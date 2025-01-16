@@ -1,0 +1,34 @@
+[package]
+name = "wildcat"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "wildcat"
+path = "src/main.rs"
+
+[[bin]]
+name = "admin-dashboard"
+path = "src/cli.rs"
+
+[dependencies]
+
+tokio = {version = "1.4", features = ["macros", "rt-multi-thread"]}
+axum = {version = "0.6", features = ["macros"]}
+reqwest = {version = "0.12"}
+
+log = {version = "0.4"}
+env_logger = {version = "0.11"}
+serde = {version = "1.0", features = ["derive"]}
+uuid = {version = "1.11", features = ["serde", "v4"]}
+rust_decimal = {version = "1.36"}
+chrono = {version = "0.4", features = ["serde"]}
+futures-util = {version = "0.3"}
+thiserror = {version = "2.0"}
+config = {version = "0.15"}
+
+cdk = {version = "0.6"}
+secp256k1 = {version = "0.30"}
+
+crossterm = {version = "0.28", features = ["event-stream"]}
+# async-trait = {version = "0.1"}
