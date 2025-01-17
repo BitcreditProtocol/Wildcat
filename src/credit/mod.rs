@@ -2,14 +2,14 @@
 // ----- extra library imports
 use axum::routing::Router;
 use axum::routing::{get, post};
-use thiserror::Error;
 use bitcoin::bip32 as btc32;
+use thiserror::Error;
 // ----- local modules
+pub mod admin;
+mod keys;
 pub mod mint;
 pub mod persistence;
-pub mod admin;
 mod web;
-mod keys;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
