@@ -3,16 +3,8 @@ name = "wildcat"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "wildcat"
-path = "src/main.rs"
-
-[[bin]]
-name = "admin-dashboard"
-path = "src/cli.rs"
 
 [dependencies]
-
 tokio = {version = "1.4", features = ["macros", "rt-multi-thread"]}
 axum = {version = "0.6", features = ["macros"]}
 reqwest = {version = "0.12"}
@@ -27,13 +19,10 @@ futures-util = {version = "0.3"}
 thiserror = {version = "2.0"}
 config = {version = "0.15"}
 bitcoin = {version = "0.32"}
+hex = {version = "0.4"}
 
 cdk = {version = "0.6"}
-
-crossterm = {version = "0.28", features = ["event-stream"]}
-# async-trait = {version = "0.1"}
 
 [dev-dependencies]
 bip39 = {version = "2.1"}
 mockall = {version = "0.13"}
-hex = {version = "0.4"}

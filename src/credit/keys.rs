@@ -1,5 +1,5 @@
-#![allow(dead_code)]
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
@@ -7,12 +7,26 @@ use bitcoin::hashes::Hash;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
+use thiserror::Error;
 // ----- local modules
 // ----- local imports
-use super::{Error, Result};
 
+pub type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid keysetID {0}")]
+    InvalidKeysetID(KeysetID),
+    #[error("keyset with id {0} and path {1} already exists")]
+    KeysetAlreadyExists(KeysetID, btc32::DerivationPath),
+    #[error("no key for amount {0}")]
+    NoKeyForAmount(cdk::Amount),
+    #[error("cdk::nut01 error {0}")]
+    CdkNut01(#[from] cdk01::Error),
+    #[error("cdk::dhke error {0}")]
+    CdkDHKE(#[from] cdk::dhke::Error),
+}
 /// rework of cdk02::Id as they do not export internal fields
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct KeysetID {
     pub version: cdk02::KeySetVersion,
     pub id: [u8; Self::BYTELEN],
@@ -64,31 +78,33 @@ impl std::convert::From<KeysetID> for cdk02::Id {
     }
 }
 
-// ---------- KeysRepository
-#[cfg_attr(test, mockall::automock)]
-pub trait KeysRepository: Send + Sync {
-    fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo>;
-    fn store(
-        &self,
-        id: KeysetID,
-        keyset: cdk01::MintKeys,
-        info: cdk::mint::MintKeySetInfo,
-    ) -> Result<()>;
+impl std::fmt::Display for KeysetID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.version, hex::encode(self.id))
+    }
 }
 
-// ---------- KeysFactory
-pub struct KeysFactory {
+// ---------- Keys Repository for creation
+#[cfg_attr(test, mockall::automock)]
+pub trait CreateRepository: Send + Sync {
+    fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo>;
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> Result<()>;
+}
+
+// ---------- Keys Factory
+#[derive(Clone)]
+pub struct Factory<Keys> {
     ctx: bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     xpriv: btc32::Xpriv,
-    repo: Box<dyn KeysRepository>,
+    repo: Keys,
     unit: cdk00::CurrencyUnit,
 }
 
-impl KeysFactory {
+impl<Keys> Factory<Keys> {
     pub const MAX_ORDER: u8 = 20;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
-    pub fn new(seed: &[u8], repo: Box<dyn KeysRepository>) -> Self {
+    pub fn new(seed: &[u8], repo: Keys) -> Self {
         Self {
             ctx: bitcoin::secp256k1::Secp256k1::new(),
             xpriv: btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL"),
@@ -96,7 +112,9 @@ impl KeysFactory {
             unit: cdk00::CurrencyUnit::Custom(String::from(Self::CURRENCY_UNIT)),
         }
     }
+}
 
+impl<Keys: CreateRepository> Factory<Keys> {
     // inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
     // m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
     // 129372 is utf-8 for 🥜
@@ -104,7 +122,7 @@ impl KeysFactory {
     // <keysetID> is u32 from first 4bytes of sha256(keysetID)
     // <quoteID> is u32 from first 4bytes of sha256(quoteID)
     // <rotateID> is the rotating index, when newly generated index is 0
-    fn generate(&self, keysetid: KeysetID, quote: uuid::Uuid) -> Result<cdk01::MintKeys> {
+    pub fn generate(&self, keysetid: KeysetID, quote: uuid::Uuid) -> Result<cdk02::MintKeySet> {
         const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
         let keyset_as_u = std::cmp::min(
             u32::from_be_bytes(
@@ -157,10 +175,36 @@ impl KeysFactory {
             max_order: Self::MAX_ORDER,
             input_fee_ppk: 0,
         };
-        self.repo.store(keysetid, keys.clone(), info)?;
+        let set = cdk02::MintKeySet {
+            id: keysetid.into(),
+            keys,
+            unit: self.unit.clone(),
+        };
+        self.repo.store(set.clone(), info)?;
 
-        Ok(keys)
+        Ok(set)
     }
+}
+
+pub fn sign_with_keys(
+    keyset: &cdk02::MintKeySet,
+    blind: &cdk00::BlindedMessage,
+) -> Result<cdk00::BlindSignature> {
+    if blind.keyset_id != keyset.id {
+        return Err(Error::InvalidKeysetID(KeysetID::from(blind.keyset_id)));
+    }
+    let key = keyset
+        .keys
+        .get(&blind.amount)
+        .ok_or(Error::NoKeyForAmount(blind.amount))?;
+    let raw_signature = cdk::dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
+    let signature = cdk00::BlindSignature {
+        amount: blind.amount,
+        c: raw_signature,
+        keyset_id: keyset.id,
+        dleq: None,
+    };
+    Ok(signature)
 }
 
 #[cfg(test)]
@@ -176,21 +220,21 @@ mod tests {
         let keyid = KeysetID::from(cdk02::Id::from_bytes(&[0u8; 8]).unwrap());
         let quote = uuid::Uuid::from_u128(0);
 
-        let mut repo = Box::new(MockKeysRepository::new());
+        let mut repo = MockRepository::new();
         repo.expect_info().returning(|_| None);
         repo.expect_store().returning(|_, _, _| Ok(()));
 
-        let factory = KeysFactory::new(&seed, repo);
+        let factory = Factory::new(&seed, repo);
 
         let keyset = factory.generate(keyid, quote).unwrap();
         // m/129372'/129534'/2147383647'/927402239'/0'/0'
-        let key = &keyset[&cdk::Amount::from(1_u64)];
+        let key = &keyset.keys[&cdk::Amount::from(1_u64)];
         assert_eq!(
             key.public_key.to_hex(),
             "02cc7583bba21bae84d15777a90a054ccf88056bb74b01d8440bc67dbdcccb5f85"
         );
         // m/129372'/129534'/2147383647'/927402239'/0'/5'
-        let key = &keyset[&cdk::Amount::from(32_u64)];
+        let key = &keyset.keys[&cdk::Amount::from(32_u64)];
         assert_eq!(
             key.public_key.to_hex(),
             "02a2e66c769bc4b9615873fba6b4b22f45ea3a98ce63cd804ea94aebf4dfac7609"
