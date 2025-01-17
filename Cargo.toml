@@ -26,9 +26,14 @@ chrono = {version = "0.4", features = ["serde"]}
 futures-util = {version = "0.3"}
 thiserror = {version = "2.0"}
 config = {version = "0.15"}
+bitcoin = {version = "0.32"}
 
 cdk = {version = "0.6"}
-secp256k1 = {version = "0.30"}
 
 crossterm = {version = "0.28", features = ["event-stream"]}
 # async-trait = {version = "0.1"}
+
+[dev-dependencies]
+bip39 = {version = "2.1"}
+mockall = {version = "0.13"}
+hex = {version = "0.4"}
