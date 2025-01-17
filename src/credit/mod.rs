@@ -2,12 +2,14 @@
 // ----- extra library imports
 use axum::routing::Router;
 use axum::routing::{get, post};
+use bitcoin::bip32 as btc32;
 use thiserror::Error;
 // ----- local modules
+pub mod admin;
+mod keys;
 pub mod mint;
 pub mod persistence;
 mod web;
-pub mod admin;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -19,6 +21,10 @@ pub enum Error {
     QuoteNotFound(uuid::Uuid),
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
+
+    /// keyset errors
+    #[error("Keyset already exists: {0:?} {1:?}")]
+    KeysetAlreadyExists(keys::KeysetID, btc32::DerivationPath),
 }
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
