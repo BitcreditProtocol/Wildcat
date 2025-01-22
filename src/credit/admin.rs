@@ -122,7 +122,6 @@ pub async fn resolve_quote(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn routes(ctrl: Controller) -> Router {
     let admin = Router::new()
         .route("/quote/pending", get(list_pending_quotes))

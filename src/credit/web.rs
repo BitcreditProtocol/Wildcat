@@ -4,7 +4,6 @@ use axum::extract::{Json, Path, State};
 use axum::routing::Router;
 use axum::routing::{get, post};
 use cdk::nuts::nut00 as cdk00;
-use rust_decimal::Decimal;
 // ----- local modules
 // ----- local imports
 use super::quotes;
@@ -72,7 +71,6 @@ pub async fn lookup_quote(
     Ok(Json(quote.into()))
 }
 
-#[allow(dead_code)]
 pub fn routes(ctrl: Controller) -> Router {
     let v1_credit = Router::new()
         .route("/mint/quote", post(enquire_quote))

@@ -18,7 +18,6 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 #[derive(Clone)]
 pub struct Controller {
     key_factory: keys::Factory<persistence::InMemoryKeysRepository>,
-    keys: persistence::InMemoryKeysRepository,
     quote_factory: quotes::Factory<persistence::InMemoryQuoteRepository>,
     quotes: persistence::InMemoryQuoteRepository,
 }
@@ -34,7 +33,6 @@ impl Controller {
             quote_factory: quotes::Factory {
                 quotes: quotes.clone(),
             },
-            keys,
             quotes,
         }
     }
@@ -48,9 +46,9 @@ impl Controller {
         tstamp: TStamp,
         blinds: Vec<cdk00::BlindedMessage>,
     ) -> Result<uuid::Uuid> {
-        Ok(self
+        self
             .quote_factory
-            .new_quote_request(bill, endorser, blinds, tstamp))
+            .new_quote_request(bill, endorser, blinds, tstamp).map_err(Error::from)
     }
 
     pub fn lookup(&self, id: uuid::Uuid) -> Result<quotes::Quote> {
@@ -81,7 +79,6 @@ impl Controller {
         let mut quote = self.quotes.load(id).ok_or(Error::UnknownQuoteID(id))?;
         let id = quote.id;
         let kid = keys::KeysetID::new(&quote.bill, &quote.endorser);
-        println!("kid: {:?}", kid);
         let quotes::QuoteStatus::Pending { ref mut blinds } = quote.status_as_mut() else {
             return Err(Error::QuoteAlreadyResolved(id));
         };
@@ -96,7 +93,7 @@ impl Controller {
             .map(|blind| keys::sign_with_keys(&keyset, blind))
             .collect::<Vec<_>>()
             .into_iter()
-            .collect::<keys::Result<Vec<_>>>()?; //::Vec<_>().into_iter().collect::<Result<Vec<_>>>()?;
+            .collect::<keys::Result<Vec<_>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.accept(signatures, expiration)?;
         self.quotes.update_if_pending(quote);

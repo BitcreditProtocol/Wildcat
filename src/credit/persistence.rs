@@ -21,18 +21,15 @@ impl quotes::Repository for InMemoryQuoteRepository {
             .find(|q| q.bill == bill && q.endorser == endorser)
             .cloned()
     }
-    fn store(&self, quote: quotes::Quote) {
+    fn store(&self, quote: quotes::Quote) -> std::result::Result<(), Box<dyn std::error::Error>> {
         self.quotes.write().unwrap().insert(quote.id, quote);
+        Ok(())
     }
 }
 
 impl InMemoryQuoteRepository {
     pub fn load(&self, id: Uuid) -> Option<quotes::Quote> {
         self.quotes.read().unwrap().get(&id).cloned()
-    }
-
-    pub fn remove(&self, id: Uuid) -> Option<quotes::Quote> {
-        self.quotes.write().unwrap().remove(&id)
     }
 
     pub fn update_if_pending(&self, new: quotes::Quote) {
@@ -83,7 +80,7 @@ impl keys::CreateRepository for InMemoryKeysRepository {
         &self,
         keyset: cdk02::MintKeySet,
         info: cdk::mint::MintKeySetInfo,
-    ) -> keys::Result<()> {
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         self.keys
             .write()
             .unwrap()

@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::sync::Arc;
 // ----- extra library imports
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
@@ -24,6 +23,8 @@ pub enum Error {
     CdkNut01(#[from] cdk01::Error),
     #[error("cdk::dhke error {0}")]
     CdkDHKE(#[from] cdk::dhke::Error),
+    #[error("repository error {0}")]
+    RepoError(#[from] Box<dyn std::error::Error>),
 }
 /// rework of cdk02::Id as they do not export internal fields
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
@@ -88,7 +89,7 @@ impl std::fmt::Display for KeysetID {
 #[cfg_attr(test, mockall::automock)]
 pub trait CreateRepository: Send + Sync {
     fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo>;
-    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> Result<()>;
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> std::result::Result<(), Box<dyn std::error::Error>>;
 }
 
 // ---------- Keys Factory
@@ -220,9 +221,9 @@ mod tests {
         let keyid = KeysetID::from(cdk02::Id::from_bytes(&[0u8; 8]).unwrap());
         let quote = uuid::Uuid::from_u128(0);
 
-        let mut repo = MockRepository::new();
+        let mut repo = MockCreateRepository::new();
         repo.expect_info().returning(|_| None);
-        repo.expect_store().returning(|_, _, _| Ok(()));
+        repo.expect_store().returning(|_, _| Ok(()));
 
         let factory = Factory::new(&seed, repo);
 

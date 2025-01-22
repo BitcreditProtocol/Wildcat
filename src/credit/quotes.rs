@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::sync::Arc;
 // ----- extra library imports
 use cdk::nuts::nut00 as cdk00;
 use thiserror::Error;
@@ -12,14 +11,12 @@ use super::TStamp;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Quote already exists: {0}")]
-    QuoteAlreadyExists(uuid::Uuid),
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
-    #[error("Insufficient blinds")]
-    InsufficientBlinds,
     #[error("keys error {0}")]
     Keys(#[from] super::keys::Error),
+    #[error("repository error {0}")]
+    RepoError(#[from] Box<dyn std::error::Error>),
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +87,7 @@ impl Quote {
 #[cfg_attr(test, mockall::automock)]
 pub trait Repository: Send + Sync {
     fn search_by(&self, bill: &str, endorser: &str) -> Option<Quote>;
-    fn store(&self, quote: Quote);
+    fn store(&self, quote: Quote) -> std::result::Result<(), Box<dyn std::error::Error>>;
 }
 
 // ---------- Quotes Factory
@@ -100,18 +97,6 @@ pub struct Factory<Quotes> {
 }
 
 impl<Quotes: Repository> Factory<Quotes> {
-    fn add_new(
-        &self,
-        bill: String,
-        endorser: String,
-        blinds: Vec<cdk00::BlindedMessage>,
-        submitted: TStamp,
-    ) -> uuid::Uuid {
-        let new = Quote::new(bill, endorser, blinds, submitted);
-        let id = new.id;
-        self.quotes.store(new);
-        id
-    }
 
     pub fn new_quote_request(
         &self,
@@ -119,53 +104,166 @@ impl<Quotes: Repository> Factory<Quotes> {
         endorser: String,
         blinds: Vec<cdk00::BlindedMessage>,
         submitted: TStamp,
-    ) -> uuid::Uuid {
+    ) -> Result<uuid::Uuid> {
         let Some(quote) = self.quotes.search_by(&bill, &endorser) else {
             let quote = Quote::new(bill, endorser, blinds, submitted);
             let id = quote.id;
-            self.quotes.store(quote);
-            return id;
+            self.quotes.store(quote)?;
+            return Ok(id);
         };
 
         if let QuoteStatus::Accepted { ttl, .. } = quote.status() {
             if *ttl < submitted {
                 let new = Quote::new(bill, endorser, blinds, submitted);
                 let id = new.id;
-                self.quotes.store(new);
-                return id;
+                self.quotes.store(new)?;
+                return Ok(id);
             }
         }
-        quote.id
+        Ok(quote.id)
     }
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use mockall::predicate::*;
 
     #[test]
     fn test_new_quote_request_quote_not_present() {
-        // TODO!
+        let mut repo = MockRepository::new();
+        repo.expect_search_by()
+            .with(eq("billID"), eq("endorserID"))
+            .returning(|_, _| None);
+        repo.expect_store().returning(|_| Ok(()));
+
+        let factory = Factory { quotes: repo };
+        let test = factory.new_quote_request(
+            String::from("billID"),
+            String::from("endorserID"),
+            vec![],
+            chrono::Utc::now(),
+        );
+        assert!(test.is_ok());
     }
 
     #[test]
     fn test_new_quote_request_quote_pending() {
-        // TODO!
+        let id = Uuid::new_v4();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by()
+            .with(eq("billID"), eq("endorserID"))
+            .returning(move |_, _| {
+                Some(Quote {
+                    status: QuoteStatus::Pending { blinds: vec![] },
+                    id,
+                    bill: String::from("billID"),
+                    endorser: String::from("endorserID"),
+                    submitted: chrono::Utc::now(),
+                })
+            });
+        repo.expect_store().returning(|_| Ok(()));
+
+        let factory = Factory { quotes: repo };
+        let test_id = factory.new_quote_request(
+            String::from("billID"),
+            String::from("endorserID"),
+            vec![],
+            chrono::Utc::now(),
+        );
+        assert!(test_id.is_ok());
+        assert_eq!(id, test_id.unwrap());
     }
 
     #[test]
     fn test_new_quote_request_quote_declined() {
-        // TODO!
+        let id = Uuid::new_v4();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by()
+            .with(eq("billID"), eq("endorserID"))
+            .returning(move |_, _| {
+                Some(Quote {
+                    status: QuoteStatus::Declined,
+                    id,
+                    bill: String::from("billID"),
+                    endorser: String::from("endorserID"),
+                    submitted: chrono::Utc::now(),
+                })
+            });
+        repo.expect_store().returning(|_| Ok(()));
+
+        let factory = Factory { quotes: repo };
+        let test_id = factory.new_quote_request(
+            String::from("billID"),
+            String::from("endorserID"),
+            vec![],
+            chrono::Utc::now(),
+        );
+        assert!(test_id.is_ok());
+        assert_eq!(id, test_id.unwrap());
     }
 
     #[test]
     fn test_new_quote_request_quote_accepted() {
-        // TODO!
+        let id = Uuid::new_v4();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by()
+            .with(eq("billID"), eq("endorserID"))
+            .returning(move |_, _| {
+                Some(Quote {
+                    status: QuoteStatus::Accepted {
+                        signatures: vec![],
+                        ttl: chrono::Utc::now() + chrono::Duration::days(1),
+                    },
+                    id,
+                    bill: String::from("billID"),
+                    endorser: String::from("endorserID"),
+                    submitted: chrono::Utc::now(),
+                })
+            });
+        repo.expect_store().returning(|_| Ok(()));
+
+        let factory = Factory { quotes: repo };
+        let test_id = factory.new_quote_request(
+            String::from("billID"),
+            String::from("endorserID"),
+            vec![],
+            chrono::Utc::now(),
+        );
+        assert!(test_id.is_ok());
+        assert_eq!(id, test_id.unwrap());
     }
 
     #[test]
     fn test_new_quote_request_quote_accepted_but_expired() {
         // TODO!
+        let id = Uuid::new_v4();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by()
+            .with(eq("billID"), eq("endorserID"))
+            .returning(move |_, _| {
+                Some(Quote {
+                    status: QuoteStatus::Accepted {
+                        signatures: vec![],
+                        ttl: chrono::Utc::now(),
+                    },
+                    id,
+                    bill: String::from("billID"),
+                    endorser: String::from("endorserID"),
+                    submitted: chrono::Utc::now(),
+                })
+            });
+        repo.expect_store().returning(|_| Ok(()));
+
+        let factory = Factory { quotes: repo };
+        let test_id = factory.new_quote_request(
+            String::from("billID"),
+            String::from("endorserID"),
+            vec![],
+            chrono::Utc::now() + chrono::Duration::seconds(1),
+        );
+        assert!(test_id.is_ok());
+        assert_ne!(id, test_id.unwrap());
     }
 }
