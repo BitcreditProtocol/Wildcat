@@ -16,7 +16,7 @@ pub enum Error {
     #[error("keys error {0}")]
     Keys(#[from] super::keys::Error),
     #[error("repository error {0}")]
-    RepoError(#[from] Box<dyn std::error::Error>),
+    Repository(#[from] Box<dyn std::error::Error>),
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +97,6 @@ pub struct Factory<Quotes> {
 }
 
 impl<Quotes: Repository> Factory<Quotes> {
-
     pub fn new_quote_request(
         &self,
         bill: String,

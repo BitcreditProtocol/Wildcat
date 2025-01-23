@@ -24,7 +24,7 @@ pub enum Error {
     #[error("cdk::dhke error {0}")]
     CdkDHKE(#[from] cdk::dhke::Error),
     #[error("repository error {0}")]
-    RepoError(#[from] Box<dyn std::error::Error>),
+    Repository(#[from] Box<dyn std::error::Error>),
 }
 /// rework of cdk02::Id as they do not export internal fields
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
@@ -89,7 +89,11 @@ impl std::fmt::Display for KeysetID {
 #[cfg_attr(test, mockall::automock)]
 pub trait CreateRepository: Send + Sync {
     fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo>;
-    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> std::result::Result<(), Box<dyn std::error::Error>>;
+    fn store(
+        &self,
+        keyset: cdk02::MintKeySet,
+        info: cdk::mint::MintKeySetInfo,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>>;
 }
 
 // ---------- Keys Factory

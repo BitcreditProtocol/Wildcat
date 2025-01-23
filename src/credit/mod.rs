@@ -46,9 +46,9 @@ impl Controller {
         tstamp: TStamp,
         blinds: Vec<cdk00::BlindedMessage>,
     ) -> Result<uuid::Uuid> {
-        self
-            .quote_factory
-            .new_quote_request(bill, endorser, blinds, tstamp).map_err(Error::from)
+        self.quote_factory
+            .new_quote_request(bill, endorser, blinds, tstamp)
+            .map_err(Error::from)
     }
 
     pub fn lookup(&self, id: uuid::Uuid) -> Result<quotes::Quote> {

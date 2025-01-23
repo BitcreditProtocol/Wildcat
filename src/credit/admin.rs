@@ -6,7 +6,7 @@ use cdk::nuts::nut00 as cdk00;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 // ----- local modules
-// ----- local modules
+// ----- local imports
 use super::{quotes, utils, Controller, Result, TStamp};
 
 /// --------------------------- List quotes
