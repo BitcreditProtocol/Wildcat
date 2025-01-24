@@ -1,16 +1,20 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use rust_decimal::Decimal;
+use axum::routing::Router;
+use axum::routing::{get, post};
+use cdk::nuts::nut00 as cdk00;
 // ----- local modules
 // ----- local imports
-use crate::credit::{mint, Controller, Result};
+use super::quotes;
+use super::{Controller, Result};
 
 ///--------------------------- Enquire mint quote
 #[derive(serde::Deserialize)]
 pub struct QuoteRequest {
     bill: String,
     node: String,
+    outputs: Vec<cdk00::BlindedMessage>,
 }
 
 #[derive(serde::Serialize)]
@@ -28,31 +32,30 @@ pub async fn enquire_quote(
         req.node
     );
 
-    let QuoteRequest { bill, node } = req;
-    let id = ctrl.quote_service.enquire(bill, node, chrono::Utc::now())?;
-
+    let id = ctrl.enquire(req.bill, req.node, chrono::Utc::now(), req.outputs)?;
     Ok(Json(QuoteRequestReply { id }))
 }
 
 /// --------------------------- Look up quote
 #[derive(serde::Serialize)]
+#[serde(rename_all = "lowercase", tag = "status")]
 pub enum LookUpQuoteReply {
     Pending,
     Declined,
     Accepted {
-        discount: Decimal,
-        ttl: chrono::DateTime<chrono::Utc>,
+        signatures: Vec<cdk00::BlindSignature>,
+        expiration_date: chrono::DateTime<chrono::Utc>,
     },
 }
 
-impl std::convert::From<mint::Quote> for LookUpQuoteReply {
-    fn from(quote: mint::Quote) -> Self {
-        match quote {
-            mint::Quote::Pending(_) => LookUpQuoteReply::Pending,
-            mint::Quote::Declined(_) => LookUpQuoteReply::Declined,
-            mint::Quote::Accepted(_, details) => LookUpQuoteReply::Accepted {
-                discount: details.discounted,
-                ttl: details.ttl,
+impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
+    fn from(quote: quotes::Quote) -> Self {
+        match quote.status() {
+            quotes::QuoteStatus::Pending { .. } => LookUpQuoteReply::Pending,
+            quotes::QuoteStatus::Declined => LookUpQuoteReply::Declined,
+            quotes::QuoteStatus::Accepted { signatures, ttl } => LookUpQuoteReply::Accepted {
+                signatures: signatures.clone(),
+                expiration_date: *ttl,
             },
         }
     }
@@ -64,8 +67,14 @@ pub async fn lookup_quote(
 ) -> Result<Json<LookUpQuoteReply>> {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
-    let service = ctrl.quote_service.clone();
-    let quote = service.lookup(id)?;
-    let response = LookUpQuoteReply::from(quote);
-    Ok(Json(response))
+    let quote = ctrl.lookup(id)?;
+    Ok(Json(quote.into()))
+}
+
+pub fn routes(ctrl: Controller) -> Router {
+    let v1_credit = Router::new()
+        .route("/mint/quote", post(enquire_quote))
+        .route("/mint/quote/:id", get(lookup_quote));
+
+    Router::new().nest("/credit/v1", v1_credit).with_state(ctrl)
 }

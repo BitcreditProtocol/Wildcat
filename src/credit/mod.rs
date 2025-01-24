@@ -1,61 +1,110 @@
 // ----- standard library imports
 // ----- extra library imports
-use axum::routing::Router;
-use axum::routing::{get, post};
-use bitcoin::bip32 as btc32;
-use thiserror::Error;
+use cdk::nuts::nut00 as cdk00;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 // ----- local modules
 pub mod admin;
-mod keys;
-pub mod mint;
+pub mod error;
+pub mod keys;
 pub mod persistence;
-mod web;
+pub mod quotes;
+mod utils;
+pub mod web;
 // ----- local imports
+use error::{Error, Result};
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-#[allow(dead_code)]
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Quote expired: {0}")]
-    QuoteExpired(uuid::Uuid),
-    #[error("Quote not found: {0}")]
-    QuoteNotFound(uuid::Uuid),
-    #[error("Quote has been already resolved: {0}")]
-    QuoteAlreadyResolved(uuid::Uuid),
-
-    /// keyset errors
-    #[error("Keyset already exists: {0:?} {1:?}")]
-    KeysetAlreadyExists(keys::KeysetID, btc32::DerivationPath),
-}
-impl axum::response::IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        todo!();
-    }
-}
+type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone)]
 pub struct Controller {
-    pub quote_service: mint::Service<persistence::InMemoryQuoteRepository>,
+    key_factory: keys::Factory<persistence::InMemoryKeysRepository>,
+    quote_factory: quotes::Factory<persistence::InMemoryQuoteRepository>,
+    quotes: persistence::InMemoryQuoteRepository,
 }
 
-#[allow(dead_code)]
-pub fn pub_routes(ctrl: Controller) -> Router {
-    let v1_credit = Router::new()
-        .route("/mint/quote", post(web::enquire_quote))
-        .route("/mint/quote/:id", get(web::lookup_quote));
-
-    Router::new().nest("/credit/v1", v1_credit).with_state(ctrl)
+impl Controller {
+    pub fn new(
+        seed: &[u8],
+        quotes: persistence::InMemoryQuoteRepository,
+        keys: persistence::InMemoryKeysRepository,
+    ) -> Self {
+        Self {
+            key_factory: keys::Factory::new(seed, keys.clone()),
+            quote_factory: quotes::Factory {
+                quotes: quotes.clone(),
+            },
+            quotes,
+        }
+    }
 }
 
-#[allow(dead_code)]
-pub fn admin_routes(ctrl: Controller) -> Router {
-    let admin = Router::new()
-        .route("/quote/pending", get(admin::list_pending_quotes))
-        .route("/quote/accepted", get(admin::list_accepted_quotes))
-        .route("/quote/:id", get(admin::lookup_quote))
-        .route("/quote/:id", post(admin::resolve_quote));
-    Router::new()
-        .nest("/admin/credit/v1", admin)
-        .with_state(ctrl)
+impl Controller {
+    pub fn enquire(
+        &self,
+        bill: String,
+        endorser: String,
+        tstamp: TStamp,
+        blinds: Vec<cdk00::BlindedMessage>,
+    ) -> Result<uuid::Uuid> {
+        self.quote_factory
+            .new_quote_request(bill, endorser, blinds, tstamp)
+            .map_err(Error::from)
+    }
+
+    pub fn lookup(&self, id: uuid::Uuid) -> Result<quotes::Quote> {
+        self.quotes.load(id).ok_or(Error::UnknownQuoteID(id))
+    }
+
+    pub fn decline(&self, id: uuid::Uuid) -> Result<()> {
+        let old = self.quotes.load(id);
+        if old.is_none() {
+            return Err(Error::UnknownQuoteID(id));
+        }
+        let mut quote = old.unwrap();
+        quote.decline()?;
+        self.quotes.update_if_pending(quote);
+        Ok(())
+    }
+
+    pub fn accept(
+        &self,
+        id: uuid::Uuid,
+        discount: Decimal,
+        now: TStamp,
+        ttl: Option<TStamp>,
+    ) -> Result<()> {
+        let discounted_amount =
+            cdk::Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
+
+        let mut quote = self.quotes.load(id).ok_or(Error::UnknownQuoteID(id))?;
+        let id = quote.id;
+        let kid = keys::KeysetID::new(&quote.bill, &quote.endorser);
+        let quotes::QuoteStatus::Pending { ref mut blinds } = quote.status_as_mut() else {
+            return Err(Error::QuoteAlreadyResolved(id));
+        };
+
+        let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
+        log::warn!("WARNING: we are leaving fees on the table, ... but we don't know how much (eBill service missing)");
+
+        let keyset = self.key_factory.generate(kid, id).map_err(Error::from)?;
+
+        let signatures = selected_blinds
+            .iter()
+            .map(|blind| keys::sign_with_keys(&keyset, blind))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect::<keys::Result<Vec<_>>>()?;
+        let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
+        quote.accept(signatures, expiration)?;
+        self.quotes.update_if_pending(quote);
+        Ok(())
+    }
+
+    pub fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+        Ok(self.quotes.list_pendings(since))
+    }
+
+    pub fn list_accepteds(&self) -> Result<Vec<uuid::Uuid>> {
+        Ok(self.quotes.list_accepteds())
+    }
 }
