@@ -20,6 +20,7 @@ thiserror = {version = "2.0"}
 config = {version = "0.15"}
 bitcoin = {version = "0.32"}
 hex = {version = "0.4"}
+anyhow = {version = "1.0"}
 
 cdk = {version = "0.6"}
 

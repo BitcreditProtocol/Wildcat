@@ -1,8 +1,5 @@
-// ----- standard library imports
-// ----- extra library imports
-// ----- local modules
-mod credit;
-// ----- local imports
+
+use wildcat::credit;
 
 #[tokio::main]
 async fn main() {
