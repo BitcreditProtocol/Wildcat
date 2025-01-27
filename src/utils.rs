@@ -39,18 +39,18 @@ pub fn select_blinds_to_target(
     &blinds[0..selected_idx]
 }
 
-pub fn calculate_default_expiration_date_for_quote(now: super::TStamp) -> super::TStamp {
+pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
     now + chrono::Duration::days(2)
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     use super::*;
     use cdk::nuts::nut01 as cdk01;
     use cdk::nuts::nut02 as cdk02;
 
-    const RANDOMS: [&str; 6] = [
+    pub const RANDOMS: [&str; 6] = [
         "0244e4420934530b2bdf5161f4c88b3c4f923db158741da51f3bb22b579495862e",
         "03244bce3f2ea7b12acd2004a6c629acf9d01e7eceadfd7f4ce6f7a09134a84474",
         "0212612cddd9e1aa368c500654538c71ebdf70d5bc4a1b642f9c963269505514cc",
@@ -58,11 +58,70 @@ mod tests {
         "02cc8e0448596f0aaec2c62ef02e5a36f53a4e8b7d5a9e906d2c1f8d5cd738ccae",
         "027a238c992c4a5ea59502b2d6b52e6466bf2a775191cbfaf29b9311e8352d99dc",
     ];
-    fn publics() -> Vec<cdk01::PublicKey> {
+    pub fn publics() -> Vec<cdk01::PublicKey> {
         RANDOMS
             .iter()
             .map(|key| cdk01::PublicKey::from_hex(key).unwrap())
             .collect()
+    }
+
+    pub fn generate_proofs(
+        keyset: &cdk02::MintKeySet,
+        amounts: &[cdk::Amount],
+    ) -> Vec<cdk00::Proof> {
+        let mut proofs: Vec<cdk00::Proof> = Vec::new();
+        for amount in amounts {
+            let keypair = keyset.keys.get(amount).expect("keys for amount");
+            let secret = cdk::secret::Secret::new(rand::random::<u64>().to_string());
+            let (b_, r) = cdk::dhke::blind_message(secret.as_bytes(), None)
+                .expect("cdk::dhke::blind_message");
+            let c_ =
+                cdk::dhke::sign_message(&keypair.secret_key, &b_).expect("cdk::dhke::sign_message");
+            let c =
+                cdk::dhke::unblind_message(&c_, &r, &keypair.public_key).expect("unblind_message");
+            proofs.push(cdk00::Proof::new(*amount, keyset.id, secret, c));
+        }
+        proofs
+    }
+
+    pub fn generate_blinds(
+        keyset: &cdk02::MintKeySet,
+        amounts: &[cdk::Amount],
+    ) -> Vec<(cdk00::BlindedMessage, cdk::secret::Secret, cdk01::SecretKey)> {
+        let mut blinds: Vec<(cdk00::BlindedMessage, cdk::secret::Secret, cdk01::SecretKey)> =
+            Vec::new();
+        for amount in amounts {
+            let _keypair = keyset.keys.get(amount).expect("keys for amount");
+            let secret = cdk::secret::Secret::new(rand::random::<u64>().to_string());
+            let (b_, r) = cdk::dhke::blind_message(secret.as_bytes(), None)
+                .expect("cdk::dhke::blind_message");
+            blinds.push((
+                cdk00::BlindedMessage::new(*amount, keyset.id, b_),
+                secret,
+                r,
+            ));
+        }
+        blinds
+    }
+
+    pub fn verify_signatures_data(
+        keyset: &cdk02::MintKeySet,
+        signatures: impl std::iter::IntoIterator<Item = (cdk00::BlindedMessage, cdk00::BlindSignature)>,
+    ) -> bool {
+        for signature in signatures.into_iter() {
+            if signature.0.keyset_id != keyset.id || signature.1.keyset_id != keyset.id {
+                return false;
+            }
+            if signature.0.amount != signature.1.amount {
+                return false;
+            }
+
+            let keypair = keyset.keys.get(&signature.0.amount);
+            if keypair.is_none() {
+                return false;
+            }
+        }
+        true
     }
 
     #[test]
