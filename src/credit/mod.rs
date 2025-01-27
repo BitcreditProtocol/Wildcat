@@ -12,6 +12,7 @@ pub mod web;
 // ----- local imports
 use crate::utils;
 use error::{Error, Result};
+use crate::keys::generate_keyset_id_from_bill;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
@@ -78,7 +79,7 @@ impl Controller {
 
         let mut quote = self.quotes.load(id).ok_or(Error::UnknownQuoteID(id))?;
         let id = quote.id;
-        let kid = keys::KeysetID::new(&quote.bill, &quote.endorser);
+        let kid = generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
         let quotes::QuoteStatus::Pending { ref mut blinds } = quote.status_as_mut() else {
             return Err(Error::QuoteAlreadyResolved(id));
         };

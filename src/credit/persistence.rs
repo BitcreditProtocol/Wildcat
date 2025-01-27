@@ -7,6 +7,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use super::{keys, quotes, TStamp};
+use crate::keys::KeysetID;
 
 #[derive(Default, Clone)]
 pub struct InMemoryQuoteRepository {
@@ -69,11 +70,11 @@ impl InMemoryQuoteRepository {
 
 #[derive(Default, Clone)]
 pub struct InMemoryKeysRepository {
-    keys: Arc<RwLock<HashMap<keys::KeysetID, (cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>>>,
+    keys: Arc<RwLock<HashMap<KeysetID, (cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>>>,
 }
 
 impl keys::CreateRepository for InMemoryKeysRepository {
-    fn info(&self, id: &keys::KeysetID) -> Option<cdk::mint::MintKeySetInfo> {
+    fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo> {
         self.keys.read().unwrap().get(id).map(|k| k.0.clone())
     }
     fn store(
@@ -84,7 +85,7 @@ impl keys::CreateRepository for InMemoryKeysRepository {
         self.keys
             .write()
             .unwrap()
-            .insert(keys::KeysetID::from(keyset.id), (info, keyset));
+            .insert(KeysetID::from(keyset.id), (info, keyset));
         Ok(())
     }
 }
