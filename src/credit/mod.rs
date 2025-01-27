@@ -8,9 +8,9 @@ pub mod error;
 pub mod keys;
 pub mod persistence;
 pub mod quotes;
-mod utils;
 pub mod web;
 // ----- local imports
+use crate::utils;
 use error::{Error, Result};
 
 type TStamp = chrono::DateTime<chrono::Utc>;
