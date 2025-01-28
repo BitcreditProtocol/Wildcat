@@ -1,5 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
+use bitcoin::bip32 as btc32;
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::Hash;
 use cdk::nuts::nut00 as cdk00;
 use thiserror::Error;
 use uuid::Uuid;
@@ -17,6 +20,14 @@ pub enum Error {
     Keys(#[from] super::keys::Error),
     #[error("repository error {0}")]
     Repository(#[from] Box<dyn std::error::Error>),
+}
+
+pub fn generate_path_idx_from_quoteid(quoteid: Uuid) -> btc32::ChildNumber {
+    const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
+    let sha_qid = Sha256::hash(quoteid.as_bytes());
+    let u_qid = u32::from_be_bytes(sha_qid[0..4].try_into().expect("a u32 is 4 bytes"));
+    let idx_qid = std::cmp::min(u_qid, MAX_INDEX);
+    btc32::ChildNumber::from_hardened_idx(idx_qid).expect("keyset is a valid index")
 }
 
 #[derive(Debug, Clone)]

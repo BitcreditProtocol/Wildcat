@@ -9,7 +9,9 @@ use cdk::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
-use crate::keys::KeysetID;
+use super::quotes;
+use crate::keys::{generate_path_index_from_keysetid, KeysetID};
+use crate::TStamp;
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
@@ -28,6 +30,61 @@ pub enum Error {
     Repository(#[from] Box<dyn std::error::Error>),
 }
 
+pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
+    let input = format!("{}{}", bill, node);
+    let digest = Sha256::hash(input.as_bytes());
+    KeysetID {
+        version: cdk02::KeySetVersion::Version00,
+        id: digest.as_byte_array()[0..KeysetID::BYTELEN]
+            .try_into()
+            .expect("cdk::KeysetID BYTELEN == 7"),
+    }
+}
+
+// inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
+// m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
+// 129372 is utf-8 for 🥜
+// 129534 is utf-8 for 🧾
+// <keysetID_idx> check generate_path_index_from_keysetid
+// <quoteID_idx> check generate_path_idx_from_quoteid
+fn generate_quote_keyset_path(kid: KeysetID, quote: uuid::Uuid) -> btc32::DerivationPath {
+    let keyset_child = generate_path_index_from_keysetid(kid);
+    let quote_child = quotes::generate_path_idx_from_quoteid(quote);
+    let path = [
+        btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
+        btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
+        keyset_child,
+        quote_child,
+    ];
+    btc32::DerivationPath::from(path.as_slice())
+}
+
+fn generate_keyset_id_from_maturity_date(maturity_date: TStamp) -> KeysetID {
+    let idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
+    let mut kid = KeysetID {
+        version: cdk02::KeySetVersion::Version00,
+        id: Default::default(),
+    };
+    kid.id[0..4].copy_from_slice(&idx.to_be_bytes()[0..4]);
+    kid
+}
+
+// inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
+// m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
+// 129372 is utf-8 for 🥜
+// 129534 is utf-8 for 🧾
+// <maturity_idx> days from unix epoch
+fn generate_maturing_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath {
+    let idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
+    let maturity_child =
+        btc32::ChildNumber::from_hardened_idx(idx).expect("maturity date is a valid index");
+    let path = [
+        btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
+        btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
+        maturity_child,
+    ];
+    btc32::DerivationPath::from(path.as_slice())
+}
 
 // ---------- Keys Repository for creation
 #[cfg_attr(test, mockall::automock)]
@@ -45,7 +102,8 @@ pub trait CreateRepository: Send + Sync {
 pub struct Factory<Keys> {
     ctx: bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     xpriv: btc32::Xpriv,
-    repo: Keys,
+    quote_keys: Keys,
+    maturing_keys: Keys,
     unit: cdk00::CurrencyUnit,
 }
 
@@ -53,52 +111,26 @@ impl<Keys> Factory<Keys> {
     pub const MAX_ORDER: u8 = 20;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
-    pub fn new(seed: &[u8], repo: Keys) -> Self {
+    pub fn new(seed: &[u8], quote_keys: Keys, maturing_keys: Keys) -> Self {
         Self {
             ctx: bitcoin::secp256k1::Secp256k1::new(),
             xpriv: btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL"),
-            repo,
+            quote_keys,
+            maturing_keys,
             unit: cdk00::CurrencyUnit::Custom(String::from(Self::CURRENCY_UNIT)),
         }
     }
 }
 
 impl<Keys: CreateRepository> Factory<Keys> {
-    // inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
-    // m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
-    // 129372 is utf-8 for 🥜
-    // 129534 is utf-8 for 🧾
-    // <keysetID> is u32 from first 4bytes of sha256(keysetID)
-    // <quoteID> is u32 from first 4bytes of sha256(quoteID)
-    // <rotateID> is the rotating index, when newly generated index is 0
-    pub fn generate(&self, keysetid: KeysetID, quote: uuid::Uuid) -> Result<cdk02::MintKeySet> {
-        const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
-        let keyset_as_u = std::cmp::min(
-            u32::from_be_bytes(
-                Sha256::hash(&keysetid.as_bytes())[0..4]
-                    .try_into()
-                    .expect("a u32 is 4 bytes"),
-            ),
-            MAX_INDEX,
-        );
-        let quote_as_u = std::cmp::min(
-            u32::from_be_bytes(
-                Sha256::hash(quote.as_bytes())[0..4]
-                    .try_into()
-                    .expect("a u32 is 4 bytes"),
-            ),
-            MAX_INDEX,
-        );
-        let path = [
-            btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
-            btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
-            btc32::ChildNumber::from_hardened_idx(keyset_as_u).expect("keyset is a valid index"),
-            btc32::ChildNumber::from_hardened_idx(quote_as_u).expect("quote is a valid index"),
-        ];
-        let path = btc32::DerivationPath::from(path.as_slice());
-        let indexed_path =
-            path.child(btc32::ChildNumber::from_hardened_idx(0).expect("0 is a valid index"));
-        let info = self.repo.info(&keysetid);
+    pub fn generate(
+        &self,
+        keysetid: KeysetID,
+        quote: uuid::Uuid,
+        bill_maturity_date: TStamp,
+    ) -> Result<cdk02::MintKeySet> {
+        let path = generate_quote_keyset_path(keysetid, quote);
+        let info = self.quote_keys.info(&keysetid);
         if let Some(info) = info {
             if info.derivation_path == path {
                 return Err(Error::KeysetAlreadyExists(keysetid, path));
@@ -109,7 +141,7 @@ impl<Keys: CreateRepository> Factory<Keys> {
             self.xpriv,
             Self::MAX_ORDER,
             self.unit.clone(),
-            indexed_path,
+            path.clone(),
         )
         .keys;
 
@@ -118,9 +150,9 @@ impl<Keys: CreateRepository> Factory<Keys> {
             unit: self.unit.clone(),
             active: false,
             valid_from: chrono::Utc::now().timestamp() as u64,
-            valid_to: None,
+            valid_to: Some(bill_maturity_date.timestamp() as u64),
             derivation_path: path,
-            derivation_path_index: Some(0),
+            derivation_path_index: None,
             max_order: Self::MAX_ORDER,
             input_fee_ppk: 0,
         };
@@ -129,7 +161,38 @@ impl<Keys: CreateRepository> Factory<Keys> {
             keys,
             unit: self.unit.clone(),
         };
-        self.repo.store(set.clone(), info)?;
+        self.quote_keys.store(set.clone(), info)?;
+
+        let kid = generate_keyset_id_from_maturity_date(bill_maturity_date);
+        if self.maturing_keys.info(&kid).is_some() {
+            return Ok(set);
+        }
+
+        let path = generate_maturing_keyset_path(bill_maturity_date);
+        // adding <rotate_idx> starts from zero
+        let rotate_child =
+            btc32::ChildNumber::from_hardened_idx(0).expect("rotate index 0 is valid");
+        let indexed_path = path.child(rotate_child);
+        let mut keyset = cdk02::MintKeySet::generate_from_xpriv(
+            &self.ctx,
+            self.xpriv,
+            Self::MAX_ORDER,
+            self.unit.clone(),
+            indexed_path,
+        );
+        keyset.id = kid.into();
+        let info = cdk::mint::MintKeySetInfo {
+            id: keyset.id,
+            unit: self.unit.clone(),
+            active: false,
+            valid_from: chrono::Utc::now().timestamp() as u64,
+            valid_to: Some(bill_maturity_date.timestamp() as u64),
+            derivation_path: path,
+            derivation_path_index: Some(0),
+            max_order: Self::MAX_ORDER,
+            input_fee_ppk: 0,
+        };
+        self.maturing_keys.store(keyset.clone(), info)?;
 
         Ok(set)
     }
@@ -168,25 +231,31 @@ mod tests {
 
         let keyid = KeysetID::from(cdk02::Id::from_bytes(&[0u8; 8]).unwrap());
         let quote = uuid::Uuid::from_u128(0);
+        let maturity = chrono::DateTime::parse_from_rfc3339("2021-01-01T00:00:00Z")
+            .unwrap()
+            .to_utc();
 
-        let mut repo = MockCreateRepository::new();
-        repo.expect_info().returning(|_| None);
-        repo.expect_store().returning(|_, _| Ok(()));
+        let mut maturingkeys_repo = MockCreateRepository::new();
+        maturingkeys_repo.expect_info().returning(|_| None);
+        maturingkeys_repo.expect_store().returning(|_, _| Ok(()));
+        let mut quotekeys_repo = MockCreateRepository::new();
+        quotekeys_repo.expect_info().returning(|_| None);
+        quotekeys_repo.expect_store().returning(|_, _| Ok(()));
 
-        let factory = Factory::new(&seed, repo);
+        let factory = Factory::new(&seed, quotekeys_repo, maturingkeys_repo);
 
-        let keyset = factory.generate(keyid, quote).unwrap();
-        // m/129372'/129534'/2147383647'/927402239'/0'/0'
+        let keyset = factory.generate(keyid, quote, maturity).unwrap();
+        // m/129372'/129534'/0'/927402239'/0'
         let key = &keyset.keys[&cdk::Amount::from(1_u64)];
         assert_eq!(
             key.public_key.to_hex(),
-            "02cc7583bba21bae84d15777a90a054ccf88056bb74b01d8440bc67dbdcccb5f85"
+            "03287106d3d2f1df660f7c7764e39e98051bca0c95feb9604336e9744de88eac68"
         );
-        // m/129372'/129534'/2147383647'/927402239'/0'/5'
+        // m/129372'/129534'/0'/927402239'/5'
         let key = &keyset.keys[&cdk::Amount::from(32_u64)];
         assert_eq!(
             key.public_key.to_hex(),
-            "02a2e66c769bc4b9615873fba6b4b22f45ea3a98ce63cd804ea94aebf4dfac7609"
+            "03c5b66986d15100d1c0b342e012da7a954c7040c13d514ebc3b282ffa3a54651f"
         );
     }
 }

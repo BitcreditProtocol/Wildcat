@@ -12,7 +12,7 @@ pub mod web;
 // ----- local imports
 use crate::utils;
 use error::{Error, Result};
-use crate::keys::generate_keyset_id_from_bill;
+use keys::generate_keyset_id_from_bill;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
@@ -27,10 +27,11 @@ impl Controller {
     pub fn new(
         seed: &[u8],
         quotes: persistence::InMemoryQuoteRepository,
-        keys: persistence::InMemoryKeysRepository,
+        quote_keys: persistence::InMemoryKeysRepository,
+        maturing_keys: persistence::InMemoryKeysRepository,
     ) -> Self {
         Self {
-            key_factory: keys::Factory::new(seed, keys.clone()),
+            key_factory: keys::Factory::new(seed, quote_keys.clone(), maturing_keys.clone()),
             quote_factory: quotes::Factory {
                 quotes: quotes.clone(),
             },
@@ -87,7 +88,12 @@ impl Controller {
         let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
         log::warn!("WARNING: we are leaving fees on the table, ... but we don't know how much (eBill service missing)");
 
-        let keyset = self.key_factory.generate(kid, id).map_err(Error::from)?;
+        // TODO! maturity date should come from the eBill
+        let maturity_date = now + chrono::Duration::days(30);
+        let keyset = self
+            .key_factory
+            .generate(kid, id, maturity_date)
+            .map_err(Error::from)?;
 
         let signatures = selected_blinds
             .iter()

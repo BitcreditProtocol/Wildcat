@@ -9,8 +9,9 @@ async fn main() {
     env_logger::Builder::from_env(e).init();
 
     let quote_repo = credit::persistence::InMemoryQuoteRepository::default();
-    let keys_repo = credit::persistence::InMemoryKeysRepository::default();
-    let ctrl = credit::Controller::new(&[0u8; 32], quote_repo.clone(), keys_repo.clone());
+    let quote_keys_repo = credit::persistence::InMemoryKeysRepository::default();
+    let maturing_keys_repo = credit::persistence::InMemoryKeysRepository::default();
+    let ctrl = credit::Controller::new(&[0u8; 32], quote_repo.clone(), quote_keys_repo, maturing_keys_repo);
 
     let credit_route = credit::web::routes(ctrl.clone());
     let admin_route = credit::admin::routes(ctrl.clone());
