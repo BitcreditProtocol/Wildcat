@@ -12,6 +12,7 @@ use thiserror::Error;
 // ----- local imports
 use super::quotes;
 use crate::keys::{generate_path_index_from_keysetid, KeysetID};
+use crate::swap;
 use crate::TStamp;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -54,14 +55,30 @@ fn generate_quote_keyset_path(kid: KeysetID, quote: uuid::Uuid) -> btc32::Deriva
     btc32::DerivationPath::from(path.as_slice())
 }
 
-fn generate_keyset_id_from_maturity_date(maturity_date: TStamp) -> KeysetID {
+/// Generates a keyset id from a maturity date and a rotation index
+/// id[0..4] = maturity date in days from unix epoch
+/// id[4..7] = rotation index in big endian
+fn generate_keyset_id_from_maturity_date(maturity_date: TStamp, rotation_idx: u32) -> KeysetID {
     let idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
     let mut kid = KeysetID {
         version: cdk02::KeySetVersion::Version00,
         id: Default::default(),
     };
-    kid.id[0..4].copy_from_slice(&idx.to_be_bytes()[0..4]);
+    kid.id[3..7].copy_from_slice(&rotation_idx.to_be_bytes());
+    kid.id[0..4].copy_from_slice(&idx.to_be_bytes());
     kid
+}
+
+fn extract_maturity_and_rotatingidx_from_id(id: &KeysetID) -> (TStamp, u32) {
+    let mut u32_buf: [u8; 4] = Default::default();
+    u32_buf.copy_from_slice(&id.id[0..4]);
+    let maturity = TStamp::from_timestamp(u32::from_be_bytes(u32_buf) as i64, 0)
+        .expect("datetime conversion from u64");
+
+    u32_buf = Default::default();
+    u32_buf[1..].copy_from_slice(&id.id[4..7]);
+    let idx = u32::from_be_bytes(u32_buf);
+    (maturity, idx)
 }
 
 // inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
@@ -70,9 +87,9 @@ fn generate_keyset_id_from_maturity_date(maturity_date: TStamp) -> KeysetID {
 // 129534 is utf-8 for 🧾
 // <maturity_idx> days from unix epoch
 fn generate_maturing_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath {
-    let idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
-    let maturity_child =
-        btc32::ChildNumber::from_hardened_idx(idx).expect("maturity date is a valid index");
+    let maturity_idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
+    let maturity_child = btc32::ChildNumber::from_hardened_idx(maturity_idx)
+        .expect("maturity date is a valid index");
     let path = [
         btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
         btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
@@ -154,7 +171,7 @@ impl<Keys: CreateRepository> Factory<Keys> {
         };
         self.quote_keys.store(set.clone(), info)?;
 
-        let kid = generate_keyset_id_from_maturity_date(bill_maturity_date);
+        let kid = generate_keyset_id_from_maturity_date(bill_maturity_date, 0);
         if self.maturing_keys.info(&kid)?.is_some() {
             return Ok(set);
         }
@@ -189,10 +206,90 @@ impl<Keys: CreateRepository> Factory<Keys> {
     }
 }
 
+// ---------- Swap Keys Repository
+pub struct SwapRepository<KeysRepo> {
+    endorsed_keys: KeysRepo,
+    maturing_keys: KeysRepo,
+    debit_keys: KeysRepo,
+}
+
+impl<KeysRepo: swap::KeysRepository> SwapRepository<KeysRepo> {
+    fn find_maturing_keys_from_maturity_date(
+        &self,
+        maturity_date: TStamp,
+        mut rotation_idx: u32,
+    ) -> Result<Option<KeysetID>> {
+        let mut kid: KeysetID = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx);
+        while let Some(info) = self.maturing_keys.info(kid)? {
+            if info.active {
+                return Ok(Some(kid));
+            }
+            rotation_idx += 1;
+            kid = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx)
+        }
+        Ok(None)
+    }
+
+    fn find_maturing_keys_from_id(&self, kid: KeysetID) -> Result<Option<KeysetID>> {
+        if let Some(info) = self.maturing_keys.info(kid)? {
+            if info.active {
+                return Ok(Some(kid));
+            }
+            let valid_to = info.valid_to.expect("valid_to field not set") as i64;
+            let maturity =
+                TStamp::from_timestamp(valid_to, 0).expect("datetime conversion from u64");
+            let rotation_index = info
+                .derivation_path_index
+                .expect("derivation_path_index not set");
+            return self.find_maturing_keys_from_maturity_date(maturity, rotation_index + 1);
+        }
+        Ok(None)
+    }
+}
+
+impl<KeysRepo: swap::KeysRepository> swap::KeysRepository for SwapRepository<KeysRepo> {
+    fn load(&self, id: KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
+        if let Some(keyset) = self.endorsed_keys.load(id)? {
+            return Ok(Some(keyset));
+        }
+        if let Some(keyset) = self.maturing_keys.load(id)? {
+            return Ok(Some(keyset));
+        }
+        self.debit_keys.load(id)
+    }
+    fn info(&self, id: KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        if let Some(info) = self.endorsed_keys.info(id)? {
+            return Ok(Some(info));
+        }
+        if let Some(info) = self.maturing_keys.info(id)? {
+            return Ok(Some(info));
+        }
+        self.debit_keys.info(id)
+    }
+    // in case keyset id is inactive, returns the proper replacement for it
+    fn replacing_id(&self, kid: KeysetID) -> AnyResult<Option<KeysetID>> {
+        if let Some(info) = self.endorsed_keys.info(kid)? {
+            let valid_to = info.valid_to.expect("valid_to field not set") as i64;
+            let maturity =
+                TStamp::from_timestamp(valid_to, 0).expect("datetime conversion from u64");
+            if let Some(id) = self.find_maturing_keys_from_maturity_date(maturity, 0)? {
+                return Ok(Some(id));
+            }
+        }
+        if let Some(kid) = self.find_maturing_keys_from_id(kid)? {
+            return Ok(Some(kid));
+        }
+        self.debit_keys.replacing_id(kid)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use crate::keys::tests as testkeys;
+    use crate::swap::KeysRepository;
+    use mockall::predicate::*;
     use std::str::FromStr;
 
     #[test]
@@ -227,5 +324,463 @@ mod tests {
             key.public_key.to_hex(),
             "03c5b66986d15100d1c0b342e012da7a954c7040c13d514ebc3b282ffa3a54651f"
         );
+    }
+
+    #[test]
+    fn test_swaprepository_info_debit_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let mut debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let info = cdk::mint::MintKeySetInfo {
+            active: true,
+            derivation_path: Default::default(),
+            derivation_path_index: Default::default(),
+            id: kid.into(),
+            input_fee_ppk: Default::default(),
+            max_order: Default::default(),
+            unit: Default::default(),
+            valid_from: Default::default(),
+            valid_to: Default::default(),
+        };
+
+        quote_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        let cinfo = info.clone();
+        debit_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cinfo.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.info(kid).unwrap();
+        assert_eq!(result, Some(info));
+    }
+
+    #[test]
+    fn test_swaprepository_info_maturing_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let info = cdk::mint::MintKeySetInfo {
+            active: true,
+            derivation_path: Default::default(),
+            derivation_path_index: Default::default(),
+            id: kid.into(),
+            input_fee_ppk: Default::default(),
+            max_order: Default::default(),
+            unit: Default::default(),
+            valid_from: Default::default(),
+            valid_to: Default::default(),
+        };
+
+        quote_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        let cinfo = info.clone();
+        maturing_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cinfo.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.info(kid).unwrap();
+        assert_eq!(result, Some(info));
+    }
+
+    #[test]
+    fn test_swaprepository_info_quote_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let info = cdk::mint::MintKeySetInfo {
+            active: true,
+            derivation_path: Default::default(),
+            derivation_path_index: Default::default(),
+            id: kid.into(),
+            input_fee_ppk: Default::default(),
+            max_order: Default::default(),
+            unit: Default::default(),
+            valid_from: Default::default(),
+            valid_to: Default::default(),
+        };
+
+        let cinfo = info.clone();
+        quote_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cinfo.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.info(kid).unwrap();
+        assert_eq!(result, Some(info));
+    }
+
+    #[test]
+    fn test_swaprepository_load_debit_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let mut debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let set = cdk02::MintKeySet {
+            id: kid.into(),
+            keys: cdk01::MintKeys::new(Default::default()),
+            unit: Default::default(),
+        };
+
+        quote_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        let cset = set.clone();
+        debit_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cset.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.load(kid).unwrap();
+        assert_eq!(result, Some(set));
+    }
+
+    #[test]
+    fn test_swaprepository_load_maturing_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let set = cdk02::MintKeySet {
+            id: kid.into(),
+            keys: cdk01::MintKeys::new(Default::default()),
+            unit: Default::default(),
+        };
+
+        quote_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        let cset = set.clone();
+        maturing_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cset.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.load(kid).unwrap();
+        assert_eq!(result, Some(set));
+    }
+
+    #[test]
+    fn test_swaprepository_load_quote_key() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+        let set = cdk02::MintKeySet {
+            id: kid.into(),
+            keys: cdk01::MintKeys::new(Default::default()),
+            unit: Default::default(),
+        };
+
+        let cset = set.clone();
+        quote_repo
+            .expect_load()
+            .with(eq(kid))
+            .returning(move |_| Ok(Some(cset.clone())));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.load(kid).unwrap();
+        assert_eq!(result, Some(set));
+    }
+
+    #[test]
+    fn test_swaprepository_replacing_keys_debit() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let mut debit_repo = swap::MockKeysRepository::new();
+
+        let in_kid = testkeys::generate_random_keysetid();
+        let out_kid = testkeys::generate_random_keysetid();
+
+        quote_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(|_| Ok(None));
+        debit_repo
+            .expect_replacing_id()
+            .with(eq(in_kid))
+            .returning(move |_| Ok(Some(out_kid)));
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.replacing_id(in_kid).unwrap();
+        assert_eq!(result, Some(out_kid));
+    }
+
+    #[test]
+    fn test_swaprepository_replacing_keys_maturing_active() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let kid = testkeys::generate_random_keysetid();
+
+        quote_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_info()
+            .with(eq(kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: true,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Default::default(),
+                    id: kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: Default::default(),
+                }))
+            });
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.replacing_id(kid).unwrap();
+        assert_eq!(result, Some(kid));
+    }
+
+    #[test]
+    fn test_swaprepository_replacing_keys_maturing_inactive() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let in_kid = testkeys::generate_random_keysetid();
+        let maturity_date =
+            chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap()
+                .and_utc();
+
+        quote_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: false,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Some(0),
+                    id: in_kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: Some(maturity_date.timestamp() as u64),
+                }))
+            });
+        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 1);
+        maturing_repo
+            .expect_info()
+            .with(eq(maturity_kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: true,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Some(1),
+                    id: maturity_kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: Some(maturity_date.timestamp() as u64),
+                }))
+            });
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.replacing_id(in_kid).unwrap();
+        assert_eq!(result, Some(maturity_kid));
+    }
+
+    #[test]
+    fn test_swaprepository_replacing_keys_maturing_inactive_to_debit() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let mut debit_repo = swap::MockKeysRepository::new();
+
+        let in_kid = testkeys::generate_random_keysetid();
+        let maturity_date =
+            chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap()
+                .and_utc();
+
+        quote_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(|_| Ok(None));
+        maturing_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: false,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Some(0),
+                    id: in_kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: Some(maturity_date.timestamp() as u64),
+                }))
+            });
+        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 1);
+        maturing_repo
+            .expect_info()
+            .with(eq(maturity_kid))
+            .returning(move |_| {
+                Ok(None)
+            });
+        let debit_kid = testkeys::generate_random_keysetid();
+        debit_repo
+            .expect_replacing_id()
+            .with(eq(in_kid))
+            .returning(move |_| {Ok(Some(debit_kid))});
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.replacing_id(in_kid).unwrap();
+        assert_eq!(result, Some(debit_kid));
+    }
+
+    #[test]
+    fn test_swaprepository_replacing_keys_quote_to_maturing() {
+        let mut quote_repo = swap::MockKeysRepository::new();
+        let mut maturing_repo = swap::MockKeysRepository::new();
+        let debit_repo = swap::MockKeysRepository::new();
+
+        let in_kid = testkeys::generate_random_keysetid();
+        let maturity_date =
+            chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap()
+                .and_utc();
+
+        quote_repo
+            .expect_info()
+            .with(eq(in_kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: false,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Some(0),
+                    id: in_kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: Some(maturity_date.timestamp() as u64),
+                }))
+            });
+        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 0);
+        maturing_repo
+            .expect_info()
+            .with(eq(maturity_kid))
+            .returning(move |_| {
+                Ok(Some(cdk::mint::MintKeySetInfo {
+                    active: true,
+                    derivation_path: Default::default(),
+                    derivation_path_index: Some(0),
+                    id: maturity_kid.into(),
+                    input_fee_ppk: Default::default(),
+                    max_order: Default::default(),
+                    unit: Default::default(),
+                    valid_from: Default::default(),
+                    valid_to: None,
+                }))
+            });
+
+        let swap_repo = SwapRepository {
+            endorsed_keys: quote_repo,
+            maturing_keys: maturing_repo,
+            debit_keys: debit_repo,
+        };
+
+        let result = swap_repo.replacing_id(in_kid).unwrap();
+        assert_eq!(result, Some(maturity_kid));
     }
 }
