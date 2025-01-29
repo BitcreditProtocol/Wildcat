@@ -10,6 +10,7 @@ pub mod persistence;
 pub mod quotes;
 pub mod web;
 // ----- local imports
+use crate::keys::{sign_with_keys, Result as KeyResult};
 use crate::utils;
 use error::{Error, Result};
 use keys::generate_keyset_id_from_bill;
@@ -97,10 +98,10 @@ impl Controller {
 
         let signatures = selected_blinds
             .iter()
-            .map(|blind| keys::sign_with_keys(&keyset, blind))
+            .map(|blind| sign_with_keys(&keyset, blind))
             .collect::<Vec<_>>()
             .into_iter()
-            .collect::<keys::Result<Vec<_>>>()?;
+            .collect::<KeyResult<Vec<_>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.accept(signatures, expiration)?;
         self.quotes.update_if_pending(quote);

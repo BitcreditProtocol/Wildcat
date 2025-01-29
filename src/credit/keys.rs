@@ -16,16 +16,10 @@ use crate::TStamp;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid keysetID {0}")]
-    InvalidKeysetID(KeysetID),
     #[error("keyset with id {0} and path {1} already exists")]
     KeysetAlreadyExists(KeysetID, btc32::DerivationPath),
-    #[error("no key for amount {0}")]
-    NoKeyForAmount(cdk::Amount),
     #[error("cdk::nut01 error {0}")]
     CdkNut01(#[from] cdk01::Error),
-    #[error("cdk::dhke error {0}")]
-    CdkDHKE(#[from] cdk::dhke::Error),
     #[error("repository error {0}")]
     Repository(#[from] Box<dyn std::error::Error>),
 }
@@ -196,27 +190,6 @@ impl<Keys: CreateRepository> Factory<Keys> {
 
         Ok(set)
     }
-}
-
-pub fn sign_with_keys(
-    keyset: &cdk02::MintKeySet,
-    blind: &cdk00::BlindedMessage,
-) -> Result<cdk00::BlindSignature> {
-    if blind.keyset_id != keyset.id {
-        return Err(Error::InvalidKeysetID(KeysetID::from(blind.keyset_id)));
-    }
-    let key = keyset
-        .keys
-        .get(&blind.amount)
-        .ok_or(Error::NoKeyForAmount(blind.amount))?;
-    let raw_signature = cdk::dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
-    let signature = cdk00::BlindSignature {
-        amount: blind.amount,
-        c: raw_signature,
-        keyset_id: keyset.id,
-        dleq: None,
-    };
-    Ok(signature)
 }
 
 #[cfg(test)]
