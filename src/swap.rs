@@ -47,7 +47,7 @@ pub trait KeysRepository {
     fn load(&self, id: KeysetID) -> AnyResult<Option<MintKeySet>>;
     fn info(&self, id: KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
     // in case keyset id is inactive, returns the proper replacement for it
-    fn replacing_keysetid(&self, id: KeysetID) -> AnyResult<Option<KeysetID>>;
+    fn replacing_id(&self, id: KeysetID) -> AnyResult<Option<KeysetID>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -132,7 +132,7 @@ where
         for i in inputs {
             let o = self
                 .keys
-                .replacing_keysetid(i.keyset_id.into())
+                .replacing_id(i.keyset_id.into())
                 .map_err(Error::KeysetRepository)?
                 .ok_or(Error::UnknownKeyset(i.keyset_id.into()))?;
             ids.push(o);
@@ -306,9 +306,14 @@ mod tests {
         keyrepo
             .expect_load()
             .with(eq(kid))
-            .returning(move|_| Ok(Some(ex_keys.clone())));
-        keyrepo.expect_replacing_keysetid().returning(move|_| Ok(Some(kid)));
-        proofrepo.expect_spend().with(eq(inputs.clone())).returning(|_| Ok(()));
+            .returning(move |_| Ok(Some(ex_keys.clone())));
+        keyrepo
+            .expect_replacing_id()
+            .returning(move |_| Ok(Some(kid)));
+        proofrepo
+            .expect_spend()
+            .with(eq(inputs.clone()))
+            .returning(|_| Ok(()));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -339,9 +344,14 @@ mod tests {
         keyrepo
             .expect_load()
             .with(eq(kid))
-            .returning(move|_| Ok(Some(ex_keys.clone())));
-        keyrepo.expect_replacing_keysetid().returning(move|_| Ok(Some(kid)));
-        proofrepo.expect_spend().with(eq(inputs.clone())).returning(|_| Ok(()));
+            .returning(move |_| Ok(Some(ex_keys.clone())));
+        keyrepo
+            .expect_replacing_id()
+            .returning(move |_| Ok(Some(kid)));
+        proofrepo
+            .expect_spend()
+            .with(eq(inputs.clone()))
+            .returning(|_| Ok(()));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
