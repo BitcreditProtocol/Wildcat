@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
+use anyhow::Result as AnyResult;
 use cdk::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
@@ -74,14 +75,10 @@ pub struct InMemoryKeysRepository {
 }
 
 impl keys::CreateRepository for InMemoryKeysRepository {
-    fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo> {
-        self.keys.read().unwrap().get(id).map(|k| k.0.clone())
+    fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        Ok(self.keys.read().unwrap().get(id).map(|k| k.0.clone()))
     }
-    fn store(
-        &self,
-        keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {
         self.keys
             .write()
             .unwrap()

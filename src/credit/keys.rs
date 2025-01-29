@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::{Error as AnyError, Result as AnyResult};
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
@@ -21,7 +22,7 @@ pub enum Error {
     #[error("cdk::nut01 error {0}")]
     CdkNut01(#[from] cdk01::Error),
     #[error("repository error {0}")]
-    Repository(#[from] Box<dyn std::error::Error>),
+    Repository(#[from] AnyError),
 }
 
 pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
@@ -83,12 +84,8 @@ fn generate_maturing_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath
 // ---------- Keys Repository for creation
 #[cfg_attr(test, mockall::automock)]
 pub trait CreateRepository: Send + Sync {
-    fn info(&self, id: &KeysetID) -> Option<cdk::mint::MintKeySetInfo>;
-    fn store(
-        &self,
-        keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
-    ) -> std::result::Result<(), Box<dyn std::error::Error>>;
+    fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
 }
 
 // ---------- Keys Factory
@@ -124,7 +121,7 @@ impl<Keys: CreateRepository> Factory<Keys> {
         bill_maturity_date: TStamp,
     ) -> Result<cdk02::MintKeySet> {
         let path = generate_quote_keyset_path(keysetid, quote);
-        let info = self.quote_keys.info(&keysetid);
+        let info = self.quote_keys.info(&keysetid)?;
         if let Some(info) = info {
             if info.derivation_path == path {
                 return Err(Error::KeysetAlreadyExists(keysetid, path));
@@ -158,7 +155,7 @@ impl<Keys: CreateRepository> Factory<Keys> {
         self.quote_keys.store(set.clone(), info)?;
 
         let kid = generate_keyset_id_from_maturity_date(bill_maturity_date);
-        if self.maturing_keys.info(&kid).is_some() {
+        if self.maturing_keys.info(&kid)?.is_some() {
             return Ok(set);
         }
 
@@ -209,10 +206,10 @@ mod tests {
             .to_utc();
 
         let mut maturingkeys_repo = MockCreateRepository::new();
-        maturingkeys_repo.expect_info().returning(|_| None);
+        maturingkeys_repo.expect_info().returning(|_| Ok(None));
         maturingkeys_repo.expect_store().returning(|_, _| Ok(()));
         let mut quotekeys_repo = MockCreateRepository::new();
-        quotekeys_repo.expect_info().returning(|_| None);
+        quotekeys_repo.expect_info().returning(|_| Ok(None));
         quotekeys_repo.expect_store().returning(|_, _| Ok(()));
 
         let factory = Factory::new(&seed, quotekeys_repo, maturingkeys_repo);
