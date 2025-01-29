@@ -709,14 +709,12 @@ mod tests {
         maturing_repo
             .expect_info()
             .with(eq(maturity_kid))
-            .returning(move |_| {
-                Ok(None)
-            });
+            .returning(move |_| Ok(None));
         let debit_kid = testkeys::generate_random_keysetid();
         debit_repo
             .expect_replacing_id()
             .with(eq(in_kid))
-            .returning(move |_| {Ok(Some(debit_kid))});
+            .returning(move |_| Ok(Some(debit_kid)));
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
