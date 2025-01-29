@@ -102,7 +102,7 @@ where
         outputs: &[BlindedMessage],
     ) -> Result<Vec<BlindSignature>> {
         if inputs.is_empty() {
-            return Err(Error::ZeroAmount)
+            return Err(Error::ZeroAmount);
         }
         // first step: zero-cost verifications
         let no_zero_amount = outputs.iter().all(|output| output.amount != Amount::ZERO);
@@ -247,7 +247,7 @@ mod tests {
         keyrepo
             .expect_load()
             .with(eq(kid))
-            .returning(move|_| Ok(Some(keys.clone())));
+            .returning(move |_| Ok(Some(keys.clone())));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -276,7 +276,7 @@ mod tests {
         keyrepo
             .expect_load()
             .with(eq(kid))
-            .returning(move|_| Ok(Some(keys.clone())));
+            .returning(move |_| Ok(Some(keys.clone())));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -292,10 +292,11 @@ mod tests {
     fn test_swap_split_tokens_ok() {
         let keys = keys::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
-        let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(4), Amount::from(4)].as_slice())
-            .into_iter()
-            .map(|a| a.0)
-            .collect();
+        let outputs: Vec<_> =
+            utils::generate_blinds(&keys, vec![Amount::from(4), Amount::from(4)].as_slice())
+                .into_iter()
+                .map(|a| a.0)
+                .collect();
         let mut keyrepo = MockKeysRepository::new();
         let mut proofrepo = MockProofRepository::new();
         proofrepo
@@ -322,14 +323,17 @@ mod tests {
         let r = swaps.swap(&inputs, &outputs);
         assert!(r.is_ok());
         let bs = r.unwrap();
-        assert!(utils::verify_signatures_data(&keys, outputs.into_iter().zip(bs.into_iter())));
-
+        assert!(utils::verify_signatures_data(
+            &keys,
+            outputs.into_iter().zip(bs.into_iter())
+        ));
     }
 
     #[test]
     fn test_swap_merge_tokens_ok() {
         let keys = keys::generate_keyset();
-        let inputs = utils::generate_proofs(&keys, vec![Amount::from(4), Amount::from(4)].as_slice());
+        let inputs =
+            utils::generate_proofs(&keys, vec![Amount::from(4), Amount::from(4)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
             .into_iter()
             .map(|a| a.0)
@@ -360,8 +364,9 @@ mod tests {
         let r = swaps.swap(&inputs, &outputs);
         assert!(r.is_ok());
         let bs = r.unwrap();
-        assert!(utils::verify_signatures_data(&keys, outputs.into_iter().zip(bs.into_iter())));
-
+        assert!(utils::verify_signatures_data(
+            &keys,
+            outputs.into_iter().zip(bs.into_iter())
+        ));
     }
-
 }
