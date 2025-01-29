@@ -1,9 +1,20 @@
 // ----- standard library imports
 // ----- extra library imports
 use bitcoin::bip32 as btc32;
+use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
+use thiserror::Error;
 // ----- local modules
 // ----- local imports
+
+pub type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("no key for amount {0}")]
+    NoKeyForAmount(cdk::Amount),
+    #[error("cdk::dhke error {0}")]
+    CdkDHKE(#[from] cdk::dhke::Error),
+}
 
 /// rework of cdk02::Id as they do not export internal fields
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
@@ -57,6 +68,24 @@ pub fn generate_path_index_from_keysetid(kid: KeysetID) -> btc32::ChildNumber {
     const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
     let ukid = std::cmp::min(u32::from(cdk02::Id::from(kid)), MAX_INDEX);
     btc32::ChildNumber::from_hardened_idx(ukid).expect("keyset is a valid index")
+}
+
+pub fn sign_with_keys(
+    keyset: &cdk02::MintKeySet,
+    blind: &cdk00::BlindedMessage,
+) -> Result<cdk00::BlindSignature> {
+    let key = keyset
+        .keys
+        .get(&blind.amount)
+        .ok_or(Error::NoKeyForAmount(blind.amount))?;
+    let raw_signature = cdk::dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
+    let signature = cdk00::BlindSignature {
+        amount: blind.amount,
+        c: raw_signature,
+        keyset_id: keyset.id,
+        dleq: None,
+    };
+    Ok(signature)
 }
 
 #[cfg(test)]

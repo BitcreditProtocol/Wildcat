@@ -3,7 +3,9 @@
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
-use super::{keys, quotes};
+use super::quotes;
+use crate::credit::keys::Error as CreditKeysError;
+use crate::keys::Error as KeysError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
@@ -11,7 +13,9 @@ pub enum Error {
     #[error("Quote error {0}")]
     Quote(#[from] quotes::Error),
     #[error("Key error {0}")]
-    Key(#[from] keys::Error),
+    CreditKeys(#[from] CreditKeysError),
+    #[error("Keys error {0}")]
+    Keys(#[from] KeysError),
 
     #[error("unknown quote id {0}")]
     UnknownQuoteID(uuid::Uuid),
