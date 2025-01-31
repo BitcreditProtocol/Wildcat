@@ -1,13 +1,16 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
-use axum::routing::{get, post, Router};
 use cdk::nuts::nut00 as cdk00;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use super::{quotes, utils, Controller, Result, TStamp};
+use crate::credit::error::Result;
+use crate::credit::quotes;
+use crate::credit::ProdQuotingService;
+use crate::utils;
+use crate::TStamp;
 
 /// --------------------------- List quotes
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -16,7 +19,7 @@ pub struct ListQuotesReply {
 }
 
 pub async fn list_pending_quotes(
-    State(ctrl): State<Controller>,
+    State(ctrl): State<ProdQuotingService>,
     since: Option<Query<TStamp>>,
 ) -> Result<Json<ListQuotesReply>> {
     log::debug!("Received request to list pending quotes");
@@ -25,10 +28,12 @@ pub async fn list_pending_quotes(
     Ok(Json(ListQuotesReply { quotes }))
 }
 
-pub async fn list_accepted_quotes(State(ctrl): State<Controller>) -> Result<Json<ListQuotesReply>> {
+pub async fn list_accepted_quotes(
+    State(ctrl): State<ProdQuotingService>,
+) -> Result<Json<ListQuotesReply>> {
     log::debug!("Received request to list accepted quotes");
 
-    let quotes = ctrl.list_accepteds()?;
+    let quotes = ctrl.list_accepteds(None)?;
     Ok(Json(ListQuotesReply { quotes }))
 }
 
@@ -59,7 +64,7 @@ pub enum LookUpQuoteReply {
 
 impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
     fn from(quote: quotes::Quote) -> Self {
-        match quote.status() {
+        match quote.status {
             quotes::QuoteStatus::Pending { .. } => LookUpQuoteReply::Pending {
                 id: quote.id,
                 bill: quote.bill,
@@ -73,7 +78,7 @@ impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
                 id: quote.id,
                 bill: quote.bill.clone(),
                 endorser: quote.endorser.clone(),
-                ttl: *ttl,
+                ttl,
                 signatures: signatures.clone(),
             },
             quotes::QuoteStatus::Declined => LookUpQuoteReply::Declined {
@@ -86,7 +91,7 @@ impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
 }
 
 pub async fn lookup_quote(
-    State(ctrl): State<Controller>,
+    State(ctrl): State<ProdQuotingService>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<LookUpQuoteReply>> {
     log::debug!("Received mint quote lookup request for id: {}", id);
@@ -107,7 +112,7 @@ pub enum ResolveQuoteRequest {
 }
 
 pub async fn resolve_quote(
-    State(ctrl): State<Controller>,
+    State(ctrl): State<ProdQuotingService>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<ResolveQuoteRequest>,
 ) -> Result<()> {
@@ -120,15 +125,4 @@ pub async fn resolve_quote(
         }
     }
     Ok(())
-}
-
-pub fn routes(ctrl: Controller) -> Router {
-    let admin = Router::new()
-        .route("/quote/pending", get(list_pending_quotes))
-        .route("/quote/accepted", get(list_accepted_quotes))
-        .route("/quote/:id", get(lookup_quote))
-        .route("/quote/:id", post(resolve_quote));
-    Router::new()
-        .nest("/admin/credit/v1", admin)
-        .with_state(ctrl)
 }

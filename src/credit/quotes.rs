@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::{Error as AnyError, Result as AnyResult};
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
@@ -8,7 +9,8 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use super::TStamp;
+use crate::credit::quoting_service::QuoteFactory;
+use crate::TStamp;
 
 // ----- error
 pub type Result<T> = std::result::Result<T, Error>;
@@ -19,7 +21,7 @@ pub enum Error {
     #[error("keys error {0}")]
     Keys(#[from] super::keys::Error),
     #[error("repository error {0}")]
-    Repository(#[from] Box<dyn std::error::Error>),
+    Repository(#[from] AnyError),
 }
 
 pub fn generate_path_idx_from_quoteid(quoteid: Uuid) -> btc32::ChildNumber {
@@ -44,7 +46,7 @@ pub enum QuoteStatus {
 
 #[derive(Debug, Clone)]
 pub struct Quote {
-    status: QuoteStatus,
+    pub status: QuoteStatus,
     pub id: Uuid,
     pub bill: String,
     pub endorser: String,
@@ -60,19 +62,11 @@ impl Quote {
     ) -> Self {
         Self {
             status: QuoteStatus::Pending { blinds },
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             bill,
             endorser,
             submitted,
         }
-    }
-
-    pub fn status(&self) -> &QuoteStatus {
-        &self.status
-    }
-
-    pub fn status_as_mut(&mut self) -> &mut QuoteStatus {
-        &mut self.status
     }
 
     pub fn decline(&mut self) -> Result<()> {
@@ -97,8 +91,8 @@ impl Quote {
 // ---------- Quotes Repository
 #[cfg_attr(test, mockall::automock)]
 pub trait Repository: Send + Sync {
-    fn search_by(&self, bill: &str, endorser: &str) -> Option<Quote>;
-    fn store(&self, quote: Quote) -> std::result::Result<(), Box<dyn std::error::Error>>;
+    fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<Quote>>;
+    fn store(&self, quote: Quote) -> AnyResult<()>;
 }
 
 // ---------- Quotes Factory
@@ -107,23 +101,26 @@ pub struct Factory<Quotes> {
     pub quotes: Quotes,
 }
 
-impl<Quotes: Repository> Factory<Quotes> {
-    pub fn new_quote_request(
+impl<Quotes> QuoteFactory for Factory<Quotes>
+where
+    Quotes: Repository,
+{
+    fn generate(
         &self,
         bill: String,
         endorser: String,
         blinds: Vec<cdk00::BlindedMessage>,
         submitted: TStamp,
-    ) -> Result<uuid::Uuid> {
-        let Some(quote) = self.quotes.search_by(&bill, &endorser) else {
+    ) -> AnyResult<uuid::Uuid> {
+        let Some(quote) = self.quotes.search_by_bill(&bill, &endorser)? else {
             let quote = Quote::new(bill, endorser, blinds, submitted);
             let id = quote.id;
             self.quotes.store(quote)?;
             return Ok(id);
         };
 
-        if let QuoteStatus::Accepted { ttl, .. } = quote.status() {
-            if *ttl < submitted {
+        if let QuoteStatus::Accepted { ttl, .. } = quote.status {
+            if ttl < submitted {
                 let new = Quote::new(bill, endorser, blinds, submitted);
                 let id = new.id;
                 self.quotes.store(new)?;
@@ -143,13 +140,11 @@ mod tests {
     #[test]
     fn test_new_quote_request_quote_not_present() {
         let mut repo = MockRepository::new();
-        repo.expect_search_by()
-            .with(eq("billID"), eq("endorserID"))
-            .returning(|_, _| None);
+        repo.expect_search_by_bill().returning(|_, _| Ok(None));
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test = factory.new_quote_request(
+        let test = factory.generate(
             String::from("billID"),
             String::from("endorserID"),
             vec![],
@@ -161,24 +156,26 @@ mod tests {
     #[test]
     fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
+        let bill_id = "billID";
+        let endorser_id = "endorserID";
         let mut repo = MockRepository::new();
-        repo.expect_search_by()
-            .with(eq("billID"), eq("endorserID"))
+        repo.expect_search_by_bill()
+            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Some(Quote {
+                Ok(Some(Quote {
                     status: QuoteStatus::Pending { blinds: vec![] },
                     id,
-                    bill: String::from("billID"),
-                    endorser: String::from("endorserID"),
+                    bill: String::from(bill_id),
+                    endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                })
+                }))
             });
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.new_quote_request(
-            String::from("billID"),
-            String::from("endorserID"),
+        let test_id = factory.generate(
+            String::from(bill_id),
+            String::from(endorser_id),
             vec![],
             chrono::Utc::now(),
         );
@@ -189,24 +186,26 @@ mod tests {
     #[test]
     fn test_new_quote_request_quote_declined() {
         let id = Uuid::new_v4();
+        let bill_id = "billID";
+        let endorser_id = "endorserID";
         let mut repo = MockRepository::new();
-        repo.expect_search_by()
-            .with(eq("billID"), eq("endorserID"))
+        repo.expect_search_by_bill()
+            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Some(Quote {
+                Ok(Some(Quote {
                     status: QuoteStatus::Declined,
                     id,
-                    bill: String::from("billID"),
-                    endorser: String::from("endorserID"),
+                    bill: String::from(bill_id),
+                    endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                })
+                }))
             });
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.new_quote_request(
-            String::from("billID"),
-            String::from("endorserID"),
+        let test_id = factory.generate(
+            String::from(bill_id),
+            String::from(endorser_id),
             vec![],
             chrono::Utc::now(),
         );
@@ -217,27 +216,29 @@ mod tests {
     #[test]
     fn test_new_quote_request_quote_accepted() {
         let id = Uuid::new_v4();
+        let bill_id = "billID";
+        let endorser_id = "endorserID";
         let mut repo = MockRepository::new();
-        repo.expect_search_by()
-            .with(eq("billID"), eq("endorserID"))
+        repo.expect_search_by_bill()
+            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Some(Quote {
+                Ok(Some(Quote {
                     status: QuoteStatus::Accepted {
                         signatures: vec![],
                         ttl: chrono::Utc::now() + chrono::Duration::days(1),
                     },
                     id,
-                    bill: String::from("billID"),
-                    endorser: String::from("endorserID"),
+                    bill: String::from(bill_id),
+                    endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                })
+                }))
             });
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.new_quote_request(
-            String::from("billID"),
-            String::from("endorserID"),
+        let test_id = factory.generate(
+            String::from(bill_id),
+            String::from(endorser_id),
             vec![],
             chrono::Utc::now(),
         );
@@ -247,29 +248,30 @@ mod tests {
 
     #[test]
     fn test_new_quote_request_quote_accepted_but_expired() {
-        // TODO!
         let id = Uuid::new_v4();
+        let bill_id = "billID";
+        let endorser_id = "endorserID";
         let mut repo = MockRepository::new();
-        repo.expect_search_by()
-            .with(eq("billID"), eq("endorserID"))
+        repo.expect_search_by_bill()
+            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Some(Quote {
+                Ok(Some(Quote {
                     status: QuoteStatus::Accepted {
                         signatures: vec![],
                         ttl: chrono::Utc::now(),
                     },
                     id,
-                    bill: String::from("billID"),
-                    endorser: String::from("endorserID"),
+                    bill: String::from(bill_id),
+                    endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                })
+                }))
             });
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.new_quote_request(
-            String::from("billID"),
-            String::from("endorserID"),
+        let test_id = factory.generate(
+            String::from(bill_id),
+            String::from(endorser_id),
             vec![],
             chrono::Utc::now() + chrono::Duration::seconds(1),
         );

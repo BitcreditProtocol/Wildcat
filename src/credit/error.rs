@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::Error as AnyError;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -16,6 +17,10 @@ pub enum Error {
     CreditKeys(#[from] CreditKeysError),
     #[error("Keys error {0}")]
     Keys(#[from] KeysError),
+    #[error("Quote repository error {0}")]
+    QuoteRepository(#[from] AnyError),
+    #[error("Keys Factory error {0}")]
+    KeysFactory(AnyError),
 
     #[error("unknown quote id {0}")]
     UnknownQuoteID(uuid::Uuid),
