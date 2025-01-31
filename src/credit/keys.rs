@@ -8,9 +8,11 @@ use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
 use thiserror::Error;
+use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use super::quotes;
+use crate::credit::quoting_service::KeyFactory;
 use crate::keys::{generate_path_index_from_keysetid, KeysetID};
 use crate::swap;
 use crate::TStamp;
@@ -18,8 +20,6 @@ use crate::TStamp;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("keyset with id {0} and path {1} already exists")]
-    KeysetAlreadyExists(KeysetID, btc32::DerivationPath),
     #[error("cdk::nut01 error {0}")]
     CdkNut01(#[from] cdk01::Error),
     #[error("repository error {0}")]
@@ -69,6 +69,7 @@ fn generate_keyset_id_from_maturity_date(maturity_date: TStamp, rotation_idx: u3
     kid
 }
 
+#[allow(dead_code)]
 fn extract_maturity_and_rotatingidx_from_id(id: &KeysetID) -> (TStamp, u32) {
     let mut u32_buf: [u8; 4] = Default::default();
     u32_buf.copy_from_slice(&id.id[0..4]);
@@ -100,26 +101,36 @@ fn generate_maturing_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath
 
 // ---------- Keys Repository for creation
 #[cfg_attr(test, mockall::automock)]
-pub trait CreateRepository: Send + Sync {
-    fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+pub trait QuoteKeyRepository: Send + Sync {
+    fn store(
+        &self,
+        qid: Uuid,
+        keyset: cdk02::MintKeySet,
+        info: cdk::mint::MintKeySetInfo,
+    ) -> AnyResult<()>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait MaturityKeyRepository: Send + Sync {
+    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
 }
 
 // ---------- Keys Factory
 #[derive(Clone)]
-pub struct Factory<Keys> {
+pub struct Factory<QuoteKeys, MaturityKeys> {
     ctx: bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     xpriv: btc32::Xpriv,
-    quote_keys: Keys,
-    maturing_keys: Keys,
+    quote_keys: QuoteKeys,
+    maturing_keys: MaturityKeys,
     unit: cdk00::CurrencyUnit,
 }
 
-impl<Keys> Factory<Keys> {
+impl<QuoteKeys, MaturityKeys> Factory<QuoteKeys, MaturityKeys> {
     pub const MAX_ORDER: u8 = 20;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
-    pub fn new(seed: &[u8], quote_keys: Keys, maturing_keys: Keys) -> Self {
+    pub fn new(seed: &[u8], quote_keys: QuoteKeys, maturing_keys: MaturityKeys) -> Self {
         Self {
             ctx: bitcoin::secp256k1::Secp256k1::new(),
             xpriv: btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL"),
@@ -130,20 +141,19 @@ impl<Keys> Factory<Keys> {
     }
 }
 
-impl<Keys: CreateRepository> Factory<Keys> {
-    pub fn generate(
+impl<QuoteKeys, MaturityKeys> KeyFactory for Factory<QuoteKeys, MaturityKeys>
+where
+    QuoteKeys: QuoteKeyRepository,
+    MaturityKeys: MaturityKeyRepository,
+{
+    type Error = Error;
+    fn generate(
         &self,
         keysetid: KeysetID,
         quote: uuid::Uuid,
         bill_maturity_date: TStamp,
-    ) -> Result<cdk02::MintKeySet> {
+    ) -> AnyResult<cdk02::MintKeySet> {
         let path = generate_quote_keyset_path(keysetid, quote);
-        let info = self.quote_keys.info(&keysetid)?;
-        if let Some(info) = info {
-            if info.derivation_path == path {
-                return Err(Error::KeysetAlreadyExists(keysetid, path));
-            }
-        }
         let keys = cdk02::MintKeySet::generate_from_xpriv(
             &self.ctx,
             self.xpriv,
@@ -169,7 +179,7 @@ impl<Keys: CreateRepository> Factory<Keys> {
             keys,
             unit: self.unit.clone(),
         };
-        self.quote_keys.store(set.clone(), info)?;
+        self.quote_keys.store(quote, set.clone(), info)?;
 
         let kid = generate_keyset_id_from_maturity_date(bill_maturity_date, 0);
         if self.maturing_keys.info(&kid)?.is_some() {
@@ -302,14 +312,17 @@ mod tests {
             .unwrap()
             .to_utc();
 
-        let mut maturingkeys_repo = MockCreateRepository::new();
-        maturingkeys_repo.expect_info().returning(|_| Ok(None));
-        maturingkeys_repo.expect_store().returning(|_, _| Ok(()));
-        let mut quotekeys_repo = MockCreateRepository::new();
-        quotekeys_repo.expect_info().returning(|_| Ok(None));
-        quotekeys_repo.expect_store().returning(|_, _| Ok(()));
+        let mut maturitykeys_repo = MockMaturityKeyRepository::new();
+        maturitykeys_repo.expect_info().returning(|_| Ok(None));
+        maturitykeys_repo.expect_store().returning(|_, _| Ok(()));
+        let mut quotekeys_repo = MockQuoteKeyRepository::new();
+        quotekeys_repo
+            .expect_store()
+            .with(eq(quote), always(), always())
+            .returning(|_, _, _| Ok(()));
+        //quotekeys_repo.expect_store().returning(|_, _| Ok(()));
 
-        let factory = Factory::new(&seed, quotekeys_repo, maturingkeys_repo);
+        let factory = Factory::new(&seed, quotekeys_repo, maturitykeys_repo);
 
         let keyset = factory.generate(keyid, quote, maturity).unwrap();
         // m/129372'/129534'/0'/927402239'/0'
