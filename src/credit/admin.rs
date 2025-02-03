@@ -8,7 +8,6 @@ use uuid::Uuid;
 // ----- local imports
 use crate::credit::error::Result;
 use crate::credit::quotes;
-use crate::credit::ProdQuotingService;
 use crate::utils;
 use crate::TStamp;
 
@@ -18,19 +17,27 @@ pub struct ListQuotesReply {
     pub quotes: Vec<uuid::Uuid>,
 }
 
-pub async fn list_pending_quotes(
-    State(ctrl): State<ProdQuotingService>,
+pub async fn list_pending_quotes<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
     since: Option<Query<TStamp>>,
-) -> Result<Json<ListQuotesReply>> {
+) -> Result<Json<ListQuotesReply>>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!("Received request to list pending quotes");
 
     let quotes = ctrl.list_pendings(since.map(|q| q.0))?;
     Ok(Json(ListQuotesReply { quotes }))
 }
 
-pub async fn list_accepted_quotes(
-    State(ctrl): State<ProdQuotingService>,
-) -> Result<Json<ListQuotesReply>> {
+pub async fn list_accepted_quotes<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
+) -> Result<Json<ListQuotesReply>>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!("Received request to list accepted quotes");
 
     let quotes = ctrl.list_accepteds(None)?;
@@ -90,10 +97,14 @@ impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
     }
 }
 
-pub async fn lookup_quote(
-    State(ctrl): State<ProdQuotingService>,
+pub async fn lookup_quote<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<LookUpQuoteReply>> {
+) -> Result<Json<LookUpQuoteReply>>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!("Received mint quote lookup request for id: {}", id);
 
     let quote = ctrl.lookup(id)?;
@@ -111,11 +122,15 @@ pub enum ResolveQuoteRequest {
     },
 }
 
-pub async fn resolve_quote(
-    State(ctrl): State<ProdQuotingService>,
+pub async fn resolve_quote<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<ResolveQuoteRequest>,
-) -> Result<()> {
+) -> Result<()>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!("Received mint quote resolve request for id: {}", id);
 
     match req {

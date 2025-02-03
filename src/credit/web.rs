@@ -6,7 +6,6 @@ use cdk::nuts::nut00 as cdk00;
 // ----- local imports
 use crate::credit::error::Result;
 use crate::credit::quotes;
-use crate::credit::ProdQuotingService;
 
 ///--------------------------- Enquire mint quote
 #[derive(serde::Deserialize)]
@@ -21,10 +20,14 @@ pub struct QuoteRequestReply {
     id: uuid::Uuid,
 }
 
-pub async fn enquire_quote(
-    State(ctrl): State<ProdQuotingService>,
+pub async fn enquire_quote<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
     Json(req): Json<QuoteRequest>,
-) -> Result<Json<QuoteRequestReply>> {
+) -> Result<Json<QuoteRequestReply>>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!(
         "Received mint quote request for bill: {}, from node : {}",
         req.bill,
@@ -60,10 +63,14 @@ impl std::convert::From<quotes::Quote> for LookUpQuoteReply {
     }
 }
 
-pub async fn lookup_quote(
-    State(ctrl): State<ProdQuotingService>,
+pub async fn lookup_quote<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<LookUpQuoteReply>> {
+) -> Result<Json<LookUpQuoteReply>>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
     log::debug!("Received mint quote lookup request for id: {}", id);
 
     let quote = ctrl.lookup(id)?;

@@ -5,23 +5,35 @@ use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 use cdk::nuts::nut00 as cdk00;
+use cdk::nuts::nut02 as cdk02;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::quoting_service::QuoteFactory;
+use crate::credit::keys::generate_keyset_id_from_bill;
+use crate::keys::{sign_with_keys, KeysetID, Result as KeyResult};
+use crate::utils;
 use crate::TStamp;
 
 // ----- error
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    // external errors wrappers
+    #[error("keys error {0}")]
+    Keys(#[from] crate::keys::Error),
+    #[error("credit::keys error {0}")]
+    CreditKeys(#[from] crate::credit::keys::Error),
+    #[error("quotes repository error {0}")]
+    Repository(#[from] AnyError),
+
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
-    #[error("keys error {0}")]
-    Keys(#[from] super::keys::Error),
-    #[error("repository error {0}")]
-    Repository(#[from] AnyError),
+    #[error("unknown quote id {0}")]
+    UnknownQuoteID(uuid::Uuid),
+    #[error("Invalid amount: {0}")]
+    InvalidAmount(rust_decimal::Decimal),
 }
 
 pub fn generate_path_idx_from_quoteid(quoteid: Uuid) -> btc32::ChildNumber {
@@ -88,20 +100,34 @@ impl Quote {
     }
 }
 
-// ---------- Quotes Repository
+// ---------- required traits
 #[cfg_attr(test, mockall::automock)]
 pub trait Repository: Send + Sync {
+    fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
+    fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
+    fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    fn list_accepteds(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
     fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<Quote>>;
     fn store(&self, quote: Quote) -> AnyResult<()>;
 }
 
-// ---------- Quotes Factory
+pub trait KeyFactory: Send + Sync {
+    type Error;
+    fn generate(
+        &self,
+        kid: KeysetID,
+        qid: Uuid,
+        maturity_date: TStamp,
+    ) -> AnyResult<cdk02::MintKeySet>;
+}
+
+// ---------- Factory
 #[derive(Clone)]
 pub struct Factory<Quotes> {
     pub quotes: Quotes,
 }
 
-impl<Quotes> QuoteFactory for Factory<Quotes>
+impl<Quotes> Factory<Quotes>
 where
     Quotes: Repository,
 {
@@ -128,6 +154,94 @@ where
             }
         }
         Ok(quote.id)
+    }
+}
+
+// ---------- Service
+#[derive(Clone)]
+pub struct Service<KeysGen, QuotesRepo> {
+    pub keys_gen: KeysGen,
+    pub quotes_gen: Factory<QuotesRepo>,
+    pub quotes: QuotesRepo,
+}
+
+impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
+where
+    QuotesRepo: Repository,
+{
+    pub fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
+        self.quotes.load(id)?.ok_or(Error::UnknownQuoteID(id))
+    }
+
+    pub fn decline(&self, id: uuid::Uuid) -> Result<()> {
+        let old = self.quotes.load(id)?;
+        if old.is_none() {
+            return Err(Error::UnknownQuoteID(id));
+        }
+        let mut quote = old.unwrap();
+        quote.decline()?;
+        self.quotes.update_if_pending(quote)?;
+        Ok(())
+    }
+
+    pub fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+        self.quotes.list_pendings(since).map_err(Error::Repository)
+    }
+
+    pub fn list_accepteds(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+        self.quotes.list_accepteds(since).map_err(Error::Repository)
+    }
+
+    pub fn enquire(
+        &self,
+        bill: String,
+        endorser: String,
+        tstamp: TStamp,
+        blinds: Vec<cdk00::BlindedMessage>,
+    ) -> Result<uuid::Uuid> {
+        self.quotes_gen
+            .generate(bill, endorser, blinds, tstamp)
+            .map_err(Error::from)
+    }
+}
+
+impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
+where
+    KeysGen: KeyFactory,
+    QuotesRepo: Repository,
+{
+    pub fn accept(
+        &self,
+        id: uuid::Uuid,
+        discount: Decimal,
+        now: TStamp,
+        ttl: Option<TStamp>,
+    ) -> Result<()> {
+        let discounted_amount =
+            cdk::Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
+
+        let mut quote = self.lookup(id)?;
+        let qid = quote.id;
+        let kid = generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
+        let QuoteStatus::Pending { ref mut blinds } = quote.status else {
+            return Err(Error::QuoteAlreadyResolved(qid));
+        };
+
+        let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
+        log::warn!("WARNING: we are leaving fees on the table, ... but we don't know how much (eBill data missing)");
+
+        // TODO! maturity date should come from the eBill
+        let maturity_date = now + chrono::Duration::days(30);
+        let keyset = self.keys_gen.generate(kid, qid, maturity_date)?;
+
+        let signatures = selected_blinds
+            .iter()
+            .map(|blind| sign_with_keys(&keyset, blind))
+            .collect::<KeyResult<Vec<cdk00::BlindSignature>>>()?;
+        let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
+        quote.accept(signatures, expiration)?;
+        self.quotes.update_if_pending(quote)?;
+        Ok(())
     }
 }
 

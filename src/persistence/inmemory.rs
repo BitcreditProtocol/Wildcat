@@ -11,13 +11,11 @@ use crate::credit::{keys, quotes};
 use crate::keys::KeysetID;
 use crate::TStamp;
 
-use super::quoting_service;
-
 #[derive(Default, Clone)]
-pub struct InMemoryQuoteRepository {
+pub struct QuoteRepo {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
 }
-impl quotes::Repository for InMemoryQuoteRepository {
+impl quotes::Repository for QuoteRepo {
     fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
         Ok(self
             .quotes
@@ -32,9 +30,6 @@ impl quotes::Repository for InMemoryQuoteRepository {
         self.quotes.write().unwrap().insert(quote.id, quote);
         Ok(())
     }
-}
-
-impl quoting_service::QuoteRepository for InMemoryQuoteRepository {
     fn load(&self, id: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
@@ -78,12 +73,14 @@ impl quoting_service::QuoteRepository for InMemoryQuoteRepository {
     }
 }
 
+type QuoteKeysIndex = (KeysetID, Uuid);
+type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
 #[derive(Default, Clone)]
-pub struct InMemoryQuoteKeysRepository {
-    keys: Arc<RwLock<HashMap<(KeysetID, Uuid), (cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>>>,
+pub struct QuoteKeysRepo {
+    keys: Arc<RwLock<HashMap<QuoteKeysIndex, KeysetEntry>>>,
 }
 
-impl keys::QuoteKeyRepository for InMemoryQuoteKeysRepository {
+impl keys::QuoteKeyRepository for QuoteKeysRepo {
     fn store(
         &self,
         qid: Uuid,
@@ -99,11 +96,11 @@ impl keys::QuoteKeyRepository for InMemoryQuoteKeysRepository {
 }
 
 #[derive(Default, Clone)]
-pub struct InMemoryMaturityKeysRepository {
-    keys: Arc<RwLock<HashMap<KeysetID, (cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>>>,
+pub struct MaturityKeysRepo {
+    keys: Arc<RwLock<HashMap<KeysetID, KeysetEntry>>>,
 }
 
-impl keys::MaturityKeyRepository for InMemoryMaturityKeysRepository {
+impl keys::MaturityKeyRepository for MaturityKeysRepo {
     fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
         let a = self
             .keys
