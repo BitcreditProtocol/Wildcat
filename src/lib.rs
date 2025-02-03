@@ -7,32 +7,42 @@ use axum::Router;
 //mod credit;
 mod credit;
 mod keys;
+mod persistence;
 mod swap;
 mod utils;
 // ----- local imports
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
+pub type ProdQuoteKeysRepository = persistence::inmemory::QuoteKeysRepo;
+pub type ProdMaturityKeysRepository = persistence::inmemory::MaturityKeysRepo;
+pub type ProdQuoteRepository = persistence::inmemory::QuoteRepo;
+
+pub type ProdCreditKeysFactory =
+    credit::keys::Factory<ProdQuoteKeysRepository, ProdMaturityKeysRepository>;
+pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
+pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
+
+//pub type ProdCreditKeysRepository = crate::credit::keys::SwapRepository<crate::>
+//pub type ProdCreditSwapKeysRepository = crate::credit::keys::SwapRepository<>;
+//pub type ProdSwapService = swap::service::Service<>;
+
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    quote: credit::ProdQuotingService,
+    quote: ProdQuotingService,
 }
 
 impl AppController {
     pub fn new(mint_seed: &[u8]) -> Self {
-        let quote_keys_repository = credit::persistence::InMemoryQuoteKeysRepository::default();
-        let maturing_keys_repository =
-            credit::persistence::InMemoryMaturityKeysRepository::default();
-        let keys_factory = credit::ProdCreditKeysFactory::new(
-            mint_seed,
-            quote_keys_repository,
-            maturing_keys_repository,
-        );
-        let quotes_repository = credit::persistence::InMemoryQuoteRepository::default();
-        let quotes_factory = credit::ProdQuoteFactory {
+        let quote_keys_repository = ProdQuoteKeysRepository::default();
+        let maturing_keys_repository = ProdMaturityKeysRepository::default();
+        let keys_factory =
+            ProdCreditKeysFactory::new(mint_seed, quote_keys_repository, maturing_keys_repository);
+        let quotes_repository = ProdQuoteRepository::default();
+        let quotes_factory = ProdQuoteFactory {
             quotes: quotes_repository.clone(),
         };
-        let quoting_service = credit::ProdQuotingService {
+        let quoting_service = ProdQuotingService {
             keys_gen: keys_factory,
             quotes_gen: quotes_factory,
             quotes: quotes_repository,

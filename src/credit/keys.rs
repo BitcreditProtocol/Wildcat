@@ -12,7 +12,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use super::quotes;
-use crate::credit::quoting_service::KeyFactory;
+use crate::credit::quotes::KeyFactory;
 use crate::keys::{generate_path_index_from_keysetid, KeysetID};
 use crate::swap;
 use crate::TStamp;
@@ -223,7 +223,10 @@ pub struct SwapRepository<KeysRepo> {
     debit_keys: KeysRepo,
 }
 
-impl<KeysRepo: swap::KeysRepository> SwapRepository<KeysRepo> {
+impl<KeysRepo> SwapRepository<KeysRepo>
+where
+    KeysRepo: swap::KeysRepository,
+{
     fn find_maturing_keys_from_maturity_date(
         &self,
         maturity_date: TStamp,

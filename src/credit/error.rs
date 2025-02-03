@@ -19,17 +19,8 @@ pub enum Error {
     Keys(#[from] KeysError),
     #[error("Quote repository error {0}")]
     QuoteRepository(#[from] AnyError),
-    #[error("Keys Factory error {0}")]
-    KeysFactory(AnyError),
-
-    #[error("unknown quote id {0}")]
-    UnknownQuoteID(uuid::Uuid),
-    #[error("Quote has been already resolved: {0}")]
-    QuoteAlreadyResolved(uuid::Uuid),
-
-    #[error("Invalid amount: {0}")]
-    InvalidAmount(rust_decimal::Decimal),
 }
+
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         self.to_string().into_response()
