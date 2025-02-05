@@ -37,8 +37,6 @@ pub enum Error {
     UnmatchingAmount(Amount, Amount),
 }
 
-
-
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         self.to_string().into_response()

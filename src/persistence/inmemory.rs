@@ -11,7 +11,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::{keys, quotes};
-use crate::keys::{KeysetID, KeysetEntry};
+use crate::keys::{KeysetEntry, KeysetID};
 use crate::swap;
 use crate::TStamp;
 

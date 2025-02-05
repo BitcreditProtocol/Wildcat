@@ -13,7 +13,7 @@ use uuid::Uuid;
 // ----- local imports
 use super::quotes;
 use crate::credit::quotes::KeyFactory;
-use crate::keys::{generate_path_index_from_keysetid, KeysetID, KeysetEntry};
+use crate::keys::{generate_path_index_from_keysetid, KeysetEntry, KeysetID};
 use crate::swap;
 use crate::TStamp;
 
@@ -310,9 +310,9 @@ mod tests {
 
     use super::*;
     use crate::keys::tests as testkeys;
+    use crate::swap::KeysRepository;
     use mockall::predicate::*;
     use std::str::FromStr;
-    use crate::swap::KeysRepository;
 
     #[test]
     fn test_keys_factory_generate() {

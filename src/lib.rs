@@ -23,8 +23,6 @@ pub type ProdSwapKeysRepository = persistence::inmemory::SimpleKeysRepo;
 pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
 pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
 pub type ProdSwapCreditKeysRepository = credit::keys::SwapRepository<ProdKeysRepository>;
-pub type ProdCreditKeysEnabler =
-    credit::keys::KeysEnabler<ProdQuoteKeysRepository, ProdKeysRepository>;
 
 pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 pub type ProdSwapService = swap::Service<ProdSwapCreditKeysRepository, ProdSwapProofRepository>;
