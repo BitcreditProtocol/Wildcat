@@ -217,15 +217,18 @@ where
 }
 
 // ---------- Swap Keys Repository
-pub struct SwapRepository<KeysRepo> {
-    endorsed_keys: KeysRepo,
-    maturing_keys: KeysRepo,
-    debit_keys: KeysRepo,
+#[derive(Clone)]
+pub struct SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys> {
+    pub endorsed_keys: EndorsedKeys,
+    pub maturing_keys: MaturityKeys,
+    pub debit_keys: DebitKeys,
 }
 
-impl<KeysRepo> SwapRepository<KeysRepo>
+impl<EndorsedKeys, MaturityKeys, DebitKeys> SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys>
 where
-    KeysRepo: swap::KeysRepository,
+    EndorsedKeys: swap::KeysRepository,
+    MaturityKeys: swap::KeysRepository,
+    DebitKeys: swap::KeysRepository,
 {
     fn find_maturing_keys_from_maturity_date(
         &self,
@@ -233,7 +236,7 @@ where
         mut rotation_idx: u32,
     ) -> Result<Option<KeysetID>> {
         let mut kid: KeysetID = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx);
-        while let Some(info) = self.maturing_keys.info(kid)? {
+        while let Some(info) = self.maturing_keys.info(&kid)? {
             if info.active {
                 return Ok(Some(kid));
             }
@@ -243,10 +246,10 @@ where
         Ok(None)
     }
 
-    fn find_maturing_keys_from_id(&self, kid: KeysetID) -> Result<Option<KeysetID>> {
-        if let Some(info) = self.maturing_keys.info(kid)? {
+    fn find_maturing_keys_from_id(&self, kid: &KeysetID) -> Result<Option<KeysetID>> {
+        if let Some(info) = self.maturing_keys.info(&kid)? {
             if info.active {
-                return Ok(Some(kid));
+                return Ok(Some(*kid));
             }
             let valid_to = info.valid_to.expect("valid_to field not set") as i64;
             let maturity =
@@ -260,8 +263,13 @@ where
     }
 }
 
-impl<KeysRepo: swap::KeysRepository> swap::KeysRepository for SwapRepository<KeysRepo> {
-    fn load(&self, id: KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
+impl<EndorsedKeys, MaturityKeys, DebitKeys> SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys>
+where
+    EndorsedKeys: swap::KeysRepository,
+    MaturityKeys: swap::KeysRepository,
+    DebitKeys: swap::KeysRepository,
+{
+    fn load(&self, id: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
         if let Some(keyset) = self.endorsed_keys.load(id)? {
             return Ok(Some(keyset));
         }
@@ -270,7 +278,7 @@ impl<KeysRepo: swap::KeysRepository> swap::KeysRepository for SwapRepository<Key
         }
         self.debit_keys.load(id)
     }
-    fn info(&self, id: KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
         if let Some(info) = self.endorsed_keys.info(id)? {
             return Ok(Some(info));
         }
@@ -280,7 +288,7 @@ impl<KeysRepo: swap::KeysRepository> swap::KeysRepository for SwapRepository<Key
         self.debit_keys.info(id)
     }
     // in case keyset id is inactive, returns the proper replacement for it
-    fn replacing_id(&self, kid: KeysetID) -> AnyResult<Option<KeysetID>> {
+    fn replacing_id(&self, kid: &KeysetID) -> AnyResult<Option<KeysetID>> {
         if let Some(info) = self.endorsed_keys.info(kid)? {
             let valid_to = info.valid_to.expect("valid_to field not set") as i64;
             let maturity =
@@ -301,7 +309,6 @@ mod tests {
 
     use super::*;
     use crate::keys::tests as testkeys;
-    use crate::swap::KeysRepository;
     use mockall::predicate::*;
     use std::str::FromStr;
 
@@ -381,7 +388,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.info(kid).unwrap();
+        let result = swap_repo.info(&kid).unwrap();
         assert_eq!(result, Some(info));
     }
 
@@ -420,7 +427,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.info(kid).unwrap();
+        let result = swap_repo.info(&kid).unwrap();
         assert_eq!(result, Some(info));
     }
 
@@ -455,7 +462,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.info(kid).unwrap();
+        let result = swap_repo.info(&kid).unwrap();
         assert_eq!(result, Some(info));
     }
 
@@ -492,7 +499,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.load(kid).unwrap();
+        let result = swap_repo.load(&kid).unwrap();
         assert_eq!(result, Some(set));
     }
 
@@ -525,7 +532,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.load(kid).unwrap();
+        let result = swap_repo.load(&kid).unwrap();
         assert_eq!(result, Some(set));
     }
 
@@ -554,7 +561,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.load(kid).unwrap();
+        let result = swap_repo.load(&kid).unwrap();
         assert_eq!(result, Some(set));
     }
 
@@ -586,7 +593,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.replacing_id(in_kid).unwrap();
+        let result = swap_repo.replacing_id(&in_kid).unwrap();
         assert_eq!(result, Some(out_kid));
     }
 
@@ -625,7 +632,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.replacing_id(kid).unwrap();
+        let result = swap_repo.replacing_id(&kid).unwrap();
         assert_eq!(result, Some(kid));
     }
 
@@ -685,7 +692,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.replacing_id(in_kid).unwrap();
+        let result = swap_repo.replacing_id(&in_kid).unwrap();
         assert_eq!(result, Some(maturity_kid));
     }
 
@@ -738,7 +745,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.replacing_id(in_kid).unwrap();
+        let result = swap_repo.replacing_id(&in_kid).unwrap();
         assert_eq!(result, Some(debit_kid));
     }
 
@@ -794,7 +801,7 @@ mod tests {
             debit_keys: debit_repo,
         };
 
-        let result = swap_repo.replacing_id(in_kid).unwrap();
+        let result = swap_repo.replacing_id(&in_kid).unwrap();
         assert_eq!(result, Some(maturity_kid));
     }
 }

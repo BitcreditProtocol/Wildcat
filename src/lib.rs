@@ -15,21 +15,29 @@ mod utils;
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::inmemory::QuoteKeysRepo;
-pub type ProdMaturityKeysRepository = persistence::inmemory::MaturityKeysRepo;
+pub type ProdEndorsedKeysRepository = persistence::inmemory::SimpleKeysRepo;
+pub type ProdMaturityKeysRepository = persistence::inmemory::SimpleKeysRepo;
+pub type ProdDebitKeysRepository = persistence::inmemory::SimpleKeysRepo;
 pub type ProdQuoteRepository = persistence::inmemory::QuoteRepo;
+pub type ProdSwapProofRepository = persistence::inmemory::ProofRepo;
+pub type ProdSwapKeysRepository = persistence::inmemory::SimpleKeysRepo;
 
 pub type ProdCreditKeysFactory =
     credit::keys::Factory<ProdQuoteKeysRepository, ProdMaturityKeysRepository>;
 pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
+pub type ProdSwapCreditKeysRepository = credit::keys::SwapRepository<
+    ProdEndorsedKeysRepository,
+    ProdMaturityKeysRepository,
+    ProdDebitKeysRepository,
+>;
 pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 
-//pub type ProdCreditKeysRepository = crate::credit::keys::SwapRepository<crate::>
-//pub type ProdCreditSwapKeysRepository = crate::credit::keys::SwapRepository<>;
-//pub type ProdSwapService = swap::service::Service<>;
+pub type ProdSwapService = swap::Service<ProdSwapCreditKeysRepository, ProdSwapProofRepository>;
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
     quote: ProdQuotingService,
+    swap: ProdSwapService,
 }
 
 impl AppController {

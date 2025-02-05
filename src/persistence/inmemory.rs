@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
+use cdk::nuts::nut00 as cdk00;
+use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
+use cdk::nuts::nut07 as cdk07;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::{keys, quotes};
 use crate::keys::KeysetID;
+use crate::swap;
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -75,6 +79,7 @@ impl quotes::Repository for QuoteRepo {
 
 type QuoteKeysIndex = (KeysetID, Uuid);
 type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
+
 #[derive(Default, Clone)]
 pub struct QuoteKeysRepo {
     keys: Arc<RwLock<HashMap<QuoteKeysIndex, KeysetEntry>>>,
@@ -96,12 +101,12 @@ impl keys::QuoteKeyRepository for QuoteKeysRepo {
 }
 
 #[derive(Default, Clone)]
-pub struct MaturityKeysRepo {
+pub struct SimpleKeysRepo {
     keys: Arc<RwLock<HashMap<KeysetID, KeysetEntry>>>,
 }
 
-impl keys::MaturityKeyRepository for MaturityKeysRepo {
-    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+impl SimpleKeysRepo {
+    fn keyinfo(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
         let a = self
             .keys
             .read()
@@ -110,11 +115,78 @@ impl keys::MaturityKeyRepository for MaturityKeysRepo {
             .map(|(info, _)| info.clone());
         Ok(a)
     }
+    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
+        let a = self
+            .keys
+            .read()
+            .unwrap()
+            .get(kid)
+            .map(|(_, set)| set.clone());
+        Ok(a)
+    }
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {
         self.keys
             .write()
             .unwrap()
             .insert(KeysetID::from(keyset.id), (info, keyset));
         Ok(())
+    }
+}
+
+impl keys::MaturityKeyRepository for SimpleKeysRepo {
+    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        self.keyinfo(kid)
+    }
+
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {
+        self.store(keyset, info)
+    }
+}
+
+impl swap::KeysRepository for SimpleKeysRepo {
+    fn load(&self, id: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
+        self.keyset(id)
+    }
+
+    fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        self.keyinfo(id)
+    }
+
+    fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>> {
+        Ok(Some(id.clone()))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct ProofRepo {
+    proofs: Arc<RwLock<HashMap<cdk01::PublicKey, cdk07::ProofState>>>,
+}
+
+impl swap::ProofRepository for ProofRepo {
+    fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
+        let mut writer = self.proofs.write().unwrap();
+        for token in tokens {
+            let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
+            writer.insert(
+                y,
+                cdk07::ProofState {
+                    y,
+                    state: cdk07::State::Spent,
+                    witness: None,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
+        let mut states: Vec<cdk07::State> = Vec::with_capacity(tokens.len());
+        let reader = self.proofs.read().unwrap();
+        for token in tokens {
+            let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
+            let state = reader.get(&y).map_or(cdk07::State::Unspent, |s| s.state);
+            states.push(state);
+        }
+        Ok(states)
     }
 }
