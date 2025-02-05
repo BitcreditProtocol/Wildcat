@@ -13,7 +13,7 @@ use uuid::Uuid;
 // ----- local imports
 use super::quotes;
 use crate::credit::quotes::KeyFactory;
-use crate::keys::{generate_path_index_from_keysetid, KeysetID};
+use crate::keys::{generate_path_index_from_keysetid, KeysetID, KeysetEntry};
 use crate::swap;
 use crate::TStamp;
 
@@ -99,20 +99,25 @@ fn generate_maturing_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath
     btc32::DerivationPath::from(path.as_slice())
 }
 
-// ---------- Keys Repository for creation
+// ---------- required traits
 #[cfg_attr(test, mockall::automock)]
-pub trait QuoteKeyRepository: Send + Sync {
+pub trait QuoteBasedRepository: Send + Sync {
     fn store(
         &self,
         qid: Uuid,
         keyset: cdk02::MintKeySet,
         info: cdk::mint::MintKeySetInfo,
     ) -> AnyResult<()>;
+    fn load(
+        &self,
+        kid: KeysetID,
+        qid: Uuid,
+    ) -> AnyResult<Option<(cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait MaturityKeyRepository: Send + Sync {
-    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+pub trait Repository: Send + Sync {
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
 }
 
@@ -143,8 +148,8 @@ impl<QuoteKeys, MaturityKeys> Factory<QuoteKeys, MaturityKeys> {
 
 impl<QuoteKeys, MaturityKeys> KeyFactory for Factory<QuoteKeys, MaturityKeys>
 where
-    QuoteKeys: QuoteKeyRepository,
-    MaturityKeys: MaturityKeyRepository,
+    QuoteKeys: QuoteBasedRepository,
+    MaturityKeys: Repository,
 {
     type Error = Error;
     fn generate(
@@ -182,7 +187,7 @@ where
         self.quote_keys.store(quote, set.clone(), info)?;
 
         let kid = generate_keyset_id_from_maturity_date(bill_maturity_date, 0);
-        if self.maturing_keys.info(&kid)?.is_some() {
+        if self.maturing_keys.load(&kid)?.is_some() {
             return Ok(set);
         }
 
@@ -218,17 +223,15 @@ where
 
 // ---------- Swap Keys Repository
 #[derive(Clone)]
-pub struct SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys> {
-    pub endorsed_keys: EndorsedKeys,
-    pub maturing_keys: MaturityKeys,
-    pub debit_keys: DebitKeys,
+pub struct SwapRepository<KeysRepo> {
+    pub endorsed_keys: KeysRepo,
+    pub maturing_keys: KeysRepo,
+    pub debit_keys: KeysRepo,
 }
 
-impl<EndorsedKeys, MaturityKeys, DebitKeys> SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys>
+impl<KeysRepo> SwapRepository<KeysRepo>
 where
-    EndorsedKeys: swap::KeysRepository,
-    MaturityKeys: swap::KeysRepository,
-    DebitKeys: swap::KeysRepository,
+    KeysRepo: swap::KeysRepository,
 {
     fn find_maturing_keys_from_maturity_date(
         &self,
@@ -263,11 +266,9 @@ where
     }
 }
 
-impl<EndorsedKeys, MaturityKeys, DebitKeys> SwapRepository<EndorsedKeys, MaturityKeys, DebitKeys>
+impl<KeysRepo> swap::KeysRepository for SwapRepository<KeysRepo>
 where
-    EndorsedKeys: swap::KeysRepository,
-    MaturityKeys: swap::KeysRepository,
-    DebitKeys: swap::KeysRepository,
+    KeysRepo: swap::KeysRepository,
 {
     fn load(&self, id: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
         if let Some(keyset) = self.endorsed_keys.load(id)? {
@@ -311,6 +312,7 @@ mod tests {
     use crate::keys::tests as testkeys;
     use mockall::predicate::*;
     use std::str::FromStr;
+    use crate::swap::KeysRepository;
 
     #[test]
     fn test_keys_factory_generate() {
@@ -322,10 +324,10 @@ mod tests {
             .unwrap()
             .to_utc();
 
-        let mut maturitykeys_repo = MockMaturityKeyRepository::new();
-        maturitykeys_repo.expect_info().returning(|_| Ok(None));
+        let mut maturitykeys_repo = MockRepository::new();
+        maturitykeys_repo.expect_load().returning(|_| Ok(None));
         maturitykeys_repo.expect_store().returning(|_, _| Ok(()));
-        let mut quotekeys_repo = MockQuoteKeyRepository::new();
+        let mut quotekeys_repo = MockQuoteBasedRepository::new();
         quotekeys_repo
             .expect_store()
             .with(eq(quote), always(), always())

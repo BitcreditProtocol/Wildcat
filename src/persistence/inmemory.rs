@@ -11,7 +11,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::{keys, quotes};
-use crate::keys::KeysetID;
+use crate::keys::{KeysetID, KeysetEntry};
 use crate::swap;
 use crate::TStamp;
 
@@ -78,14 +78,13 @@ impl quotes::Repository for QuoteRepo {
 }
 
 type QuoteKeysIndex = (KeysetID, Uuid);
-type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
 
 #[derive(Default, Clone)]
 pub struct QuoteKeysRepo {
     keys: Arc<RwLock<HashMap<QuoteKeysIndex, KeysetEntry>>>,
 }
 
-impl keys::QuoteKeyRepository for QuoteKeysRepo {
+impl keys::QuoteBasedRepository for QuoteKeysRepo {
     fn store(
         &self,
         qid: Uuid,
@@ -98,6 +97,14 @@ impl keys::QuoteKeyRepository for QuoteKeysRepo {
             .insert((KeysetID::from(keyset.id), qid), (info, keyset));
         Ok(())
     }
+
+    fn load(
+        &self,
+        kid: KeysetID,
+        qid: Uuid,
+    ) -> AnyResult<Option<(cdk::mint::MintKeySetInfo, cdk02::MintKeySet)>> {
+        Ok(self.keys.read().unwrap().get(&(kid, qid)).cloned())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -106,23 +113,17 @@ pub struct SimpleKeysRepo {
 }
 
 impl SimpleKeysRepo {
-    fn keyinfo(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
-        let a = self
-            .keys
-            .read()
-            .unwrap()
-            .get(kid)
-            .map(|(info, _)| info.clone());
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>> {
+        let a = self.keys.read().unwrap().get(kid).cloned();
         Ok(a)
     }
+    fn keyinfo(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        let a = self.load(kid)?;
+        Ok(a.map(|(info, _)| info))
+    }
     fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
-        let a = self
-            .keys
-            .read()
-            .unwrap()
-            .get(kid)
-            .map(|(_, set)| set.clone());
-        Ok(a)
+        let a = self.load(kid)?;
+        Ok(a.map(|(_, set)| set))
     }
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {
         self.keys
@@ -133,9 +134,9 @@ impl SimpleKeysRepo {
     }
 }
 
-impl keys::MaturityKeyRepository for SimpleKeysRepo {
-    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
-        self.keyinfo(kid)
+impl keys::Repository for SimpleKeysRepo {
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>> {
+        self.load(kid)
     }
 
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {
@@ -153,7 +154,7 @@ impl swap::KeysRepository for SimpleKeysRepo {
     }
 
     fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>> {
-        Ok(Some(id.clone()))
+        Ok(Some(*id))
     }
 }
 

@@ -16,6 +16,8 @@ pub enum Error {
     CdkDHKE(#[from] cdk::dhke::Error),
 }
 
+
+pub type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
 /// rework of cdk02::Id as they do not export internal fields
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct KeysetID {
