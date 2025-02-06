@@ -112,7 +112,6 @@ pub trait Repository: Send + Sync {
 }
 
 pub trait KeyFactory: Send + Sync {
-    type Error;
     fn generate(
         &self,
         kid: KeysetID,

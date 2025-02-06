@@ -5,7 +5,7 @@ use anyhow::Result as AnyResult;
 use cdk::mint::MintKeySetInfo;
 use cdk::nuts::nut00::{BlindSignature, BlindedMessage, Proof};
 use cdk::nuts::nut02::MintKeySet;
-use cdk::nuts::nut07::State as ProofState;
+use cdk::nuts::nut07 as cdk07;
 use cdk::Amount;
 // ----- local imports
 use crate::keys::KeysetID;
@@ -22,12 +22,13 @@ pub trait KeysRepository {
 #[cfg_attr(test, mockall::automock)]
 pub trait ProofRepository {
     fn spend(&self, tokens: &[Proof]) -> AnyResult<()>;
-    fn get_state(&self, ys: &[Proof]) -> AnyResult<Vec<ProofState>>;
+    fn get_state(&self, tokens: &[Proof]) -> AnyResult<Vec<cdk07::State>>;
 }
 
+#[derive(Clone)]
 pub struct Service<KeysRepo, ProofRepo> {
-    keys: KeysRepo,
-    proofs: ProofRepo,
+    pub keys: KeysRepo,
+    pub proofs: ProofRepo,
 }
 
 impl<KeysRepo, ProofRepo> Service<KeysRepo, ProofRepo>
@@ -41,7 +42,7 @@ where
             .get_state(proofs)
             .map_err(Error::ProofRepository)?
             .into_iter()
-            .all(|state| state == ProofState::Unspent);
+            .all(|state| state == cdk07::State::Unspent);
         Ok(result)
     }
 
@@ -157,7 +158,7 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Spent]));
+            .returning(|_| Ok(vec![cdk07::State::Spent]));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -185,8 +186,11 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Unspent]));
-        keyrepo.expect_keyset().with(eq(kid)).returning(|_| Ok(None));
+            .returning(|_| Ok(vec![cdk07::State::Unspent]));
+        keyrepo
+            .expect_keyset()
+            .with(eq(kid))
+            .returning(|_| Ok(None));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -211,7 +215,7 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Unspent]));
+            .returning(|_| Ok(vec![cdk07::State::Unspent]));
         let kid = KeysetID::from(keys.id);
         keyrepo
             .expect_keyset()
@@ -240,7 +244,7 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Unspent]));
+            .returning(|_| Ok(vec![cdk07::State::Unspent]));
         let kid = KeysetID::from(keys.id);
         keyrepo
             .expect_keyset()
@@ -270,7 +274,7 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Unspent]));
+            .returning(|_| Ok(vec![cdk07::State::Unspent]));
         let kid = KeysetID::from(keys.id);
         let ex_keys = keys.clone();
         keyrepo
@@ -311,7 +315,7 @@ mod tests {
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_get_state()
-            .returning(|_| Ok(vec![ProofState::Unspent]));
+            .returning(|_| Ok(vec![cdk07::State::Unspent]));
         let kid = KeysetID::from(keys.id);
         let ex_keys = keys.clone();
         keyrepo
