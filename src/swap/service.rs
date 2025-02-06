@@ -13,10 +13,10 @@ use crate::swap::error::{Error, Result};
 
 #[cfg_attr(test, mockall::automock)]
 pub trait KeysRepository {
-    fn load(&self, id: KeysetID) -> AnyResult<Option<MintKeySet>>;
-    fn info(&self, id: KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
+    fn keyset(&self, id: &KeysetID) -> AnyResult<Option<MintKeySet>>;
+    fn info(&self, id: &KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
     // in case keyset id is inactive, returns the proper replacement for it
-    fn replacing_id(&self, id: KeysetID) -> AnyResult<Option<KeysetID>>;
+    fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -50,7 +50,7 @@ where
             let id = proof.keyset_id;
             let keyset = self
                 .keys
-                .load(id.into())
+                .keyset(&id.into())
                 .map_err(Error::KeysetRepository)?
                 .ok_or_else(|| Error::UnknownKeyset(id.into()))?;
             let key = keyset
@@ -101,7 +101,7 @@ where
         for i in inputs {
             let o = self
                 .keys
-                .replacing_id(i.keyset_id.into())
+                .replacing_id(&i.keyset_id.into())
                 .map_err(Error::KeysetRepository)?
                 .ok_or(Error::UnknownKeyset(i.keyset_id.into()))?;
             ids.push(o);
@@ -113,7 +113,7 @@ where
 
         let keys = self
             .keys
-            .load(*first)
+            .keyset(first)
             .map_err(Error::KeysetRepository)?
             .expect("Keyset from first not found");
         let mut signatures = Vec::new();
@@ -186,7 +186,7 @@ mod tests {
         proofrepo
             .expect_get_state()
             .returning(|_| Ok(vec![ProofState::Unspent]));
-        keyrepo.expect_load().with(eq(kid)).returning(|_| Ok(None));
+        keyrepo.expect_keyset().with(eq(kid)).returning(|_| Ok(None));
         let swaps = Service {
             keys: keyrepo,
             proofs: proofrepo,
@@ -214,7 +214,7 @@ mod tests {
             .returning(|_| Ok(vec![ProofState::Unspent]));
         let kid = KeysetID::from(keys.id);
         keyrepo
-            .expect_load()
+            .expect_keyset()
             .with(eq(kid))
             .returning(move |_| Ok(Some(keys.clone())));
         let swaps = Service {
@@ -243,7 +243,7 @@ mod tests {
             .returning(|_| Ok(vec![ProofState::Unspent]));
         let kid = KeysetID::from(keys.id);
         keyrepo
-            .expect_load()
+            .expect_keyset()
             .with(eq(kid))
             .returning(move |_| Ok(Some(keys.clone())));
         let swaps = Service {
@@ -274,7 +274,7 @@ mod tests {
         let kid = KeysetID::from(keys.id);
         let ex_keys = keys.clone();
         keyrepo
-            .expect_load()
+            .expect_keyset()
             .with(eq(kid))
             .returning(move |_| Ok(Some(ex_keys.clone())));
         keyrepo
@@ -315,7 +315,7 @@ mod tests {
         let kid = KeysetID::from(keys.id);
         let ex_keys = keys.clone();
         keyrepo
-            .expect_load()
+            .expect_keyset()
             .with(eq(kid))
             .returning(move |_| Ok(Some(ex_keys.clone())));
         keyrepo
