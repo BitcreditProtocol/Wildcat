@@ -7,15 +7,16 @@ use cdk::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::{keys, quotes};
-use crate::keys::KeysetID;
+use crate::credit::{keys as creditkeys, quotes};
+use crate::keys::{KeysetEntry, KeysetID};
+use crate::keys;
 use crate::TStamp;
 
 #[derive(Default, Clone)]
-pub struct QuoteRepo {
+pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
 }
-impl quotes::Repository for QuoteRepo {
+impl quotes::Repository for QuotesIDMap {
     fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
         Ok(self
             .quotes
@@ -74,13 +75,12 @@ impl quotes::Repository for QuoteRepo {
 }
 
 type QuoteKeysIndex = (KeysetID, Uuid);
-type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
 #[derive(Default, Clone)]
-pub struct QuoteKeysRepo {
+pub struct KeysetIDQuoteIDMap {
     keys: Arc<RwLock<HashMap<QuoteKeysIndex, KeysetEntry>>>,
 }
 
-impl keys::QuoteKeyRepository for QuoteKeysRepo {
+impl creditkeys::QuoteBasedRepository for KeysetIDQuoteIDMap {
     fn store(
         &self,
         qid: Uuid,
@@ -96,11 +96,11 @@ impl keys::QuoteKeyRepository for QuoteKeysRepo {
 }
 
 #[derive(Default, Clone)]
-pub struct MaturityKeysRepo {
+pub struct KeysetIDEntryMap {
     keys: Arc<RwLock<HashMap<KeysetID, KeysetEntry>>>,
 }
 
-impl keys::MaturityKeyRepository for MaturityKeysRepo {
+impl keys::Repository for KeysetIDEntryMap {
     fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
         let a = self
             .keys
@@ -108,6 +108,23 @@ impl keys::MaturityKeyRepository for MaturityKeysRepo {
             .unwrap()
             .get(kid)
             .map(|(info, _)| info.clone());
+        Ok(a)
+    }
+    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
+        let a = self
+            .keys
+            .read()
+            .unwrap()
+            .get(kid)
+            .map(|(_, keyset)| keyset.clone());
+        Ok(a)
+    }
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<keys::KeysetEntry>> {
+        let a = self
+            .keys
+            .read()
+            .unwrap()
+            .get(kid).cloned();
         Ok(a)
     }
     fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()> {

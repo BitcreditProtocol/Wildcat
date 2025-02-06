@@ -14,9 +14,9 @@ mod utils;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
-pub type ProdQuoteKeysRepository = persistence::inmemory::QuoteKeysRepo;
-pub type ProdMaturityKeysRepository = persistence::inmemory::MaturityKeysRepo;
-pub type ProdQuoteRepository = persistence::inmemory::QuoteRepo;
+pub type ProdQuoteKeysRepository = persistence::inmemory::KeysetIDQuoteIDMap;
+pub type ProdMaturityKeysRepository = persistence::inmemory::KeysetIDEntryMap;
+pub type ProdQuoteRepository = persistence::inmemory::QuotesIDMap;
 
 pub type ProdCreditKeysFactory =
     credit::keys::Factory<ProdQuoteKeysRepository, ProdMaturityKeysRepository>;

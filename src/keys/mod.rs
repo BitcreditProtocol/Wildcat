@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::Result as AnyResult;
 use bitcoin::bip32 as btc32;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
@@ -88,6 +89,40 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
+pub type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
+
+// ----- required traits
+#[cfg_attr(test, mockall::automock)]
+pub trait Repository: Send + Sync {
+    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
+}
+
+pub trait ActiveRepository: Repository {
+    fn info_active(&self) -> AnyResult<cdk::mint::MintKeySetInfo>;
+    #[allow(dead_code)]
+    fn keyset_active(&self) -> AnyResult<cdk02::MintKeySet>;
+}
+#[cfg(test)]
+mockall::mock! {
+    // Structure to mock
+    pub ActiveRepository {}
+    // First trait to implement on C
+    impl Repository for ActiveRepository {
+    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
+    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
+    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
+    }
+    // Second trait to implement on C
+    impl ActiveRepository for ActiveRepository {
+    fn info_active(&self) -> AnyResult<cdk::mint::MintKeySetInfo>;
+    fn keyset_active(&self) -> AnyResult<cdk02::MintKeySet>;
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -98,7 +133,7 @@ pub mod tests {
     use std::str::FromStr;
 
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
-        Lazy::new(|| bitcoin::secp256k1::Secp256k1::new());
+        Lazy::new(bitcoin::secp256k1::Secp256k1::new);
 
     pub fn generate_random_keysetid() -> KeysetID {
         KeysetID {
