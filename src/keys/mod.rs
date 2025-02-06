@@ -101,9 +101,9 @@ pub trait Repository: Send + Sync {
 }
 
 pub trait ActiveRepository: Repository {
-    fn info_active(&self) -> AnyResult<cdk::mint::MintKeySetInfo>;
+    fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
     #[allow(dead_code)]
-    fn keyset_active(&self) -> AnyResult<cdk02::MintKeySet>;
+    fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
 }
 #[cfg(test)]
 mockall::mock! {
@@ -118,8 +118,8 @@ mockall::mock! {
     }
     // Second trait to implement on C
     impl ActiveRepository for ActiveRepository {
-    fn info_active(&self) -> AnyResult<cdk::mint::MintKeySetInfo>;
-    fn keyset_active(&self) -> AnyResult<cdk02::MintKeySet>;
+    fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+        fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
     }
 }
 

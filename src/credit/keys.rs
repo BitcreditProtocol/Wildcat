@@ -141,7 +141,6 @@ where
     QuoteKeys: QuoteBasedRepository,
     MaturityKeys: keys::Repository,
 {
-    type Error = Error;
     fn generate(
         &self,
         keysetid: KeysetID,
@@ -212,10 +211,11 @@ where
 }
 
 // ---------- Swap Keys Repository
+#[derive(Default, Clone)]
 pub struct SwapRepository<KeysRepo, ActiveRepo> {
-    endorsed_keys: KeysRepo,
-    maturing_keys: KeysRepo,
-    debit_keys: ActiveRepo,
+    pub endorsed_keys: KeysRepo,
+    pub maturity_keys: KeysRepo,
+    pub debit_keys: ActiveRepo,
 }
 
 impl<KeysRepo, ActiveRepo> SwapRepository<KeysRepo, ActiveRepo>
@@ -229,7 +229,7 @@ where
         mut rotation_idx: u32,
     ) -> Result<Option<KeysetID>> {
         let mut kid: KeysetID = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx);
-        while let Some(info) = self.maturing_keys.info(&kid)? {
+        while let Some(info) = self.maturity_keys.info(&kid)? {
             if info.active {
                 return Ok(Some(kid));
             }
@@ -240,7 +240,7 @@ where
     }
 
     fn find_maturing_keys_from_id(&self, kid: &KeysetID) -> Result<Option<KeysetID>> {
-        if let Some(info) = self.maturing_keys.info(kid)? {
+        if let Some(info) = self.maturity_keys.info(kid)? {
             if info.active {
                 return Ok(Some(*kid));
             }
@@ -265,7 +265,7 @@ where
         if let Some(keyset) = self.endorsed_keys.keyset(id)? {
             return Ok(Some(keyset));
         }
-        if let Some(keyset) = self.maturing_keys.keyset(id)? {
+        if let Some(keyset) = self.maturity_keys.keyset(id)? {
             return Ok(Some(keyset));
         }
         self.debit_keys.keyset(id)
@@ -274,7 +274,7 @@ where
         if let Some(info) = self.endorsed_keys.info(id)? {
             return Ok(Some(info));
         }
-        if let Some(info) = self.maturing_keys.info(id)? {
+        if let Some(info) = self.maturity_keys.info(id)? {
             return Ok(Some(info));
         }
         self.debit_keys.info(id)
@@ -292,9 +292,12 @@ where
         if let Some(kid) = self.find_maturing_keys_from_id(kid)? {
             return Ok(Some(kid));
         }
-        self.debit_keys
-            .info_active()
-            .map(|info| Some(info.id.into()))
+        let kid = self
+            .debit_keys
+            .info_active()?
+            .map(|info| info.id)
+            .map(KeysetID::from);
+        Ok(kid)
     }
 }
 
@@ -380,7 +383,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -419,7 +422,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -454,7 +457,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -491,7 +494,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -524,7 +527,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -553,7 +556,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -579,7 +582,7 @@ mod tests {
             .with(eq(in_kid))
             .returning(|_| Ok(None));
         debit_repo.expect_info_active().returning(move || {
-            Ok(cdk::mint::MintKeySetInfo {
+            Ok(Some(cdk::mint::MintKeySetInfo {
                 active: true,
                 derivation_path: Default::default(),
                 derivation_path_index: Default::default(),
@@ -589,12 +592,12 @@ mod tests {
                 unit: Default::default(),
                 valid_from: Default::default(),
                 valid_to: Default::default(),
-            })
+            }))
         });
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -633,7 +636,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -693,7 +696,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -740,7 +743,7 @@ mod tests {
             .returning(move |_| Ok(None));
         let debit_kid = testkeys::generate_random_keysetid();
         debit_repo.expect_info_active().returning(move || {
-            Ok(cdk::mint::MintKeySetInfo {
+            Ok(Some(cdk::mint::MintKeySetInfo {
                 active: false,
                 derivation_path: Default::default(),
                 derivation_path_index: Some(0),
@@ -750,12 +753,12 @@ mod tests {
                 unit: Default::default(),
                 valid_from: Default::default(),
                 valid_to: Some(maturity_date.timestamp() as u64),
-            })
+            }))
         });
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
@@ -811,7 +814,7 @@ mod tests {
 
         let swap_repo = SwapRepository {
             endorsed_keys: quote_repo,
-            maturing_keys: maturing_repo,
+            maturity_keys: maturing_repo,
             debit_keys: debit_repo,
         };
 
