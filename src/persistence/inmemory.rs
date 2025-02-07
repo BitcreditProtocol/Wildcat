@@ -98,6 +98,11 @@ impl creditkeys::QuoteBasedRepository for KeysetIDQuoteIDMap {
             .insert((KeysetID::from(keyset.id), qid), (info, keyset));
         Ok(())
     }
+
+    fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
+        let mapkey = (kid.clone(), qid);
+        Ok(self.keys.read().unwrap().get(&mapkey).cloned())
+    }
 }
 
 #[derive(Default, Clone)]

@@ -7,6 +7,7 @@ use cdk::nuts::nut00::{BlindSignature, BlindedMessage, Proof};
 use cdk::nuts::nut02::MintKeySet;
 use cdk::nuts::nut07 as cdk07;
 use cdk::Amount;
+use log::debug;
 // ----- local imports
 use crate::keys::KeysetID;
 use crate::swap::error::{Error, Result};
@@ -85,6 +86,13 @@ where
         let total_output: Amount = outputs
             .iter()
             .fold(Amount::ZERO, |total, output| total + output.amount);
+        log::debug!(
+            "Received swap request: {} inputs totaling {}, {} outputs totaling {}",
+            inputs.len(),
+            total_input,
+            outputs.len(),
+            total_output
+        );
         if total_input != total_output {
             return Err(Error::UnmatchingAmount(total_input, total_output));
         }
