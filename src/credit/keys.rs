@@ -103,6 +103,7 @@ fn generate_maturity_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath
 // ---------- required traits
 #[cfg_attr(test, mockall::automock)]
 pub trait QuoteBasedRepository: Send + Sync {
+    fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>>;
     fn store(
         &self,
         qid: Uuid,
@@ -196,7 +197,7 @@ where
         let info = cdk::mint::MintKeySetInfo {
             id: keyset.id,
             unit: self.unit.clone(),
-            active: false,
+            active: true,
             valid_from: chrono::Utc::now().timestamp() as u64,
             valid_to: Some(bill_maturity_date.timestamp() as u64),
             derivation_path: path,
@@ -223,7 +224,7 @@ where
     KeysRepo: keys::Repository,
     ActiveRepo: keys::ActiveRepository,
 {
-    fn find_maturing_keys_from_maturity_date(
+    fn find_maturity_keys_from_maturity_date(
         &self,
         maturity_date: TStamp,
         mut rotation_idx: u32,
@@ -239,7 +240,7 @@ where
         Ok(None)
     }
 
-    fn find_maturing_keys_from_id(&self, kid: &KeysetID) -> Result<Option<KeysetID>> {
+    fn find_maturity_keys_from_id(&self, kid: &KeysetID) -> Result<Option<KeysetID>> {
         if let Some(info) = self.maturity_keys.info(kid)? {
             if info.active {
                 return Ok(Some(*kid));
@@ -250,7 +251,7 @@ where
             let rotation_index = info
                 .derivation_path_index
                 .expect("derivation_path_index not set");
-            return self.find_maturing_keys_from_maturity_date(maturity, rotation_index + 1);
+            return self.find_maturity_keys_from_maturity_date(maturity, rotation_index + 1);
         }
         Ok(None)
     }
@@ -285,11 +286,11 @@ where
             let valid_to = info.valid_to.expect("valid_to field not set") as i64;
             let maturity =
                 TStamp::from_timestamp(valid_to, 0).expect("datetime conversion from u64");
-            if let Some(id) = self.find_maturing_keys_from_maturity_date(maturity, 0)? {
+            if let Some(id) = self.find_maturity_keys_from_maturity_date(maturity, 0)? {
                 return Ok(Some(id));
             }
         }
-        if let Some(kid) = self.find_maturing_keys_from_id(kid)? {
+        if let Some(kid) = self.find_maturity_keys_from_id(kid)? {
             return Ok(Some(kid));
         }
         let kid = self

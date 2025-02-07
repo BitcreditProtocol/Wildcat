@@ -8,35 +8,21 @@ pub fn select_blinds_to_target(
     mut target: cdk::Amount,
     blinds: &mut [cdk00::BlindedMessage],
 ) -> &[cdk00::BlindedMessage] {
-    blinds.sort_by_key(|blind| std::cmp::Reverse(blind.amount));
-    let marked_end_idx = blinds.partition_point(|blind| blind.amount > cdk::Amount::ZERO);
-    let mut selected_idx: usize = 0;
-    // first we sign whatever marked blinds user sent
-    for idx in 0..marked_end_idx {
-        if blinds[idx].amount <= target {
-            blinds.swap(selected_idx, idx);
-            target -= blinds[selected_idx].amount;
-            selected_idx += 1;
-            if target == cdk::Amount::ZERO {
-                break;
-            }
+    for (idx, blind) in blinds.iter_mut().enumerate() {
+        if target == cdk::Amount::ZERO {
+            return &blinds[0..idx];
+        }
+        if blind.amount == cdk::Amount::ZERO {
+            blind.amount = *target.split().first().expect("target > 0"); // split() returns from
+                                                                         // highest to lowest
+            target -= blind.amount;
+        } else if blind.amount <= target {
+            target -= blind.amount;
+        } else {
+            return &blinds[0..idx];
         }
     }
-    for target_split in target.split() {
-        for idx in selected_idx..blinds.len() {
-            if blinds[idx].amount == target_split {
-                blinds.swap(selected_idx, idx);
-                selected_idx += 1;
-                break;
-            } else if blinds[idx].amount == cdk::Amount::ZERO {
-                blinds.swap(selected_idx, idx);
-                blinds[selected_idx].amount = target_split;
-                selected_idx += 1;
-                break;
-            }
-        }
-    }
-    &blinds[0..selected_idx]
+    blinds
 }
 
 pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
