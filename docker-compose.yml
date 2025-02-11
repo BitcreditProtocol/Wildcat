@@ -1,0 +1,26 @@
+services:
+  wildcat:
+    build:
+      context: .
+      dockerfile: ./docker/wildcat/Dockerfile
+    ports:
+      - "3338:3338"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    volumes:
+      - ./data/surrealdb:/data
+    command:
+      - start
+      - --unauthenticated
+      - rocksdb:/data/database.db
+    user: ${UID}:${GID}
+    ports:
+      - "8800:8000"
+    healthcheck:
+      test: [ "CMD", "/surreal", "is-ready" ]
+      interval: 5s
+      retries: 5
