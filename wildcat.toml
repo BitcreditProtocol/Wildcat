@@ -1,0 +1,13 @@
+
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+
+# Database configuration
+[appcfg.dbs]
+
+[appcfg.dbs.quotes]
+connection = "ws://surrealdb:8800"
+namespace = "test"
+database = "wildcat"
