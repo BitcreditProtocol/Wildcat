@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
+use async_trait::async_trait;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
@@ -20,8 +21,9 @@ use crate::TStamp;
 pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
 }
+#[async_trait]
 impl quotes::Repository for QuotesIDMap {
-    fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
         Ok(self
             .quotes
             .read()
@@ -31,15 +33,15 @@ impl quotes::Repository for QuotesIDMap {
             .map(|(_, q)| q.clone()))
     }
 
-    fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
+    async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
         self.quotes.write().unwrap().insert(quote.id, quote);
         Ok(())
     }
-    fn load(&self, id: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
+    async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
 
-    fn update_if_pending(&self, new: quotes::Quote) -> AnyResult<()> {
+    async fn update_if_pending(&self, new: quotes::Quote) -> AnyResult<()> {
         let id = new.id;
         let mut m = self.quotes.write().unwrap();
         let result = m.remove(&id);
@@ -53,7 +55,7 @@ impl quotes::Repository for QuotesIDMap {
         Ok(())
     }
 
-    fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         let a = self
             .quotes
             .read()
@@ -65,7 +67,7 @@ impl quotes::Repository for QuotesIDMap {
             .collect();
         Ok(a)
     }
-    fn list_accepteds(&self, _since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_accepteds(&self, _since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         let a = self
             .quotes
             .read()

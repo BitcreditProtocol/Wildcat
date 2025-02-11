@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use anyhow::{Error as AnyError, Result as AnyResult};
+use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
@@ -102,15 +103,17 @@ impl Quote {
 
 // ---------- required traits
 #[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait Repository: Send + Sync {
-    fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
-    fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
-    fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    fn list_accepteds(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<Quote>>;
-    fn store(&self, quote: Quote) -> AnyResult<()>;
+    async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
+    async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
+    async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    async fn list_accepteds(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<Quote>>;
+    async fn store(&self, quote: Quote) -> AnyResult<()>;
 }
 
+#[async_trait]
 pub trait KeyFactory: Send + Sync {
     fn generate(
         &self,
@@ -130,17 +133,17 @@ impl<Quotes> Factory<Quotes>
 where
     Quotes: Repository,
 {
-    fn generate(
+    async fn generate(
         &self,
         bill: String,
         endorser: String,
         blinds: Vec<cdk00::BlindedMessage>,
         submitted: TStamp,
     ) -> AnyResult<uuid::Uuid> {
-        let Some(quote) = self.quotes.search_by_bill(&bill, &endorser)? else {
+        let Some(quote) = self.quotes.search_by_bill(&bill, &endorser).await? else {
             let quote = Quote::new(bill, endorser, blinds, submitted);
             let id = quote.id;
-            self.quotes.store(quote)?;
+            self.quotes.store(quote).await?;
             return Ok(id);
         };
 
@@ -148,7 +151,7 @@ where
             if ttl < submitted {
                 let new = Quote::new(bill, endorser, blinds, submitted);
                 let id = new.id;
-                self.quotes.store(new)?;
+                self.quotes.store(new).await?;
                 return Ok(id);
             }
         }
@@ -168,30 +171,36 @@ impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
 where
     QuotesRepo: Repository,
 {
-    pub fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
-        self.quotes.load(id)?.ok_or(Error::UnknownQuoteID(id))
+    pub async fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
+        self.quotes.load(id).await?.ok_or(Error::UnknownQuoteID(id))
     }
 
-    pub fn decline(&self, id: uuid::Uuid) -> Result<()> {
-        let old = self.quotes.load(id)?;
+    pub async fn decline(&self, id: uuid::Uuid) -> Result<()> {
+        let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
         quote.decline()?;
-        self.quotes.update_if_pending(quote)?;
+        self.quotes.update_if_pending(quote).await?;
         Ok(())
     }
 
-    pub fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
-        self.quotes.list_pendings(since).map_err(Error::Repository)
+    pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+        self.quotes
+            .list_pendings(since)
+            .await
+            .map_err(Error::Repository)
     }
 
-    pub fn list_accepteds(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
-        self.quotes.list_accepteds(since).map_err(Error::Repository)
+    pub async fn list_accepteds(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+        self.quotes
+            .list_accepteds(since)
+            .await
+            .map_err(Error::Repository)
     }
 
-    pub fn enquire(
+    pub async fn enquire(
         &self,
         bill: String,
         endorser: String,
@@ -200,6 +209,7 @@ where
     ) -> Result<uuid::Uuid> {
         self.quotes_gen
             .generate(bill, endorser, blinds, tstamp)
+            .await
             .map_err(Error::from)
     }
 }
@@ -209,7 +219,7 @@ where
     KeysGen: KeyFactory,
     QuotesRepo: Repository,
 {
-    pub fn accept(
+    pub async fn accept(
         &self,
         id: uuid::Uuid,
         discount: Decimal,
@@ -219,7 +229,7 @@ where
         let discounted_amount =
             cdk::Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
-        let mut quote = self.lookup(id)?;
+        let mut quote = self.lookup(id).await?;
         let qid = quote.id;
         let kid = generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
@@ -239,7 +249,7 @@ where
             .collect::<KeyResult<Vec<cdk00::BlindSignature>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.accept(signatures, expiration)?;
-        self.quotes.update_if_pending(quote)?;
+        self.quotes.update_if_pending(quote).await?;
         Ok(())
     }
 }
@@ -250,24 +260,26 @@ mod tests {
     use super::*;
     use mockall::predicate::*;
 
-    #[test]
-    fn test_new_quote_request_quote_not_present() {
+    #[tokio::test]
+    async fn test_new_quote_request_quote_not_present() {
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill().returning(|_, _| Ok(None));
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test = factory.generate(
-            String::from("billID"),
-            String::from("endorserID"),
-            vec![],
-            chrono::Utc::now(),
-        );
+        let test = factory
+            .generate(
+                String::from("billID"),
+                String::from("endorserID"),
+                vec![],
+                chrono::Utc::now(),
+            )
+            .await;
         assert!(test.is_ok());
     }
 
-    #[test]
-    fn test_new_quote_request_quote_pending() {
+    #[tokio::test]
+    async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -286,18 +298,20 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.generate(
-            String::from(bill_id),
-            String::from(endorser_id),
-            vec![],
-            chrono::Utc::now(),
-        );
+        let test_id = factory
+            .generate(
+                String::from(bill_id),
+                String::from(endorser_id),
+                vec![],
+                chrono::Utc::now(),
+            )
+            .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
     }
 
-    #[test]
-    fn test_new_quote_request_quote_declined() {
+    #[tokio::test]
+    async fn test_new_quote_request_quote_declined() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -316,18 +330,20 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.generate(
-            String::from(bill_id),
-            String::from(endorser_id),
-            vec![],
-            chrono::Utc::now(),
-        );
+        let test_id = factory
+            .generate(
+                String::from(bill_id),
+                String::from(endorser_id),
+                vec![],
+                chrono::Utc::now(),
+            )
+            .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
     }
 
-    #[test]
-    fn test_new_quote_request_quote_accepted() {
+    #[tokio::test]
+    async fn test_new_quote_request_quote_accepted() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -349,18 +365,20 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.generate(
-            String::from(bill_id),
-            String::from(endorser_id),
-            vec![],
-            chrono::Utc::now(),
-        );
+        let test_id = factory
+            .generate(
+                String::from(bill_id),
+                String::from(endorser_id),
+                vec![],
+                chrono::Utc::now(),
+            )
+            .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
     }
 
-    #[test]
-    fn test_new_quote_request_quote_accepted_but_expired() {
+    #[tokio::test]
+    async fn test_new_quote_request_quote_accepted_but_expired() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -382,12 +400,14 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
 
         let factory = Factory { quotes: repo };
-        let test_id = factory.generate(
-            String::from(bill_id),
-            String::from(endorser_id),
-            vec![],
-            chrono::Utc::now() + chrono::Duration::seconds(1),
-        );
+        let test_id = factory
+            .generate(
+                String::from(bill_id),
+                String::from(endorser_id),
+                vec![],
+                chrono::Utc::now() + chrono::Duration::seconds(1),
+            )
+            .await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
     }

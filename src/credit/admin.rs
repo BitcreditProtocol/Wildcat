@@ -27,7 +27,7 @@ where
 {
     log::debug!("Received request to list pending quotes");
 
-    let quotes = ctrl.list_pendings(since.map(|q| q.0))?;
+    let quotes = ctrl.list_pendings(since.map(|q| q.0)).await?;
     Ok(Json(ListQuotesReply { quotes }))
 }
 
@@ -40,7 +40,7 @@ where
 {
     log::debug!("Received request to list accepted quotes");
 
-    let quotes = ctrl.list_accepteds(None)?;
+    let quotes = ctrl.list_accepteds(None).await?;
     Ok(Json(ListQuotesReply { quotes }))
 }
 
@@ -107,7 +107,7 @@ where
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
-    let quote = ctrl.lookup(id)?;
+    let quote = ctrl.lookup(id).await?;
     let response = LookUpQuoteReply::from(quote);
     Ok(Json(response))
 }
@@ -134,9 +134,9 @@ where
     log::debug!("Received mint quote resolve request for id: {}", id);
 
     match req {
-        ResolveQuoteRequest::Decline => ctrl.decline(id)?,
+        ResolveQuoteRequest::Decline => ctrl.decline(id).await?,
         ResolveQuoteRequest::Accept { discount, ttl } => {
-            ctrl.accept(id, discount, chrono::Utc::now(), ttl)?
+            ctrl.accept(id, discount, chrono::Utc::now(), ttl).await?
         }
     }
     Ok(())

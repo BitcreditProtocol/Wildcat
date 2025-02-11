@@ -21,6 +21,7 @@ config = {version = "0.15"}
 bitcoin = {version = "0.32"}
 hex = {version = "0.4"}
 anyhow = {version = "1.0"}
+async-trait = {version = "0.1"}
 
 cdk = {version = "0.6"}
 
