@@ -17,7 +17,7 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 pub type ProdQuoteKeysRepository = persistence::inmemory::KeysetIDQuoteIDMap;
 pub type ProdKeysRepository = persistence::inmemory::KeysetIDEntryMap;
 pub type ProdActiveKeysRepository = persistence::inmemory::KeysetIDEntryMapWithActive;
-pub type ProdQuoteRepository = persistence::inmemory::QuotesIDMap;
+pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 
 pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
 pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
@@ -28,6 +28,12 @@ pub type ProdCreditKeysRepository =
 pub type ProdProofRepository = persistence::inmemory::ProofMap;
 pub type ProdSwapService = swap::Service<ProdCreditKeysRepository, ProdProofRepository>;
 
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct AppConfig {
+    dbs: persistence::surreal::DBConfig,
+}
+
+
 #[derive(Clone, FromRef)]
 pub struct AppController {
     quote: ProdQuotingService,
@@ -35,7 +41,12 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub fn new(mint_seed: &[u8]) -> Self {
+    pub async fn new(mint_seed: &[u8], cfg: AppConfig) -> Self {
+
+        let AppConfig { dbs, .. } = cfg;
+        let persistence::surreal::DBConfig { quotes, .. } = dbs;
+        let quotes_repository = ProdQuoteRepository::new(quotes).await.expect("DB connection to quotes failed");
+
         let quote_keys_repository = ProdQuoteKeysRepository::default();
         let endorsed_keys_repository = ProdKeysRepository::default();
         let maturity_keys_repository = ProdKeysRepository::default();
@@ -44,7 +55,6 @@ impl AppController {
             quote_keys_repository,
             maturity_keys_repository.clone(),
         );
-        let quotes_repository = ProdQuoteRepository::default();
         let quotes_factory = ProdQuoteFactory {
             quotes: quotes_repository.clone(),
         };
