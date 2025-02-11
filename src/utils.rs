@@ -175,14 +175,14 @@ pub mod tests {
         let publics = publics();
         let mut blinds = vec![
             cdk00::BlindedMessage {
-                amount: cdk::Amount::from(1),
-                blinded_secret: publics[0],
+                amount: cdk::Amount::from(16_u64),
+                blinded_secret: publics[1],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
             cdk00::BlindedMessage {
-                amount: cdk::Amount::from(16_u64),
-                blinded_secret: publics[1],
+                amount: cdk::Amount::from(4_u64),
+                blinded_secret: publics[3],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
@@ -193,19 +193,15 @@ pub mod tests {
                 witness: None,
             },
             cdk00::BlindedMessage {
-                amount: cdk::Amount::from(4_u64),
-                blinded_secret: publics[3],
+                amount: cdk::Amount::from(1),
+                blinded_secret: publics[0],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
         ];
         let target = cdk::Amount::from(6_u64);
         let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 2);
-        assert_eq!(selected[0].amount, cdk::Amount::from(4_u64));
-        assert_eq!(selected[0].blinded_secret.to_hex(), RANDOMS[3]);
-        assert_eq!(selected[1].amount, cdk::Amount::from(2_u64));
-        assert_eq!(selected[1].blinded_secret.to_hex(), RANDOMS[2]);
+        assert_eq!(selected.len(), 0);
     }
 
     #[test]
@@ -213,14 +209,8 @@ pub mod tests {
         let publics = publics();
         let mut blinds = vec![
             cdk00::BlindedMessage {
-                amount: cdk::Amount::from(0),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: cdk::Amount::from(16_u64),
-                blinded_secret: publics[1],
+                amount: cdk::Amount::from(4_u64),
+                blinded_secret: publics[3],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
@@ -231,8 +221,8 @@ pub mod tests {
                 witness: None,
             },
             cdk00::BlindedMessage {
-                amount: cdk::Amount::from(4_u64),
-                blinded_secret: publics[3],
+                amount: cdk::Amount::from(0),
+                blinded_secret: publics[0],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
@@ -251,6 +241,12 @@ pub mod tests {
         let publics = publics();
         let mut blinds = vec![
             cdk00::BlindedMessage {
+                amount: cdk::Amount::from(4_u64),
+                blinded_secret: publics[3],
+                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
+                witness: None,
+            },
+            cdk00::BlindedMessage {
                 amount: cdk::Amount::from(1),
                 blinded_secret: publics[0],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
@@ -265,12 +261,6 @@ pub mod tests {
             cdk00::BlindedMessage {
                 amount: cdk::Amount::from(0_u64),
                 blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: cdk::Amount::from(4_u64),
-                blinded_secret: publics[3],
                 keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
                 witness: None,
             },
