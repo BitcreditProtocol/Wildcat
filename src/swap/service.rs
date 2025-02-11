@@ -7,7 +7,6 @@ use cdk::nuts::nut00::{BlindSignature, BlindedMessage, Proof};
 use cdk::nuts::nut02::MintKeySet;
 use cdk::nuts::nut07 as cdk07;
 use cdk::Amount;
-use log::debug;
 // ----- local imports
 use crate::keys::KeysetID;
 use crate::swap::error::{Error, Result};

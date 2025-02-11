@@ -34,7 +34,9 @@ where
         req.node
     );
 
-    let id = ctrl.enquire(req.bill, req.node, chrono::Utc::now(), req.outputs)?;
+    let id = ctrl
+        .enquire(req.bill, req.node, chrono::Utc::now(), req.outputs)
+        .await?;
     Ok(Json(QuoteRequestReply { id }))
 }
 
@@ -73,6 +75,6 @@ where
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
-    let quote = ctrl.lookup(id)?;
+    let quote = ctrl.lookup(id).await?;
     Ok(Json(quote.into()))
 }
