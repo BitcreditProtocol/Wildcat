@@ -25,11 +25,13 @@ struct DBQuoteKeys {
     keys: HashMap<String, cdk01::MintKeyPair>,
 }
 
-fn keysentry2dbquoteskeys(qid: Uuid, ke: keys::KeysetEntry) -> DBQuoteKeys {
+fn keysentry_2_dbquoteskeys(qid: Uuid, ke: keys::KeysetEntry) -> DBQuoteKeys {
     let (info, keyset) = ke;
     let cdk02::MintKeySet { unit, mut keys, .. } = keyset;
     let mut serialized_keys = HashMap::new();
     while let Some((amount, keypair)) = keys.pop_last() {
+        // surrealDB does not accept map with keys of type anything but Strings
+        // so we need to serialize the keys to strings...
         serialized_keys.insert(amount.to_string(), keypair);
     }
     DBQuoteKeys {
@@ -40,7 +42,7 @@ fn keysentry2dbquoteskeys(qid: Uuid, ke: keys::KeysetEntry) -> DBQuoteKeys {
     }
 }
 
-fn dbquoteskeys2keysentry(dbqk: DBQuoteKeys) -> (Uuid, keys::KeysetEntry) {
+fn dbquoteskeys_2_keysentry(dbqk: DBQuoteKeys) -> (Uuid, keys::KeysetEntry) {
     let DBQuoteKeys {
         qid,
         info,
@@ -49,6 +51,7 @@ fn dbquoteskeys2keysentry(dbqk: DBQuoteKeys) -> (Uuid, keys::KeysetEntry) {
     } = dbqk;
     let mut keysmap: BTreeMap<cdk::Amount, cdk01::MintKeyPair> = BTreeMap::default();
     for (val, keypair) in keys {
+        // ... and parse it back to the original type
         let uval = val.parse::<u64>().expect("Failed to parse amount");
         keysmap.insert(cdk::Amount::from(uval), keypair);
     }
@@ -82,7 +85,7 @@ impl QuoteKeysDB {
 impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
     async fn load(&self, _kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
         let res: Option<DBQuoteKeys> = self.db.select((Self::DB_TABLE, qid)).await?;
-        Ok(res.map(|dbqk| dbquoteskeys2keysentry(dbqk).1))
+        Ok(res.map(|dbqk| dbquoteskeys_2_keysentry(dbqk).1))
     }
 
     async fn store(
@@ -91,7 +94,7 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
         keyset: cdk02::MintKeySet,
         info: cdk::mint::MintKeySetInfo,
     ) -> AnyResult<()> {
-        let dbqk = keysentry2dbquoteskeys(qid, (info, keyset));
+        let dbqk = keysentry_2_dbquoteskeys(qid, (info, keyset));
         let _: Option<DBQuoteKeys> = self.db.insert((Self::DB_TABLE, qid)).content(dbqk).await?;
         Ok(())
     }
