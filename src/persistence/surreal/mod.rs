@@ -2,6 +2,7 @@
 // ----- extra library imports
 // ----- local modules
 pub mod quotes;
+pub mod keysets;
 // ----- local imports
 
 
@@ -15,4 +16,5 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct DBConfig {
     pub quotes: ConnectionConfig,
+    pub quoteskeys: ConnectionConfig,
 }

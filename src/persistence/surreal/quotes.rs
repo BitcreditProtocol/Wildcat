@@ -122,12 +122,12 @@ pub struct DB {
 impl DB {
 
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
-        let quotes_repo_connection = Surreal::<Any>::init();
-        quotes_repo_connection.connect(cfg.connection).await?;
-        quotes_repo_connection.use_ns(cfg.namespace).await?;
-        quotes_repo_connection.use_db(cfg.database).await?;
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
         Ok(Self {
-            db: quotes_repo_connection,
+            db: db_connection,
         })
     }
 
@@ -149,7 +149,7 @@ impl DB {
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
             .db
-            .query("SELECT * FROM quotes WHERE status == $status SORT BY submitted DESC")
+            .query("SELECT * FROM quotes WHERE status == $status ORDER BY submitted DESC")
             .bind(("status", status));
         if let Some(since) = since {
             query = query
