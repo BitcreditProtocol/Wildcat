@@ -120,6 +120,8 @@ pub struct DB {
 }
 
 impl DB {
+    const TABLE: &'static str = "quotes";
+
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
@@ -129,12 +131,12 @@ impl DB {
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBQuote>> {
-        self.db.select(("quotes", qid)).await
+        self.db.select((Self::TABLE, qid)).await
     }
 
     async fn store(&self, quote: DBQuote) -> SurrealResult<Option<DBQuote>> {
         self.db
-            .insert(("quotes", quote.quote_id))
+            .insert((Self::TABLE, quote.quote_id))
             .content(quote)
             .await
     }
@@ -146,7 +148,8 @@ impl DB {
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
             .db
-            .query("SELECT * FROM quotes WHERE status == $status ORDER BY submitted DESC")
+            .query("SELECT * FROM $table WHERE status == $status ORDER BY submitted DESC")
+            .bind(("table", Self::TABLE))
             .bind(("status", status));
         if let Some(since) = since {
             query = query
@@ -158,7 +161,8 @@ impl DB {
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Option<DBQuote>> {
         let results: Vec<DBQuote> = self.db
-            .query("SELECT * FROM quotes WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
+            .query("SELECT * FROM $table WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
+            .bind(("table", Self::TABLE))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;
         Ok(results.first().cloned())
@@ -178,7 +182,7 @@ impl quotes::Repository for DB {
         if matches!(new.status, quotes::QuoteStatus::Pending { .. }) {
             return Err(anyhow!("cannot update to pending"));
         }
-        let recordid = surrealdb::RecordId::from_table_key("quotes", new.id);
+        let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, new.id);
         self.db
             .query("UPDATE $rid CONTENT $new WHERE status == $status")
             .bind(("rid", recordid))
