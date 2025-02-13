@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use anyhow::Result as AnyResult;
+use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
@@ -93,33 +94,42 @@ pub type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
 
 // ----- required traits
 #[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait Repository: Send + Sync {
-    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
-    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
-    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
-    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
+    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
+    async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
+    async fn store(
+        &self,
+        keyset: cdk02::MintKeySet,
+        info: cdk::mint::MintKeySetInfo,
+    ) -> AnyResult<()>;
 }
 
+#[async_trait]
 pub trait ActiveRepository: Repository {
-    fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
     #[allow(dead_code)]
-    fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
+    async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
 }
+
 #[cfg(test)]
 mockall::mock! {
     // Structure to mock
     pub ActiveRepository {}
     // First trait to implement on C
+    #[async_trait]
     impl Repository for ActiveRepository {
-    fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
-    fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
-    fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
-    fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
+    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
+    async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
+    async fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
     }
     // Second trait to implement on C
+    #[async_trait]
     impl ActiveRepository for ActiveRepository {
-    fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
-        fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
+        async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+        async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
     }
 }
 

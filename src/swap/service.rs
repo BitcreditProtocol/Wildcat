@@ -2,6 +2,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use anyhow::Result as AnyResult;
+use async_trait::async_trait;
 use cdk::mint::MintKeySetInfo;
 use cdk::nuts::nut00::{BlindSignature, BlindedMessage, Proof};
 use cdk::nuts::nut02::MintKeySet;
@@ -12,11 +13,12 @@ use crate::keys::KeysetID;
 use crate::swap::error::{Error, Result};
 
 #[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait KeysRepository {
-    fn keyset(&self, id: &KeysetID) -> AnyResult<Option<MintKeySet>>;
-    fn info(&self, id: &KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
+    async fn keyset(&self, id: &KeysetID) -> AnyResult<Option<MintKeySet>>;
+    async fn info(&self, id: &KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
     // in case keyset id is inactive, returns the proper replacement for it
-    fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>>;
+    async fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -46,12 +48,13 @@ where
         Ok(result)
     }
 
-    fn verify_proofs_signatures(&self, proofs: &[Proof]) -> Result<bool> {
+    async fn verify_proofs_signatures(&self, proofs: &[Proof]) -> Result<bool> {
         for proof in proofs {
             let id = proof.keyset_id;
             let keyset = self
                 .keys
                 .keyset(&id.into())
+                .await
                 .map_err(Error::KeysetRepository)?
                 .ok_or_else(|| Error::UnknownKeyset(id.into()))?;
             let key = keyset
@@ -66,7 +69,7 @@ where
         Ok(true)
     }
 
-    pub fn swap(
+    pub async fn swap(
         &self,
         inputs: &[Proof],
         outputs: &[BlindedMessage],
@@ -100,7 +103,7 @@ where
         if !proofs_are_unspent {
             return Err(Error::ProofsAlreadySpent);
         }
-        let proofs_signatures_are_ok = self.verify_proofs_signatures(inputs)?;
+        let proofs_signatures_are_ok = self.verify_proofs_signatures(inputs).await?;
         if !proofs_signatures_are_ok {
             return Err(Error::UnknownProofs);
         }
@@ -110,6 +113,7 @@ where
             let o = self
                 .keys
                 .replacing_id(&i.keyset_id.into())
+                .await
                 .map_err(Error::KeysetRepository)?
                 .ok_or(Error::UnknownKeyset(i.keyset_id.into()))?;
             ids.push(o);
@@ -122,6 +126,7 @@ where
         let keys = self
             .keys
             .keyset(first)
+            .await
             .map_err(Error::KeysetRepository)?
             .expect("Keyset from first not found");
         let mut signatures = Vec::new();
@@ -152,8 +157,8 @@ mod tests {
     use crate::utils::tests as utils;
     use mockall::predicate::*;
 
-    #[test]
-    fn test_swap_spent_proofs() {
+    #[tokio::test]
+    async fn test_swap_spent_proofs() {
         let keys = keys::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
@@ -170,14 +175,14 @@ mod tests {
             keys: keyrepo,
             proofs: proofrepo,
         };
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_err());
         let e = r.unwrap_err();
         assert!(matches!(e, Error::ProofsAlreadySpent));
     }
 
-    #[test]
-    fn test_swap_unknown_keysetid() {
+    #[tokio::test]
+    async fn test_swap_unknown_keysetid() {
         let kid = keys::generate_random_keysetid();
         let id = kid.into();
 
@@ -203,14 +208,14 @@ mod tests {
             proofs: proofrepo,
         };
 
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_err());
         let e = r.unwrap_err();
         assert!(matches!(e, Error::UnknownKeyset(_)));
     }
 
-    #[test]
-    fn test_swap_wrong_signatures() {
+    #[tokio::test]
+    async fn test_swap_wrong_signatures() {
         let keys = keys::generate_keyset();
         let mut inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = utils::publics()[0];
@@ -233,14 +238,14 @@ mod tests {
             proofs: proofrepo,
         };
 
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_err());
         let e = r.unwrap_err();
         assert!(matches!(e, Error::UnknownProofs));
     }
 
-    #[test]
-    fn test_swap_unmatched_amounts() {
+    #[tokio::test]
+    async fn test_swap_unmatched_amounts() {
         let keys = keys::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(16)].as_slice())
@@ -262,14 +267,14 @@ mod tests {
             proofs: proofrepo,
         };
 
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_err());
         let e = r.unwrap_err();
         assert!(matches!(e, Error::UnmatchingAmount(_, _)));
     }
 
-    #[test]
-    fn test_swap_split_tokens_ok() {
+    #[tokio::test]
+    async fn test_swap_split_tokens_ok() {
         let keys = keys::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> =
@@ -300,7 +305,7 @@ mod tests {
             proofs: proofrepo,
         };
 
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_ok());
         let bs = r.unwrap();
         assert!(utils::verify_signatures_data(
@@ -309,8 +314,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_swap_merge_tokens_ok() {
+    #[tokio::test]
+    async fn test_swap_merge_tokens_ok() {
         let keys = keys::generate_keyset();
         let inputs =
             utils::generate_proofs(&keys, vec![Amount::from(4), Amount::from(4)].as_slice());
@@ -341,7 +346,7 @@ mod tests {
             proofs: proofrepo,
         };
 
-        let r = swaps.swap(&inputs, &outputs);
+        let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_ok());
         let bs = r.unwrap();
         assert!(utils::verify_signatures_data(
