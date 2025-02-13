@@ -15,7 +15,7 @@ mod utils;
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::surreal::keysets::QuoteKeysDB;
-pub type ProdKeysRepository = persistence::inmemory::KeysetIDEntryMap;
+pub type ProdKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdActiveKeysRepository = persistence::inmemory::KeysetIDEntryMapWithActive;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 
@@ -43,16 +43,24 @@ impl AppController {
     pub async fn new(mint_seed: &[u8], cfg: AppConfig) -> Self {
         let AppConfig { dbs, .. } = cfg;
         let persistence::surreal::DBConfig {
-            quotes, quoteskeys, ..
+            quotes,
+            quotes_keys,
+            maturity_keys,
+            endorsed_keys,
+            ..
         } = dbs;
         let quotes_repository = ProdQuoteRepository::new(quotes)
             .await
             .expect("DB connection to quotes failed");
-        let quote_keys_repository = ProdQuoteKeysRepository::new(quoteskeys)
+        let quote_keys_repository = ProdQuoteKeysRepository::new(quotes_keys)
             .await
             .expect("DB connection to quoteskeys failed");
-        let endorsed_keys_repository = ProdKeysRepository::default();
-        let maturity_keys_repository = ProdKeysRepository::default();
+        let endorsed_keys_repository = ProdKeysRepository::new(endorsed_keys)
+            .await
+            .expect("DB connection to endorsed_keys failed");
+        let maturity_keys_repository = ProdKeysRepository::new(maturity_keys)
+            .await
+            .expect("DB connection to maturity_keys failed");
         let keys_factory = ProdCreditKeysFactory::new(
             mint_seed,
             quote_keys_repository,
