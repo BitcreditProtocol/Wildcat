@@ -11,8 +11,10 @@ log_level = "DEBUG"
 connection = "ws://surrealdb:8800"
 namespace = "test"
 database = "wildcat"
+table = "quotes"
 
 [appcfg.dbs.quoteskeys]
 connection = "ws://surrealdb:8800"
 namespace = "test"
 database = "wildcat"
+table: "quotes_keys"

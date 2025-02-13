@@ -64,12 +64,11 @@ impl From<DBKeys> for keys::KeysetEntry {
 
 #[derive(Debug, Clone)]
 pub struct KeysDB {
-    pub db: Surreal<surrealdb::engine::any::Any>,
+    db: Surreal<surrealdb::engine::any::Any>,
+    table: String,
 }
 
 impl KeysDB {
-    const DB_TABLE: &'static str = "creditkeys";
-
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
@@ -77,18 +76,19 @@ impl KeysDB {
         db_connection.use_db(cfg.database).await?;
         Ok(Self {
             db: db_connection,
+            table: cfg.table,
         })
     }
 
     async fn store(&self, keys: keys::KeysetEntry) -> AnyResult<()> {
         let dbkeys = DBKeys::from(keys);
-        let rid = RecordId::from_table_key(Self::DB_TABLE, dbkeys.info.id.to_string());
+        let rid = RecordId::from_table_key(self.table.clone(), dbkeys.info.id.to_string());
         let _resp: Option<DBKeys> = self.db.insert(rid).content(dbkeys).await?;
         Ok(())
     }
 
     async fn load(&self, kid: &keys::KeysetID) -> AnyResult<Option<keys::KeysetEntry>> {
-        let rid = RecordId::from_table_key(Self::DB_TABLE, kid.to_string());
+        let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
         let response: Option<DBKeys> = self.db.select(rid).await?;
         Ok(response.map(|dbk| dbk.into()))
     }
@@ -97,7 +97,7 @@ impl KeysDB {
 #[async_trait]
 impl keys::Repository for KeysDB {
     async fn info(&self, kid: &keys::KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
-        let rid = RecordId::from_table_key(Self::DB_TABLE, kid.to_string());
+        let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
         let result: Option<cdk::mint::MintKeySetInfo> = self
             .db
             .query("SELECT info FROM $rid")
@@ -135,25 +135,27 @@ struct DBQuoteKeys {
 
 #[derive(Debug, Clone)]
 pub struct QuoteKeysDB {
-    pub db: Surreal<surrealdb::engine::any::Any>,
+    db: Surreal<surrealdb::engine::any::Any>,
+    table: String,
 }
 
 impl QuoteKeysDB {
-    const DB_TABLE: &'static str = "quotekeys";
-
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self { db: db_connection })
+        Ok(Self {
+            db: db_connection,
+            table: cfg.table,
+        })
     }
 }
 
 #[async_trait]
 impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
     async fn load(&self, _kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
-        let res: Option<DBQuoteKeys> = self.db.select((Self::DB_TABLE, qid)).await?;
+        let res: Option<DBQuoteKeys> = self.db.select((self.table.clone(), qid)).await?;
         Ok(res.map(|dbqk| dbqk.keys.into()))
     }
 
@@ -163,8 +165,11 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
         keyset: cdk02::MintKeySet,
         info: cdk::mint::MintKeySetInfo,
     ) -> AnyResult<()> {
-        let dbqk = DBQuoteKeys{qid, keys: DBKeys::from((info, keyset))};
-        let _: Option<DBQuoteKeys> = self.db.insert((Self::DB_TABLE, qid)).content(dbqk).await?;
+        let dbqk = DBQuoteKeys {
+            qid,
+            keys: DBKeys::from((info, keyset)),
+        };
+        let _: Option<DBQuoteKeys> = self.db.insert((self.table.clone(), qid)).content(dbqk).await?;
         Ok(())
     }
 }
