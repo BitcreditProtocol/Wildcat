@@ -13,8 +13,20 @@ namespace = "test"
 database = "wildcat"
 table = "quotes"
 
-[appcfg.dbs.quoteskeys]
+[appcfg.dbs.quotes_keys]
 connection = "ws://surrealdb:8800"
 namespace = "test"
 database = "wildcat"
-table: "quotes_keys"
+table = "quotes_keys"
+
+[appcfg.dbs.maturity_keys]
+connection = "ws://surrealdb:8800"
+namespace = "test"
+database = "wildcat"
+table = "maturity_keys"
+
+[appcfg.dbs.endorsed_keys]
+connection = "ws://surrealdb:8800"
+namespace = "test"
+database = "wildcat"
+table = "endorsed_keys"

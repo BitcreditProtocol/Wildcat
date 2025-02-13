@@ -148,7 +148,7 @@ impl DB {
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
             .db
-            .query("SELECT * FROM $table WHERE status == $status ORDER BY submitted DESC")
+            .query("SELECT * FROM type::table($table) WHERE status == $status ORDER BY submitted DESC")
             .bind(("table", Self::TABLE))
             .bind(("status", status));
         if let Some(since) = since {
@@ -161,7 +161,7 @@ impl DB {
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Option<DBQuote>> {
         let results: Vec<DBQuote> = self.db
-            .query("SELECT * FROM $table WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
+            .query("SELECT * FROM type::table($table) WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
             .bind(("table", Self::TABLE))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;

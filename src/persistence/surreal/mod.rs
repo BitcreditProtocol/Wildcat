@@ -16,5 +16,7 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct DBConfig {
     pub quotes: ConnectionConfig,
-    pub quoteskeys: ConnectionConfig,
+    pub quotes_keys: ConnectionConfig,
+    pub endorsed_keys: ConnectionConfig,
+    pub maturity_keys: ConnectionConfig,
 }
