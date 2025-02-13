@@ -14,7 +14,7 @@ where
     KR: swap::KeysRepository,
     PR: swap::ProofRepository,
 {
-    let signatures = ctrl.swap(&request.inputs, &request.outputs)?;
+    let signatures = ctrl.swap(&request.inputs, &request.outputs).await?;
     let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }
