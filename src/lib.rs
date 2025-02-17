@@ -16,8 +16,9 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::surreal::keysets::QuoteKeysDB;
 pub type ProdKeysRepository = persistence::surreal::keysets::KeysDB;
-pub type ProdActiveKeysRepository = persistence::inmemory::KeysetIDEntryMapWithActive;
+pub type ProdActiveKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
+pub type ProdProofRepository = persistence::surreal::proofs::DB;
 
 pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
 pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
@@ -25,7 +26,6 @@ pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, Pro
 
 pub type ProdCreditKeysRepository =
     crate::credit::keys::SwapRepository<ProdKeysRepository, ProdActiveKeysRepository>;
-pub type ProdProofRepository = persistence::inmemory::ProofMap;
 pub type ProdSwapService = swap::Service<ProdCreditKeysRepository, ProdProofRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -47,6 +47,8 @@ impl AppController {
             quotes_keys,
             maturity_keys,
             endorsed_keys,
+            debit_keys,
+            proofs,
             ..
         } = dbs;
         let quotes_repository = ProdQuoteRepository::new(quotes)
@@ -61,6 +63,13 @@ impl AppController {
         let maturity_keys_repository = ProdKeysRepository::new(maturity_keys)
             .await
             .expect("DB connection to maturity_keys failed");
+        let debit_keys_repository = ProdActiveKeysRepository::new(debit_keys)
+            .await
+            .expect("DB connection to debit_keys failed");
+        let proofs_repo = ProdProofRepository::new(proofs)
+            .await
+            .expect("DB connection to proofs failed");
+
         let keys_factory = ProdCreditKeysFactory::new(
             mint_seed,
             quote_keys_repository,
@@ -75,13 +84,11 @@ impl AppController {
             quotes: quotes_repository,
         };
 
-        let debit_keys_repository = ProdActiveKeysRepository::default();
         let credit_keys_for_swaps = ProdCreditKeysRepository {
             debit_keys: debit_keys_repository,
             endorsed_keys: endorsed_keys_repository,
             maturity_keys: maturity_keys_repository,
         };
-        let proofs_repo = ProdProofRepository::default();
         let swaps = ProdSwapService {
             keys: credit_keys_for_swaps,
             proofs: proofs_repo,
