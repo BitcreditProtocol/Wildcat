@@ -24,7 +24,7 @@ anyhow = {version = "1.0"}
 async-trait = {version = "0.1"}
 
 strum = {version = "0.27", features = ["derive"]}
-surrealdb = {version = "2.1"}
+surrealdb = {version = "2.2", features = ["kv-mem"]}
 
 cdk = {version = "0.6"}
 

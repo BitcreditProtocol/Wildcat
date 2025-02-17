@@ -155,8 +155,9 @@ pub struct ProofMap {
     proofs: Arc<RwLock<HashMap<cdk01::PublicKey, cdk07::ProofState>>>,
 }
 
+#[async_trait()]
 impl swap::ProofRepository for ProofMap {
-    fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
+    async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
         let mut writer = self.proofs.write().unwrap();
         for token in tokens {
             let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
@@ -170,8 +171,8 @@ impl swap::ProofRepository for ProofMap {
         Ok(())
     }
 
-    fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
-        let mut states: Vec<cdk07::State> = Vec::new();
+    async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
+       let mut states: Vec<cdk07::State> = Vec::new();
         let reader = self.proofs.read().unwrap();
         for token in tokens {
             let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
