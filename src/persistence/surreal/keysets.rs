@@ -130,7 +130,7 @@ impl keys::Repository for KeysDB {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBQuoteKeys {
     qid: surrealdb::Uuid,
-    keys: DBKeys,
+    data: DBKeys,
 }
 
 #[derive(Debug, Clone)]
@@ -156,7 +156,7 @@ impl QuoteKeysDB {
 impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
     async fn load(&self, _kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
         let res: Option<DBQuoteKeys> = self.db.select((self.table.clone(), qid)).await?;
-        Ok(res.map(|dbqk| dbqk.keys.into()))
+        Ok(res.map(|dbqk| dbqk.data.into()))
     }
 
     async fn store(
@@ -167,9 +167,13 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
     ) -> AnyResult<()> {
         let dbqk = DBQuoteKeys {
             qid,
-            keys: DBKeys::from((info, keyset)),
+            data: DBKeys::from((info, keyset)),
         };
-        let _: Option<DBQuoteKeys> = self.db.insert((self.table.clone(), qid)).content(dbqk).await?;
+        let _: Option<DBQuoteKeys> = self
+            .db
+            .insert((self.table.clone(), qid))
+            .content(dbqk)
+            .await?;
         Ok(())
     }
 }

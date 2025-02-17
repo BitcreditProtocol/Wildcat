@@ -20,4 +20,6 @@ pub struct DBConfig {
     pub quotes_keys: ConnectionConfig,
     pub endorsed_keys: ConnectionConfig,
     pub maturity_keys: ConnectionConfig,
+    pub debit_keys: ConnectionConfig,
+    pub proofs: ConnectionConfig,
 }
