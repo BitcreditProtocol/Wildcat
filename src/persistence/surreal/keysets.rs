@@ -173,3 +173,29 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
         Ok(())
     }
 }
+
+// ----- keys repository with active keyset reference
+
+#[async_trait]
+impl keys::ActiveRepository for KeysDB {
+    async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+        let result: Option<cdk::mint::MintKeySetInfo> = self
+            .db
+            .query("SELECT info FROM type::table($table) WHERE info.active is true ORDER BY info.valid_from DESC")
+            .bind(("table", self.table.clone()))
+            .await?
+            .take(0)?;
+        Ok(result)
+    }
+    async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>> {
+        let result: Option<DBKeys> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE info.active is true ORDER BY info.valid_from DESC")
+            .bind(("table", self.table.clone()))
+            .await?
+            .take(0)?;
+        Ok(result
+            .map(keys::KeysetEntry::from)
+            .map(|(_, keyset)| keyset))
+    }
+}
