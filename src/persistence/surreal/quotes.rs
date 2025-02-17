@@ -9,9 +9,8 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::quotes;
+use crate::persistence::surreal::ConnectionConfig;
 use crate::TStamp;
-
-use super::ConnectionConfig;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
 enum DBQuoteStatus {
@@ -116,27 +115,29 @@ impl TryFrom<DBQuote> for quotes::Quote {
 
 #[derive(Debug, Clone)]
 pub struct DB {
-    pub db: Surreal<surrealdb::engine::any::Any>,
+    db: Surreal<surrealdb::engine::any::Any>,
+    table: String,
 }
 
 impl DB {
-    const TABLE: &'static str = "quotes";
-
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self { db: db_connection })
+        Ok(Self {
+            db: db_connection,
+            table: cfg.table,
+        })
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBQuote>> {
-        self.db.select((Self::TABLE, qid)).await
+        self.db.select((&self.table, qid)).await
     }
 
     async fn store(&self, quote: DBQuote) -> SurrealResult<Option<DBQuote>> {
         self.db
-            .insert((Self::TABLE, quote.quote_id))
+            .insert((&self.table, quote.quote_id))
             .content(quote)
             .await
     }
@@ -148,8 +149,10 @@ impl DB {
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
             .db
-            .query("SELECT * FROM type::table($table) WHERE status == $status ORDER BY submitted DESC")
-            .bind(("table", Self::TABLE))
+            .query(
+                "SELECT * FROM type::table($table) WHERE status == $status ORDER BY submitted DESC",
+            )
+            .bind(("table", self.table.clone()))
             .bind(("status", status));
         if let Some(since) = since {
             query = query
@@ -162,7 +165,7 @@ impl DB {
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Option<DBQuote>> {
         let results: Vec<DBQuote> = self.db
             .query("SELECT * FROM type::table($table) WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
-            .bind(("table", Self::TABLE))
+            .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;
         Ok(results.first().cloned())
@@ -182,7 +185,7 @@ impl quotes::Repository for DB {
         if matches!(new.status, quotes::QuoteStatus::Pending { .. }) {
             return Err(anyhow!("cannot update to pending"));
         }
-        let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, new.id);
+        let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
         self.db
             .query("UPDATE $rid CONTENT $new WHERE status == $status")
             .bind(("rid", recordid))
