@@ -4,8 +4,8 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use cdk::mint::MintKeySetInfo;
-use cdk::nuts::nut00::{BlindSignature, BlindedMessage, Proof};
-use cdk::nuts::nut02::MintKeySet;
+use cdk::nuts::nut00 as cdk00;
+use cdk::nuts::nut02 as cdk02;
 use cdk::nuts::nut07 as cdk07;
 use cdk::Amount;
 // ----- local imports
@@ -15,16 +15,17 @@ use crate::swap::error::{Error, Result};
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysRepository {
-    async fn keyset(&self, id: &KeysetID) -> AnyResult<Option<MintKeySet>>;
+    async fn keyset(&self, id: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
     async fn info(&self, id: &KeysetID) -> AnyResult<Option<MintKeySetInfo>>;
     // in case keyset id is inactive, returns the proper replacement for it
     async fn replacing_id(&self, id: &KeysetID) -> AnyResult<Option<KeysetID>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait ProofRepository {
-    fn spend(&self, tokens: &[Proof]) -> AnyResult<()>;
-    fn get_state(&self, tokens: &[Proof]) -> AnyResult<Vec<cdk07::State>>;
+    async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()>;
+    async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>>;
 }
 
 #[derive(Clone)]
@@ -38,17 +39,18 @@ where
     KeysRepo: KeysRepository,
     ProofRepo: ProofRepository,
 {
-    fn verify_proofs_are_unspent(&self, proofs: &[Proof]) -> Result<bool> {
+    async fn verify_proofs_are_unspent(&self, proofs: &[cdk00::Proof]) -> Result<bool> {
         let result = self
             .proofs
             .get_state(proofs)
+            .await
             .map_err(Error::ProofRepository)?
             .into_iter()
             .all(|state| state == cdk07::State::Unspent);
         Ok(result)
     }
 
-    async fn verify_proofs_signatures(&self, proofs: &[Proof]) -> Result<bool> {
+    async fn verify_proofs_signatures(&self, proofs: &[cdk00::Proof]) -> Result<bool> {
         for proof in proofs {
             let id = proof.keyset_id;
             let keyset = self
@@ -71,9 +73,9 @@ where
 
     pub async fn swap(
         &self,
-        inputs: &[Proof],
-        outputs: &[BlindedMessage],
-    ) -> Result<Vec<BlindSignature>> {
+        inputs: &[cdk00::Proof],
+        outputs: &[cdk00::BlindedMessage],
+    ) -> Result<Vec<cdk00::BlindSignature>> {
         if inputs.is_empty() {
             return Err(Error::ZeroAmount);
         }
@@ -99,7 +101,7 @@ where
             return Err(Error::UnmatchingAmount(total_input, total_output));
         }
         // second step: costly verifications
-        let proofs_are_unspent = self.verify_proofs_are_unspent(inputs)?;
+        let proofs_are_unspent = self.verify_proofs_are_unspent(inputs).await?;
         if !proofs_are_unspent {
             return Err(Error::ProofsAlreadySpent);
         }
@@ -136,7 +138,7 @@ where
                 .get(&output.amount)
                 .ok_or(Error::UnknownAmountForKeyset(*first, output.amount))?;
             let c = cdk::dhke::sign_message(&keypair.secret_key, &output.blinded_secret)?;
-            let signature = BlindSignature::new(
+            let signature = cdk00::BlindSignature::new(
                 output.amount,
                 c,
                 keys.id,
@@ -145,7 +147,10 @@ where
             )?;
             signatures.push(signature);
         }
-        self.proofs.spend(inputs).map_err(Error::ProofRepository)?;
+        self.proofs
+            .spend(inputs)
+            .await
+            .map_err(Error::ProofRepository)?;
         Ok(signatures)
     }
 }

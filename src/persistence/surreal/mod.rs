@@ -3,6 +3,7 @@
 // ----- local modules
 pub mod keysets;
 pub mod quotes;
+pub mod proofs;
 // ----- local imports
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
