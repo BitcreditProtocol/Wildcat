@@ -3,19 +3,16 @@
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
-use bitcoin::hashes::sha256::Hash as Sha256;
-use bitcoin::hashes::Hash;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
 use thiserror::Error;
 use uuid::Uuid;
+use bcr_wdc_keys as keys;
+use bcr_wdc_keys::KeysetID;
 // ----- local modules
 // ----- local imports
-use super::quotes;
 use crate::credit::quotes::KeyFactory;
-use crate::keys;
-use crate::keys::{generate_path_index_from_keysetid, KeysetID};
 use crate::swap;
 use crate::TStamp;
 
@@ -28,84 +25,11 @@ pub enum Error {
     Repository(#[from] AnyError),
 }
 
-pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
-    let input = format!("{}{}", bill, node);
-    let digest = Sha256::hash(input.as_bytes());
-    KeysetID {
-        version: cdk02::KeySetVersion::Version00,
-        id: digest.as_byte_array()[0..KeysetID::BYTELEN]
-            .try_into()
-            .expect("cdk::KeysetID BYTELEN == 7"),
-    }
-}
-
-// inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
-// m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
-// 129372 is utf-8 for 🥜
-// 129534 is utf-8 for 🧾
-// <keysetID_idx> check generate_path_index_from_keysetid
-// <quoteID_idx> check generate_path_idx_from_quoteid
-fn generate_quote_keyset_path(kid: KeysetID, quote: uuid::Uuid) -> btc32::DerivationPath {
-    let keyset_child = generate_path_index_from_keysetid(kid);
-    let quote_child = quotes::generate_path_idx_from_quoteid(quote);
-    let path = [
-        btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
-        btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
-        keyset_child,
-        quote_child,
-    ];
-    btc32::DerivationPath::from(path.as_slice())
-}
-
-/// Generates a keyset id from a maturity date and a rotation index
-/// id[0..4] = maturity date in days from unix epoch
-/// id[4..7] = rotation index in big endian
-fn generate_keyset_id_from_maturity_date(maturity_date: TStamp, rotation_idx: u32) -> KeysetID {
-    let idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
-    let mut kid = KeysetID {
-        version: cdk02::KeySetVersion::Version00,
-        id: Default::default(),
-    };
-    kid.id[3..7].copy_from_slice(&rotation_idx.to_be_bytes());
-    kid.id[0..4].copy_from_slice(&idx.to_be_bytes());
-    kid
-}
-
-#[allow(dead_code)]
-fn extract_maturity_and_rotatingidx_from_id(id: &KeysetID) -> (TStamp, u32) {
-    let mut u32_buf: [u8; 4] = Default::default();
-    u32_buf.copy_from_slice(&id.id[0..4]);
-    let maturity = TStamp::from_timestamp(u32::from_be_bytes(u32_buf) as i64, 0)
-        .expect("datetime conversion from u64");
-
-    u32_buf = Default::default();
-    u32_buf[1..].copy_from_slice(&id.id[4..7]);
-    let idx = u32::from_be_bytes(u32_buf);
-    (maturity, idx)
-}
-
-// inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
-// m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
-// 129372 is utf-8 for 🥜
-// 129534 is utf-8 for 🧾
-// <maturity_idx> days from unix epoch
-fn generate_maturity_keyset_path(maturity_date: TStamp) -> btc32::DerivationPath {
-    let maturity_idx = (maturity_date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
-    let maturity_child = btc32::ChildNumber::from_hardened_idx(maturity_idx)
-        .expect("maturity date is a valid index");
-    let path = [
-        btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
-        btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
-        maturity_child,
-    ];
-    btc32::DerivationPath::from(path.as_slice())
-}
-
 // ---------- required traits
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait QuoteBasedRepository: Send + Sync {
-    async fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>>;
+    async fn load(&self, kid: &KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>>;
     async fn store(
         &self,
         qid: Uuid,
@@ -151,7 +75,7 @@ where
         quote: uuid::Uuid,
         bill_maturity_date: TStamp,
     ) -> AnyResult<cdk02::MintKeySet> {
-        let path = generate_quote_keyset_path(keysetid, quote);
+        let path = keys::generate_keyset_path(keysetid, Some(quote));
         let keys = cdk02::MintKeySet::generate_from_xpriv(
             &self.ctx,
             self.xpriv,
@@ -179,12 +103,13 @@ where
         };
         self.quote_keys.store(quote, set.clone(), info).await?;
 
-        let kid = generate_keyset_id_from_maturity_date(bill_maturity_date, 0);
+        let kid = keys::generate_keyset_id_from_date(bill_maturity_date, 0);
         if self.maturing_keys.info(&kid).await?.is_some() {
             return Ok(set);
         }
 
-        let path = generate_maturity_keyset_path(bill_maturity_date);
+        let kid = keys::generate_keyset_id_from_date(bill_maturity_date, 0);
+        let path = keys::generate_keyset_path(kid, None);
         // adding <rotate_idx> starts from zero
         let rotate_child =
             btc32::ChildNumber::from_hardened_idx(0).expect("rotate index 0 is valid");
@@ -232,13 +157,13 @@ where
         maturity_date: TStamp,
         mut rotation_idx: u32,
     ) -> Result<Option<KeysetID>> {
-        let mut kid: KeysetID = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx);
+        let mut kid = keys::generate_keyset_id_from_date(maturity_date, rotation_idx);
         while let Some(info) = self.maturity_keys.info(&kid).await? {
             if info.active {
                 return Ok(Some(kid));
             }
             rotation_idx += 1;
-            kid = generate_keyset_id_from_maturity_date(maturity_date, rotation_idx)
+            kid = keys::generate_keyset_id_from_date(maturity_date, rotation_idx)
         }
         Ok(None)
     }
@@ -316,8 +241,7 @@ where
 mod tests {
 
     use super::*;
-    use crate::keys;
-    use crate::keys::tests as testkeys;
+    use crate::keys::test_utils as keys_test;
     use crate::swap::KeysRepository;
     use mockall::predicate::*;
     use std::str::FromStr;
@@ -332,7 +256,7 @@ mod tests {
             .unwrap()
             .to_utc();
 
-        let mut maturitykeys_repo = keys::MockRepository::new();
+        let mut maturitykeys_repo = keys_test::MockRepository::new();
         maturitykeys_repo.expect_info().returning(|_| Ok(None));
         maturitykeys_repo.expect_store().returning(|_, _| Ok(()));
         let mut quotekeys_repo = MockQuoteBasedRepository::new();
@@ -361,11 +285,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_info_debit_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let mut debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let mut debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let info = cdk::mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
@@ -404,11 +328,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_info_maturing_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let info = cdk::mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
@@ -443,11 +367,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_info_quote_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let info = cdk::mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
@@ -478,11 +402,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_keyset_debit_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let mut debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let mut debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let set = cdk02::MintKeySet {
             id: kid.into(),
             keys: cdk01::MintKeys::new(Default::default()),
@@ -515,11 +439,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_keyset_maturing_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let set = cdk02::MintKeySet {
             id: kid.into(),
             keys: cdk01::MintKeys::new(Default::default()),
@@ -548,11 +472,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_keyset_quote_key() {
-        let mut quote_repo = keys::MockRepository::new();
-        let maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let set = cdk02::MintKeySet {
             id: kid.into(),
             keys: cdk01::MintKeys::new(Default::default()),
@@ -577,12 +501,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_replacing_keys_debit() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let mut debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let mut debit_repo = keys_test::MockRepository::new();
 
-        let in_kid = testkeys::generate_random_keysetid();
-        let out_kid = testkeys::generate_random_keysetid();
+        let in_kid = keys_test::generate_random_keysetid();
+        let out_kid = keys_test::generate_random_keysetid();
 
         quote_repo
             .expect_info()
@@ -618,11 +542,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_replacing_keys_maturing_active() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let kid = testkeys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
 
         quote_repo
             .expect_info()
@@ -657,11 +581,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_replacing_keys_maturing_inactive() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let in_kid = testkeys::generate_random_keysetid();
+        let in_kid = keys_test::generate_random_keysetid();
         let maturity_date =
             chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
                 .unwrap()
@@ -687,7 +611,7 @@ mod tests {
                     valid_to: Some(maturity_date.timestamp() as u64),
                 }))
             });
-        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 1);
+        let maturity_kid = keys::generate_keyset_id_from_date(maturity_date, 1);
         maturing_repo
             .expect_info()
             .with(eq(maturity_kid))
@@ -717,11 +641,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_replacing_keys_maturing_inactive_to_debit() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let mut debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let mut debit_repo = keys_test::MockRepository::new();
 
-        let in_kid = testkeys::generate_random_keysetid();
+        let in_kid = keys_test::generate_random_keysetid();
         let maturity_date =
             chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
                 .unwrap()
@@ -747,12 +671,12 @@ mod tests {
                     valid_to: Some(maturity_date.timestamp() as u64),
                 }))
             });
-        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 1);
+        let maturity_kid = keys::generate_keyset_id_from_date(maturity_date, 1);
         maturing_repo
             .expect_info()
             .with(eq(maturity_kid))
             .returning(move |_| Ok(None));
-        let debit_kid = testkeys::generate_random_keysetid();
+        let debit_kid = keys_test::generate_random_keysetid();
         debit_repo.expect_info_active().returning(move || {
             Ok(Some(cdk::mint::MintKeySetInfo {
                 active: false,
@@ -779,11 +703,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_swaprepository_replacing_keys_quote_to_maturing() {
-        let mut quote_repo = keys::MockRepository::new();
-        let mut maturing_repo = keys::MockRepository::new();
-        let debit_repo = keys::MockActiveRepository::new();
+        let mut quote_repo = keys_test::MockRepository::new();
+        let mut maturing_repo = keys_test::MockRepository::new();
+        let debit_repo = keys_test::MockRepository::new();
 
-        let in_kid = testkeys::generate_random_keysetid();
+        let in_kid = keys_test::generate_random_keysetid();
         let maturity_date =
             chrono::NaiveDateTime::parse_from_str("2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
                 .unwrap()
@@ -805,7 +729,7 @@ mod tests {
                     valid_to: Some(maturity_date.timestamp() as u64),
                 }))
             });
-        let maturity_kid = generate_keyset_id_from_maturity_date(maturity_date, 0);
+        let maturity_kid = keys::generate_keyset_id_from_date(maturity_date, 0);
         maturing_repo
             .expect_info()
             .with(eq(maturity_kid))

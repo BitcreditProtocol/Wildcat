@@ -3,10 +3,10 @@ use axum::extract::FromRef;
 // ----- extra library imports
 use axum::routing::{get, post};
 use axum::Router;
+use bcr_wdc_keys as keys;
 // ----- local modules
 //mod credit;
 mod credit;
-mod keys;
 mod persistence;
 mod swap;
 mod utils;

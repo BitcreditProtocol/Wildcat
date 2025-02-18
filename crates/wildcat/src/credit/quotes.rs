@@ -2,9 +2,8 @@
 // ----- extra library imports
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
-use bitcoin::bip32 as btc32;
-use bitcoin::hashes::sha256::Hash as Sha256;
-use bitcoin::hashes::Hash;
+use bcr_wdc_keys as keys;
+use bcr_wdc_keys::KeysetID;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -12,8 +11,7 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::keys::generate_keyset_id_from_bill;
-use crate::keys::{sign_with_keys, KeysetID, Result as KeyResult};
+use crate::keys::{sign_with_keys, Result as KeyResult};
 use crate::utils;
 use crate::TStamp;
 
@@ -35,14 +33,6 @@ pub enum Error {
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
     InvalidAmount(rust_decimal::Decimal),
-}
-
-pub fn generate_path_idx_from_quoteid(quoteid: Uuid) -> btc32::ChildNumber {
-    const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
-    let sha_qid = Sha256::hash(quoteid.as_bytes());
-    let u_qid = u32::from_be_bytes(sha_qid[0..4].try_into().expect("a u32 is 4 bytes"));
-    let idx_qid = std::cmp::min(u_qid, MAX_INDEX);
-    btc32::ChildNumber::from_hardened_idx(idx_qid).expect("keyset is a valid index")
 }
 
 #[derive(Debug, Clone)]
@@ -231,7 +221,7 @@ where
 
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
-        let kid = generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
+        let kid = keys::credit::generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };

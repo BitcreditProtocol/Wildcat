@@ -1,0 +1,21 @@
+[package]
+name = "bcr-wdc-keys"
+version = "0.1.0"
+edition = "2021"
+
+
+[features]
+test-utils = ["mockall", "once_cell", "rand"]
+
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+bitcoin.workspace = true
+cdk.workspace = true
+chrono.workspace = true
+mockall = { workspace = true, optional = true}
+once_cell = {version = "1.20", optional = true}
+rand = {workspace = true, optional  = true}
+thiserror.workspace = true
+uuid.workspace = true

@@ -158,13 +158,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::tests as keys;
+    use crate::keys::test_utils as keys_test;
     use crate::utils::tests as utils;
     use mockall::predicate::*;
 
     #[tokio::test]
     async fn test_swap_spent_proofs() {
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
             .into_iter()
@@ -188,10 +188,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_unknown_keysetid() {
-        let kid = keys::generate_random_keysetid();
+        let kid = keys_test::generate_random_keysetid();
         let id = kid.into();
 
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let mut inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().keyset_id = id;
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
@@ -221,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_wrong_signatures() {
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let mut inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = utils::publics()[0];
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
@@ -251,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_unmatched_amounts() {
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(16)].as_slice())
             .into_iter()
@@ -280,7 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_split_tokens_ok() {
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let inputs = utils::generate_proofs(&keys, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> =
             utils::generate_blinds(&keys, vec![Amount::from(4), Amount::from(4)].as_slice())
@@ -321,7 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_merge_tokens_ok() {
-        let keys = keys::generate_keyset();
+        let keys = keys_test::generate_keyset();
         let inputs =
             utils::generate_proofs(&keys, vec![Amount::from(4), Amount::from(4)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keys, vec![Amount::from(8)].as_slice())
