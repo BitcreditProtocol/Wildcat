@@ -8,6 +8,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+    volumes:
+      - ${PWD}/wildcat.toml:/wildcat/wildcat.toml
 
   surrealdb:
     image: surrealdb/surrealdb:latest
@@ -19,7 +21,7 @@ services:
       - rocksdb:/data/database.db
     user: ${UID}:${GID}
     ports:
-      - "8800:8000"
+      - "8000:8000"
     healthcheck:
       test: [ "CMD", "/surreal", "is-ready" ]
       interval: 5s

@@ -1,5 +1,4 @@
 
-
 bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
@@ -8,37 +7,37 @@ log_level = "DEBUG"
 [appcfg.dbs]
 
 [appcfg.dbs.quotes]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "quotes"
 
 [appcfg.dbs.quotes_keys]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "quotes_keys"
 
 [appcfg.dbs.maturity_keys]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "maturity_keys"
 
 [appcfg.dbs.endorsed_keys]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "endorsed_keys"
 
 [appcfg.dbs.debit_keys]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "debit_keys"
 
 [appcfg.dbs.proofs]
-connection = "ws://surrealdb:8800"
+connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "wildcat"
 table = "proofs"
