@@ -10,18 +10,19 @@ async-trait.workspace = true
 axum.workspace = true
 bitcoin.workspace = true
 cdk.workspace = true
-chrono = {version = "0.4", features = ["serde"]}
+chrono.workspace = true
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
 hex = {version = "0.4"}
 log.workspace = true
-rust_decimal = {version = "1.36"}
+rust_decimal.workspace = true
 serde.workspace = true
 strum = {version = "0.27", features = ["derive"]}
 surrealdb.workspace = true
 thiserror = {version = "2.0"}
 tokio.workspace = true
 uuid.workspace = true
+bcr-web-api = {path = "../bcr-web-api"}
 
 
 [dev-dependencies]

@@ -1,14 +1,15 @@
 [workspace]
     
-members = [ "crates/wildcat"]
+members = [ "crates/bcr-web-api", "crates/wildcat"]
 
 [workspace.dependencies]
-
 async-trait = {version = "0.1"}
 axum = {version = "0.6", features = ["macros"]}
 bitcoin = {version = "0.32"}
 cdk = {version = "0.6"}
+chrono = {version = "0.4", features = ["serde"]}
 log = {version = "0.4", features = ["serde"]}
+rust_decimal = {version = "1.36"}
 serde = {version = "1.0", features = ["derive"]}
 surrealdb = {version = "2.2", features = ["kv-mem"]}
 tokio = {version = "1.4", features = ["macros", "rt-multi-thread"]}
