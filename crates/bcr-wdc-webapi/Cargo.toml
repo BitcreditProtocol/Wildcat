@@ -1,5 +1,5 @@
 [package]
-name = "bcr-web-api"
+name = "bcr-wdc-webapi"
 version = "0.1.0"
 edition = "2021"
 

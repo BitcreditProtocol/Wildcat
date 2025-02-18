@@ -5,11 +5,13 @@ edition = "2021"
 
 
 [dependencies]
+
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-bitcoin.workspace = true
 bcr-wdc-keys = { path = "../bcr-wdc-keys" }
+bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
+bitcoin.workspace = true
 cdk.workspace = true
 chrono.workspace = true
 config = {version = "0.15"}
@@ -23,8 +25,6 @@ surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
-bcr-web-api = {path = "../bcr-web-api"}
-
 
 [dev-dependencies]
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }

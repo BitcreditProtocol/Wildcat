@@ -2,8 +2,8 @@
 // ----- extra library imports
 // ----- local modules
 pub mod keysets;
-pub mod quotes;
 pub mod proofs;
+pub mod quotes;
 // ----- local imports
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]

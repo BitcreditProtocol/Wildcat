@@ -46,7 +46,7 @@ impl swap::ProofRepository for DB {
         for tk in tokens {
             let y = cdk::dhke::hash_to_curve(&tk.secret.to_bytes())?;
             let rid = RecordId::from_table_key(&self.table, y.to_string());
-            entries.push(DBProof{
+            entries.push(DBProof {
                 id: rid,
                 y,
                 state: cdk07::State::Spent,
@@ -57,7 +57,7 @@ impl swap::ProofRepository for DB {
     }
 
     async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
-        let rids:Vec<_> = tokens
+        let rids: Vec<_> = tokens
             .iter()
             .map(|tk| {
                 let y = cdk::dhke::hash_to_curve(&tk.secret.to_bytes())?;
