@@ -1,35 +1,15 @@
-[package]
-name = "wildcat"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+    
+members = [ "crates/wildcat"]
 
+[workspace.dependencies]
 
-[dependencies]
-tokio = {version = "1.4", features = ["macros", "rt-multi-thread"]}
-axum = {version = "0.6", features = ["macros"]}
-reqwest = {version = "0.12"}
-
-log = {version = "0.4", features = ["serde"]}
-env_logger = {version = "0.11"}
-serde = {version = "1.0", features = ["derive"]}
-uuid = {version = "1.11", features = ["serde", "v4", "v5"]}
-rust_decimal = {version = "1.36"}
-chrono = {version = "0.4", features = ["serde"]}
-futures-util = {version = "0.3"}
-thiserror = {version = "2.0"}
-config = {version = "0.15"}
-bitcoin = {version = "0.32"}
-hex = {version = "0.4"}
-anyhow = {version = "1.0"}
 async-trait = {version = "0.1"}
-
-strum = {version = "0.27", features = ["derive"]}
-surrealdb = {version = "2.2", features = ["kv-mem"]}
-
+axum = {version = "0.6", features = ["macros"]}
+bitcoin = {version = "0.32"}
 cdk = {version = "0.6"}
-
-[dev-dependencies]
-bip39 = {version = "2.1"}
-mockall = {version = "0.13"}
-rand = {version = "0.8"}
-once_cell = {version = "1.20"}
+log = {version = "0.4", features = ["serde"]}
+serde = {version = "1.0", features = ["derive"]}
+surrealdb = {version = "2.2", features = ["kv-mem"]}
+tokio = {version = "1.4", features = ["macros", "rt-multi-thread"]}
+uuid = {version = "1.11", features = ["serde", "v4"]}
