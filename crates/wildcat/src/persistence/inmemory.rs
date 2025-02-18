@@ -172,7 +172,7 @@ impl swap::ProofRepository for ProofMap {
     }
 
     async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
-       let mut states: Vec<cdk07::State> = Vec::new();
+        let mut states: Vec<cdk07::State> = Vec::new();
         let reader = self.proofs.read().unwrap();
         for token in tokens {
             let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;

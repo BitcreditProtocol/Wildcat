@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
-use bcr_web_api::quotes as web_quotes;
+use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::credit::error::Result;
 use crate::credit::quotes;

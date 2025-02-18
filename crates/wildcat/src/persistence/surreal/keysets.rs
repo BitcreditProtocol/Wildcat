@@ -14,8 +14,8 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::keys as creditkeys;
-use crate::persistence::surreal::ConnectionConfig;
 use crate::keys;
+use crate::persistence::surreal::ConnectionConfig;
 
 // ----- keys repository
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

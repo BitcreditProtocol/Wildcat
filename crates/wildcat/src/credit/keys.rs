@@ -2,14 +2,14 @@
 // ----- extra library imports
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
+use bcr_wdc_keys as keys;
+use bcr_wdc_keys::KeysetID;
 use bitcoin::bip32 as btc32;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut01 as cdk01;
 use cdk::nuts::nut02 as cdk02;
 use thiserror::Error;
 use uuid::Uuid;
-use bcr_wdc_keys as keys;
-use bcr_wdc_keys::KeysetID;
 // ----- local modules
 // ----- local imports
 use crate::credit::quotes::KeyFactory;

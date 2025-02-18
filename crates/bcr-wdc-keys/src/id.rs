@@ -50,4 +50,3 @@ impl std::fmt::Display for KeysetID {
         cdk02::Id::from(*self).fmt(f)
     }
 }
-
