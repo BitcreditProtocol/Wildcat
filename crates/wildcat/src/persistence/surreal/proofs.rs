@@ -88,7 +88,7 @@ impl swap::ProofRepository for DB {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::tests as keys;
+    use crate::keys::test_utils as keys_test;
     use crate::swap::ProofRepository;
     use crate::utils::tests as utils;
 
@@ -106,7 +106,7 @@ mod tests {
     #[tokio::test]
     async fn test_spend() {
         let db = init_mem_db().await;
-        let mintkeys = &keys::generate_keyset();
+        let mintkeys = &keys_test::generate_keyset();
         let proofs = utils::generate_proofs(
             mintkeys,
             &[cdk::Amount::from(16_u64), cdk::Amount::from(8_u64)],
@@ -130,7 +130,7 @@ mod tests {
     async fn test_get_state() {
         let db = init_mem_db().await;
 
-        let mintkeys = &keys::generate_keyset();
+        let mintkeys = &keys_test::generate_keyset();
         let proofs = utils::generate_proofs(
             mintkeys,
             &[

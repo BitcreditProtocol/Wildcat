@@ -5,10 +5,11 @@ edition = "2021"
 
 
 [dependencies]
-anyhow = {version = "1.0"}
+anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 bitcoin.workspace = true
+bcr-wdc-keys = { path = "../bcr-wdc-keys" }
 cdk.workspace = true
 chrono.workspace = true
 config = {version = "0.15"}
@@ -19,14 +20,14 @@ rust_decimal.workspace = true
 serde.workspace = true
 strum = {version = "0.27", features = ["derive"]}
 surrealdb.workspace = true
-thiserror = {version = "2.0"}
+thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 bcr-web-api = {path = "../bcr-web-api"}
 
 
 [dev-dependencies]
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
 bip39 = {version = "2.1"}
-mockall = {version = "0.13"}
-once_cell = {version = "1.20"}
-rand = {version = "0.8"}
+mockall.workspace = true
+rand = {version = "0.9"}
