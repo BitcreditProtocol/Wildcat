@@ -4,6 +4,7 @@ use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
 use bcr_wdc_keys as keys;
+use utoipa::OpenApi;
 // ----- local modules
 //mod credit;
 mod credit;
@@ -100,25 +101,53 @@ impl AppController {
     }
 }
 pub fn credit_routes(ctrl: AppController) -> Router {
+    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
+
     Router::new()
         .route("/v1/swap", post(swap::web::swap_tokens))
-        .route("/credit/v1/mint/quote", post(credit::web::enquire_quote))
-        .route("/credit/v1/mint/quote/:id", get(credit::web::lookup_quote))
+        .route("/v1/credit/mint/quote", post(credit::web::enquire_quote))
+        .route("/v1/credit/mint/quote/:id", get(credit::web::lookup_quote))
         .route(
-            "/admin/credit/v1/quote/pending",
+            "/v1/admin/credit/quote/pending",
             get(credit::admin::list_pending_quotes),
         )
         .route(
-            "/admin/credit/v1/quote/accepted",
+            "/v1/admin/credit/quote/accepted",
             get(credit::admin::list_accepted_quotes),
         )
         .route(
-            "/admin/credit/v1/quote/:id",
+            "/v1/admin/credit/quote/:id",
             get(credit::admin::lookup_quote),
         )
         .route(
-            "/admin/credit/v1/quote/:id",
+            "/v1/admin/credit/quote/:id",
             post(credit::admin::resolve_quote),
         )
         .with_state(ctrl)
+        .merge(swagger)
 }
+
+use cdk::nuts::nut00 as cdk00;
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    components(schemas(
+        cdk::Amount,
+        cdk00::BlindedMessage,
+        bcr_wdc_webapi::quotes::EnquireRequest,
+        bcr_wdc_webapi::quotes::ResolveRequest,
+        bcr_wdc_webapi::quotes::EnquireReply,
+        bcr_wdc_webapi::quotes::StatusReply,
+        bcr_wdc_webapi::quotes::ListReply,
+        bcr_wdc_webapi::quotes::InfoReply,
+    ),),
+    paths(
+        crate::credit::web::enquire_quote,
+        crate::credit::web::lookup_quote,
+        crate::credit::admin::list_pending_quotes,
+        crate::credit::admin::list_accepted_quotes,
+        crate::credit::admin::lookup_quote,
+        crate::credit::admin::resolve_quote,
+    )
+)]
+struct ApiDoc;
