@@ -7,6 +7,15 @@ use crate::credit::error::Result;
 use crate::credit::quotes;
 
 ///--------------------------- Enquire mint quote
+#[utoipa::path(
+    post,
+    path = "/v1/credit/mint/quote",
+    request_body(content = EnquireRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Quote request admitted", body = EnquireReply, content_type = "application/json"),
+        (status = 404, description = "Quote request not accepted"),
+    )
+)]
 pub async fn enquire_quote<KG, QR>(
     State(ctrl): State<quotes::Service<KG, QR>>,
     Json(req): Json<web_quotes::EnquireRequest>,
@@ -39,6 +48,17 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/credit/mint/quote/:id",
+    params(
+        ("id" = String, Path, description = "The quote id")
+    ),
+    responses (
+        (status = 200, description = "Succesful response", body = StatusReply, content_type = "application/json"),
+        (status = 404, description = "Quote id not  found"),
+    )
+)]
 pub async fn lookup_quote<KG, QR>(
     State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,

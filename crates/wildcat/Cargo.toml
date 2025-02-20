@@ -24,6 +24,8 @@ strum = {version = "0.27", features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+utoipa = {workspace = true, features = ["axum_extras"]}
+utoipa-swagger-ui.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
