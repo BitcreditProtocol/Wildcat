@@ -40,11 +40,15 @@ where
 fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     match quote.status {
         quotes::QuoteStatus::Pending { .. } => web_quotes::StatusReply::Pending,
-        quotes::QuoteStatus::Declined => web_quotes::StatusReply::Declined,
-        quotes::QuoteStatus::Accepted { signatures, ttl } => web_quotes::StatusReply::Accepted {
+        quotes::QuoteStatus::Denied => web_quotes::StatusReply::Denied,
+        quotes::QuoteStatus::Offered { signatures, ttl } => web_quotes::StatusReply::Offered {
             signatures,
             expiration_date: ttl,
         },
+        quotes::QuoteStatus::Rejected { tstamp } => web_quotes::StatusReply::Rejected { tstamp },
+        quotes::QuoteStatus::Accepted { signatures } => {
+            web_quotes::StatusReply::Accepted { signatures }
+        }
     }
 }
 
@@ -71,4 +75,35 @@ where
 
     let quote = ctrl.lookup(id).await?;
     Ok(Json(convert_to_enquire_reply(quote)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/credit/quote/:id",
+    params(
+        ("id" = String, Path, description = "The quote id")
+    ),
+    request_body(content = Resolve, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Succesful response"),
+        (status = 404, description = "Quote not found"),
+        (status = 409, description = "Quote already resolved"),
+    )
+)]
+pub async fn resolve_offer<KG, QR>(
+    State(ctrl): State<quotes::Service<KG, QR>>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<web_quotes::ResolveOffer>,
+) -> Result<()>
+where
+    KG: quotes::KeyFactory,
+    QR: quotes::Repository,
+{
+    log::debug!("Received mint quote resolve request for id: {}", id);
+
+    match req {
+        web_quotes::ResolveOffer::Reject => ctrl.reject(id, chrono::Utc::now()).await?,
+        web_quotes::ResolveOffer::Accept => ctrl.accept(id).await?,
+    }
+    Ok(())
 }

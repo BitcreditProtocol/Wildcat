@@ -52,7 +52,7 @@ where
 {
     log::debug!("Received request to list accepted quotes");
 
-    let quotes = ctrl.list_accepteds(since.map(|q| q.0.and_utc())).await?;
+    let quotes = ctrl.list_offers(since.map(|q| q.0.and_utc())).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
@@ -68,17 +68,29 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
                 chrono::Utc::now(),
             ),
         },
-        quotes::QuoteStatus::Accepted { signatures, ttl } => web_quotes::InfoReply::Accepted {
+        quotes::QuoteStatus::Offered { signatures, ttl } => web_quotes::InfoReply::Offered {
             id: quote.id,
             bill: quote.bill.clone(),
             endorser: quote.endorser.clone(),
             ttl,
             signatures: signatures.clone(),
         },
-        quotes::QuoteStatus::Declined => web_quotes::InfoReply::Declined {
+        quotes::QuoteStatus::Denied => web_quotes::InfoReply::Denied {
             id: quote.id,
             bill: quote.bill,
             endorser: quote.endorser,
+        },
+        quotes::QuoteStatus::Accepted { signatures } => web_quotes::InfoReply::Accepted {
+            id: quote.id,
+            bill: quote.bill,
+            endorser: quote.endorser,
+            signatures,
+        },
+        quotes::QuoteStatus::Rejected { tstamp } => web_quotes::InfoReply::Rejected {
+            id: quote.id,
+            bill: quote.bill,
+            endorser: quote.endorser,
+            tstamp,
         },
     }
 }
@@ -132,9 +144,9 @@ where
     log::debug!("Received mint quote resolve request for id: {}", id);
 
     match req {
-        web_quotes::ResolveRequest::Decline => ctrl.decline(id).await?,
-        web_quotes::ResolveRequest::Accept { discount, ttl } => {
-            ctrl.accept(id, discount, chrono::Utc::now(), ttl).await?
+        web_quotes::ResolveRequest::Deny => ctrl.deny(id).await?,
+        web_quotes::ResolveRequest::Offer { discount, ttl } => {
+            ctrl.offer(id, discount, chrono::Utc::now(), ttl).await?
         }
     }
     Ok(())

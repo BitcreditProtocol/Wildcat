@@ -24,10 +24,16 @@ pub struct EnquireReply {
 #[serde(rename_all = "lowercase", tag = "status")]
 pub enum StatusReply {
     Pending,
-    Declined,
-    Accepted {
+    Denied,
+    Offered {
         signatures: Vec<BlindSignature>,
         expiration_date: TStamp,
+    },
+    Accepted {
+        signatures: Vec<BlindSignature>,
+    },
+    Rejected {
+        tstamp: TStamp,
     },
 }
 
@@ -48,17 +54,29 @@ pub enum InfoReply {
         submitted: chrono::DateTime<chrono::Utc>,
         suggested_expiration: chrono::DateTime<chrono::Utc>,
     },
-    Accepted {
+    Offered {
         id: uuid::Uuid,
         bill: String,
         endorser: String,
         ttl: chrono::DateTime<chrono::Utc>,
         signatures: Vec<BlindSignature>,
     },
-    Declined {
+    Denied {
         id: uuid::Uuid,
         bill: String,
         endorser: String,
+    },
+    Accepted {
+        id: uuid::Uuid,
+        bill: String,
+        endorser: String,
+        signatures: Vec<BlindSignature>,
+    },
+    Rejected {
+        id: uuid::Uuid,
+        bill: String,
+        endorser: String,
+        tstamp: TStamp,
     },
 }
 
@@ -66,9 +84,17 @@ pub enum InfoReply {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase", tag = "action")]
 pub enum ResolveRequest {
-    Decline,
-    Accept {
+    Deny,
+    Offer {
         discount: Decimal,
         ttl: Option<chrono::DateTime<chrono::Utc>>,
     },
+}
+
+/// --------------------------- Resolve quote
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase", tag = "action")]
+pub enum ResolveOffer {
+    Reject,
+    Accept,
 }
