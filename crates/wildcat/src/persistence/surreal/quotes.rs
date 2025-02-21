@@ -12,23 +12,28 @@ use crate::credit::quotes;
 use crate::persistence::surreal::ConnectionConfig;
 use crate::TStamp;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
 enum DBQuoteStatus {
+    #[default]
     Pending,
-    Declined,
+    Denied,
+    Offered,
+    Rejected,
     Accepted,
 }
 impl From<&quotes::QuoteStatus> for DBQuoteStatus {
     fn from(value: &quotes::QuoteStatus) -> Self {
         match value {
             quotes::QuoteStatus::Pending { .. } => Self::Pending,
-            quotes::QuoteStatus::Declined => Self::Declined,
+            quotes::QuoteStatus::Denied => Self::Denied,
+            quotes::QuoteStatus::Offered { .. } => Self::Offered,
+            quotes::QuoteStatus::Rejected { .. } => Self::Rejected,
             quotes::QuoteStatus::Accepted { .. } => Self::Accepted,
         }
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct DBQuote {
     quote_id: surrealdb::Uuid, // can't be `id`, reserved world in surreal
     bill: String,
@@ -38,6 +43,7 @@ struct DBQuote {
     blinds: Option<Vec<cdk00::BlindedMessage>>,
     signatures: Option<Vec<cdk00::BlindSignature>>,
     ttl: Option<TStamp>,
+    rejection: Option<TStamp>,
 }
 
 impl From<quotes::Quote> for DBQuote {
@@ -50,28 +56,43 @@ impl From<quotes::Quote> for DBQuote {
                 submitted: q.submitted,
                 status: DBQuoteStatus::Pending,
                 blinds: Some(blinds),
-                signatures: None,
-                ttl: None,
+                ..Default::default()
             },
-            quotes::QuoteStatus::Declined => Self {
+            quotes::QuoteStatus::Denied => Self {
                 quote_id: q.id,
                 bill: q.bill,
                 endorser: q.endorser,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Declined,
-                blinds: None,
-                signatures: None,
-                ttl: None,
+                status: DBQuoteStatus::Denied,
+                ..Default::default()
             },
-            quotes::QuoteStatus::Accepted { signatures, ttl } => Self {
+            quotes::QuoteStatus::Offered { signatures, ttl } => Self {
                 quote_id: q.id,
                 bill: q.bill,
                 endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Accepted,
-                blinds: None,
                 signatures: Some(signatures),
                 ttl: Some(ttl),
+                ..Default::default()
+            },
+            quotes::QuoteStatus::Rejected { tstamp } => Self {
+                quote_id: q.id,
+                bill: q.bill,
+                endorser: q.endorser,
+                submitted: q.submitted,
+                status: DBQuoteStatus::Rejected,
+                rejection: Some(tstamp),
+                ..Default::default()
+            },
+            quotes::QuoteStatus::Accepted { signatures } => Self {
+                quote_id: q.id,
+                bill: q.bill,
+                endorser: q.endorser,
+                submitted: q.submitted,
+                status: DBQuoteStatus::Accepted,
+                signatures: Some(signatures),
+                ..Default::default()
             },
         }
     }
@@ -90,12 +111,33 @@ impl TryFrom<DBQuote> for quotes::Quote {
                     blinds: dbq.blinds.ok_or_else(|| anyhow!("missing blinds"))?,
                 },
             }),
-            DBQuoteStatus::Declined => Ok(Self {
+            DBQuoteStatus::Denied => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 endorser: dbq.endorser,
                 submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Declined,
+                status: quotes::QuoteStatus::Denied,
+            }),
+            DBQuoteStatus::Offered => Ok(Self {
+                id: dbq.quote_id,
+                bill: dbq.bill,
+                endorser: dbq.endorser,
+                submitted: dbq.submitted,
+                status: quotes::QuoteStatus::Offered {
+                    signatures: dbq
+                        .signatures
+                        .ok_or_else(|| anyhow!("missing signatures"))?,
+                    ttl: dbq.ttl.ok_or_else(|| anyhow!("missing ttl"))?,
+                },
+            }),
+            DBQuoteStatus::Rejected => Ok(Self {
+                id: dbq.quote_id,
+                bill: dbq.bill,
+                endorser: dbq.endorser,
+                submitted: dbq.submitted,
+                status: quotes::QuoteStatus::Rejected {
+                    tstamp: dbq.rejection.ok_or_else(|| anyhow!("missing rejection"))?,
+                },
             }),
             DBQuoteStatus::Accepted => Ok(Self {
                 id: dbq.quote_id,
@@ -106,7 +148,6 @@ impl TryFrom<DBQuote> for quotes::Quote {
                     signatures: dbq
                         .signatures
                         .ok_or_else(|| anyhow!("missing signatures"))?,
-                    ttl: dbq.ttl.ok_or_else(|| anyhow!("missing ttl"))?,
                 },
             }),
         }
@@ -162,13 +203,13 @@ impl DB {
         query.await?.take("quote_id")
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Option<DBQuote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<DBQuote>> {
         let results: Vec<DBQuote> = self.db
             .query("SELECT * FROM type::table($table) WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;
-        Ok(results.first().cloned())
+        Ok(results)
     }
 }
 
@@ -195,23 +236,38 @@ impl quotes::Repository for DB {
         Ok(())
     }
 
+    async fn update_if_offered(&self, new: quotes::Quote) -> AnyResult<()> {
+        if matches!(new.status, quotes::QuoteStatus::Pending { .. }) {
+            return Err(anyhow!("cannot update to pending"));
+        }
+        let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
+        self.db
+            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+            .bind(("rid", recordid))
+            .bind(("new", DBQuote::from(new)))
+            .bind(("status", DBQuoteStatus::Offered))
+            .await?;
+        Ok(())
+    }
+
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         self.list_by_status(DBQuoteStatus::Pending, since)
             .await
             .map_err(Into::into)
     }
 
-    async fn list_accepteds(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_offers(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         self.list_by_status(DBQuoteStatus::Accepted, since)
             .await
             .map_err(Into::into)
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
         self.search_by_bill(bill, endorser)
             .await?
+            .into_iter()
             .map(std::convert::TryInto::try_into)
-            .transpose()
+            .collect()
     }
 
     async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {

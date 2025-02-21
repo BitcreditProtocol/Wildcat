@@ -22,7 +22,6 @@ pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 pub type ProdProofRepository = persistence::surreal::proofs::DB;
 
 pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
-pub type ProdQuoteFactory = credit::quotes::Factory<ProdQuoteRepository>;
 pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 
 pub type ProdCreditKeysRepository =
@@ -76,12 +75,8 @@ impl AppController {
             quote_keys_repository,
             maturity_keys_repository.clone(),
         );
-        let quotes_factory = ProdQuoteFactory {
-            quotes: quotes_repository.clone(),
-        };
         let quoting_service = ProdQuotingService {
             keys_gen: keys_factory,
-            quotes_gen: quotes_factory,
             quotes: quotes_repository,
         };
 
@@ -109,6 +104,10 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .route("/v1/credit/mint/quote", post(credit::web::enquire_quote))
         .route("/v1/credit/mint/quote/:id", get(credit::web::lookup_quote))
         .route(
+            "/v1/credit/mint/quote/:id",
+            post(credit::web::resolve_offer),
+        )
+        .route(
             "/v1/admin/credit/quote/pending",
             get(credit::admin::list_pending_quotes),
         )
@@ -134,12 +133,14 @@ use cdk::nuts::nut00 as cdk00;
     components(schemas(
         cdk::Amount,
         cdk00::BlindedMessage,
+        cdk00::BlindSignature,
         bcr_wdc_webapi::quotes::EnquireRequest,
         bcr_wdc_webapi::quotes::ResolveRequest,
         bcr_wdc_webapi::quotes::EnquireReply,
         bcr_wdc_webapi::quotes::StatusReply,
         bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::InfoReply,
+        bcr_wdc_webapi::quotes::ResolveOffer,
     ),),
     paths(
         crate::credit::web::enquire_quote,
@@ -148,6 +149,7 @@ use cdk::nuts::nut00 as cdk00;
         crate::credit::admin::list_accepted_quotes,
         crate::credit::admin::lookup_quote,
         crate::credit::admin::resolve_quote,
+        crate::credit::web::resolve_offer,
     )
 )]
 struct ApiDoc;

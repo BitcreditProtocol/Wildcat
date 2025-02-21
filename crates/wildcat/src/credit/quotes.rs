@@ -40,10 +40,16 @@ pub enum QuoteStatus {
     Pending {
         blinds: Vec<cdk00::BlindedMessage>,
     },
-    Declined,
-    Accepted {
+    Denied,
+    Offered {
         signatures: Vec<cdk00::BlindSignature>,
         ttl: TStamp,
+    },
+    Rejected {
+        tstamp: TStamp,
+    },
+    Accepted {
+        signatures: Vec<cdk00::BlindSignature>,
     },
 }
 
@@ -72,22 +78,42 @@ impl Quote {
         }
     }
 
-    pub fn decline(&mut self) -> Result<()> {
+    pub fn deny(&mut self) -> Result<()> {
         if let QuoteStatus::Pending { .. } = self.status {
-            self.status = QuoteStatus::Declined;
+            self.status = QuoteStatus::Denied;
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))
         }
     }
 
-    pub fn accept(&mut self, signatures: Vec<cdk00::BlindSignature>, ttl: TStamp) -> Result<()> {
+    pub fn offer(&mut self, signatures: Vec<cdk00::BlindSignature>, ttl: TStamp) -> Result<()> {
         let QuoteStatus::Pending { .. } = self.status else {
             return Err(Error::QuoteAlreadyResolved(self.id));
         };
 
-        self.status = QuoteStatus::Accepted { signatures, ttl };
+        self.status = QuoteStatus::Offered { signatures, ttl };
         Ok(())
+    }
+
+    pub fn reject(&mut self, tstamp: TStamp) -> Result<()> {
+        if let QuoteStatus::Offered { .. } = self.status {
+            self.status = QuoteStatus::Rejected { tstamp };
+            Ok(())
+        } else {
+            Err(Error::QuoteAlreadyResolved(self.id))
+        }
+    }
+
+    pub fn accept(&mut self) -> Result<()> {
+        if let QuoteStatus::Offered { signatures, .. } = &self.status {
+            self.status = QuoteStatus::Accepted {
+                signatures: signatures.clone(),
+            };
+            Ok(())
+        } else {
+            Err(Error::QuoteAlreadyResolved(self.id))
+        }
     }
 }
 
@@ -97,12 +123,14 @@ impl Quote {
 pub trait Repository: Send + Sync {
     async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
     async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
+    async fn update_if_offered(&self, quote: Quote) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    async fn list_accepteds(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<Quote>>;
+    async fn list_offers(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> AnyResult<()>;
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeyFactory: Send + Sync {
     async fn generate(
@@ -113,47 +141,10 @@ pub trait KeyFactory: Send + Sync {
     ) -> AnyResult<cdk02::MintKeySet>;
 }
 
-// ---------- Factory
-#[derive(Clone)]
-pub struct Factory<Quotes> {
-    pub quotes: Quotes,
-}
-
-impl<Quotes> Factory<Quotes>
-where
-    Quotes: Repository,
-{
-    async fn generate(
-        &self,
-        bill: String,
-        endorser: String,
-        blinds: Vec<cdk00::BlindedMessage>,
-        submitted: TStamp,
-    ) -> AnyResult<uuid::Uuid> {
-        let Some(quote) = self.quotes.search_by_bill(&bill, &endorser).await? else {
-            let quote = Quote::new(bill, endorser, blinds, submitted);
-            let id = quote.id;
-            self.quotes.store(quote).await?;
-            return Ok(id);
-        };
-
-        if let QuoteStatus::Accepted { ttl, .. } = quote.status {
-            if ttl < submitted {
-                let new = Quote::new(bill, endorser, blinds, submitted);
-                let id = new.id;
-                self.quotes.store(new).await?;
-                return Ok(id);
-            }
-        }
-        Ok(quote.id)
-    }
-}
-
 // ---------- Service
 #[derive(Clone)]
 pub struct Service<KeysGen, QuotesRepo> {
     pub keys_gen: KeysGen,
-    pub quotes_gen: Factory<QuotesRepo>,
     pub quotes: QuotesRepo,
 }
 
@@ -161,19 +152,108 @@ impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
 where
     QuotesRepo: Repository,
 {
-    pub async fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
-        self.quotes.load(id).await?.ok_or(Error::UnknownQuoteID(id))
+    const REJECTION_RETENTION: chrono::Duration = chrono::Duration::days(1);
+
+    pub async fn enquire(
+        &self,
+        bill: String,
+        endorser: String,
+        submitted: TStamp,
+        blinds: Vec<cdk00::BlindedMessage>,
+    ) -> Result<uuid::Uuid> {
+        let mut quotes = self.quotes.search_by_bill(&bill, &endorser).await?;
+
+        // pick the more recent quote for this eBill/endorser
+        quotes.sort_by_key(|q| std::cmp::Reverse(q.submitted));
+        // user rejected the offer recently
+        match quotes.first() {
+            Some(Quote {
+                id,
+                status: QuoteStatus::Pending { .. },
+                ..
+            }) => Ok(*id),
+            Some(Quote {
+                id,
+                status: QuoteStatus::Denied { .. },
+                ..
+            }) => Err(Error::QuoteAlreadyResolved(*id)),
+            Some(Quote {
+                id,
+                status: QuoteStatus::Offered { ttl, .. },
+                ..
+            }) => {
+                if *ttl < submitted {
+                    let quote = Quote::new(bill, endorser, blinds, submitted);
+                    let id = quote.id;
+                    self.quotes.store(quote).await?;
+                    Ok(id)
+                } else {
+                    Err(Error::QuoteAlreadyResolved(*id))
+                }
+            }
+            Some(Quote {
+                id,
+                status: QuoteStatus::Accepted { .. },
+                ..
+            }) => Err(Error::QuoteAlreadyResolved(*id)),
+            Some(Quote {
+                id,
+                status: QuoteStatus::Rejected { tstamp },
+                ..
+            }) => {
+                if (submitted - tstamp) > Self::REJECTION_RETENTION {
+                    let quote = Quote::new(bill, endorser, blinds, submitted);
+                    let id = quote.id;
+                    self.quotes.store(quote).await?;
+                    Ok(id)
+                } else {
+                    Err(Error::QuoteAlreadyResolved(*id))
+                }
+            }
+            None => {
+                let quote = Quote::new(bill, endorser, blinds, submitted);
+                let id = quote.id;
+                self.quotes.store(quote).await?;
+                Ok(id)
+            }
+        }
     }
 
-    pub async fn decline(&self, id: uuid::Uuid) -> Result<()> {
+    pub async fn deny(&self, id: uuid::Uuid) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
-        quote.decline()?;
+        quote.deny()?;
         self.quotes.update_if_pending(quote).await?;
         Ok(())
+    }
+
+    pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
+        let old = self.quotes.load(id).await?;
+        if old.is_none() {
+            return Err(Error::UnknownQuoteID(id));
+        }
+        let mut quote = old.unwrap();
+        quote.reject(tstamp)?;
+        self.quotes.update_if_offered(quote).await?;
+        Ok(())
+    }
+
+    pub async fn accept(&self, id: uuid::Uuid) -> Result<()> {
+        let old = self.quotes.load(id).await?;
+        if old.is_none() {
+            return Err(Error::UnknownQuoteID(id));
+        }
+        let mut quote = old.unwrap();
+        quote.accept()?;
+        self.quotes.update_if_offered(quote).await?;
+        Ok(())
+    }
+
+    pub async fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
+        self.quotes.load(id).await?.ok_or(Error::UnknownQuoteID(id))
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
@@ -183,24 +263,11 @@ where
             .map_err(Error::Repository)
     }
 
-    pub async fn list_accepteds(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+    pub async fn list_offers(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
         self.quotes
-            .list_accepteds(since)
+            .list_offers(since)
             .await
             .map_err(Error::Repository)
-    }
-
-    pub async fn enquire(
-        &self,
-        bill: String,
-        endorser: String,
-        tstamp: TStamp,
-        blinds: Vec<cdk00::BlindedMessage>,
-    ) -> Result<uuid::Uuid> {
-        self.quotes_gen
-            .generate(bill, endorser, blinds, tstamp)
-            .await
-            .map_err(Error::from)
     }
 }
 
@@ -209,7 +276,7 @@ where
     KeysGen: KeyFactory,
     QuotesRepo: Repository,
 {
-    pub async fn accept(
+    pub async fn offer(
         &self,
         id: uuid::Uuid,
         discount: Decimal,
@@ -238,7 +305,7 @@ where
             .map(|blind| sign_with_keys(&keyset, blind))
             .collect::<KeyResult<Vec<cdk00::BlindSignature>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
-        quote.accept(signatures, expiration)?;
+        quote.offer(signatures, expiration)?;
         self.quotes.update_if_pending(quote).await?;
         Ok(())
     }
@@ -252,17 +319,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_new_quote_request_quote_not_present() {
-        let mut repo = MockRepository::new();
-        repo.expect_search_by_bill().returning(|_, _| Ok(None));
-        repo.expect_store().returning(|_| Ok(()));
+        let mut quotes = MockRepository::new();
+        quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
+        quotes.expect_store().returning(|_| Ok(()));
+        let keys_gen = MockKeyFactory::new();
 
-        let factory = Factory { quotes: repo };
-        let test = factory
-            .generate(
+        let service = Service { quotes, keys_gen };
+        let test = service
+            .enquire(
                 String::from("billID"),
                 String::from("endorserID"),
-                vec![],
                 chrono::Utc::now(),
+                vec![],
             )
             .await;
         assert!(test.is_ok());
@@ -277,23 +345,27 @@ mod tests {
         repo.expect_search_by_bill()
             .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Ok(Some(Quote {
+                Ok(vec![Quote {
                     status: QuoteStatus::Pending { blinds: vec![] },
                     id,
                     bill: String::from(bill_id),
                     endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                }))
+                }])
             });
         repo.expect_store().returning(|_| Ok(()));
+        let keys_gen = MockKeyFactory::new();
 
-        let factory = Factory { quotes: repo };
-        let test_id = factory
-            .generate(
+        let service = Service {
+            quotes: repo,
+            keys_gen,
+        };
+        let test_id = service
+            .enquire(
                 String::from(bill_id),
                 String::from(endorser_id),
-                vec![],
                 chrono::Utc::now(),
+                vec![],
             )
             .await;
         assert!(test_id.is_ok());
@@ -301,7 +373,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_new_quote_request_quote_declined() {
+    async fn test_new_quote_request_quote_denied() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -309,31 +381,38 @@ mod tests {
         repo.expect_search_by_bill()
             .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Ok(Some(Quote {
-                    status: QuoteStatus::Declined,
+                Ok(vec![Quote {
+                    status: QuoteStatus::Denied,
                     id,
                     bill: String::from(bill_id),
                     endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                }))
+                }])
             });
         repo.expect_store().returning(|_| Ok(()));
+        let keys_gen = MockKeyFactory::new();
 
-        let factory = Factory { quotes: repo };
-        let test_id = factory
-            .generate(
+        let service = Service {
+            quotes: repo,
+            keys_gen,
+        };
+        let test_id = service
+            .enquire(
                 String::from(bill_id),
                 String::from(endorser_id),
-                vec![],
                 chrono::Utc::now(),
+                vec![],
             )
             .await;
-        assert!(test_id.is_ok());
-        assert_eq!(id, test_id.unwrap());
+        assert!(test_id.is_err());
+        assert!(matches!(
+            test_id.unwrap_err(),
+            Error::QuoteAlreadyResolved(_)
+        ));
     }
 
     #[tokio::test]
-    async fn test_new_quote_request_quote_accepted() {
+    async fn test_new_quote_request_quote_offered() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -341,8 +420,8 @@ mod tests {
         repo.expect_search_by_bill()
             .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Ok(Some(Quote {
-                    status: QuoteStatus::Accepted {
+                Ok(vec![Quote {
+                    status: QuoteStatus::Offered {
                         signatures: vec![],
                         ttl: chrono::Utc::now() + chrono::Duration::days(1),
                     },
@@ -350,25 +429,32 @@ mod tests {
                     bill: String::from(bill_id),
                     endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                }))
+                }])
             });
         repo.expect_store().returning(|_| Ok(()));
+        let keys_gen = MockKeyFactory::new();
 
-        let factory = Factory { quotes: repo };
-        let test_id = factory
-            .generate(
+        let service = Service {
+            quotes: repo,
+            keys_gen,
+        };
+        let test_id = service
+            .enquire(
                 String::from(bill_id),
                 String::from(endorser_id),
-                vec![],
                 chrono::Utc::now(),
+                vec![],
             )
             .await;
-        assert!(test_id.is_ok());
-        assert_eq!(id, test_id.unwrap());
+        assert!(test_id.is_err());
+        assert!(matches!(
+            test_id.unwrap_err(),
+            Error::QuoteAlreadyResolved(_)
+        ));
     }
 
     #[tokio::test]
-    async fn test_new_quote_request_quote_accepted_but_expired() {
+    async fn test_new_quote_request_quote_offered_but_expired() {
         let id = Uuid::new_v4();
         let bill_id = "billID";
         let endorser_id = "endorserID";
@@ -376,8 +462,8 @@ mod tests {
         repo.expect_search_by_bill()
             .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
             .returning(move |_, _| {
-                Ok(Some(Quote {
-                    status: QuoteStatus::Accepted {
+                Ok(vec![Quote {
+                    status: QuoteStatus::Offered {
                         signatures: vec![],
                         ttl: chrono::Utc::now(),
                     },
@@ -385,17 +471,21 @@ mod tests {
                     bill: String::from(bill_id),
                     endorser: String::from(endorser_id),
                     submitted: chrono::Utc::now(),
-                }))
+                }])
             });
         repo.expect_store().returning(|_| Ok(()));
+        let keys_gen = MockKeyFactory::new();
 
-        let factory = Factory { quotes: repo };
-        let test_id = factory
-            .generate(
+        let service = Service {
+            quotes: repo,
+            keys_gen,
+        };
+        let test_id = service
+            .enquire(
                 String::from(bill_id),
                 String::from(endorser_id),
-                vec![],
                 chrono::Utc::now() + chrono::Duration::seconds(1),
+                vec![],
             )
             .await;
         assert!(test_id.is_ok());

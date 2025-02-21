@@ -23,14 +23,15 @@ pub struct QuotesIDMap {
 }
 #[async_trait]
 impl quotes::Repository for QuotesIDMap {
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Option<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
         Ok(self
             .quotes
             .read()
             .unwrap()
             .iter()
-            .find(|quote| quote.1.bill == bill && quote.1.endorser == endorser)
-            .map(|(_, q)| q.clone()))
+            .filter(|quote| quote.1.bill == bill && quote.1.endorser == endorser)
+            .map(|x| x.1.clone())
+            .collect())
     }
 
     async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
@@ -55,6 +56,20 @@ impl quotes::Repository for QuotesIDMap {
         Ok(())
     }
 
+    async fn update_if_offered(&self, new: quotes::Quote) -> AnyResult<()> {
+        let id = new.id;
+        let mut m = self.quotes.write().unwrap();
+        let result = m.remove(&id);
+        if let Some(old) = result {
+            if matches!(old.status, quotes::QuoteStatus::Offered { .. }) {
+                m.insert(id, new);
+            } else {
+                m.insert(id, old);
+            }
+        }
+        Ok(())
+    }
+
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         let a = self
             .quotes
@@ -67,7 +82,7 @@ impl quotes::Repository for QuotesIDMap {
             .collect();
         Ok(a)
     }
-    async fn list_accepteds(&self, _since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_offers(&self, _since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
         let a = self
             .quotes
             .read()
