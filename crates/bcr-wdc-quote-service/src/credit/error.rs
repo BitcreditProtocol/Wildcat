@@ -19,6 +19,10 @@ pub enum Error {
     Keys(#[from] KeysError),
     #[error("Quote repository error {0}")]
     QuoteRepository(#[from] AnyError),
+    #[error("Borsh error {0}")]
+    Borsh(#[from] borsh::io::Error),
+    #[error("Secp256k1 error {0}")]
+    Secp256k1(#[from] bitcoin::secp256k1::Error),
 }
 
 impl axum::response::IntoResponse for Error {

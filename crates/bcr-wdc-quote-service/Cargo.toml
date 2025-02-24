@@ -9,9 +9,11 @@ edition = "2021"
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+bcr-ebill-core.workspace = true
 bcr-wdc-keys = { path = "../bcr-wdc-keys" }
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
+borsh.workspace = true
 cdk.workspace = true
 chrono.workspace = true
 config = {version = "0.15"}

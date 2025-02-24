@@ -1,7 +1,9 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
+use bcr_ebill_core::contact::IdentityPublicData;
 use bcr_wdc_keys as keys;
 use bcr_wdc_keys::KeysetID;
 use cdk::nuts::nut00 as cdk00;
@@ -33,6 +35,48 @@ pub enum Error {
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
     InvalidAmount(rust_decimal::Decimal),
+    #[error("Error in parsing datetime: {0}")]
+    Chrono(#[from] chrono::ParseError),
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BillInfo {
+    pub id: String,
+    pub drawee: IdentityPublicData,
+    pub drawer: IdentityPublicData,
+    pub payee: IdentityPublicData,
+    pub holder: IdentityPublicData,
+    pub sum: u64,
+    pub maturity_date: TStamp,
+}
+impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
+    type Error = Error;
+    fn try_from(bill: bcr_wdc_webapi::quotes::BillInfo) -> Result<Self> {
+        let maturity_date = TStamp::from_str(&bill.maturity_date)?;
+        Ok(Self {
+            id: bill.id,
+            drawee: bill.drawee,
+            drawer: bill.drawer,
+            payee: bill.payee,
+            holder: bill.holder,
+            sum: bill.sum,
+            maturity_date,
+        })
+    }
+}
+impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
+    fn from(bill: BillInfo) -> Self {
+        let maturity_date = bill.maturity_date.to_rfc3339();
+        Self {
+            id: bill.id,
+            drawee: bill.drawee,
+            drawer: bill.drawer,
+            payee: bill.payee,
+            holder: bill.holder,
+            sum: bill.sum,
+            maturity_date,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,23 +101,16 @@ pub enum QuoteStatus {
 pub struct Quote {
     pub status: QuoteStatus,
     pub id: Uuid,
-    pub bill: String,
-    pub endorser: String,
+    pub bill: BillInfo,
     pub submitted: TStamp,
 }
 
 impl Quote {
-    pub fn new(
-        bill: String,
-        endorser: String,
-        blinds: Vec<cdk00::BlindedMessage>,
-        submitted: TStamp,
-    ) -> Self {
+    pub fn new(bill: BillInfo, blinds: Vec<cdk00::BlindedMessage>, submitted: TStamp) -> Self {
         Self {
             status: QuoteStatus::Pending { blinds },
             id: Uuid::new_v4(),
             bill,
-            endorser,
             submitted,
         }
     }
@@ -156,12 +193,14 @@ where
 
     pub async fn enquire(
         &self,
-        bill: String,
-        endorser: String,
+        bill: BillInfo,
         submitted: TStamp,
         blinds: Vec<cdk00::BlindedMessage>,
     ) -> Result<uuid::Uuid> {
-        let mut quotes = self.quotes.search_by_bill(&bill, &endorser).await?;
+        let mut quotes = self
+            .quotes
+            .search_by_bill(&bill.id, &bill.holder.node_id)
+            .await?;
 
         // pick the more recent quote for this eBill/endorser
         quotes.sort_by_key(|q| std::cmp::Reverse(q.submitted));
@@ -183,7 +222,7 @@ where
                 ..
             }) => {
                 if *ttl < submitted {
-                    let quote = Quote::new(bill, endorser, blinds, submitted);
+                    let quote = Quote::new(bill, blinds, submitted);
                     let id = quote.id;
                     self.quotes.store(quote).await?;
                     Ok(id)
@@ -202,7 +241,7 @@ where
                 ..
             }) => {
                 if (submitted - tstamp) > Self::REJECTION_RETENTION {
-                    let quote = Quote::new(bill, endorser, blinds, submitted);
+                    let quote = Quote::new(bill, blinds, submitted);
                     let id = quote.id;
                     self.quotes.store(quote).await?;
                     Ok(id)
@@ -211,7 +250,7 @@ where
                 }
             }
             None => {
-                let quote = Quote::new(bill, endorser, blinds, submitted);
+                let quote = Quote::new(bill, blinds, submitted);
                 let id = quote.id;
                 self.quotes.store(quote).await?;
                 Ok(id)
@@ -288,7 +327,8 @@ where
 
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
-        let kid = keys::credit::generate_keyset_id_from_bill(&quote.bill, &quote.endorser);
+        let kid =
+            keys::credit::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
@@ -315,7 +355,103 @@ where
 mod tests {
 
     use super::*;
+    use crate::utils::tests as testutils;
     use mockall::predicate::*;
+    use rand::{seq::IndexedRandom, Rng};
+
+    fn generate_random_identity() -> bcr_ebill_core::contact::IdentityPublicData {
+        let identities = vec![
+            IdentityPublicData {
+                t: bcr_ebill_core::contact::ContactType::Person,
+                node_id: String::from(
+                    "02a5b1c2d3e4f56789abcdef0123456789abcdef0123456789abcdef0123456789",
+                ),
+                name: String::from("Alice"),
+                postal_address: bcr_ebill_core::PostalAddress {
+                    country: String::from("USA"),
+                    city: String::from("New York"),
+                    zip: None,
+                    address: String::from("123 Main St"),
+                },
+                email: None,
+                nostr_relay: None,
+            },
+            IdentityPublicData {
+                t: bcr_ebill_core::contact::ContactType::Company,
+                node_id: String::from(
+                    "03b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
+                ),
+                name: String::from("Bob Corp"),
+                postal_address: bcr_ebill_core::PostalAddress {
+                    country: String::from("UK"),
+                    city: String::from("London"),
+                    zip: None,
+                    address: String::from("456 High St"),
+                },
+                email: None,
+                nostr_relay: None,
+            },
+            IdentityPublicData {
+                t: bcr_ebill_core::contact::ContactType::Person,
+                node_id: String::from(
+                    "02c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
+                ),
+                name: String::from("Charlie"),
+                postal_address: bcr_ebill_core::PostalAddress {
+                    country: String::from("France"),
+                    city: String::from("Paris"),
+                    zip: None,
+                    address: String::from("789 Rue de Paris"),
+                },
+                email: None,
+                nostr_relay: None,
+            },
+            IdentityPublicData {
+                t: bcr_ebill_core::contact::ContactType::Company,
+                node_id: String::from(
+                    "03d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
+                ),
+                name: String::from("Dave Ltd"),
+                postal_address: bcr_ebill_core::PostalAddress {
+                    country: String::from("Japan"),
+                    city: String::from("Tokyo"),
+                    zip: None,
+                    address: String::from("101 Shibuya St"),
+                },
+                email: None,
+                nostr_relay: None,
+            },
+            IdentityPublicData {
+                t: bcr_ebill_core::contact::ContactType::Person,
+                node_id: String::from("02e5f6789abcdef0123456789abcdef0123456789abcdef0123456789"),
+                name: String::from("Eve"),
+                postal_address: bcr_ebill_core::PostalAddress {
+                    country: String::from("Germany"),
+                    city: String::from("Berlin"),
+                    zip: None,
+                    address: String::from("555 Alexanderplatz"),
+                },
+                email: None,
+                nostr_relay: None,
+            },
+        ];
+        let mut rng = rand::rng();
+        identities.choose(&mut rng).unwrap().clone()
+    }
+
+    fn generate_random_bill() -> BillInfo {
+        let mut rng = rand::rng();
+        let ids = testutils::publics();
+        BillInfo {
+            id: ids.choose(&mut rng).unwrap().to_string(),
+            drawee: generate_random_identity(),
+            drawer: generate_random_identity(),
+            payee: generate_random_identity(),
+            holder: generate_random_identity(),
+            sum: rng.random_range(1000..100000),
+            maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.random_range(10..30)),
+        }
+    }
 
     #[tokio::test]
     async fn test_new_quote_request_quote_not_present() {
@@ -324,32 +460,25 @@ mod tests {
         quotes.expect_store().returning(|_| Ok(()));
         let keys_gen = MockKeyFactory::new();
 
+        let rnd_bill = generate_random_bill();
         let service = Service { quotes, keys_gen };
-        let test = service
-            .enquire(
-                String::from("billID"),
-                String::from("endorserID"),
-                chrono::Utc::now(),
-                vec![],
-            )
-            .await;
+        let test = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test.is_ok());
     }
 
     #[tokio::test]
     async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
-        let bill_id = "billID";
-        let endorser_id = "endorserID";
+        let rnd_bill = generate_random_bill();
         let mut repo = MockRepository::new();
+        let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
-            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Pending { blinds: vec![] },
                     id,
-                    bill: String::from(bill_id),
-                    endorser: String::from(endorser_id),
+                    bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
                 }])
             });
@@ -360,14 +489,7 @@ mod tests {
             quotes: repo,
             keys_gen,
         };
-        let test_id = service
-            .enquire(
-                String::from(bill_id),
-                String::from(endorser_id),
-                chrono::Utc::now(),
-                vec![],
-            )
-            .await;
+        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
     }
@@ -375,17 +497,16 @@ mod tests {
     #[tokio::test]
     async fn test_new_quote_request_quote_denied() {
         let id = Uuid::new_v4();
-        let bill_id = "billID";
-        let endorser_id = "endorserID";
+        let rnd_bill = generate_random_bill();
+        let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Denied,
                     id,
-                    bill: String::from(bill_id),
-                    endorser: String::from(endorser_id),
+                    bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
                 }])
             });
@@ -396,14 +517,7 @@ mod tests {
             quotes: repo,
             keys_gen,
         };
-        let test_id = service
-            .enquire(
-                String::from(bill_id),
-                String::from(endorser_id),
-                chrono::Utc::now(),
-                vec![],
-            )
-            .await;
+        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -414,11 +528,11 @@ mod tests {
     #[tokio::test]
     async fn test_new_quote_request_quote_offered() {
         let id = Uuid::new_v4();
-        let bill_id = "billID";
-        let endorser_id = "endorserID";
+        let rnd_bill = generate_random_bill();
+        let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
@@ -426,8 +540,7 @@ mod tests {
                         ttl: chrono::Utc::now() + chrono::Duration::days(1),
                     },
                     id,
-                    bill: String::from(bill_id),
-                    endorser: String::from(endorser_id),
+                    bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
                 }])
             });
@@ -438,14 +551,7 @@ mod tests {
             quotes: repo,
             keys_gen,
         };
-        let test_id = service
-            .enquire(
-                String::from(bill_id),
-                String::from(endorser_id),
-                chrono::Utc::now(),
-                vec![],
-            )
-            .await;
+        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -456,11 +562,11 @@ mod tests {
     #[tokio::test]
     async fn test_new_quote_request_quote_offered_but_expired() {
         let id = Uuid::new_v4();
-        let bill_id = "billID";
-        let endorser_id = "endorserID";
+        let rnd_bill = generate_random_bill();
+        let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(String::from(bill_id)), eq(String::from(endorser_id)))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
@@ -468,8 +574,7 @@ mod tests {
                         ttl: chrono::Utc::now(),
                     },
                     id,
-                    bill: String::from(bill_id),
-                    endorser: String::from(endorser_id),
+                    bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
                 }])
             });
@@ -482,8 +587,7 @@ mod tests {
         };
         let test_id = service
             .enquire(
-                String::from(bill_id),
-                String::from(endorser_id),
+                rnd_bill,
                 chrono::Utc::now() + chrono::Duration::seconds(1),
                 vec![],
             )

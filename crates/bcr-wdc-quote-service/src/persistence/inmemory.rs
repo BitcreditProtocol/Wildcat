@@ -29,7 +29,7 @@ impl quotes::Repository for QuotesIDMap {
             .read()
             .unwrap()
             .iter()
-            .filter(|quote| quote.1.bill == bill && quote.1.endorser == endorser)
+            .filter(|quote| quote.1.bill.id == bill && quote.1.bill.holder.node_id == endorser)
             .map(|x| x.1.clone())
             .collect())
     }
