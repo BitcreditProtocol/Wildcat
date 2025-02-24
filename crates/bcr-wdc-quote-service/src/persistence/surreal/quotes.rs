@@ -33,11 +33,10 @@ impl From<&quotes::QuoteStatus> for DBQuoteStatus {
     }
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBQuote {
     quote_id: surrealdb::Uuid, // can't be `id`, reserved world in surreal
-    bill: String,
-    endorser: String,
+    bill: quotes::BillInfo,
     submitted: TStamp,
     status: DBQuoteStatus,
     blinds: Option<Vec<cdk00::BlindedMessage>>,
@@ -52,47 +51,52 @@ impl From<quotes::Quote> for DBQuote {
             quotes::QuoteStatus::Pending { blinds } => Self {
                 quote_id: q.id,
                 bill: q.bill,
-                endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Pending,
                 blinds: Some(blinds),
-                ..Default::default()
+                signatures: Default::default(),
+                ttl: Default::default(),
+                rejection: Default::default(),
             },
             quotes::QuoteStatus::Denied => Self {
                 quote_id: q.id,
                 bill: q.bill,
-                endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Denied,
-                ..Default::default()
+                blinds: Default::default(),
+                signatures: Default::default(),
+                ttl: Default::default(),
+                rejection: Default::default(),
             },
             quotes::QuoteStatus::Offered { signatures, ttl } => Self {
                 quote_id: q.id,
                 bill: q.bill,
-                endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Accepted,
                 signatures: Some(signatures),
                 ttl: Some(ttl),
-                ..Default::default()
+                blinds: Default::default(),
+                rejection: Default::default(),
             },
             quotes::QuoteStatus::Rejected { tstamp } => Self {
                 quote_id: q.id,
                 bill: q.bill,
-                endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Rejected,
                 rejection: Some(tstamp),
-                ..Default::default()
+                blinds: Default::default(),
+                signatures: Default::default(),
+                ttl: Default::default(),
             },
             quotes::QuoteStatus::Accepted { signatures } => Self {
                 quote_id: q.id,
                 bill: q.bill,
-                endorser: q.endorser,
                 submitted: q.submitted,
                 status: DBQuoteStatus::Accepted,
                 signatures: Some(signatures),
-                ..Default::default()
+                blinds: Default::default(),
+                ttl: Default::default(),
+                rejection: Default::default(),
             },
         }
     }
@@ -105,7 +109,6 @@ impl TryFrom<DBQuote> for quotes::Quote {
             DBQuoteStatus::Pending => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
-                endorser: dbq.endorser,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Pending {
                     blinds: dbq.blinds.ok_or_else(|| anyhow!("missing blinds"))?,
@@ -114,14 +117,12 @@ impl TryFrom<DBQuote> for quotes::Quote {
             DBQuoteStatus::Denied => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
-                endorser: dbq.endorser,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Denied,
             }),
             DBQuoteStatus::Offered => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
-                endorser: dbq.endorser,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Offered {
                     signatures: dbq
@@ -133,7 +134,6 @@ impl TryFrom<DBQuote> for quotes::Quote {
             DBQuoteStatus::Rejected => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
-                endorser: dbq.endorser,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Rejected {
                     tstamp: dbq.rejection.ok_or_else(|| anyhow!("missing rejection"))?,
@@ -142,7 +142,6 @@ impl TryFrom<DBQuote> for quotes::Quote {
             DBQuoteStatus::Accepted => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
-                endorser: dbq.endorser,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Accepted {
                     signatures: dbq

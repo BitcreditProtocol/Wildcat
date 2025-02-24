@@ -128,19 +128,24 @@ pub fn credit_routes(ctrl: AppController) -> Router {
 }
 
 use cdk::nuts::nut00 as cdk00;
+use cdk::nuts::nut12 as cdk12;
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
-        cdk::Amount,
-        cdk00::BlindedMessage,
-        cdk00::BlindSignature,
-        bcr_wdc_webapi::quotes::EnquireRequest,
-        bcr_wdc_webapi::quotes::ResolveRequest,
+        //bcr_ebill_core::contact::IdentityPublicData,
+        bcr_wdc_webapi::quotes::BillInfo,
         bcr_wdc_webapi::quotes::EnquireReply,
-        bcr_wdc_webapi::quotes::StatusReply,
-        bcr_wdc_webapi::quotes::ListReply,
+        bcr_wdc_webapi::quotes::EnquireRequest,
         bcr_wdc_webapi::quotes::InfoReply,
+        bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::ResolveOffer,
+        bcr_wdc_webapi::quotes::ResolveRequest,
+        bcr_wdc_webapi::quotes::StatusReply,
+        cdk00::BlindSignature,
+        cdk00::BlindedMessage,
+        cdk00::Witness,
+        cdk12::BlindSignatureDleq,
+        cdk::Amount,
     ),),
     paths(
         crate::credit::web::enquire_quote,

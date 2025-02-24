@@ -1,7 +1,10 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_wdc_webapi::quotes as web_quotes;
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::Hash;
 // ----- local imports
 use crate::credit::error::Result;
 use crate::credit::quotes;
@@ -26,14 +29,28 @@ where
 {
     log::debug!(
         "Received mint quote request for bill: {}, from node : {}",
-        req.bill,
-        req.node
+        req.content.id,
+        req.content.holder.name
     );
 
-    let id = ctrl
-        .enquire(req.bill, req.node, chrono::Utc::now(), req.outputs)
-        .await?;
+    verify_signature(&req)?;
+
+    let bcr_wdc_webapi::quotes::EnquireRequest {
+        content, outputs, ..
+    } = req;
+    let bill = quotes::BillInfo::try_from(content)?;
+    let id = ctrl.enquire(bill, chrono::Utc::now(), outputs).await?;
     Ok(Json(web_quotes::EnquireReply { id }))
+}
+
+fn verify_signature(req: &web_quotes::EnquireRequest) -> Result<()> {
+    let author = &req.content.holder;
+    let borshed = borsh::to_vec(&req.content)?;
+    let msg = bitcoin::secp256k1::Message::from_digest(*Sha256::hash(&borshed).as_byte_array());
+    let ctx = bitcoin::secp256k1::Secp256k1::verification_only();
+    let pub_key = bitcoin::secp256k1::PublicKey::from_str(&author.node_id)?;
+    ctx.verify_schnorr(&req.signature, &msg, &pub_key.x_only_public_key().0)?;
+    Ok(())
 }
 
 /// --------------------------- Look up quote
@@ -54,9 +71,9 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
 
 #[utoipa::path(
     get,
-    path = "/v1/credit/mint/quote/:id",
+    path = "/v1/credit/mint/quote/{id}",
     params(
-        ("id" = String, Path, description = "The quote id")
+        ("id" = Uuid, Path, description = "The quote id")
     ),
     responses (
         (status = 200, description = "Succesful response", body = StatusReply, content_type = "application/json"),
@@ -79,9 +96,9 @@ where
 
 #[utoipa::path(
     post,
-    path = "/v1/credit/quote/:id",
+    path = "/v1/credit/quote/{id}",
     params(
-        ("id" = String, Path, description = "The quote id")
+        ("id" = Uuid, Path, description = "The quote id")
     ),
     request_body(content = Resolve, content_type = "application/json"),
     responses (

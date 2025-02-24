@@ -61,8 +61,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
     match quote.status {
         quotes::QuoteStatus::Pending { .. } => web_quotes::InfoReply::Pending {
             id: quote.id,
-            bill: quote.bill,
-            endorser: quote.endorser,
+            bill: quote.bill.into(),
             submitted: quote.submitted,
             suggested_expiration: utils::calculate_default_expiration_date_for_quote(
                 chrono::Utc::now(),
@@ -70,26 +69,22 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         },
         quotes::QuoteStatus::Offered { signatures, ttl } => web_quotes::InfoReply::Offered {
             id: quote.id,
-            bill: quote.bill.clone(),
-            endorser: quote.endorser.clone(),
+            bill: quote.bill.into(),
             ttl,
             signatures: signatures.clone(),
         },
         quotes::QuoteStatus::Denied => web_quotes::InfoReply::Denied {
             id: quote.id,
-            bill: quote.bill,
-            endorser: quote.endorser,
+            bill: quote.bill.into(),
         },
         quotes::QuoteStatus::Accepted { signatures } => web_quotes::InfoReply::Accepted {
             id: quote.id,
-            bill: quote.bill,
-            endorser: quote.endorser,
+            bill: quote.bill.into(),
             signatures,
         },
         quotes::QuoteStatus::Rejected { tstamp } => web_quotes::InfoReply::Rejected {
             id: quote.id,
-            bill: quote.bill,
-            endorser: quote.endorser,
+            bill: quote.bill.into(),
             tstamp,
         },
     }
@@ -97,7 +92,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
 
 #[utoipa::path(
     get,
-    path = "/v1/admin/credit/quote/:id",
+    path = "/v1/admin/credit/quote/{id}",
     params(
         ("id" = String, Path, description = "The quote id")
     ),
