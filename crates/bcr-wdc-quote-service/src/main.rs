@@ -1,7 +1,8 @@
+
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
-    appcfg: wildcat::AppConfig,
+    appcfg: bcr_wdc_quote_service::AppConfig,
     log_level: log::LevelFilter,
 }
 
@@ -21,8 +22,8 @@ async fn main() {
 
     // we keep seed separate from the app config
     let seed = [0u8; 32];
-    let app = wildcat::AppController::new(&seed, maincfg.appcfg).await;
-    let router = wildcat::credit_routes(app);
+    let app = bcr_wdc_quote_service::AppController::new(&seed, maincfg.appcfg).await;
+    let router = bcr_wdc_quote_service::credit_routes(app);
 
     axum::Server::bind(&maincfg.bind_address)
         .serve(router.into_make_service())

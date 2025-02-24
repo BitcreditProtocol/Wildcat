@@ -2,7 +2,7 @@
 resolver = "2"
 
 
-members = [ "crates/bcr-wdc-webapi", "crates/bcr-wdc-keys", "crates/wildcat"]
+members = [ "crates/bcr-wdc-webapi", "crates/bcr-wdc-keys", "crates/bcr-wdc-quote-service"]
 
 
 [workspace.dependencies]
