@@ -24,8 +24,11 @@ async fn main() {
     let app = bcr_wdc_quote_service::AppController::new(&seed, maincfg.appcfg).await;
     let router = bcr_wdc_quote_service::credit_routes(app);
 
-    axum::Server::bind(&maincfg.bind_address)
-        .serve(router.into_make_service())
+    let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await
-        .unwrap();
+        .expect("Failed to bind to address");
+
+    axum::serve(listener, router)
+        .await
+        .expect("Failed to start server");
 }

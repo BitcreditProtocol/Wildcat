@@ -22,7 +22,7 @@ hex = {version = "0.4"}
 log.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
-strum = {version = "0.27", features = ["derive"]}
+strum = {version = "0", features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -32,6 +32,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
-bip39 = {version = "2.1"}
+bip39 = {version = "2"}
 mockall.workspace = true
-rand = {version = "0.9"}
+rand.workspace = true
