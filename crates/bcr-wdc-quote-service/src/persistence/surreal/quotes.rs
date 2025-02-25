@@ -2,7 +2,7 @@
 // ----- extra library imports
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
-use cdk::nuts::nut00 as cdk00;
+use cashu::nuts::nut00 as cdk00;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;

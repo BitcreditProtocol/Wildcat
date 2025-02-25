@@ -12,7 +12,7 @@ test-utils = ["mockall", "once_cell", "rand"]
 anyhow.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
-cdk.workspace = true
+cashu.workspace = true
 chrono.workspace = true
 mockall = { workspace = true, optional = true}
 once_cell = {version = "1.20", optional = true}

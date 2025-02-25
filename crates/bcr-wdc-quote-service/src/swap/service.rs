@@ -3,11 +3,12 @@
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cdk::mint::MintKeySetInfo;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut02 as cdk02;
-use cdk::nuts::nut07 as cdk07;
-use cdk::Amount;
+use cashu::dhke as cdk_dhke;
+use cashu::mint::MintKeySetInfo;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut07 as cdk07;
+use cashu::Amount;
 // ----- local imports
 use crate::keys::KeysetID;
 use crate::swap::error::{Error, Result};
@@ -63,7 +64,7 @@ where
                 .keys
                 .get(&proof.amount)
                 .ok_or_else(|| Error::UnknownAmountForKeyset(id.into(), proof.amount))?;
-            let ok = cdk::dhke::verify_message(&key.secret_key, proof.c, proof.secret.as_bytes());
+            let ok = cdk_dhke::verify_message(&key.secret_key, proof.c, proof.secret.as_bytes());
             if ok.is_err() {
                 return Ok(false);
             }
@@ -137,7 +138,7 @@ where
                 .keys
                 .get(&output.amount)
                 .ok_or(Error::UnknownAmountForKeyset(*first, output.amount))?;
-            let c = cdk::dhke::sign_message(&keypair.secret_key, &output.blinded_secret)?;
+            let c = cdk_dhke::sign_message(&keypair.secret_key, &output.blinded_secret)?;
             let signature = cdk00::BlindSignature::new(
                 output.amount,
                 c,

@@ -4,9 +4,11 @@ use std::collections::HashMap;
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut01 as cdk01;
-use cdk::nuts::nut02 as cdk02;
+use cashu::mint as cdk_mint;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut01 as cdk01;
+use cashu::nuts::nut02 as cdk02;
+use cashu::Amount as cdk_Amount;
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
@@ -20,7 +22,7 @@ use crate::persistence::surreal::ConnectionConfig;
 // ----- keys repository
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBKeys {
-    info: cdk::mint::MintKeySetInfo,
+    info: cdk_mint::MintKeySetInfo,
     // unpacking MintKeySet because surrealdb doesn't support BTreeMap<K,V> where K is not a String
     unit: cdk00::CurrencyUnit,
     keys: HashMap<String, cdk01::MintKeyPair>,
@@ -47,11 +49,11 @@ impl From<keys::KeysetEntry> for DBKeys {
 impl From<DBKeys> for keys::KeysetEntry {
     fn from(dbk: DBKeys) -> Self {
         let DBKeys { info, unit, keys } = dbk;
-        let mut keysmap: BTreeMap<cdk::Amount, cdk01::MintKeyPair> = BTreeMap::default();
+        let mut keysmap: BTreeMap<cdk_Amount, cdk01::MintKeyPair> = BTreeMap::default();
         for (val, keypair) in keys {
             // ... and parse them back to the original type
             let uval = val.parse::<u64>().expect("Failed to parse amount");
-            keysmap.insert(cdk::Amount::from(uval), keypair);
+            keysmap.insert(cdk_Amount::from(uval), keypair);
         }
         let keyset = cdk02::MintKeySet {
             id: info.id,
@@ -96,9 +98,9 @@ impl KeysDB {
 
 #[async_trait]
 impl keys::Repository for KeysDB {
-    async fn info(&self, kid: &keys::KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    async fn info(&self, kid: &keys::KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
         let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
-        let result: Option<cdk::mint::MintKeySetInfo> = self
+        let result: Option<cdk_mint::MintKeySetInfo> = self
             .db
             .query("SELECT info FROM $rid")
             .bind(("rid", rid))
@@ -120,7 +122,7 @@ impl keys::Repository for KeysDB {
     async fn store(
         &self,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()> {
         self.store((info, keyset)).await
     }
@@ -163,7 +165,7 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
         &self,
         qid: Uuid,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()> {
         let dbqk = DBQuoteKeys {
             qid,
@@ -182,8 +184,8 @@ impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
 
 #[async_trait]
 impl keys::ActiveRepository for KeysDB {
-    async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
-        let result: Option<cdk::mint::MintKeySetInfo> = self
+    async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
+        let result: Option<cdk_mint::MintKeySetInfo> = self
             .db
             .query("SELECT info FROM type::table($table) WHERE info.active is true ORDER BY info.valid_from DESC")
             .bind(("table", self.table.clone()))

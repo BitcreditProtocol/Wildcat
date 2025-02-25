@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use cdk::nuts::nut02 as cdk02;
+use cashu::nuts::nut02 as cdk02;
 // ----- local imports
 
 /// rework of cdk02::Id as they do not export internal fields

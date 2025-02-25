@@ -4,6 +4,8 @@ use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
 use bcr_wdc_keys as keys;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut12 as cdk12;
 use utoipa::OpenApi;
 // ----- local modules
 //mod credit;
@@ -127,8 +129,6 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .merge(swagger)
 }
 
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut12 as cdk12;
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
@@ -141,11 +141,11 @@ use cdk::nuts::nut12 as cdk12;
         bcr_wdc_webapi::quotes::ResolveOffer,
         bcr_wdc_webapi::quotes::ResolveRequest,
         bcr_wdc_webapi::quotes::StatusReply,
+        cashu::Amount,
         cdk00::BlindSignature,
         cdk00::BlindedMessage,
         cdk00::Witness,
         cdk12::BlindSignatureDleq,
-        cdk::Amount,
     ),),
     paths(
         crate::credit::web::enquire_quote,

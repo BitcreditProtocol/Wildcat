@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 // ----- standard library imports
 // ----- extra library imports
-use cdk::Amount;
+use cashu::Amount;
 use thiserror::Error;
 // ----- local imports
 use crate::keys::KeysetID;
@@ -15,9 +15,9 @@ pub enum Error {
     KeysetRepository(anyhow::Error),
 
     #[error("DHKE error: {0}")]
-    CdkDhke(#[from] cdk::dhke::Error),
+    CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]
-    CDKNUT12(#[from] cdk::nuts::nut12::Error),
+    CDKNUT12(#[from] cashu::nuts::nut12::Error),
 
     #[error("Already spent proofs")]
     ProofsAlreadySpent,

@@ -4,10 +4,12 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut01 as cdk01;
-use cdk::nuts::nut02 as cdk02;
-use cdk::nuts::nut07 as cdk07;
+use cashu::dhke as cdk_dhke;
+use cashu::mint as cdk_mint;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut01 as cdk01;
+use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut07 as cdk07;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -108,7 +110,7 @@ impl creditkeys::QuoteBasedRepository for KeysetIDQuoteIDMap {
         &self,
         qid: Uuid,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()> {
         self.keys
             .write()
@@ -130,7 +132,7 @@ pub struct KeysetIDEntryMap {
 
 #[async_trait]
 impl keys::Repository for KeysetIDEntryMap {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
         let a = self
             .keys
             .read()
@@ -155,7 +157,7 @@ impl keys::Repository for KeysetIDEntryMap {
     async fn store(
         &self,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()> {
         self.keys
             .write()
@@ -175,7 +177,7 @@ impl swap::ProofRepository for ProofMap {
     async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
         let mut writer = self.proofs.write().unwrap();
         for token in tokens {
-            let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
+            let y = cdk_dhke::hash_to_curve(&token.secret.to_bytes())?;
             let proofstate = cdk07::ProofState {
                 y,
                 state: cdk07::State::Spent,
@@ -190,7 +192,7 @@ impl swap::ProofRepository for ProofMap {
         let mut states: Vec<cdk07::State> = Vec::new();
         let reader = self.proofs.read().unwrap();
         for token in tokens {
-            let y = cdk::dhke::hash_to_curve(&token.secret.to_bytes())?;
+            let y = cdk_dhke::hash_to_curve(&token.secret.to_bytes())?;
             let state = reader.get(&y).map_or(cdk07::State::Unspent, |x| x.state);
             states.push(state);
         }
@@ -206,7 +208,7 @@ pub struct KeysetIDEntryMapWithActive {
 
 #[async_trait]
 impl keys::Repository for KeysetIDEntryMapWithActive {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
         self.keys.info(kid).await
     }
 
@@ -221,7 +223,7 @@ impl keys::Repository for KeysetIDEntryMapWithActive {
     async fn store(
         &self,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()> {
         if info.active {
             *self.active.write().unwrap() = Some(KeysetID::from(keyset.id));
@@ -232,7 +234,7 @@ impl keys::Repository for KeysetIDEntryMapWithActive {
 
 #[async_trait]
 impl keys::ActiveRepository for KeysetIDEntryMapWithActive {
-    async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
         let kid = *self.active.read().unwrap();
         if let Some(kid) = kid {
             return self.keys.info(&kid).await;

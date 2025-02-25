@@ -2,9 +2,10 @@
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut01 as cdk01;
-use cdk::nuts::nut07 as cdk07;
+use cashu::dhke as cdk_dhke;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut01 as cdk01;
+use cashu::nuts::nut07 as cdk07;
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
@@ -44,7 +45,7 @@ impl swap::ProofRepository for DB {
     async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
         let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
         for tk in tokens {
-            let y = cdk::dhke::hash_to_curve(&tk.secret.to_bytes())?;
+            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes())?;
             let rid = RecordId::from_table_key(&self.table, y.to_string());
             entries.push(DBProof {
                 id: rid,
@@ -60,7 +61,7 @@ impl swap::ProofRepository for DB {
         let rids: Vec<_> = tokens
             .iter()
             .map(|tk| {
-                let y = cdk::dhke::hash_to_curve(&tk.secret.to_bytes())?;
+                let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes())?;
                 Ok(RecordId::from_table_key(&self.table, y.to_string()))
             })
             .collect::<AnyResult<_>>()?;
@@ -91,6 +92,7 @@ mod tests {
     use crate::keys::test_utils as keys_test;
     use crate::swap::ProofRepository;
     use crate::utils::tests as utils;
+    use cashu::Amount as cdk_Amount;
 
     async fn init_mem_db() -> DB {
         let sdb = Surreal::<Any>::init();
@@ -109,17 +111,17 @@ mod tests {
         let mintkeys = &keys_test::generate_keyset();
         let proofs = utils::generate_proofs(
             mintkeys,
-            &[cdk::Amount::from(16_u64), cdk::Amount::from(8_u64)],
+            &[cdk_Amount::from(16_u64), cdk_Amount::from(8_u64)],
         );
         db.spend(&proofs).await.unwrap();
 
-        let y = cdk::dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
+        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
         assert_eq!(res.unwrap().state, cdk07::State::Spent);
 
-        let y = cdk::dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
+        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
@@ -134,13 +136,13 @@ mod tests {
         let proofs = utils::generate_proofs(
             mintkeys,
             &[
-                cdk::Amount::from(16_u64),
-                cdk::Amount::from(8_u64),
-                cdk::Amount::from(4_u64),
+                cdk_Amount::from(16_u64),
+                cdk_Amount::from(8_u64),
+                cdk_Amount::from(4_u64),
             ],
         );
 
-        let y = cdk::dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
+        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let _r: Option<DBProof> = db
             .db
@@ -153,7 +155,7 @@ mod tests {
             .await
             .unwrap();
 
-        let y = cdk::dhke::hash_to_curve(&proofs[1].secret.to_bytes()).unwrap();
+        let y = cdk_dhke::hash_to_curve(&proofs[1].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let _r: Option<DBProof> = db
             .db

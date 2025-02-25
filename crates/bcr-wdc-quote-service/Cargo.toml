@@ -14,7 +14,7 @@ bcr-wdc-keys = { path = "../bcr-wdc-keys" }
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
 borsh.workspace = true
-cdk.workspace = true
+cashu.workspace = true
 chrono.workspace = true
 config = {version = "0.15"}
 env_logger = {version = "0.11"}

@@ -6,8 +6,9 @@ use async_trait::async_trait;
 use bcr_ebill_core::contact::IdentityPublicData;
 use bcr_wdc_keys as keys;
 use bcr_wdc_keys::KeysetID;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut02 as cdk02;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut02 as cdk02;
+use cashu::Amount as cdk_Amount;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use thiserror::Error;
 use uuid::Uuid;
@@ -323,7 +324,7 @@ where
         ttl: Option<TStamp>,
     ) -> Result<()> {
         let discounted_amount =
-            cdk::Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
+            cdk_Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
