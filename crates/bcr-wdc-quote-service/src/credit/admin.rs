@@ -20,7 +20,7 @@ use crate::utils;
 )]
 pub async fn list_pending_quotes<KG, QR>(
     State(ctrl): State<quotes::Service<KG, QR>>,
-    since: Option<Query<chrono::NaiveDateTime>>,
+    since: Option<Query<chrono::DateTime<chrono::Utc>>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KG: quotes::KeyFactory,
@@ -28,7 +28,7 @@ where
 {
     log::debug!("Received request to list pending quotes");
 
-    let quotes = ctrl.list_pendings(since.map(|q| q.0.and_utc())).await?;
+    let quotes = ctrl.list_pendings(since.map(|q| q.0)).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
@@ -36,7 +36,7 @@ where
     get,
     path = "/v1/admin/credit/quote/accepted",
     params(
-        ("since" = Option<chrono::NaiveDateTime>, Query, description = "only accepted quotes younger than `since`")
+        ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "only accepted quotes younger than `since`")
     ),
     responses (
         (status = 200, description = "Succesful response", body = ListReply, content_type = "application/json"),
