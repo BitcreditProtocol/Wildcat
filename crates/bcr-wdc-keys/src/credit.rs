@@ -2,7 +2,7 @@
 // ----- extra library imports
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
-use cdk::nuts::nut02 as cdk02;
+use cashu::nuts::nut02 as cdk02;
 // ----- local imports
 use crate::id::KeysetID;
 

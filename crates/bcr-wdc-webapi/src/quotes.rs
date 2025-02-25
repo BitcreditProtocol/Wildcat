@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_ebill_core::contact::IdentityPublicData;
-use cdk::nuts::nut00::{BlindSignature, BlindedMessage};
+use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
 use rust_decimal::Decimal;
 // ----- local imports
 
@@ -23,6 +23,7 @@ pub struct BillInfo {
     pub maturity_date: String,
 }
 
+///--------------------------- Enquire mint quote
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct EnquireRequest {
     pub content: BillInfo,

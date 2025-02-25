@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, State};
-use cdk::nuts::nut03 as cdk03;
+use cashu::nuts::nut03 as cdk03;
 // ----- local imports
 use crate::swap;
 use crate::swap::error::Result;

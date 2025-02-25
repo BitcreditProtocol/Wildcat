@@ -5,8 +5,11 @@ use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut02 as cdk02;
+use cashu::dhke as cdk_dhke;
+use cashu::mint as cdk_mint;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut02 as cdk02;
+use cashu::Amount as cdk_Amount;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -21,9 +24,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("no key for amount {0}")]
-    NoKeyForAmount(cdk::Amount),
+    NoKeyForAmount(cdk_Amount),
     #[error("cdk::dhke error {0}")]
-    CdkDHKE(#[from] cdk::dhke::Error),
+    CdkDHKE(#[from] cdk_dhke::Error),
     #[error("invalid timestamp {0}")]
     TStamp(TStamp),
 }
@@ -96,7 +99,7 @@ pub fn sign_with_keys(
         .keys
         .get(&blind.amount)
         .ok_or(Error::NoKeyForAmount(blind.amount))?;
-    let raw_signature = cdk::dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
+    let raw_signature = cdk_dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
     let signature = cdk00::BlindSignature {
         amount: blind.amount,
         c: raw_signature,
@@ -106,24 +109,24 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
-pub type KeysetEntry = (cdk::mint::MintKeySetInfo, cdk02::MintKeySet);
+pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 
 // ----- required traits
 #[async_trait]
 pub trait Repository: Send + Sync {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
     async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
     async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
     async fn store(
         &self,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()>;
 }
 
 #[async_trait]
 pub trait ActiveRepository: Repository {
-    async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+    async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
     #[allow(dead_code)]
     async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
 }
@@ -133,8 +136,6 @@ pub mod test_utils {
 
     use super::*;
     use bitcoin::bip32::DerivationPath;
-    use cdk::nuts::nut00 as cdk00;
-    use cdk::nuts::nut02 as cdk02;
     use once_cell::sync::Lazy;
     use std::str::FromStr;
 
@@ -143,14 +144,14 @@ pub mod test_utils {
         pub Repository {}
         #[async_trait]
         impl Repository for Repository {
-        async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+        async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
         async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
         async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
-        async fn store(&self, keyset: cdk02::MintKeySet, info: cdk::mint::MintKeySetInfo) -> AnyResult<()>;
+        async fn store(&self, keyset: cdk02::MintKeySet, info: cdk_mint::MintKeySetInfo) -> AnyResult<()>;
         }
         #[async_trait]
         impl ActiveRepository for Repository {
-            async fn info_active(&self) -> AnyResult<Option<cdk::mint::MintKeySetInfo>>;
+            async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
             async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
         }
     }

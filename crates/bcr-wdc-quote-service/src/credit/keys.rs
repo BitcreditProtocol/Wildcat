@@ -5,9 +5,10 @@ use async_trait::async_trait;
 use bcr_wdc_keys as keys;
 use bcr_wdc_keys::KeysetID;
 use bitcoin::bip32 as btc32;
-use cdk::nuts::nut00 as cdk00;
-use cdk::nuts::nut01 as cdk01;
-use cdk::nuts::nut02 as cdk02;
+use cashu::mint as cdk_mint;
+use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut01 as cdk01;
+use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -34,7 +35,7 @@ pub trait QuoteBasedRepository: Send + Sync {
         &self,
         qid: Uuid,
         keyset: cdk02::MintKeySet,
-        info: cdk::mint::MintKeySetInfo,
+        info: cdk_mint::MintKeySetInfo,
     ) -> AnyResult<()>;
 }
 
@@ -85,7 +86,7 @@ where
         )
         .keys;
 
-        let info = cdk::mint::MintKeySetInfo {
+        let info = cdk_mint::MintKeySetInfo {
             id: keysetid.into(),
             unit: self.unit.clone(),
             active: false,
@@ -122,7 +123,7 @@ where
             indexed_path,
         );
         keyset.id = kid.into();
-        let info = cdk::mint::MintKeySetInfo {
+        let info = cdk_mint::MintKeySetInfo {
             id: keyset.id,
             unit: self.unit.clone(),
             active: true,
@@ -202,7 +203,7 @@ where
         }
         self.debit_keys.keyset(id).await
     }
-    async fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk::mint::MintKeySetInfo>> {
+    async fn info(&self, id: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
         if let Some(info) = self.endorsed_keys.info(id).await? {
             return Ok(Some(info));
         }
@@ -243,6 +244,7 @@ mod tests {
     use super::*;
     use crate::keys::test_utils as keys_test;
     use crate::swap::KeysRepository;
+    use cashu::Amount as cdk_Amount;
     use mockall::predicate::*;
     use std::str::FromStr;
 
@@ -270,13 +272,13 @@ mod tests {
 
         let keyset = factory.generate(keyid, quote, maturity).await.unwrap();
         // m/129372'/129534'/0'/927402239'/0'
-        let key = &keyset.keys[&cdk::Amount::from(1_u64)];
+        let key = &keyset.keys[&cdk_Amount::from(1_u64)];
         assert_eq!(
             key.public_key.to_hex(),
             "03287106d3d2f1df660f7c7764e39e98051bca0c95feb9604336e9744de88eac68"
         );
         // m/129372'/129534'/0'/927402239'/5'
-        let key = &keyset.keys[&cdk::Amount::from(32_u64)];
+        let key = &keyset.keys[&cdk_Amount::from(32_u64)];
         assert_eq!(
             key.public_key.to_hex(),
             "03c5b66986d15100d1c0b342e012da7a954c7040c13d514ebc3b282ffa3a54651f"
@@ -290,7 +292,7 @@ mod tests {
         let mut debit_repo = keys_test::MockRepository::new();
 
         let kid = keys_test::generate_random_keysetid();
-        let info = cdk::mint::MintKeySetInfo {
+        let info = cdk_mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
             derivation_path_index: Default::default(),
@@ -333,7 +335,7 @@ mod tests {
         let debit_repo = keys_test::MockRepository::new();
 
         let kid = keys_test::generate_random_keysetid();
-        let info = cdk::mint::MintKeySetInfo {
+        let info = cdk_mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
             derivation_path_index: Default::default(),
@@ -372,7 +374,7 @@ mod tests {
         let debit_repo = keys_test::MockRepository::new();
 
         let kid = keys_test::generate_random_keysetid();
-        let info = cdk::mint::MintKeySetInfo {
+        let info = cdk_mint::MintKeySetInfo {
             active: true,
             derivation_path: Default::default(),
             derivation_path_index: Default::default(),
@@ -517,7 +519,7 @@ mod tests {
             .with(eq(in_kid))
             .returning(|_| Ok(None));
         debit_repo.expect_info_active().returning(move || {
-            Ok(Some(cdk::mint::MintKeySetInfo {
+            Ok(Some(cdk_mint::MintKeySetInfo {
                 active: true,
                 derivation_path: Default::default(),
                 derivation_path_index: Default::default(),
@@ -556,7 +558,7 @@ mod tests {
             .expect_info()
             .with(eq(kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: true,
                     derivation_path: Default::default(),
                     derivation_path_index: Default::default(),
@@ -599,7 +601,7 @@ mod tests {
             .expect_info()
             .with(eq(in_kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: false,
                     derivation_path: Default::default(),
                     derivation_path_index: Some(0),
@@ -616,7 +618,7 @@ mod tests {
             .expect_info()
             .with(eq(maturity_kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: true,
                     derivation_path: Default::default(),
                     derivation_path_index: Some(1),
@@ -659,7 +661,7 @@ mod tests {
             .expect_info()
             .with(eq(in_kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: false,
                     derivation_path: Default::default(),
                     derivation_path_index: Some(0),
@@ -678,7 +680,7 @@ mod tests {
             .returning(move |_| Ok(None));
         let debit_kid = keys_test::generate_random_keysetid();
         debit_repo.expect_info_active().returning(move || {
-            Ok(Some(cdk::mint::MintKeySetInfo {
+            Ok(Some(cdk_mint::MintKeySetInfo {
                 active: false,
                 derivation_path: Default::default(),
                 derivation_path_index: Some(0),
@@ -717,7 +719,7 @@ mod tests {
             .expect_info()
             .with(eq(in_kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: false,
                     derivation_path: Default::default(),
                     derivation_path_index: Some(0),
@@ -734,7 +736,7 @@ mod tests {
             .expect_info()
             .with(eq(maturity_kid))
             .returning(move |_| {
-                Ok(Some(cdk::mint::MintKeySetInfo {
+                Ok(Some(cdk_mint::MintKeySetInfo {
                     active: true,
                     derivation_path: Default::default(),
                     derivation_path_index: Some(0),
