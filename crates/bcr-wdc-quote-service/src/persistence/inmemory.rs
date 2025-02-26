@@ -4,14 +4,14 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use bcr_wdc_keys as keys;
 use cashu::mint as cdk_mint;
 use cashu::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::{keys as creditkeys, quotes};
-use crate::keys;
 use crate::keys::{KeysetEntry, KeysetID, Repository};
+use crate::quotes;
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -100,7 +100,7 @@ pub struct KeysetIDQuoteIDMap {
 }
 
 #[async_trait]
-impl creditkeys::QuoteBasedRepository for KeysetIDQuoteIDMap {
+impl crate::keys_factory::QuoteBasedRepository for KeysetIDQuoteIDMap {
     async fn store(
         &self,
         qid: Uuid,

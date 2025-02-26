@@ -14,7 +14,6 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::keys::{sign_with_keys, Result as KeyResult};
 use crate::utils;
 use crate::TStamp;
 
@@ -23,10 +22,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
+    #[error("keys factory error {0}")]
+    KeysFactory(#[from] crate::keys_factory::Error),
     #[error("keys error {0}")]
     Keys(#[from] crate::keys::Error),
-    #[error("credit::keys error {0}")]
-    CreditKeys(#[from] crate::credit::keys::Error),
     #[error("quotes repository error {0}")]
     Repository(#[from] AnyError),
 
@@ -328,8 +327,7 @@ where
 
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
-        let kid =
-            keys::credit::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
+        let kid = keys::credit::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
@@ -343,8 +341,8 @@ where
 
         let signatures = selected_blinds
             .iter()
-            .map(|blind| sign_with_keys(&keyset, blind))
-            .collect::<KeyResult<Vec<cdk00::BlindSignature>>>()?;
+            .map(|blind| keys::sign_with_keys(&keyset, blind))
+            .collect::<keys::Result<Vec<cdk00::BlindSignature>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
         self.quotes.update_if_pending(quote).await?;
