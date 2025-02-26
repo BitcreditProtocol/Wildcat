@@ -11,7 +11,6 @@ use utoipa::OpenApi;
 //mod credit;
 mod credit;
 mod persistence;
-mod swap;
 mod utils;
 // ----- local imports
 
@@ -21,14 +20,9 @@ pub type ProdQuoteKeysRepository = persistence::surreal::keysets::QuoteKeysDB;
 pub type ProdKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdActiveKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
-pub type ProdProofRepository = persistence::surreal::proofs::DB;
 
 pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
 pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
-
-pub type ProdCreditKeysRepository =
-    crate::credit::keys::SwapRepository<ProdKeysRepository, ProdActiveKeysRepository>;
-pub type ProdSwapService = swap::Service<ProdCreditKeysRepository, ProdProofRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
@@ -38,7 +32,6 @@ pub struct AppConfig {
 #[derive(Clone, FromRef)]
 pub struct AppController {
     quote: ProdQuotingService,
-    swap: ProdSwapService,
 }
 
 impl AppController {
@@ -48,9 +41,6 @@ impl AppController {
             quotes,
             quotes_keys,
             maturity_keys,
-            endorsed_keys,
-            debit_keys,
-            proofs,
             ..
         } = dbs;
         let quotes_repository = ProdQuoteRepository::new(quotes)
@@ -59,18 +49,9 @@ impl AppController {
         let quote_keys_repository = ProdQuoteKeysRepository::new(quotes_keys)
             .await
             .expect("DB connection to quoteskeys failed");
-        let endorsed_keys_repository = ProdKeysRepository::new(endorsed_keys)
-            .await
-            .expect("DB connection to endorsed_keys failed");
         let maturity_keys_repository = ProdKeysRepository::new(maturity_keys)
             .await
             .expect("DB connection to maturity_keys failed");
-        let debit_keys_repository = ProdActiveKeysRepository::new(debit_keys)
-            .await
-            .expect("DB connection to debit_keys failed");
-        let proofs_repo = ProdProofRepository::new(proofs)
-            .await
-            .expect("DB connection to proofs failed");
 
         let keys_factory = ProdCreditKeysFactory::new(
             mint_seed,
@@ -82,18 +63,8 @@ impl AppController {
             quotes: quotes_repository,
         };
 
-        let credit_keys_for_swaps = ProdCreditKeysRepository {
-            debit_keys: debit_keys_repository,
-            endorsed_keys: endorsed_keys_repository,
-            maturity_keys: maturity_keys_repository,
-        };
-        let swaps = ProdSwapService {
-            keys: credit_keys_for_swaps,
-            proofs: proofs_repo,
-        };
         Self {
             quote: quoting_service,
-            swap: swaps,
         }
     }
 }
@@ -102,7 +73,6 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     Router::new()
-        .route("/v1/swap", post(swap::web::swap_tokens))
         .route("/v1/credit/mint/quote", post(credit::web::enquire_quote))
         .route("/v1/credit/mint/quote/:id", get(credit::web::lookup_quote))
         .route(

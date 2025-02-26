@@ -4,19 +4,14 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cashu::dhke as cdk_dhke;
 use cashu::mint as cdk_mint;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
-use cashu::nuts::nut07 as cdk07;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::credit::{keys as creditkeys, quotes};
 use crate::keys;
 use crate::keys::{KeysetEntry, KeysetID, Repository};
-use crate::swap;
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -164,39 +159,6 @@ impl keys::Repository for KeysetIDEntryMap {
             .unwrap()
             .insert(KeysetID::from(keyset.id), (info, keyset));
         Ok(())
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct ProofMap {
-    proofs: Arc<RwLock<HashMap<cdk01::PublicKey, cdk07::ProofState>>>,
-}
-
-#[async_trait()]
-impl swap::ProofRepository for ProofMap {
-    async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
-        let mut writer = self.proofs.write().unwrap();
-        for token in tokens {
-            let y = cdk_dhke::hash_to_curve(&token.secret.to_bytes())?;
-            let proofstate = cdk07::ProofState {
-                y,
-                state: cdk07::State::Spent,
-                witness: None,
-            };
-            writer.insert(y, proofstate);
-        }
-        Ok(())
-    }
-
-    async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
-        let mut states: Vec<cdk07::State> = Vec::new();
-        let reader = self.proofs.read().unwrap();
-        for token in tokens {
-            let y = cdk_dhke::hash_to_curve(&token.secret.to_bytes())?;
-            let state = reader.get(&y).map_or(cdk07::State::Unspent, |x| x.state);
-            states.push(state);
-        }
-        Ok(states)
     }
 }
 

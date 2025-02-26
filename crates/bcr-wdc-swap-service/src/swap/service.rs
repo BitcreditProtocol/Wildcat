@@ -77,7 +77,7 @@ where
         inputs: &[cdk00::Proof],
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>> {
-        if inputs.is_empty() {
+        if inputs.is_empty() || outputs.is_empty() {
             return Err(Error::ZeroAmount);
         }
         // first step: zero-cost verifications

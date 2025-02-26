@@ -1,3 +1,4 @@
+
 // ----- standard library imports
 // ----- extra library imports
 use anyhow::Result as AnyResult;
@@ -12,7 +13,6 @@ use surrealdb::{engine::any::Any, Surreal};
 // ----- local modules
 // ----- local imports
 use crate::persistence::surreal::ConnectionConfig;
-use crate::swap;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DBProof {
