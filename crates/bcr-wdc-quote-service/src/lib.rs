@@ -1,6 +1,6 @@
-use axum::extract::FromRef;
 // ----- standard library imports
 // ----- extra library imports
+use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
 use bcr_wdc_keys as keys;
@@ -8,7 +8,6 @@ use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut12 as cdk12;
 use utoipa::OpenApi;
 // ----- local modules
-//mod credit;
 mod admin;
 mod error;
 mod keys_factory;
@@ -79,10 +78,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
     Router::new()
         .route("/v1/credit/mint/quote", post(web::enquire_quote))
         .route("/v1/credit/mint/quote/:id", get(web::lookup_quote))
-        .route(
-            "/v1/credit/mint/quote/:id",
-            post(web::resolve_offer),
-        )
+        .route("/v1/credit/mint/quote/:id", post(web::resolve_offer))
         .route(
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),
@@ -91,14 +87,8 @@ pub fn credit_routes(ctrl: AppController) -> Router {
             "/v1/admin/credit/quote/accepted",
             get(admin::list_accepted_quotes),
         )
-        .route(
-            "/v1/admin/credit/quote/:id",
-            get(admin::lookup_quote),
-        )
-        .route(
-            "/v1/admin/credit/quote/:id",
-            post(admin::resolve_quote),
-        )
+        .route("/v1/admin/credit/quote/:id", get(admin::lookup_quote))
+        .route("/v1/admin/credit/quote/:id", post(admin::resolve_quote))
         .with_state(ctrl)
         .merge(swagger)
 }
