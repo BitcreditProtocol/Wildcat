@@ -2,7 +2,6 @@
 // ----- extra library imports
 // ----- local modules
 pub mod keysets;
-pub mod proofs;
 pub mod quotes;
 // ----- local imports
 
@@ -18,8 +17,5 @@ pub struct ConnectionConfig {
 pub struct DBConfig {
     pub quotes: ConnectionConfig,
     pub quotes_keys: ConnectionConfig,
-    pub endorsed_keys: ConnectionConfig,
     pub maturity_keys: ConnectionConfig,
-    pub debit_keys: ConnectionConfig,
-    pub proofs: ConnectionConfig,
 }
