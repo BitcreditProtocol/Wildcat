@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_ebill_core::contact::IdentityPublicData;
 use bcr_wdc_keys as keys;
@@ -10,35 +10,12 @@ use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount as cdk_Amount;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::keys::{sign_with_keys, Result as KeyResult};
+use crate::error::{Error, Result};
 use crate::utils;
 use crate::TStamp;
-
-// ----- error
-pub type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug, Error)]
-pub enum Error {
-    // external errors wrappers
-    #[error("keys error {0}")]
-    Keys(#[from] crate::keys::Error),
-    #[error("credit::keys error {0}")]
-    CreditKeys(#[from] crate::credit::keys::Error),
-    #[error("quotes repository error {0}")]
-    Repository(#[from] AnyError),
-
-    #[error("Quote has been already resolved: {0}")]
-    QuoteAlreadyResolved(uuid::Uuid),
-    #[error("unknown quote id {0}")]
-    UnknownQuoteID(uuid::Uuid),
-    #[error("Invalid amount: {0}")]
-    InvalidAmount(rust_decimal::Decimal),
-    #[error("Error in parsing datetime: {0}")]
-    Chrono(#[from] chrono::ParseError),
-}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BillInfo {
@@ -53,7 +30,7 @@ pub struct BillInfo {
 impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
     type Error = Error;
     fn try_from(bill: bcr_wdc_webapi::quotes::BillInfo) -> Result<Self> {
-        let maturity_date = TStamp::from_str(&bill.maturity_date)?;
+        let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
         Ok(Self {
             id: bill.id,
             drawee: bill.drawee,
@@ -201,7 +178,8 @@ where
         let mut quotes = self
             .quotes
             .search_by_bill(&bill.id, &bill.holder.node_id)
-            .await?;
+            .await
+            .map_err(Error::QuotesRepository)?;
 
         // pick the more recent quote for this eBill/endorser
         quotes.sort_by_key(|q| std::cmp::Reverse(q.submitted));
@@ -225,7 +203,10 @@ where
                 if *ttl < submitted {
                     let quote = Quote::new(bill, blinds, submitted);
                     let id = quote.id;
-                    self.quotes.store(quote).await?;
+                    self.quotes
+                        .store(quote)
+                        .await
+                        .map_err(Error::QuotesRepository)?;
                     Ok(id)
                 } else {
                     Err(Error::QuoteAlreadyResolved(*id))
@@ -260,54 +241,79 @@ where
     }
 
     pub async fn deny(&self, id: uuid::Uuid) -> Result<()> {
-        let old = self.quotes.load(id).await?;
+        let old = self
+            .quotes
+            .load(id)
+            .await
+            .map_err(Error::QuotesRepository)?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
         quote.deny()?;
-        self.quotes.update_if_pending(quote).await?;
+        self.quotes
+            .update_if_pending(quote)
+            .await
+            .map_err(Error::QuotesRepository)?;
         Ok(())
     }
 
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
-        let old = self.quotes.load(id).await?;
+        let old = self
+            .quotes
+            .load(id)
+            .await
+            .map_err(Error::QuotesRepository)?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
         quote.reject(tstamp)?;
-        self.quotes.update_if_offered(quote).await?;
+        self.quotes
+            .update_if_offered(quote)
+            .await
+            .map_err(Error::QuotesRepository)?;
         Ok(())
     }
 
     pub async fn accept(&self, id: uuid::Uuid) -> Result<()> {
-        let old = self.quotes.load(id).await?;
+        let old = self
+            .quotes
+            .load(id)
+            .await
+            .map_err(Error::QuotesRepository)?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
         quote.accept()?;
-        self.quotes.update_if_offered(quote).await?;
+        self.quotes
+            .update_if_offered(quote)
+            .await
+            .map_err(Error::QuotesRepository)?;
         Ok(())
     }
 
     pub async fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
-        self.quotes.load(id).await?.ok_or(Error::UnknownQuoteID(id))
+        self.quotes
+            .load(id)
+            .await
+            .map_err(Error::QuotesRepository)?
+            .ok_or(Error::UnknownQuoteID(id))
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
         self.quotes
             .list_pendings(since)
             .await
-            .map_err(Error::Repository)
+            .map_err(Error::QuotesRepository)
     }
 
     pub async fn list_offers(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
         self.quotes
             .list_offers(since)
             .await
-            .map_err(Error::Repository)
+            .map_err(Error::QuotesRepository)
     }
 }
 
@@ -343,8 +349,8 @@ where
 
         let signatures = selected_blinds
             .iter()
-            .map(|blind| sign_with_keys(&keyset, blind))
-            .collect::<KeyResult<Vec<cdk00::BlindSignature>>>()?;
+            .map(|blind| keys::sign_with_keys(&keyset, blind))
+            .collect::<keys::Result<Vec<cdk00::BlindSignature>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
         self.quotes.update_if_pending(quote).await?;

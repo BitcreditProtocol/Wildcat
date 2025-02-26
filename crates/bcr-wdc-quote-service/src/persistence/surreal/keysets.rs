@@ -4,6 +4,7 @@ use std::collections::HashMap;
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use bcr_wdc_keys as keys;
 use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
@@ -15,8 +16,7 @@ use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::keys as creditkeys;
-use crate::keys;
+use crate::keys_factory;
 use crate::persistence::surreal::ConnectionConfig;
 
 // ----- keys repository
@@ -155,7 +155,7 @@ impl QuoteKeysDB {
 }
 
 #[async_trait]
-impl creditkeys::QuoteBasedRepository for QuoteKeysDB {
+impl keys_factory::QuoteBasedRepository for QuoteKeysDB {
     async fn load(&self, _kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
         let res: Option<DBQuoteKeys> = self.db.select((self.table.clone(), qid)).await?;
         Ok(res.map(|dbqk| dbqk.data.into()))

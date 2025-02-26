@@ -6,8 +6,8 @@ use bcr_wdc_webapi::quotes as web_quotes;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 // ----- local imports
-use crate::credit::error::Result;
-use crate::credit::quotes;
+use crate::error::Result;
+use crate::quotes;
 
 ///--------------------------- Enquire mint quote
 #[utoipa::path(

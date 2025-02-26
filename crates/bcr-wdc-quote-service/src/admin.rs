@@ -3,8 +3,8 @@
 use axum::extract::{Json, Path, Query, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
-use crate::credit::error::Result;
-use crate::credit::quotes;
+use crate::error::Result;
+use crate::quotes;
 use crate::utils;
 
 /// --------------------------- List quotes
