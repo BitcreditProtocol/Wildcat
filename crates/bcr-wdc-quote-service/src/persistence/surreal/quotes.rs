@@ -8,7 +8,7 @@ use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::quotes;
+use crate::quotes;
 use crate::persistence::surreal::ConnectionConfig;
 use crate::TStamp;
 

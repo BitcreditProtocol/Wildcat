@@ -13,7 +13,7 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::quotes::KeyFactory;
+use crate::quotes::KeyFactory;
 use crate::TStamp;
 
 #[derive(Debug, Error)]

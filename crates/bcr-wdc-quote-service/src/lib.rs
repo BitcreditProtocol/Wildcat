@@ -9,9 +9,13 @@ use cashu::nuts::nut12 as cdk12;
 use utoipa::OpenApi;
 // ----- local modules
 //mod credit;
-mod credit;
+mod admin;
+mod error;
+mod keys_factory;
 mod persistence;
+mod quotes;
 mod utils;
+mod web;
 // ----- local imports
 
 type TStamp = chrono::DateTime<chrono::Utc>;
@@ -21,8 +25,8 @@ pub type ProdKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdActiveKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 
-pub type ProdCreditKeysFactory = credit::keys::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
-pub type ProdQuotingService = credit::quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
+pub type ProdCreditKeysFactory = keys_factory::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
+pub type ProdQuotingService = quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
@@ -73,27 +77,27 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     Router::new()
-        .route("/v1/credit/mint/quote", post(credit::web::enquire_quote))
-        .route("/v1/credit/mint/quote/:id", get(credit::web::lookup_quote))
+        .route("/v1/credit/mint/quote", post(web::enquire_quote))
+        .route("/v1/credit/mint/quote/:id", get(web::lookup_quote))
         .route(
             "/v1/credit/mint/quote/:id",
-            post(credit::web::resolve_offer),
+            post(web::resolve_offer),
         )
         .route(
             "/v1/admin/credit/quote/pending",
-            get(credit::admin::list_pending_quotes),
+            get(admin::list_pending_quotes),
         )
         .route(
             "/v1/admin/credit/quote/accepted",
-            get(credit::admin::list_accepted_quotes),
+            get(admin::list_accepted_quotes),
         )
         .route(
             "/v1/admin/credit/quote/:id",
-            get(credit::admin::lookup_quote),
+            get(admin::lookup_quote),
         )
         .route(
             "/v1/admin/credit/quote/:id",
-            post(credit::admin::resolve_quote),
+            post(admin::resolve_quote),
         )
         .with_state(ctrl)
         .merge(swagger)
@@ -118,13 +122,13 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         cdk12::BlindSignatureDleq,
     ),),
     paths(
-        crate::credit::web::enquire_quote,
-        crate::credit::web::lookup_quote,
-        crate::credit::admin::list_pending_quotes,
-        crate::credit::admin::list_accepted_quotes,
-        crate::credit::admin::lookup_quote,
-        crate::credit::admin::resolve_quote,
-        crate::credit::web::resolve_offer,
+        crate::web::enquire_quote,
+        crate::web::lookup_quote,
+        crate::admin::list_pending_quotes,
+        crate::admin::list_accepted_quotes,
+        crate::admin::lookup_quote,
+        crate::admin::resolve_quote,
+        crate::web::resolve_offer,
     )
 )]
 struct ApiDoc;
