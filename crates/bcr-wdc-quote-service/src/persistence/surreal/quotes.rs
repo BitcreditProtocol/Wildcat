@@ -8,8 +8,8 @@ use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::quotes;
 use crate::persistence::surreal::ConnectionConfig;
+use crate::quotes;
 use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
