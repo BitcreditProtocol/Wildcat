@@ -1,15 +1,15 @@
 services:
-  wildcat:
+  quote-service:
     build:
       context: .
-      dockerfile: ./docker/wildcat/Dockerfile
+      dockerfile: ./docker/quote-service/Dockerfile
     ports:
       - "3338:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
     volumes:
-      - ${PWD}/wildcat.toml:/wildcat/wildcat.toml
+      - ${PWD}/wildcat.toml:/quote-service/wildcat.toml
 
   surrealdb:
     image: surrealdb/surrealdb:latest
