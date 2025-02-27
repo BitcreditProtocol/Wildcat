@@ -17,5 +17,4 @@ pub struct ConnectionConfig {
 pub struct DBConfig {
     pub quotes: ConnectionConfig,
     pub quotes_keys: ConnectionConfig,
-    pub maturity_keys: ConnectionConfig,
 }
