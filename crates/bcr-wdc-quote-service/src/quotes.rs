@@ -335,7 +335,7 @@ where
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
         let kid =
-            keys::credit::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
+            keys::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };

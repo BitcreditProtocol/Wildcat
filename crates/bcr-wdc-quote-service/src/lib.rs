@@ -20,11 +20,9 @@ mod web;
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::surreal::keysets::QuoteKeysDB;
-pub type ProdKeysRepository = persistence::surreal::keysets::KeysDB;
-pub type ProdActiveKeysRepository = persistence::surreal::keysets::KeysDB;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 
-pub type ProdCreditKeysFactory = keys_factory::Factory<ProdQuoteKeysRepository, ProdKeysRepository>;
+pub type ProdCreditKeysFactory = keys_factory::Factory<ProdQuoteKeysRepository>;
 pub type ProdQuotingService = quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -43,7 +41,6 @@ impl AppController {
         let persistence::surreal::DBConfig {
             quotes,
             quotes_keys,
-            maturity_keys,
             ..
         } = dbs;
         let quotes_repository = ProdQuoteRepository::new(quotes)
@@ -52,15 +49,8 @@ impl AppController {
         let quote_keys_repository = ProdQuoteKeysRepository::new(quotes_keys)
             .await
             .expect("DB connection to quoteskeys failed");
-        let maturity_keys_repository = ProdKeysRepository::new(maturity_keys)
-            .await
-            .expect("DB connection to maturity_keys failed");
 
-        let keys_factory = ProdCreditKeysFactory::new(
-            mint_seed,
-            quote_keys_repository,
-            maturity_keys_repository.clone(),
-        );
+        let keys_factory = ProdCreditKeysFactory::new(mint_seed, quote_keys_repository);
         let quoting_service = ProdQuotingService {
             keys_gen: keys_factory,
             quotes: quotes_repository,
@@ -76,9 +66,9 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     Router::new()
-        .route("/v1/credit/mint/quote", post(web::enquire_quote))
-        .route("/v1/credit/mint/quote/:id", get(web::lookup_quote))
-        .route("/v1/credit/mint/quote/:id", post(web::resolve_offer))
+        .route("/v1/mint/credit/quote", post(web::enquire_quote))
+        .route("/v1/mint/credit/quote/:id", get(web::lookup_quote))
+        .route("/v1/mint/credit/quote/:id", post(web::resolve_offer))
         .route(
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),

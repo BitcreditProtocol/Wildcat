@@ -1,20 +1,18 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Result as AnyResult;
-use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 use cashu::dhke as cdk_dhke;
-use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount as cdk_Amount;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
-pub mod credit;
 pub mod id;
+#[cfg(feature = "persistence")]
+pub mod persistence;
 // ----- local imports
 pub use crate::id::KeysetID;
 
@@ -65,30 +63,15 @@ pub fn generate_keyset_path(kid: KeysetID, id: Option<uuid::Uuid>) -> btc32::Der
     btc32::DerivationPath::from(path.as_slice())
 }
 
-/// Generates a keyset id from a date and a rotation index
-/// id[0..4] = date in days from unix epoch
-/// id[4..7] = rotation index in big endian
-pub fn generate_keyset_id_from_date(date: TStamp, rotation_idx: u32) -> KeysetID {
-    let idx = (date - chrono::DateTime::UNIX_EPOCH).num_days() as u32;
-    let mut kid = KeysetID {
+pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
+    let input = format!("{}{}", bill, node);
+    let digest = Sha256::hash(input.as_bytes());
+    KeysetID {
         version: cdk02::KeySetVersion::Version00,
-        id: Default::default(),
-    };
-    kid.id[3..7].copy_from_slice(&rotation_idx.to_be_bytes());
-    kid.id[0..4].copy_from_slice(&idx.to_be_bytes());
-    kid
-}
-
-pub fn extract_date_from_id(id: &KeysetID) -> (TStamp, u32) {
-    let mut u32_buf: [u8; 4] = Default::default();
-    u32_buf.copy_from_slice(&id.id[0..4]);
-    let maturity = TStamp::from_timestamp(u32::from_be_bytes(u32_buf) as i64, 0)
-        .expect("datetime conversion from u64");
-
-    u32_buf = Default::default();
-    u32_buf[1..].copy_from_slice(&id.id[4..7]);
-    let idx = u32::from_be_bytes(u32_buf);
-    (maturity, idx)
+        id: digest.as_byte_array()[0..KeysetID::BYTELEN]
+            .try_into()
+            .expect("cdk::KeysetID BYTELEN == 7"),
+    }
 }
 
 pub fn sign_with_keys(
@@ -109,27 +92,7 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
-pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 
-// ----- required traits
-#[async_trait]
-pub trait Repository: Send + Sync {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
-    async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
-    async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
-    async fn store(
-        &self,
-        keyset: cdk02::MintKeySet,
-        info: cdk_mint::MintKeySetInfo,
-    ) -> AnyResult<()>;
-}
-
-#[async_trait]
-pub trait ActiveRepository: Repository {
-    async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
-    #[allow(dead_code)]
-    async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
-}
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
@@ -139,22 +102,6 @@ pub mod test_utils {
     use once_cell::sync::Lazy;
     use std::str::FromStr;
 
-    mockall::mock! {
-        // Structure to mock
-        pub Repository {}
-        #[async_trait]
-        impl Repository for Repository {
-        async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
-        async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>>;
-        async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>>;
-        async fn store(&self, keyset: cdk02::MintKeySet, info: cdk_mint::MintKeySetInfo) -> AnyResult<()>;
-        }
-        #[async_trait]
-        impl ActiveRepository for Repository {
-            async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>>;
-            async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>>;
-        }
-    }
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
         Lazy::new(bitcoin::secp256k1::Secp256k1::new);
 

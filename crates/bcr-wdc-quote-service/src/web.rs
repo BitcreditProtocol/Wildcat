@@ -12,7 +12,7 @@ use crate::quotes;
 ///--------------------------- Enquire mint quote
 #[utoipa::path(
     post,
-    path = "/v1/credit/mint/quote",
+    path = "/v1/mint/credit/quote",
     request_body(content = EnquireRequest, content_type = "application/json"),
     responses (
         (status = 200, description = "Quote request admitted", body = EnquireReply, content_type = "application/json"),
@@ -71,7 +71,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
 
 #[utoipa::path(
     get,
-    path = "/v1/credit/mint/quote/{id}",
+    path = "/v1/mint/credit/quote/{id}",
     params(
         ("id" = Uuid, Path, description = "The quote id")
     ),

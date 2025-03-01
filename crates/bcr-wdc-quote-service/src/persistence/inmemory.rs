@@ -10,7 +10,7 @@ use cashu::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::keys::{KeysetEntry, KeysetID, Repository};
+use crate::keys::{persistence::KeysetEntry, KeysetID};
 use crate::quotes;
 use crate::TStamp;
 
@@ -114,101 +114,8 @@ impl crate::keys_factory::QuoteBasedRepository for KeysetIDQuoteIDMap {
         Ok(())
     }
 
-    async fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>> {
+    async fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<KeysetEntry>> {
         let mapkey = (kid.clone(), qid);
         Ok(self.keys.read().unwrap().get(&mapkey).cloned())
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct KeysetIDEntryMap {
-    keys: Arc<RwLock<HashMap<KeysetID, KeysetEntry>>>,
-}
-
-#[async_trait]
-impl keys::Repository for KeysetIDEntryMap {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
-        let a = self
-            .keys
-            .read()
-            .unwrap()
-            .get(kid)
-            .map(|(info, _)| info.clone());
-        Ok(a)
-    }
-    async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
-        let a = self
-            .keys
-            .read()
-            .unwrap()
-            .get(kid)
-            .map(|(_, keyset)| keyset.clone());
-        Ok(a)
-    }
-    async fn load(&self, kid: &KeysetID) -> AnyResult<Option<keys::KeysetEntry>> {
-        let a = self.keys.read().unwrap().get(kid).cloned();
-        Ok(a)
-    }
-    async fn store(
-        &self,
-        keyset: cdk02::MintKeySet,
-        info: cdk_mint::MintKeySetInfo,
-    ) -> AnyResult<()> {
-        self.keys
-            .write()
-            .unwrap()
-            .insert(KeysetID::from(keyset.id), (info, keyset));
-        Ok(())
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct KeysetIDEntryMapWithActive {
-    keys: KeysetIDEntryMap,
-    active: Arc<RwLock<Option<KeysetID>>>,
-}
-
-#[async_trait]
-impl keys::Repository for KeysetIDEntryMapWithActive {
-    async fn info(&self, kid: &KeysetID) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
-        self.keys.info(kid).await
-    }
-
-    async fn keyset(&self, kid: &KeysetID) -> AnyResult<Option<cdk02::MintKeySet>> {
-        self.keys.keyset(kid).await
-    }
-
-    async fn load(&self, kid: &KeysetID) -> AnyResult<Option<KeysetEntry>> {
-        self.keys.load(kid).await
-    }
-
-    async fn store(
-        &self,
-        keyset: cdk02::MintKeySet,
-        info: cdk_mint::MintKeySetInfo,
-    ) -> AnyResult<()> {
-        if info.active {
-            *self.active.write().unwrap() = Some(KeysetID::from(keyset.id));
-        }
-        self.keys.store(keyset, info).await
-    }
-}
-
-#[async_trait]
-impl keys::ActiveRepository for KeysetIDEntryMapWithActive {
-    async fn info_active(&self) -> AnyResult<Option<cdk_mint::MintKeySetInfo>> {
-        let kid = *self.active.read().unwrap();
-        if let Some(kid) = kid {
-            return self.keys.info(&kid).await;
-        }
-        Ok(None)
-    }
-
-    async fn keyset_active(&self) -> AnyResult<Option<cdk02::MintKeySet>> {
-        let kid = *self.active.read().unwrap();
-        if let Some(kid) = kid {
-            return self.keys.keyset(&kid).await;
-        }
-        Ok(None)
     }
 }

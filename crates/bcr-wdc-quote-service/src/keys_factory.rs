@@ -3,6 +3,7 @@
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use bcr_wdc_keys as keys;
+use bcr_wdc_keys::persistence::KeysetEntry;
 use bcr_wdc_keys::KeysetID;
 use bitcoin::bip32 as btc32;
 use cashu::mint as cdk_mint;
@@ -28,7 +29,7 @@ pub enum Error {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait QuoteBasedRepository: Send + Sync {
-    async fn load(&self, kid: &KeysetID, qid: Uuid) -> AnyResult<Option<keys::KeysetEntry>>;
+    async fn load(&self, kid: &KeysetID, qid: Uuid) -> AnyResult<Option<KeysetEntry>>;
     async fn store(
         &self,
         qid: Uuid,
@@ -39,34 +40,31 @@ pub trait QuoteBasedRepository: Send + Sync {
 
 // ---------- Keys Factory
 #[derive(Clone)]
-pub struct Factory<QuoteKeys, MaturityKeys> {
+pub struct Factory<QuoteKeys> {
     ctx: bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     xpriv: btc32::Xpriv,
     quote_keys: QuoteKeys,
-    maturing_keys: MaturityKeys,
     unit: cdk00::CurrencyUnit,
 }
 
-impl<QuoteKeys, MaturityKeys> Factory<QuoteKeys, MaturityKeys> {
+impl<QuoteKeys> Factory<QuoteKeys> {
     pub const MAX_ORDER: u8 = 20;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
-    pub fn new(seed: &[u8], quote_keys: QuoteKeys, maturing_keys: MaturityKeys) -> Self {
+    pub fn new(seed: &[u8], quote_keys: QuoteKeys) -> Self {
         Self {
             ctx: bitcoin::secp256k1::Secp256k1::new(),
             xpriv: btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL"),
             quote_keys,
-            maturing_keys,
             unit: cdk00::CurrencyUnit::Custom(String::from(Self::CURRENCY_UNIT)),
         }
     }
 }
 
 #[async_trait]
-impl<QuoteKeys, MaturityKeys> KeyFactory for Factory<QuoteKeys, MaturityKeys>
+impl<QuoteKeys> KeyFactory for Factory<QuoteKeys>
 where
     QuoteKeys: QuoteBasedRepository,
-    MaturityKeys: keys::Repository,
 {
     async fn generate(
         &self,
@@ -102,38 +100,6 @@ where
         };
         self.quote_keys.store(quote, set.clone(), info).await?;
 
-        let kid = keys::generate_keyset_id_from_date(bill_maturity_date, 0);
-        if self.maturing_keys.info(&kid).await?.is_some() {
-            return Ok(set);
-        }
-
-        let kid = keys::generate_keyset_id_from_date(bill_maturity_date, 0);
-        let path = keys::generate_keyset_path(kid, None);
-        // adding <rotate_idx> starts from zero
-        let rotate_child =
-            btc32::ChildNumber::from_hardened_idx(0).expect("rotate index 0 is valid");
-        let indexed_path = path.child(rotate_child);
-        let mut keyset = cdk02::MintKeySet::generate_from_xpriv(
-            &self.ctx,
-            self.xpriv,
-            Self::MAX_ORDER,
-            self.unit.clone(),
-            indexed_path,
-        );
-        keyset.id = kid.into();
-        let info = cdk_mint::MintKeySetInfo {
-            id: keyset.id,
-            unit: self.unit.clone(),
-            active: true,
-            valid_from: chrono::Utc::now().timestamp() as u64,
-            valid_to: Some(bill_maturity_date.timestamp() as u64),
-            derivation_path: path,
-            derivation_path_index: Some(0),
-            max_order: Self::MAX_ORDER,
-            input_fee_ppk: 0,
-        };
-        self.maturing_keys.store(keyset.clone(), info).await?;
-
         Ok(set)
     }
 }
@@ -142,7 +108,6 @@ where
 mod tests {
 
     use super::*;
-    use crate::keys::test_utils as keys_test;
     use cashu::Amount as cdk_Amount;
     use mockall::predicate::*;
     use std::str::FromStr;
@@ -157,9 +122,6 @@ mod tests {
             .unwrap()
             .to_utc();
 
-        let mut maturitykeys_repo = keys_test::MockRepository::new();
-        maturitykeys_repo.expect_info().returning(|_| Ok(None));
-        maturitykeys_repo.expect_store().returning(|_, _| Ok(()));
         let mut quotekeys_repo = MockQuoteBasedRepository::new();
         quotekeys_repo
             .expect_store()
@@ -167,7 +129,7 @@ mod tests {
             .returning(|_, _, _| Ok(()));
         //quotekeys_repo.expect_store().returning(|_, _| Ok(()));
 
-        let factory = Factory::new(&seed, quotekeys_repo, maturitykeys_repo);
+        let factory = Factory::new(&seed, quotekeys_repo);
 
         let keyset = factory.generate(keyid, quote, maturity).await.unwrap();
         // m/129372'/129534'/0'/927402239'/0'
