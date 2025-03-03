@@ -97,6 +97,7 @@ pub mod test_utils {
 
     use super::*;
     use bitcoin::bip32::DerivationPath;
+    use cashu::nuts::nut01 as cdk01;
     use once_cell::sync::Lazy;
     use std::str::FromStr;
 
@@ -113,5 +114,21 @@ pub mod test_utils {
     pub fn generate_keyset() -> cdk02::MintKeySet {
         let path = DerivationPath::from_str("m/0'/0").unwrap();
         cdk02::MintKeySet::generate_from_seed(&SECPCTX, &[], 10, cdk00::CurrencyUnit::Sat, path)
+    }
+
+    pub const RANDOMS: [&str; 6] = [
+        "0244e4420934530b2bdf5161f4c88b3c4f923db158741da51f3bb22b579495862e",
+        "03244bce3f2ea7b12acd2004a6c629acf9d01e7eceadfd7f4ce6f7a09134a84474",
+        "0212612cddd9e1aa368c500654538c71ebdf70d5bc4a1b642f9c963269505514cc",
+        "0292abc8e9eb2935f0ae6fcf7c491ea124a5860ed954e339a0b7f549cd8c190500",
+        "02cc8e0448596f0aaec2c62ef02e5a36f53a4e8b7d5a9e906d2c1f8d5cd738ccae",
+        "027a238c992c4a5ea59502b2d6b52e6466bf2a775191cbfaf29b9311e8352d99dc",
+    ];
+
+    pub fn publics() -> Vec<cdk01::PublicKey> {
+        RANDOMS
+            .iter()
+            .map(|key| cdk01::PublicKey::from_hex(key).unwrap())
+            .collect()
     }
 }
