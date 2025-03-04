@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
-use cashu::nuts::nut02 as cdk02;
 use cashu::Amount;
+use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local imports
 

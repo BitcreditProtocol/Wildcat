@@ -34,8 +34,8 @@ pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super:
 pub mod tests {
 
     use super::*;
-    use cashu::nuts::nut02 as cdk02;
     use bcr_wdc_keys::test_utils as keys_test;
+    use cashu::nuts::nut02 as cdk02;
 
     #[test]
     fn test_select_blind_signatures_no_valid_blinds() {

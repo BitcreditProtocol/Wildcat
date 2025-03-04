@@ -361,7 +361,7 @@ where
 mod tests {
 
     use super::*;
-    use crate::utils::tests as testutils;
+    use bcr_wdc_keys::test_utils as keysutils;
     use mockall::predicate::*;
     use rand::{seq::IndexedRandom, Rng};
 
@@ -447,7 +447,7 @@ mod tests {
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::rng();
-        let ids = testutils::publics();
+        let ids = keysutils::publics();
         BillInfo {
             id: ids.choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),

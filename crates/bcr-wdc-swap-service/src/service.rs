@@ -113,7 +113,6 @@ where
         self.verify_keys_are_active(&ids).await?;
         // 2. verify proofs signatures
         self.verify_proofs_signatures(inputs).await?;
-        // 3. verify proofs are not already spent
         let mut signatures = Vec::with_capacity(outputs.len());
         for output in outputs {
             let keys = self
@@ -160,7 +159,9 @@ mod tests {
         keysrvc
             .expect_info()
             .returning(move |_| Ok(Some(keyinfo.clone())));
-        keysrvc.expect_keyset().returning(move |_| Ok(Some(keyset.clone())));
+        keysrvc
+            .expect_keyset()
+            .returning(move |_| Ok(Some(keyset.clone())));
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_insert()
@@ -177,7 +178,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_unknown_keysetid() {
-
         let (_, keyset) = keys_test::generate_keyset();
         let kid = keyset.id;
         let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
@@ -188,10 +188,7 @@ mod tests {
 
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();
-        keysrvc
-            .expect_info()
-            .with(eq(kid))
-            .returning(|_| Ok(None));
+        keysrvc.expect_info().with(eq(kid)).returning(|_| Ok(None));
         let swaps = Service {
             keys: keysrvc,
             proofs: proofrepo,
@@ -206,7 +203,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_wrong_signatures() {
-        let (keyinfo,keyset) = keys_test::generate_keyset();
+        let (keyinfo, keyset) = keys_test::generate_keyset();
         let mut inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = keys_test::publics()[0];
         let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
@@ -306,7 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_swap_merge_tokens_ok() {
-        let (keyinfo,keyset) = keys_test::generate_keyset();
+        let (keyinfo, keyset) = keys_test::generate_keyset();
         let inputs =
             utils::generate_proofs(&keyset, vec![Amount::from(4), Amount::from(4)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
