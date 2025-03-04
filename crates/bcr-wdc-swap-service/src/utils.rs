@@ -1,14 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
+use cashu::Amount as cdk_Amount;
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::secret as cdk_secret;
-use cashu::Amount as cdk_Amount;
 // ----- local imports
-
-
 
 pub fn generate_proofs(keyset: &cdk02::MintKeySet, amounts: &[cdk_Amount]) -> Vec<cdk00::Proof> {
     let mut proofs: Vec<cdk00::Proof> = Vec::new();

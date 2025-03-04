@@ -97,9 +97,9 @@ pub mod test_utils {
 
     use super::*;
     use bitcoin::bip32::DerivationPath;
+    use cashu::mint as cdk_mint;
     use cashu::nuts::nut01 as cdk01;
     use once_cell::sync::Lazy;
-    use std::str::FromStr;
 
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
         Lazy::new(bitcoin::secp256k1::Secp256k1::new);
@@ -111,9 +111,27 @@ pub mod test_utils {
         }
     }
 
-    pub fn generate_keyset() -> cdk02::MintKeySet {
-        let path = DerivationPath::from_str("m/0'/0").unwrap();
-        cdk02::MintKeySet::generate_from_seed(&SECPCTX, &[], 10, cdk00::CurrencyUnit::Sat, path)
+    pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
+        let path = DerivationPath::master();
+        let set = cdk02::MintKeySet::generate_from_seed(
+            &SECPCTX,
+            &[],
+            10,
+            cdk00::CurrencyUnit::Sat,
+            path.clone(),
+        );
+        let info = cdk_mint::MintKeySetInfo {
+            id: set.id,
+            active: true,
+            unit: cdk00::CurrencyUnit::Sat,
+            valid_from: 0,
+            valid_to: None,
+            derivation_path_index: None,
+            derivation_path: path,
+            input_fee_ppk: 0,
+            max_order: 10,
+        };
+        (info, set)
     }
 
     pub const RANDOMS: [&str; 6] = [
