@@ -1,33 +1,38 @@
-
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Result as AnyResult;
+use anyhow::anyhow;
 use async_trait::async_trait;
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut01 as cdk01;
-use cashu::nuts::nut07 as cdk07;
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
-use surrealdb::{engine::any::Any, Surreal};
+use surrealdb::{Surreal, engine::any::Any};
 // ----- local modules
 // ----- local imports
-use crate::persistence::surreal::ConnectionConfig;
+use crate::error::{Error, Result};
+use crate::service::ProofRepository;
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ConnectionConfig {
+    pub connection: String,
+    pub namespace: String,
+    pub database: String,
+    pub table: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DBProof {
     id: RecordId,
-    y: cdk01::PublicKey,
-    state: cdk07::State,
+    proof: cdk00::Proof,
 }
 
 #[derive(Debug, Clone)]
-pub struct DB {
+pub struct ProofDB {
     db: Surreal<surrealdb::engine::any::Any>,
     table: String,
 }
 
-impl DB {
+impl ProofDB {
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
@@ -41,137 +46,124 @@ impl DB {
 }
 
 #[async_trait]
-impl swap::ProofRepository for DB {
-    async fn spend(&self, tokens: &[cdk00::Proof]) -> AnyResult<()> {
+impl ProofRepository for ProofDB {
+    async fn insert(&self, tokens: &[cdk00::Proof]) -> Result<()> {
         let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
         for tk in tokens {
-            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes())?;
+            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes()).map_err(Error::CdkDhke)?;
             let rid = RecordId::from_table_key(&self.table, y.to_string());
             entries.push(DBProof {
                 id: rid,
-                y,
-                state: cdk07::State::Spent,
+                proof: tk.clone(),
             });
         }
-        let _: Vec<DBProof> = self.db.insert(&self.table).content(entries).await?;
-        Ok(())
-    }
-
-    async fn get_state(&self, tokens: &[cdk00::Proof]) -> AnyResult<Vec<cdk07::State>> {
-        let rids: Vec<_> = tokens
-            .iter()
-            .map(|tk| {
-                let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes())?;
-                Ok(RecordId::from_table_key(&self.table, y.to_string()))
-            })
-            .collect::<AnyResult<_>>()?;
-
-        let resp: Vec<DBProof> = self
+        let _: Vec<DBProof> = self
             .db
-            .query("SELECT * FROM $rids")
-            .bind(("rids", rids.clone()))
-            .await?
-            .take(0)?;
-
-        let mut states = Vec::with_capacity(rids.len());
-        for rid in rids {
-            let found = resp.iter().find(|r| r.id == rid);
-            if let Some(r) = found {
-                states.push(r.state);
-            } else {
-                states.push(cdk07::State::Unspent);
-            }
-        }
-        Ok(states)
+            .insert(&self.table)
+            .content(entries)
+            .await
+            .map_err(|e| match e {
+                surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
+                    Error::ProofsAlreadySpent
+                }
+                _ => Error::ProofRepository(anyhow!(e)),
+            })?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::test_utils as keys_test;
-    use crate::swap::ProofRepository;
-    use crate::utils::tests as utils;
+    use crate::utils;
+    use bcr_wdc_keys::test_utils as keys_test;
     use cashu::Amount as cdk_Amount;
 
-    async fn init_mem_db() -> DB {
+    async fn init_mem_db() -> ProofDB {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DB {
+        ProofDB {
             db: sdb,
             table: "test".to_string(),
         }
     }
 
     #[tokio::test]
-    async fn test_spend() {
+    async fn test_insert() {
         let db = init_mem_db().await;
-        let mintkeys = &keys_test::generate_keyset();
+        let (_, keyset) = keys_test::generate_keyset();
         let proofs = utils::generate_proofs(
-            mintkeys,
+            &keyset,
             &[cdk_Amount::from(16_u64), cdk_Amount::from(8_u64)],
         );
-        db.spend(&proofs).await.unwrap();
+        db.insert(&proofs).await.unwrap();
 
         let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
-        assert_eq!(res.unwrap().state, cdk07::State::Spent);
+        assert_eq!(res.unwrap().proof.secret, proofs[0].secret);
 
-        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
+        let y = cdk_dhke::hash_to_curve(&proofs[1].secret.to_bytes()).unwrap();
         let rid = RecordId::from_table_key(&db.table, y.to_string());
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
-        assert_eq!(res.unwrap().state, cdk07::State::Spent);
+        assert_eq!(res.unwrap().proof.secret, proofs[1].secret);
     }
 
     #[tokio::test]
-    async fn test_get_state() {
+    async fn test_insert_double_spent_all() {
         let db = init_mem_db().await;
-
-        let mintkeys = &keys_test::generate_keyset();
+        let (_, keyset) = keys_test::generate_keyset();
         let proofs = utils::generate_proofs(
-            mintkeys,
+            &keyset,
+            &[cdk_Amount::from(16_u64), cdk_Amount::from(8_u64)],
+        );
+        db.insert(&proofs).await.unwrap();
+
+        let res = db.insert(&proofs).await;
+        assert!(res.is_err());
+        dbg!(&res);
+        assert!(matches!(res.unwrap_err(), Error::ProofsAlreadySpent));
+    }
+
+    #[tokio::test]
+    async fn test_insert_double_spent_partial() {
+        let db = init_mem_db().await;
+        let (_, keyset) = keys_test::generate_keyset();
+        let proofs = utils::generate_proofs(
+            &keyset,
             &[
                 cdk_Amount::from(16_u64),
                 cdk_Amount::from(8_u64),
                 cdk_Amount::from(4_u64),
             ],
         );
+        db.insert(&proofs[0..2]).await.unwrap();
 
-        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
-        let rid = RecordId::from_table_key(&db.table, y.to_string());
-        let _r: Option<DBProof> = db
-            .db
-            .insert(rid)
-            .content(DBProof {
-                id: RecordId::from_table_key(&db.table, y.to_string()),
-                y,
-                state: cdk07::State::Spent,
-            })
-            .await
-            .unwrap();
+        let res = db.insert(&proofs[1..]).await;
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), Error::ProofsAlreadySpent));
+    }
 
-        let y = cdk_dhke::hash_to_curve(&proofs[1].secret.to_bytes()).unwrap();
-        let rid = RecordId::from_table_key(&db.table, y.to_string());
-        let _r: Option<DBProof> = db
-            .db
-            .insert(rid)
-            .content(DBProof {
-                id: RecordId::from_table_key(&db.table, y.to_string()),
-                y,
-                state: cdk07::State::Spent,
-            })
-            .await
-            .unwrap();
+    #[tokio::test]
+    async fn test_insert_double_spent_partial_still_valid() {
+        let db = init_mem_db().await;
+        let (_, keyset) = keys_test::generate_keyset();
+        let proofs = utils::generate_proofs(
+            &keyset,
+            &[
+                cdk_Amount::from(16_u64),
+                cdk_Amount::from(8_u64),
+                cdk_Amount::from(4_u64),
+            ],
+        );
+        db.insert(&proofs[0..2]).await.unwrap();
 
-        let res: Vec<cdk07::State> = db.get_state(&proofs).await.unwrap();
-        assert!(res.len() == 3);
-        assert_eq!(res[0], cdk07::State::Spent);
-        assert_eq!(res[1], cdk07::State::Spent);
-        assert_eq!(res[2], cdk07::State::Unspent);
+        let res = db.insert(&proofs[1..]).await;
+        assert!(res.is_err());
+        db.insert(&proofs[2..]).await.unwrap();
     }
 }
