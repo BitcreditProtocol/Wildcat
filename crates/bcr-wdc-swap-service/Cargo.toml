@@ -4,3 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
+cashu.workspace = true
+chrono.workspace = true
+config = {version = "0.15"}
+env_logger = {version = "0.11"}
+itertools = {version = "0.14"}
+log.workspace = true
+serde.workspace = true
+surrealdb.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
+bip39 = {version = "2"}
+mockall.workspace = true
+rand.workspace = true
