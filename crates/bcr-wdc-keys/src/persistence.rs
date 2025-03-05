@@ -9,7 +9,6 @@ use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount as cdk_Amount;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
-// ----- local modules
 // ----- local imports
 use crate::id::KeysetID;
 

@@ -92,8 +92,6 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
-
-
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
 
