@@ -44,16 +44,12 @@ impl axum::response::IntoResponse for Error {
 
             Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
 
-            Error::Keys(KeysError::TStamp(tstamp)) => (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid timestamp: {}", tstamp),
-            ),
             Error::Keys(KeysError::NoKeyForAmount(amount)) => (
                 StatusCode::NOT_FOUND,
                 format!("No key for amount {}", amount),
             ),
-            Error::Keys(KeysError::CdkDHKE(_)) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+            Error::Keys(_) => {
+                (StatusCode::BAD_REQUEST, String::new())
             }
 
             Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
