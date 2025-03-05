@@ -15,7 +15,7 @@ use crate::utils;
         ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
     )
 )]
 pub async fn list_pending_quotes<KG, QR>(
@@ -39,7 +39,7 @@ where
         ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "only accepted quotes younger than `since`")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
     )
 )]
 pub async fn list_accepted_quotes<KG, QR>(
@@ -97,7 +97,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         ("id" = String, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = InfoReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = InfoReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -124,7 +124,7 @@ where
     ),
     request_body(content = ResolveRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Succesful response"),
+        (status = 200, description = "Successful response"),
     )
 )]
 pub async fn resolve_quote<KG, QR>(

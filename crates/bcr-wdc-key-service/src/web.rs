@@ -17,7 +17,7 @@ use crate::service::{KeysRepository, Service};
         ("kid" = cdk02::Id, Path, description = "The keyset id")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = StatusReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = StatusReply, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]
@@ -42,7 +42,7 @@ where
         ("kid" = cdk02::Id, Path, description = "The keyset id")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = StatusReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = StatusReply, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]

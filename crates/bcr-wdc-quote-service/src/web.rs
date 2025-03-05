@@ -76,7 +76,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         ("id" = Uuid, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Succesful response", body = StatusReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = StatusReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -102,7 +102,7 @@ where
     ),
     request_body(content = Resolve, content_type = "application/json"),
     responses (
-        (status = 200, description = "Succesful response"),
+        (status = 200, description = "Successful response"),
         (status = 404, description = "Quote not found"),
         (status = 409, description = "Quote already resolved"),
     )
