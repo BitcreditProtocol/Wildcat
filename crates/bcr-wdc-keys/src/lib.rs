@@ -168,15 +168,15 @@ pub mod test_utils {
         keyset: &cdk02::MintKeySet,
         amount: &cdk_Amount,
     ) -> (cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey) {
-            let _keypair = keyset.keys.get(amount).expect("keys for amount");
-            let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
-            let (b_, r) =
-                cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
-            (
-                cdk00::BlindedMessage::new(*amount, keyset.id, b_),
-                secret,
-                r,
-            )
+        let _keypair = keyset.keys.get(amount).expect("keys for amount");
+        let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
+        let (b_, r) =
+            cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
+        (
+            cdk00::BlindedMessage::new(*amount, keyset.id, b_),
+            secret,
+            r,
+        )
     }
 
     pub const RANDOMS: [&str; 6] = [
@@ -193,5 +193,23 @@ pub mod test_utils {
             .iter()
             .map(|key| cdk01::PublicKey::from_hex(key).unwrap())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cashu::Amount;
+
+    #[test]
+    fn sign_verify_message() {
+        let (_, keyset) = test_utils::generate_keyset();
+        let (blind, secret, secretkey) = test_utils::generate_blind(&keyset, &Amount::from(8));
+        let sig = sign_with_keys(&keyset, &blind).unwrap();
+        let mintpub = keyset.keys.get(&blind.amount).unwrap().public_key;
+        let c = cashu::dhke::unblind_message(&sig.c, &secretkey, &mintpub).unwrap();
+        let p = cdk00::Proof::new(blind.amount, keyset.id, secret, c);
+
+        verify_with_keys(&keyset, p).unwrap();
     }
 }
