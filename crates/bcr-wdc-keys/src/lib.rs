@@ -128,6 +128,7 @@ pub mod test_utils {
     use bitcoin::bip32::DerivationPath;
     use cashu::mint as cdk_mint;
     use cashu::nuts::nut01 as cdk01;
+    use cashu::secret as cdk_secret;
     use once_cell::sync::Lazy;
 
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
@@ -161,6 +162,21 @@ pub mod test_utils {
             max_order: 10,
         };
         (info, set)
+    }
+
+    pub fn generate_blind(
+        keyset: &cdk02::MintKeySet,
+        amount: &cdk_Amount,
+    ) -> (cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey) {
+            let _keypair = keyset.keys.get(amount).expect("keys for amount");
+            let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
+            let (b_, r) =
+                cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
+            (
+                cdk00::BlindedMessage::new(*amount, keyset.id, b_),
+                secret,
+                r,
+            )
     }
 
     pub const RANDOMS: [&str; 6] = [
