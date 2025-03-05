@@ -6,6 +6,9 @@ use bitcoin::hashes::Hash;
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut10 as cdk10;
+use cashu::nuts::nut11 as cdk11;
+use cashu::nuts::nut14 as cdk14;
 use cashu::Amount as cdk_Amount;
 use thiserror::Error;
 use uuid::Uuid;
@@ -25,6 +28,10 @@ pub enum Error {
     NoKeyForAmount(cdk_Amount),
     #[error("cdk::dhke error {0}")]
     CdkDHKE(#[from] cdk_dhke::Error),
+    #[error("Nut11 error {0}")]
+    Cdk11(#[from] cdk11::Error),
+    #[error("Nut14 error {0}")]
+    Cdk14(#[from] cdk14::Error),
     #[error("invalid timestamp {0}")]
     TStamp(TStamp),
 }
@@ -90,6 +97,28 @@ pub fn sign_with_keys(
         dleq: None,
     };
     Ok(signature)
+}
+
+pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: cdk00::Proof) -> Result<()> {
+    // ref: https://docs.rs/cdk/latest/cdk/mint/struct.Mint.html#method.verify_proof
+    if let Ok(secret) = <&cashu::secret::Secret as TryInto<cdk10::Secret>>::try_into(&proof.secret)
+    {
+        match secret.kind {
+            cashu::nuts::Kind::P2PK => {
+                proof.verify_p2pk()?;
+            }
+            cashu::nuts::Kind::HTLC => {
+                proof.verify_htlc()?;
+            }
+        }
+    }
+
+    let keypair = keyset
+        .keys
+        .get(&proof.amount)
+        .ok_or(Error::NoKeyForAmount(proof.amount))?;
+    cashu::dhke::verify_message(&keypair.secret_key, proof.c, proof.secret.as_bytes())?;
+    Ok(())
 }
 
 #[cfg(feature = "test-utils")]
