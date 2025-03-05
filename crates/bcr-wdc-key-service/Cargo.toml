@@ -1,0 +1,23 @@
+[package]
+name = "bcr-wdc-key-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
+cashu.workspace = true
+chrono.workspace = true
+config = {version = "0.15"}
+env_logger = {version = "0.11"}
+log.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+utoipa = {workspace = true, features = ["axum_extras"]}
+utoipa-swagger-ui.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
