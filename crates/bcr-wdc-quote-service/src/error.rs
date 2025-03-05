@@ -48,9 +48,7 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::NOT_FOUND,
                 format!("No key for amount {}", amount),
             ),
-            Error::Keys(_) => {
-                (StatusCode::BAD_REQUEST, String::new())
-            }
+            Error::Keys(_) => (StatusCode::BAD_REQUEST, String::new()),
 
             Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
