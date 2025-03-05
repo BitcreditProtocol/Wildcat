@@ -5,6 +5,7 @@ use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
+use bcr_wdc_keys::test_utils::generate_blind;
 use cashu::secret as cdk_secret;
 // ----- local imports
 
@@ -28,15 +29,7 @@ pub fn generate_blinds(
 ) -> Vec<(cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey)> {
     let mut blinds: Vec<(cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey)> = Vec::new();
     for amount in amounts {
-        let _keypair = keyset.keys.get(amount).expect("keys for amount");
-        let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
-        let (b_, r) =
-            cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
-        blinds.push((
-            cdk00::BlindedMessage::new(*amount, keyset.id, b_),
-            secret,
-            r,
-        ));
+        blinds.push(generate_blind(keyset, amount));
     }
     blinds
 }
