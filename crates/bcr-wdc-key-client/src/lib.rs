@@ -9,9 +9,14 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Url parse error {0}")]
+    #[error("URL parse error {0}")]
     Url(#[from] url::ParseError),
-    #[error("client error {0}")]
+    #[error("resource not found {0}")]
+    ResourceNotFound(cdk02::Id),
+    #[error("invalid request")]
+    InvalidRequest,
+
+    #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
 }
 
@@ -33,6 +38,9 @@ impl KeyClient {
     pub async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
         let url = self.base.join(&format!("/v1/keys/{}", kid))?;
         let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(kid))
+        }
         let ks = res.json::<cdk02::KeySet>().await?;
         Ok(ks)
     }
@@ -40,20 +48,32 @@ impl KeyClient {
     pub async fn keyset(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
         let url = self.base.join(&format!("/v1/keysets/{}", kid))?;
         let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(kid))
+        }
         let ks = res.json::<cdk02::KeySetInfo>().await?;
         Ok(ks)
     }
 
-    pub async fn sign(&self, msg: cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+    pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
         let url = self.base.join("/v1/admin/keys/sign")?;
-        let res = self.cl.post(url).json(&msg).send().await?;
+        let res = self.cl.post(url).json(msg).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(msg.keyset_id));
+        }
         let sig = res.json::<cdk00::BlindSignature>().await?;
         Ok(sig)
     }
 
-    pub async fn verify(&self, proof: cdk00::Proof) -> Result<bool> {
+    pub async fn verify(&self, proof: &cdk00::Proof) -> Result<bool> {
         let url = self.base.join("/v1/admin/keys/verify")?;
-        let res = self.cl.post(url).json(&proof).send().await?;
+        let res = self.cl.post(url).json(proof).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(proof.keyset_id));
+        }
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Ok(false)
         }
