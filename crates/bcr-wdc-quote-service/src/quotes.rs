@@ -225,7 +225,10 @@ where
                 if (submitted - tstamp) > Self::REJECTION_RETENTION {
                     let quote = Quote::new(bill, blinds, submitted);
                     let id = quote.id;
-                    self.quotes.store(quote).await?;
+                    self.quotes
+                        .store(quote)
+                        .await
+                        .map_err(Error::QuotesRepository)?;
                     Ok(id)
                 } else {
                     Err(Error::QuoteAlreadyResolved(*id))
@@ -234,7 +237,10 @@ where
             None => {
                 let quote = Quote::new(bill, blinds, submitted);
                 let id = quote.id;
-                self.quotes.store(quote).await?;
+                self.quotes
+                    .store(quote)
+                    .await
+                    .map_err(Error::QuotesRepository)?;
                 Ok(id)
             }
         }
@@ -344,7 +350,11 @@ where
 
         // TODO! maturity date should come from the eBill
         let maturity_date = now + chrono::Duration::days(30);
-        let keyset = self.keys_gen.generate(kid, qid, maturity_date).await?;
+        let keyset = self
+            .keys_gen
+            .generate(kid, qid, maturity_date)
+            .await
+            .map_err(Error::KeysFactory)?;
 
         let signatures = selected_blinds
             .iter()
@@ -352,7 +362,10 @@ where
             .collect::<keys::Result<Vec<cdk00::BlindSignature>>>()?;
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
-        self.quotes.update_if_pending(quote).await?;
+        self.quotes
+            .update_if_pending(quote)
+            .await
+            .map_err(Error::QuotesRepository)?;
         Ok(())
     }
 }
