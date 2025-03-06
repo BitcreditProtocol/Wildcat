@@ -33,10 +33,10 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
         let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
         Ok(Self {
             id: bill.id,
-            drawee: bill.drawee,
-            drawer: bill.drawer,
-            payee: bill.payee,
-            holder: bill.holder,
+            drawee: bill.drawee.into(),
+            drawer: bill.drawer.into(),
+            payee: bill.payee.into(),
+            holder: bill.holder.into(),
             sum: bill.sum,
             maturity_date,
         })
@@ -47,10 +47,10 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
         let maturity_date = bill.maturity_date.to_rfc3339();
         Self {
             id: bill.id,
-            drawee: bill.drawee,
-            drawer: bill.drawer,
-            payee: bill.payee,
-            holder: bill.holder,
+            drawee: bill.drawee.into(),
+            drawer: bill.drawer.into(),
+            payee: bill.payee.into(),
+            holder: bill.holder.into(),
             sum: bill.sum,
             maturity_date,
         }
