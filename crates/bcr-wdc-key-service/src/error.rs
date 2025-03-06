@@ -2,9 +2,9 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
+use bcr_wdc_keys::Error as KeysError;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
-use bcr_wdc_keys::Error as KeysError;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;

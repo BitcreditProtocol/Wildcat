@@ -39,7 +39,7 @@ impl KeyClient {
         let url = self.base.join(&format!("/v1/keys/{}", kid))?;
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(kid))
+            return Err(Error::ResourceNotFound(kid));
         }
         let ks = res.json::<cdk02::KeySet>().await?;
         Ok(ks)
@@ -49,7 +49,7 @@ impl KeyClient {
         let url = self.base.join(&format!("/v1/keysets/{}", kid))?;
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(kid))
+            return Err(Error::ResourceNotFound(kid));
         }
         let ks = res.json::<cdk02::KeySetInfo>().await?;
         Ok(ks)
@@ -75,7 +75,7 @@ impl KeyClient {
             return Err(Error::ResourceNotFound(proof.keyset_id));
         }
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
-            return Ok(false)
+            return Ok(false);
         }
         res.error_for_status()?;
         Ok(true)

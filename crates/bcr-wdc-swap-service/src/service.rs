@@ -196,7 +196,9 @@ mod tests {
             .expect_info()
             .with(eq(kid))
             .returning(move |_| Ok(keyinfo.clone().into()));
-        keysrvc.expect_verify_proof().returning(move |p| Err(Error::InvalidProof(p.secret.clone())));
+        keysrvc
+            .expect_verify_proof()
+            .returning(move |p| Err(Error::InvalidProof(p.secret.clone())));
         let swaps = Service {
             keys: keysrvc,
             proofs: proofrepo,
