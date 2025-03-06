@@ -1,9 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-//use bcr_wdc_webapi::quotes as web_quotes;
-//use bitcoin::hashes::sha256::Hash as Sha256;
-//use bitcoin::hashes::Hash;
 use cashu::nuts::nut02 as cdk02;
 // ----- local imports
 use crate::error::Result;
@@ -12,7 +9,7 @@ use crate::service::{KeysRepository, Service};
 /// --------------------------- Look up keysets info
 #[utoipa::path(
     get,
-    path = "/v1/credit/keysets/{kid}",
+    path = "/v1/keysets/{kid}",
     params(
         ("kid" = cdk02::Id, Path, description = "The keyset id")
     ),
@@ -37,7 +34,7 @@ where
 /// --------------------------- Look up keys
 #[utoipa::path(
     get,
-    path = "/v1/credit/keys/{kid}",
+    path = "/v1/keys/{kid}",
     params(
         ("kid" = cdk02::Id, Path, description = "The keyset id")
     ),
