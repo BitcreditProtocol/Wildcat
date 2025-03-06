@@ -2,10 +2,9 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use cashu::Amount;
-use cashu::dhke as cdk_dhke;
-use cashu::mint::MintKeySetInfo;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
+use futures::future::JoinAll;
 use itertools::Itertools;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -13,8 +12,9 @@ use crate::error::{Error, Result};
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysService: Send + Sync {
-    async fn keyset(&self, id: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>>;
-    async fn info(&self, id: &cdk02::Id) -> Result<Option<MintKeySetInfo>>;
+    async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo>;
+    async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature>;
+    async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -37,31 +37,17 @@ where
     KeysSrvc: KeysService,
 {
     async fn verify_proofs_signatures(&self, proofs: &[cdk00::Proof]) -> Result<()> {
-        for proof in proofs {
-            let id = proof.keyset_id;
-            let keyset = self
-                .keys
-                .keyset(&id)
-                .await?
-                .ok_or_else(|| Error::UnknownKeyset(id))?;
-            let key = keyset
-                .keys
-                .get(&proof.amount)
-                .ok_or_else(|| Error::UnknownAmountForKeyset(id, proof.amount))?;
-            cdk_dhke::verify_message(&key.secret_key, proof.c, proof.secret.as_bytes())
-                .map_err(Error::CdkDhke)?;
-        }
+        let joined: JoinAll<_> = proofs.iter().map(|p| self.keys.verify_proof(p)).collect();
+        joined.await.into_iter().collect::<Result<()>>()?;
         Ok(())
     }
+
     async fn verify_keys_are_active(&self, keys: &[cdk02::Id]) -> Result<()> {
-        for id in keys {
-            let info = self.keys.info(id).await?;
-            if let Some(info) = info {
-                if !info.active {
-                    return Err(Error::InactiveKeyset(*id));
-                }
-            } else {
-                return Err(Error::UnknownKeyset(*id));
+        let joined: JoinAll<_> = keys.iter().map(|kid| self.keys.info(kid)).collect();
+        let responses: Vec<_> = joined.await.into_iter().collect::<Result<_>>()?;
+        for (info, kid) in responses.into_iter().zip(keys.iter()) {
+            if !info.active {
+                return Err(Error::InactiveKeyset(*kid));
             }
         }
         Ok(())
@@ -84,18 +70,19 @@ where
             outputs.len(),
         );
         // cheap verifications
+        // 1. no empty inputs or outputs
         if inputs.is_empty() || outputs.is_empty() {
             return Err(Error::EmptyInputsOrOutputs);
         }
-        // 1. no zero amounts in inputs or outputs
+        // 2. no zero amounts in inputs or outputs
         let zero_outputs = outputs.iter().any(|output| output.amount == Amount::ZERO);
         let zero_inputs = inputs.iter().any(|output| output.amount == Amount::ZERO);
         if zero_outputs || zero_inputs {
             return Err(Error::ZeroAmount);
         }
-        // 2. inputs and outputs grouped by keyset ID have equal amounts
-        let ids: Vec<_> = inputs.iter().map(|p| p.keyset_id).unique().collect();
-        for id in &ids {
+        // 3. inputs and outputs grouped by keyset ID have equal amounts
+        let unique_ids: Vec<_> = inputs.iter().map(|p| p.keyset_id).unique().collect();
+        for id in &unique_ids {
             let total_input = inputs
                 .iter()
                 .filter(|p| p.keyset_id == *id)
@@ -110,30 +97,16 @@ where
         }
         // expensive verifications
         // 1. verify keysets are active
-        self.verify_keys_are_active(&ids).await?;
+        self.verify_keys_are_active(&unique_ids).await?;
         // 2. verify proofs signatures
         self.verify_proofs_signatures(inputs).await?;
-        let mut signatures = Vec::with_capacity(outputs.len());
-        for output in outputs {
-            let keys = self
-                .keys
-                .keyset(&output.keyset_id)
-                .await?
-                .ok_or(Error::UnknownKeyset(output.keyset_id))?;
-            let keypair = keys
-                .keys
-                .get(&output.amount)
-                .ok_or(Error::UnknownAmountForKeyset(keys.id, output.amount))?;
-            let c = cdk_dhke::sign_message(&keypair.secret_key, &output.blinded_secret)?;
-            let signature = cdk00::BlindSignature::new(
-                output.amount,
-                c,
-                keys.id,
-                &output.blinded_secret,
-                keypair.secret_key.clone(),
-            )?;
-            signatures.push(signature);
-        }
+        // generate signatures
+        let joined: JoinAll<_> = outputs
+            .iter()
+            .map(|blind| self.keys.sign_blind(blind))
+            .collect();
+        let signatures: Vec<cdk00::BlindSignature> =
+            joined.await.into_iter().collect::<Result<_>>()?;
         self.proofs.insert(inputs).await?;
         Ok(signatures)
     }
@@ -150,6 +123,7 @@ mod tests {
     async fn test_swap_spent_proofs() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
         let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let signatures = utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
             .into_iter()
             .map(|a| a.0)
@@ -158,10 +132,12 @@ mod tests {
         let mut keysrvc = MockKeysService::new();
         keysrvc
             .expect_info()
-            .returning(move |_| Ok(Some(keyinfo.clone())));
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc.expect_verify_proof().returning(|_| Ok(()));
+        let sig = signatures[0].clone();
         keysrvc
-            .expect_keyset()
-            .returning(move |_| Ok(Some(keyset.clone())));
+            .expect_sign_blind()
+            .returning(move |_| Ok(sig.clone()));
         let mut proofrepo = MockProofRepository::new();
         proofrepo
             .expect_insert()
@@ -188,7 +164,10 @@ mod tests {
 
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();
-        keysrvc.expect_info().with(eq(kid)).returning(|_| Ok(None));
+        keysrvc
+            .expect_info()
+            .with(eq(kid))
+            .returning(|kid| Err(Error::UnknownKeyset(*kid)));
         let swaps = Service {
             keys: keysrvc,
             proofs: proofrepo,
@@ -216,11 +195,8 @@ mod tests {
         keysrvc
             .expect_info()
             .with(eq(kid))
-            .returning(move |_| Ok(Some(keyinfo.clone())));
-        keysrvc
-            .expect_keyset()
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(keyset.clone())));
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc.expect_verify_proof().returning(move |p| Err(Error::InvalidProof(p.secret.clone())));
         let swaps = Service {
             keys: keysrvc,
             proofs: proofrepo,
@@ -229,13 +205,14 @@ mod tests {
         let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_err());
         let e = r.unwrap_err();
-        assert!(matches!(e, Error::CdkDhke(_)));
+        assert!(matches!(e, Error::InvalidProof(_)));
     }
 
     #[tokio::test]
     async fn test_swap_unmatched_amounts() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
         let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let signatures = utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(16)].as_slice())
             .into_iter()
             .map(|a| a.0)
@@ -246,11 +223,11 @@ mod tests {
         keysrvc
             .expect_info()
             .with(eq(kid))
-            .returning(move |_| Ok(Some(keyinfo.clone())));
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        let sig = signatures[0].clone();
         keysrvc
-            .expect_keyset()
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(keyset.clone())));
+            .expect_sign_blind()
+            .returning(move |_| Ok(sig.clone()));
         let swaps = Service {
             keys: keysrvc,
             proofs: proofrepo,
@@ -265,24 +242,33 @@ mod tests {
     #[tokio::test]
     async fn test_swap_split_tokens_ok() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
+        let amounts = vec![Amount::from(4), Amount::from(4)];
         let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
-        let outputs: Vec<_> =
-            utils::generate_blinds(&keyset, vec![Amount::from(4), Amount::from(4)].as_slice())
-                .into_iter()
-                .map(|a| a.0)
-                .collect();
+        let signatures = utils::generate_signatures(&keyset, &amounts);
+        let outputs: Vec<_> = utils::generate_blinds(&keyset, &amounts)
+            .into_iter()
+            .map(|a| a.0)
+            .collect();
         let mut keysrvc = MockKeysService::new();
         let mut proofrepo = MockProofRepository::new();
         let kid = keyset.id;
-        let keyset_clone = keyset.clone();
         keysrvc
             .expect_info()
             .with(eq(kid))
-            .returning(move |_| Ok(Some(keyinfo.clone())));
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc.expect_verify_proof().returning(move |_| Ok(()));
+        let sig_clone = signatures[0].clone();
+        let blind_clone = outputs[0].clone();
         keysrvc
-            .expect_keyset()
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(keyset_clone.clone())));
+            .expect_sign_blind()
+            .with(eq(blind_clone.clone()))
+            .returning(move |_| Ok(sig_clone.clone()));
+        let sig_clone = signatures[1].clone();
+        let blind_clone = outputs[1].clone();
+        keysrvc
+            .expect_sign_blind()
+            .with(eq(blind_clone.clone()))
+            .returning(move |_| Ok(sig_clone.clone()));
         proofrepo
             .expect_insert()
             .with(eq(inputs.clone()))
@@ -306,22 +292,27 @@ mod tests {
         let (keyinfo, keyset) = keys_test::generate_keyset();
         let inputs =
             utils::generate_proofs(&keyset, vec![Amount::from(4), Amount::from(4)].as_slice());
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+        let amounts = vec![Amount::from(8)];
+        let signatures = utils::generate_signatures(&keyset, &amounts);
+        let outputs: Vec<_> = utils::generate_blinds(&keyset, &amounts)
             .into_iter()
             .map(|a| a.0)
             .collect();
         let mut keysrvc = MockKeysService::new();
         let mut proofrepo = MockProofRepository::new();
         let kid = keyset.id;
-        let keyset_clone = keyset.clone();
         keysrvc
             .expect_info()
             .with(eq(kid))
-            .returning(move |_| Ok(Some(keyinfo.clone())));
+            .returning(move |_| Ok(keyinfo.clone().into()));
         keysrvc
-            .expect_keyset()
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(keyset_clone.clone())));
+            .expect_verify_proof()
+            .times(2)
+            .returning(move |_| Ok(()));
+        let sig_clone = signatures[0].clone();
+        keysrvc
+            .expect_sign_blind()
+            .returning(move |_| Ok(sig_clone.clone()));
         proofrepo
             .expect_insert()
             .with(eq(inputs.clone()))

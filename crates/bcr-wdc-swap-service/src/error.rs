@@ -2,8 +2,10 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use cashu::Amount;
+use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
+use bcr_wdc_key_client::Error as KeyClientError;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -12,14 +14,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     // external errors wrappers
     #[error("Proof Repository error: {0}")]
-    ProofRepository(#[from] anyhow::Error),
+    ProofRepository(anyhow::Error),
     #[error("Keyset Client error: {0}")]
-    KeysetClient(anyhow::Error),
+    KeysClient(KeyClientError),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]
     CDKNUT12(#[from] cashu::nuts::nut12::Error),
 
+    #[error("Invalid proof")]
+    InvalidProof(cashu::secret::Secret),
+    #[error("Invalid blinded message")]
+    InvalidBlindedMessage(cdk01::PublicKey),
     #[error("Already spent proofs")]
     ProofsAlreadySpent,
     #[error("Unknown keyset {0}")]
@@ -54,15 +60,17 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::NOT_FOUND,
                 String::from("Unknown amount for keyset"),
             ),
-            Error::InactiveKeyset(_) => (StatusCode::GONE, String::from("Inactive keyset")),
+            Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
             Error::ProofsAlreadySpent => {
-                (StatusCode::FORBIDDEN, String::from("Proofs already spent"))
+                (StatusCode::BAD_REQUEST, String::from("Proofs already spent"))
             }
+            Error::InvalidProof(_) => (StatusCode::BAD_REQUEST, String::from("Invalid proof")),
+            Error::InvalidBlindedMessage(_) => (StatusCode::BAD_REQUEST, String::from("Invalid blinded message")),
 
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CdkDhke(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::KeysetClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CdkDhke(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::KeysClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ProofRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
 

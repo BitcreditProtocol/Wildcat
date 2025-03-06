@@ -14,7 +14,7 @@ mod web;
 // ----- local imports
 
 type ProdProofRepository = persistence::surreal::ProofDB;
-type ProdKeysService = crate::keys::DummyKeysService;
+type ProdKeysService = crate::keys::RESTClient;
 type ProdService = service::Service<ProdKeysService, ProdProofRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]

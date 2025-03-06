@@ -1,12 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_keys::test_utils::generate_blind;
-use cashu::Amount as cdk_Amount;
+use bcr_wdc_keys::test_utils::{generate_blind, publics};
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::secret as cdk_secret;
+use cashu::Amount as cdk_Amount;
 // ----- local imports
 
 pub fn generate_proofs(keyset: &cdk02::MintKeySet, amounts: &[cdk_Amount]) -> Vec<cdk00::Proof> {
@@ -32,6 +32,22 @@ pub fn generate_blinds(
         blinds.push(generate_blind(keyset, amount));
     }
     blinds
+}
+
+pub fn generate_signatures(
+    keyset: &cdk02::MintKeySet,
+    amounts: &[cdk_Amount],
+) -> Vec<cdk00::BlindSignature> {
+    let mut signatures: Vec<cdk00::BlindSignature> = Vec::new();
+    for amount in amounts {
+        signatures.push(cdk00::BlindSignature {
+            keyset_id: keyset.id,
+            amount: *amount,
+            c: publics()[0],
+            dleq: None,
+        });
+    }
+    signatures
 }
 
 pub fn verify_signatures_data(

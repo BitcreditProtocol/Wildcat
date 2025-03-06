@@ -1,33 +1,54 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cashu::mint::MintKeySetInfo;
+use bcr_wdc_key_client::KeyClient;
+use bcr_wdc_key_client::Error as KeyClientError;
+use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 // ----- local imports
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::service::KeysService;
 
 #[derive(Debug, Default, Clone, serde::Deserialize)]
-pub struct KeysClientConfig {}
+pub struct KeysClientConfig {
+    base_url: String,
+}
 
 #[derive(Debug, Clone)]
-pub struct DummyKeysService {}
-
-impl DummyKeysService {
-    pub async fn new(_cfg: KeysClientConfig) -> AnyResult<Self> {
-        Ok(Self {})
+pub struct RESTClient(KeyClient);
+impl RESTClient {
+    pub async fn new(cfg: KeysClientConfig) -> Result<Self> {
+        let cl = KeyClient::new(&cfg.base_url).map_err(Error::KeysClient)?;
+        Ok(Self (cl))
     }
 }
 
 #[async_trait]
-impl KeysService for DummyKeysService {
-    async fn keyset(&self, id: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
-        log::debug!("DummyKeys keyset({:?})", id);
-        Ok(None)
+impl KeysService for RESTClient {
+    async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo> {
+        let response = self.0.keyset(*id).await;
+        match response {
+            Ok(info) => Ok(info),
+            Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(e) => Err(Error::KeysClient(e)),
+        }
     }
-    async fn info(&self, id: &cdk02::Id) -> Result<Option<MintKeySetInfo>> {
-        log::debug!("DummyKeys info({:?})", id);
-        Ok(None)
+    async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+        let response = self.0.sign(blind).await;
+        match response {
+            Ok(signature) => Ok(signature),
+            Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeyClientError::InvalidRequest) => Err(Error::InvalidBlindedMessage(blind.blinded_secret)),
+            Err(e) => Err(Error::KeysClient(e)),
+        }
+    }
+    async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()> {
+        let response = self.0.verify(proof).await;
+        match response {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Error::InvalidProof(proof.secret.clone())),
+            Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(e) => Err(Error::KeysClient(e)),
+        }
     }
 }
