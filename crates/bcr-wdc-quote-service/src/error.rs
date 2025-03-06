@@ -20,9 +20,9 @@ pub enum Error {
     #[error("Error in parsing datetime: {0}")]
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
-    QuotesRepository(#[from] AnyError),
+    QuotesRepository(AnyError),
     #[error("keys repository error {0}")]
-    KeysRepository(AnyError),
+    KeysFactory(AnyError),
 
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
@@ -50,7 +50,7 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::Keys(_) => (StatusCode::BAD_REQUEST, String::new()),
 
-            Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::KeysFactory(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
