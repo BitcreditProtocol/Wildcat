@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use cashu::nut00 as cdk00;
 use cashu::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
@@ -14,6 +15,7 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
 }
 
+#[derive(Debug, Clone)]
 pub struct KeyClient {
     cl: reqwest::Client,
     base: reqwest::Url,
@@ -40,5 +42,22 @@ impl KeyClient {
         let res = self.cl.get(url).send().await?;
         let ks = res.json::<cdk02::KeySetInfo>().await?;
         Ok(ks)
+    }
+
+    pub async fn sign(&self, msg: cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+        let url = self.base.join("/v1/admin/keys/sign")?;
+        let res = self.cl.post(url).json(&msg).send().await?;
+        let sig = res.json::<cdk00::BlindSignature>().await?;
+        Ok(sig)
+    }
+
+    pub async fn verify(&self, proof: cdk00::Proof) -> Result<bool> {
+        let url = self.base.join("/v1/admin/keys/verify")?;
+        let res = self.cl.post(url).json(&proof).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Ok(false)
+        }
+        res.error_for_status()?;
+        Ok(true)
     }
 }
