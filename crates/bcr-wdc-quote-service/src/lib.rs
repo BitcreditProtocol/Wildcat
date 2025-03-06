@@ -88,6 +88,9 @@ pub fn credit_routes(ctrl: AppController) -> Router {
     components(schemas(
         //bcr_ebill_core::contact::IdentityPublicData,
         bcr_wdc_webapi::quotes::BillInfo,
+        bcr_wdc_webapi::quotes::IdentityPublicData,
+        bcr_wdc_webapi::quotes::ContactType,
+        bcr_wdc_webapi::quotes::PostalAddress,
         bcr_wdc_webapi::quotes::EnquireReply,
         bcr_wdc_webapi::quotes::EnquireRequest,
         bcr_wdc_webapi::quotes::InfoReply,

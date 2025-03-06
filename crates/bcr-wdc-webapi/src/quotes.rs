@@ -1,18 +1,16 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_ebill_core::contact::IdentityPublicData;
+use bcr_ebill_core as EBillCore;
+use bcr_ebill_core::contact as EBillContact;
+use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 // ----- local imports
 
 ///--------------------------- Enquire mint quote
-#[derive(
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-    utoipa::ToSchema,
-)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillInfo {
     pub id: String,
     pub drawee: IdentityPublicData,
@@ -23,8 +21,75 @@ pub struct BillInfo {
     pub maturity_date: String,
 }
 
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+pub struct IdentityPublicData {
+    #[serde(rename = "type")]
+    pub t: ContactType,
+    pub node_id: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub postal_address: PostalAddress,
+    pub email: Option<String>,
+    pub nostr_relay: Option<String>,
+}
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+#[borsh(use_discriminant = true)]
+pub enum ContactType {
+    Person = 0,
+    Company = 1,
+}
+
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+pub struct PostalAddress {
+    pub country: String,
+    pub city: String,
+    pub zip: Option<String>,
+    pub address: String,
+}
+impl std::convert::From<EBillContact::IdentityPublicData> for IdentityPublicData {
+    fn from(data: EBillContact::IdentityPublicData) -> Self {
+        IdentityPublicData {
+            t: match data.t {
+                bcr_ebill_core::contact::ContactType::Person => ContactType::Person,
+                bcr_ebill_core::contact::ContactType::Company => ContactType::Company,
+            },
+            node_id: data.node_id,
+            name: data.name,
+            postal_address: PostalAddress {
+                country: data.postal_address.country,
+                city: data.postal_address.city,
+                zip: data.postal_address.zip,
+                address: data.postal_address.address,
+            },
+            email: data.email,
+            nostr_relay: data.nostr_relay,
+        }
+    }
+}
+impl std::convert::From<IdentityPublicData> for EBillContact::IdentityPublicData {
+    fn from(data: IdentityPublicData) -> Self {
+        EBillContact::IdentityPublicData {
+            t: match data.t {
+                ContactType::Person => bcr_ebill_core::contact::ContactType::Person,
+                ContactType::Company => bcr_ebill_core::contact::ContactType::Company,
+            },
+            node_id: data.node_id,
+            name: data.name,
+            postal_address: EBillCore::PostalAddress {
+                country: data.postal_address.country,
+                city: data.postal_address.city,
+                zip: data.postal_address.zip,
+                address: data.postal_address.address,
+            },
+            email: data.email,
+            nostr_relay: data.nostr_relay,
+        }
+    }
+}
 ///--------------------------- Enquire mint quote
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct EnquireRequest {
     pub content: BillInfo,
     #[schema(value_type = String)]
@@ -33,13 +98,13 @@ pub struct EnquireRequest {
     pub outputs: Vec<BlindedMessage>, // left out of the signature as BlindedMessage does not implement borsh
 }
 
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct EnquireReply {
     pub id: uuid::Uuid,
 }
 
 /// --------------------------- Look up quote
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "status")]
 pub enum StatusReply {
     Pending,
@@ -57,13 +122,13 @@ pub enum StatusReply {
 }
 
 /// --------------------------- List quotes
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct ListReply {
     pub quotes: Vec<uuid::Uuid>,
 }
 
 /// --------------------------- Quote info request
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "status")]
 pub enum InfoReply {
     Pending {
@@ -95,7 +160,7 @@ pub enum InfoReply {
 }
 
 /// --------------------------- Resolve quote request
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "action")]
 pub enum ResolveRequest {
     Deny,
@@ -106,7 +171,7 @@ pub enum ResolveRequest {
 }
 
 /// --------------------------- Resolve quote
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "action")]
 pub enum ResolveOffer {
     Reject,
