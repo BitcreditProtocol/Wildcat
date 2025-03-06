@@ -7,11 +7,13 @@ edition = "2024"
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
 cashu.workspace = true
 chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
+futures = {version = "0.3"}
 itertools = {version = "0.14"}
 log.workspace = true
 serde.workspace = true
