@@ -1,11 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
+use bcr_wdc_key_client::Error as KeyClientError;
 use cashu::Amount;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
-use bcr_wdc_key_client::Error as KeyClientError;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -62,11 +62,15 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
-            Error::ProofsAlreadySpent => {
-                (StatusCode::BAD_REQUEST, String::from("Proofs already spent"))
-            }
+            Error::ProofsAlreadySpent => (
+                StatusCode::BAD_REQUEST,
+                String::from("Proofs already spent"),
+            ),
             Error::InvalidProof(_) => (StatusCode::BAD_REQUEST, String::from("Invalid proof")),
-            Error::InvalidBlindedMessage(_) => (StatusCode::BAD_REQUEST, String::from("Invalid blinded message")),
+            Error::InvalidBlindedMessage(_) => (
+                StatusCode::BAD_REQUEST,
+                String::from("Invalid blinded message"),
+            ),
 
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CdkDhke(_) => (StatusCode::BAD_REQUEST, String::new()),

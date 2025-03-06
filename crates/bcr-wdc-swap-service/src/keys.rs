@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_key_client::KeyClient;
 use bcr_wdc_key_client::Error as KeyClientError;
+use bcr_wdc_key_client::KeyClient;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 // ----- local imports
@@ -19,7 +19,7 @@ pub struct RESTClient(KeyClient);
 impl RESTClient {
     pub async fn new(cfg: KeysClientConfig) -> Result<Self> {
         let cl = KeyClient::new(&cfg.base_url).map_err(Error::KeysClient)?;
-        Ok(Self (cl))
+        Ok(Self(cl))
     }
 }
 
@@ -38,7 +38,9 @@ impl KeysService for RESTClient {
         match response {
             Ok(signature) => Ok(signature),
             Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
-            Err(KeyClientError::InvalidRequest) => Err(Error::InvalidBlindedMessage(blind.blinded_secret)),
+            Err(KeyClientError::InvalidRequest) => {
+                Err(Error::InvalidBlindedMessage(blind.blinded_secret))
+            }
             Err(e) => Err(Error::KeysClient(e)),
         }
     }
