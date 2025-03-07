@@ -101,7 +101,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
-pub async fn lookup_quote<KG, QR>(
+pub async fn admin_lookup_quote<KG, QR>(
     State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::InfoReply>>
@@ -118,7 +118,7 @@ where
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/credit/quote/:id",
+    path = "/v1/admin/credit/quote/{id}",
     params(
         ("id" = String, Path, description = "The quote id")
     ),
@@ -127,7 +127,7 @@ where
         (status = 200, description = "Successful response"),
     )
 )]
-pub async fn resolve_quote<KG, QR>(
+pub async fn admin_resolve_quote<KG, QR>(
     State(ctrl): State<quotes::Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveRequest>,

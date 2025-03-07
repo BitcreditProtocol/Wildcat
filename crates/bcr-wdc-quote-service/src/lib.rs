@@ -77,8 +77,11 @@ pub fn credit_routes(ctrl: AppController) -> Router {
             "/v1/admin/credit/quote/accepted",
             get(admin::list_accepted_quotes),
         )
-        .route("/v1/admin/credit/quote/:id", get(admin::lookup_quote))
-        .route("/v1/admin/credit/quote/:id", post(admin::resolve_quote))
+        .route("/v1/admin/credit/quote/:id", get(admin::admin_lookup_quote))
+        .route(
+            "/v1/admin/credit/quote/:id",
+            post(admin::admin_resolve_quote),
+        )
         .with_state(ctrl)
         .merge(swagger)
 }
@@ -109,8 +112,8 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         crate::web::lookup_quote,
         crate::admin::list_pending_quotes,
         crate::admin::list_accepted_quotes,
-        crate::admin::lookup_quote,
-        crate::admin::resolve_quote,
+        crate::admin::admin_lookup_quote,
+        crate::admin::admin_resolve_quote,
         crate::web::resolve_offer,
     )
 )]
