@@ -9,7 +9,31 @@ services:
       surrealdb:
         condition: service_healthy
     volumes:
-      - ${PWD}/wildcat.toml:/quote-service/wildcat.toml
+      - ./docker/quote-service/config.toml:/quote-service/config.toml
+
+  key-service:
+    build:
+      context: .
+      dockerfile: ./docker/key-service/Dockerfile
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/key-service/config.toml:/key-service/config.toml
+
+  swap-service:
+    build:
+      context: .
+      dockerfile: ./docker/swap-service/Dockerfile
+    ports:
+      - "3339:3338"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      key-service:
+        condition: service_started
+    volumes:
+      - ./docker/swap-service/config.toml:/swap-service/config.toml
 
   surrealdb:
     image: surrealdb/surrealdb:latest

@@ -8,8 +8,8 @@ struct MainConfig {
 #[tokio::main]
 async fn main() {
     let settings = config::Config::builder()
-        .add_source(config::File::with_name("wildcat.toml"))
-        .add_source(config::Environment::with_prefix("WILDCAT"))
+        .add_source(config::File::with_name("config.toml"))
+        .add_source(config::Environment::with_prefix("SWAP"))
         .build()
         .expect("Failed to build wildcat config");
 
