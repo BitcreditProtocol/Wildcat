@@ -19,7 +19,7 @@ pub type ProdKeysService = service::Service<ProdKeysRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
-    keys_cfg: persistence::surreal::ConnectionConfig,
+    keys: persistence::surreal::ConnectionConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -29,7 +29,7 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
-        let repo = ProdKeysRepository::new(cfg.keys_cfg)
+        let repo = ProdKeysRepository::new(cfg.keys)
             .await
             .expect("DB connection to keys failed");
         let srv = ProdKeysService { keys: repo };

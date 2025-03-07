@@ -1,0 +1,14 @@
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+
+[appcfg.proof_db]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "swap"
+table = "proofs"
+
+
+[appcfg.keys_cl]
+base_url = "http://key-service:3338"
