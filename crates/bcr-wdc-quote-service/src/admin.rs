@@ -118,7 +118,7 @@ where
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/credit/quote/:id",
+    path = "/v1/admin/credit/quote/{id}",
     params(
         ("id" = String, Path, description = "The quote id")
     ),
