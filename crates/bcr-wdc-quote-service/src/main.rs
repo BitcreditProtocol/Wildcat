@@ -19,9 +19,7 @@ async fn main() {
 
     env_logger::builder().filter_level(maincfg.log_level).init();
 
-    // we keep seed separate from the app config
-    let seed = [0u8; 32];
-    let app = bcr_wdc_quote_service::AppController::new(&seed, maincfg.appcfg).await;
+    let app = bcr_wdc_quote_service::AppController::new(maincfg.appcfg).await;
     let router = bcr_wdc_quote_service::credit_routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)

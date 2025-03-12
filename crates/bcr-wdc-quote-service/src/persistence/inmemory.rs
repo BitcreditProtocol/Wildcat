@@ -4,13 +4,9 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_keys as keys;
-use cashu::mint as cdk_mint;
-use cashu::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::keys::{KeysetEntry, KeysetID};
 use crate::quotes;
 use crate::service::Repository;
 use crate::TStamp;
@@ -90,33 +86,5 @@ impl Repository for QuotesIDMap {
             .map(|(id, _)| *id)
             .collect();
         Ok(a)
-    }
-}
-
-type QuoteKeysIndex = (KeysetID, Uuid);
-
-#[derive(Default, Clone)]
-pub struct KeysetIDQuoteIDMap {
-    keys: Arc<RwLock<HashMap<QuoteKeysIndex, KeysetEntry>>>,
-}
-
-#[async_trait]
-impl crate::keys_factory::QuoteBasedRepository for KeysetIDQuoteIDMap {
-    async fn store(
-        &self,
-        qid: Uuid,
-        keyset: cdk02::MintKeySet,
-        info: cdk_mint::MintKeySetInfo,
-    ) -> AnyResult<()> {
-        self.keys
-            .write()
-            .unwrap()
-            .insert((KeysetID::from(keyset.id), qid), (info, keyset));
-        Ok(())
-    }
-
-    async fn load(&self, kid: &keys::KeysetID, qid: Uuid) -> AnyResult<Option<KeysetEntry>> {
-        let mapkey = (kid.clone(), qid);
-        Ok(self.keys.read().unwrap().get(&mapkey).cloned())
     }
 }

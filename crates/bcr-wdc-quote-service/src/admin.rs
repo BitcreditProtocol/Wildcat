@@ -5,7 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
-use crate::service::{KeyFactory, Repository, Service};
+use crate::service::{KeysHandler, Repository, Service};
 use crate::utils;
 
 /// --------------------------- List quotes
@@ -24,7 +24,7 @@ pub async fn list_pending_quotes<KG, QR>(
     since: Option<Query<chrono::DateTime<chrono::Utc>>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received request to list pending quotes");
@@ -48,7 +48,7 @@ pub async fn list_accepted_quotes<KG, QR>(
     since: Option<Query<chrono::NaiveDateTime>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received request to list accepted quotes");
@@ -107,7 +107,7 @@ pub async fn admin_lookup_quote<KG, QR>(
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::InfoReply>>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
@@ -134,7 +134,7 @@ pub async fn admin_resolve_quote<KG, QR>(
     Json(req): Json<web_quotes::ResolveRequest>,
 ) -> Result<()>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received mint quote resolve request for id: {}", id);

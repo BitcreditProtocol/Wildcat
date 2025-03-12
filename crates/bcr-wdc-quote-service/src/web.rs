@@ -9,7 +9,7 @@ use bitcoin::hashes::Hash;
 use crate::error::Result;
 use crate::{
     quotes,
-    service::{KeyFactory, Repository, Service},
+    service::{KeysHandler, Repository, Service},
 };
 
 ///--------------------------- Enquire mint quote
@@ -27,7 +27,7 @@ pub async fn enquire_quote<KG, QR>(
     Json(req): Json<web_quotes::EnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!(
@@ -88,7 +88,7 @@ pub async fn lookup_quote<KG, QR>(
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::StatusReply>>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
@@ -116,7 +116,7 @@ pub async fn resolve_offer<KG, QR>(
     Json(req): Json<web_quotes::ResolveOffer>,
 ) -> Result<()>
 where
-    KG: KeyFactory,
+    KG: KeysHandler,
     QR: Repository,
 {
     log::debug!("Received mint quote resolve request for id: {}", id);

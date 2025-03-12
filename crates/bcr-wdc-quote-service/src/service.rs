@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bcr_wdc_keys as keys;
 use bcr_wdc_keys::KeysetID;
 use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut02 as cdk02;
-use cashu::Amount as cdk_Amount;
+use cashu::Amount;
+use futures::future::JoinAll;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use uuid::Uuid;
 // ----- local modules
@@ -31,23 +31,24 @@ pub trait Repository: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeyFactory: Send + Sync {
-    async fn generate(
+pub trait KeysHandler: Send + Sync {
+    async fn sign(
         &self,
         kid: KeysetID,
         qid: Uuid,
         maturity_date: TStamp,
-    ) -> AnyResult<cdk02::MintKeySet>;
+        msg: &cdk00::BlindedMessage,
+    ) -> Result<cdk00::BlindSignature>;
 }
 
 // ---------- Service
 #[derive(Clone)]
-pub struct Service<KeysGen, QuotesRepo> {
-    pub keys_gen: KeysGen,
+pub struct Service<KeysHndlr, QuotesRepo> {
+    pub keys_hndlr: KeysHndlr,
     pub quotes: QuotesRepo,
 }
 
-impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
+impl<KeysHndlr, QuotesRepo> Service<KeysHndlr, QuotesRepo>
 where
     QuotesRepo: Repository,
 {
@@ -76,7 +77,7 @@ where
             }) => Ok(*id),
             Some(Quote {
                 id,
-                status: QuoteStatus::Denied { .. },
+                status: QuoteStatus::Denied,
                 ..
             }) => Err(Error::QuoteAlreadyResolved(*id)),
             Some(Quote {
@@ -207,9 +208,9 @@ where
     }
 }
 
-impl<KeysGen, QuotesRepo> Service<KeysGen, QuotesRepo>
+impl<KeysHndlr, QuotesRepo> Service<KeysHndlr, QuotesRepo>
 where
-    KeysGen: KeyFactory,
+    KeysHndlr: KeysHandler,
     QuotesRepo: Repository,
 {
     pub async fn offer(
@@ -220,7 +221,7 @@ where
         ttl: Option<TStamp>,
     ) -> Result<()> {
         let discounted_amount =
-            cdk_Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
+            Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
         let mut quote = self.lookup(id).await?;
         let qid = quote.id;
@@ -232,18 +233,14 @@ where
         let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
         log::warn!("WARNING: we are leaving fees on the table, ... but we don't know how much (eBill data missing)");
 
-        // TODO! maturity date should come from the eBill
-        let maturity_date = now + chrono::Duration::days(30);
-        let keyset = self
-            .keys_gen
-            .generate(kid, qid, maturity_date)
-            .await
-            .map_err(Error::KeysFactory)?;
-
-        let signatures = selected_blinds
+        let maturity = quote.bill.maturity_date;
+        let joined: JoinAll<_> = selected_blinds
             .iter()
-            .map(|blind| keys::sign_with_keys(&keyset, blind))
-            .collect::<keys::Result<Vec<cdk00::BlindSignature>>>()?;
+            .map(|blind| self.keys_hndlr.sign(kid, qid, maturity, blind))
+            .collect();
+        let signatures: Vec<cdk00::BlindSignature> =
+            joined.await.into_iter().collect::<Result<_>>()?;
+
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
         self.quotes
@@ -362,10 +359,10 @@ mod tests {
         let mut quotes = MockRepository::new();
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes.expect_store().returning(|_| Ok(()));
-        let keys_gen = MockKeyFactory::new();
+        let keys_hndlr = MockKeysHandler::new();
 
         let rnd_bill = generate_random_bill();
-        let service = Service { quotes, keys_gen };
+        let service = Service { quotes, keys_hndlr };
         let test = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test.is_ok());
     }
@@ -387,11 +384,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_gen = MockKeyFactory::new();
+        let keys_hndlr = MockKeysHandler::new();
 
         let service = Service {
             quotes: repo,
-            keys_gen,
+            keys_hndlr,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_ok());
@@ -415,11 +412,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_gen = MockKeyFactory::new();
+        let keys_hndlr = MockKeysHandler::new();
 
         let service = Service {
             quotes: repo,
-            keys_gen,
+            keys_hndlr,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
@@ -449,11 +446,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_gen = MockKeyFactory::new();
+        let keys_hndlr = MockKeysHandler::new();
 
         let service = Service {
             quotes: repo,
-            keys_gen,
+            keys_hndlr,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
@@ -483,11 +480,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_gen = MockKeyFactory::new();
+        let keys_hndlr = MockKeysHandler::new();
 
         let service = Service {
             quotes: repo,
-            keys_gen,
+            keys_hndlr,
         };
         let test_id = service
             .enquire(
