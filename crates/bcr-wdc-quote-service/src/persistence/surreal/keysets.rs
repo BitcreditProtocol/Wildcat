@@ -3,7 +3,7 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_wdc_keys as keys;
-use bcr_wdc_keys::persistence::{DBKeys, KeysetEntry};
+use bcr_wdc_keys::{persistence::DBKeys, KeysetEntry};
 use cashu::mint as cdk_mint;
 use cashu::nuts::nut02 as cdk02;
 use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};

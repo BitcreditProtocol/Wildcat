@@ -4,6 +4,7 @@ use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 use cashu::dhke as cdk_dhke;
+use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 use cashu::nuts::nut10 as cdk10;
@@ -19,6 +20,7 @@ pub mod persistence;
 // ----- local imports
 pub use crate::id::KeysetID;
 
+pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type Result<T> = std::result::Result<T, Error>;

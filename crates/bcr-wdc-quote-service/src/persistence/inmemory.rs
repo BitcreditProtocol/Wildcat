@@ -10,7 +10,7 @@ use cashu::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::keys::{persistence::KeysetEntry, KeysetID};
+use crate::keys::{KeysetEntry, KeysetID};
 use crate::quotes;
 use crate::TStamp;
 

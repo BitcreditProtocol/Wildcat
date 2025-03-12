@@ -11,8 +11,8 @@ use cashu::Amount as cdk_Amount;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::id::KeysetID;
+use crate::KeysetEntry;
 
-pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 
 #[derive(Default, Clone)]
 pub struct InMemoryMap {
