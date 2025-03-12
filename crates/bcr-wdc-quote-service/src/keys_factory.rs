@@ -14,7 +14,7 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::quotes::KeyFactory;
+use crate::service::KeyFactory;
 use crate::TStamp;
 
 #[derive(Debug, Error)]

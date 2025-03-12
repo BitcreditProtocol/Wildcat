@@ -7,7 +7,10 @@ use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 // ----- local imports
 use crate::error::Result;
-use crate::quotes;
+use crate::{
+    quotes,
+    service::{KeyFactory, Repository, Service},
+};
 
 ///--------------------------- Enquire mint quote
 #[utoipa::path(
@@ -20,12 +23,12 @@ use crate::quotes;
     )
 )]
 pub async fn enquire_quote<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     Json(req): Json<web_quotes::EnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!(
         "Received mint quote request for bill: {}, from node : {}",
@@ -81,12 +84,12 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     )
 )]
 pub async fn lookup_quote<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::StatusReply>>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
@@ -108,13 +111,13 @@ where
     )
 )]
 pub async fn resolve_offer<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveOffer>,
 ) -> Result<()>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received mint quote resolve request for id: {}", id);
 

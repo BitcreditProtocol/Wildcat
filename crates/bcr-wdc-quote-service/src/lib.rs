@@ -13,6 +13,7 @@ mod error;
 mod keys_factory;
 mod persistence;
 mod quotes;
+mod service;
 mod utils;
 mod web;
 // ----- local imports
@@ -23,7 +24,7 @@ pub type ProdQuoteKeysRepository = persistence::surreal::keysets::QuoteKeysDB;
 pub type ProdQuoteRepository = persistence::surreal::quotes::DB;
 
 pub type ProdCreditKeysFactory = keys_factory::Factory<ProdQuoteKeysRepository>;
-pub type ProdQuotingService = quotes::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
+pub type ProdQuotingService = service::Service<ProdCreditKeysFactory, ProdQuoteRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {

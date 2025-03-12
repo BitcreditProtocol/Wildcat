@@ -12,6 +12,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::keys::{KeysetEntry, KeysetID};
 use crate::quotes;
+use crate::service::Repository;
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -19,7 +20,7 @@ pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
 }
 #[async_trait]
-impl quotes::Repository for QuotesIDMap {
+impl Repository for QuotesIDMap {
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
         Ok(self
             .quotes
