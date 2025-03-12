@@ -5,6 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
+use crate::service::{KeyFactory, Repository, Service};
 use crate::utils;
 
 /// --------------------------- List quotes
@@ -19,12 +20,12 @@ use crate::utils;
     )
 )]
 pub async fn list_pending_quotes<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     since: Option<Query<chrono::DateTime<chrono::Utc>>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received request to list pending quotes");
 
@@ -43,12 +44,12 @@ where
     )
 )]
 pub async fn list_accepted_quotes<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     since: Option<Query<chrono::NaiveDateTime>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received request to list accepted quotes");
 
@@ -102,12 +103,12 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
     )
 )]
 pub async fn admin_lookup_quote<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::InfoReply>>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
@@ -128,13 +129,13 @@ where
     )
 )]
 pub async fn admin_resolve_quote<KG, QR>(
-    State(ctrl): State<quotes::Service<KG, QR>>,
+    State(ctrl): State<Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveRequest>,
 ) -> Result<()>
 where
-    KG: quotes::KeyFactory,
-    QR: quotes::Repository,
+    KG: KeyFactory,
+    QR: Repository,
 {
     log::debug!("Received mint quote resolve request for id: {}", id);
 

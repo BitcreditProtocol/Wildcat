@@ -10,6 +10,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::persistence::surreal::ConnectionConfig;
 use crate::quotes;
+use crate::service::Repository;
 use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
@@ -213,7 +214,7 @@ impl DB {
 }
 
 #[async_trait]
-impl quotes::Repository for DB {
+impl Repository for DB {
     async fn load(&self, qid: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
         self.load(qid)
             .await?
