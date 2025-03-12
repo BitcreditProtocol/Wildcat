@@ -8,13 +8,12 @@ use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::persistence::surreal::ConnectionConfig;
 use crate::quotes;
 use crate::service::Repository;
 use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
-enum DBQuoteStatus {
+enum DBEntryQuoteStatus {
     #[default]
     Pending,
     Denied,
@@ -22,7 +21,7 @@ enum DBQuoteStatus {
     Rejected,
     Accepted,
 }
-impl From<&quotes::QuoteStatus> for DBQuoteStatus {
+impl From<&quotes::QuoteStatus> for DBEntryQuoteStatus {
     fn from(value: &quotes::QuoteStatus) -> Self {
         match value {
             quotes::QuoteStatus::Pending { .. } => Self::Pending,
@@ -35,25 +34,25 @@ impl From<&quotes::QuoteStatus> for DBQuoteStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct DBQuote {
+struct DBEntryQuote {
     quote_id: surrealdb::Uuid, // can't be `id`, reserved world in surreal
     bill: quotes::BillInfo,
     submitted: TStamp,
-    status: DBQuoteStatus,
+    status: DBEntryQuoteStatus,
     blinds: Option<Vec<cdk00::BlindedMessage>>,
     signatures: Option<Vec<cdk00::BlindSignature>>,
     ttl: Option<TStamp>,
     rejection: Option<TStamp>,
 }
 
-impl From<quotes::Quote> for DBQuote {
+impl From<quotes::Quote> for DBEntryQuote {
     fn from(q: quotes::Quote) -> Self {
         match q.status {
             quotes::QuoteStatus::Pending { blinds } => Self {
                 quote_id: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Pending,
+                status: DBEntryQuoteStatus::Pending,
                 blinds: Some(blinds),
                 signatures: Default::default(),
                 ttl: Default::default(),
@@ -63,7 +62,7 @@ impl From<quotes::Quote> for DBQuote {
                 quote_id: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Denied,
+                status: DBEntryQuoteStatus::Denied,
                 blinds: Default::default(),
                 signatures: Default::default(),
                 ttl: Default::default(),
@@ -73,7 +72,7 @@ impl From<quotes::Quote> for DBQuote {
                 quote_id: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Accepted,
+                status: DBEntryQuoteStatus::Accepted,
                 signatures: Some(signatures),
                 ttl: Some(ttl),
                 blinds: Default::default(),
@@ -83,7 +82,7 @@ impl From<quotes::Quote> for DBQuote {
                 quote_id: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Rejected,
+                status: DBEntryQuoteStatus::Rejected,
                 rejection: Some(tstamp),
                 blinds: Default::default(),
                 signatures: Default::default(),
@@ -93,7 +92,7 @@ impl From<quotes::Quote> for DBQuote {
                 quote_id: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
-                status: DBQuoteStatus::Accepted,
+                status: DBEntryQuoteStatus::Accepted,
                 signatures: Some(signatures),
                 blinds: Default::default(),
                 ttl: Default::default(),
@@ -103,11 +102,11 @@ impl From<quotes::Quote> for DBQuote {
     }
 }
 
-impl TryFrom<DBQuote> for quotes::Quote {
+impl TryFrom<DBEntryQuote> for quotes::Quote {
     type Error = AnyError;
-    fn try_from(dbq: DBQuote) -> Result<Self, Self::Error> {
+    fn try_from(dbq: DBEntryQuote) -> Result<Self, Self::Error> {
         match dbq.status {
-            DBQuoteStatus::Pending => Ok(Self {
+            DBEntryQuoteStatus::Pending => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
@@ -115,13 +114,13 @@ impl TryFrom<DBQuote> for quotes::Quote {
                     blinds: dbq.blinds.ok_or_else(|| anyhow!("missing blinds"))?,
                 },
             }),
-            DBQuoteStatus::Denied => Ok(Self {
+            DBEntryQuoteStatus::Denied => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Denied,
             }),
-            DBQuoteStatus::Offered => Ok(Self {
+            DBEntryQuoteStatus::Offered => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
@@ -132,7 +131,7 @@ impl TryFrom<DBQuote> for quotes::Quote {
                     ttl: dbq.ttl.ok_or_else(|| anyhow!("missing ttl"))?,
                 },
             }),
-            DBQuoteStatus::Rejected => Ok(Self {
+            DBEntryQuoteStatus::Rejected => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
@@ -140,7 +139,7 @@ impl TryFrom<DBQuote> for quotes::Quote {
                     tstamp: dbq.rejection.ok_or_else(|| anyhow!("missing rejection"))?,
                 },
             }),
-            DBQuoteStatus::Accepted => Ok(Self {
+            DBEntryQuoteStatus::Accepted => Ok(Self {
                 id: dbq.quote_id,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
@@ -154,13 +153,21 @@ impl TryFrom<DBQuote> for quotes::Quote {
     }
 }
 
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ConnectionConfig {
+    pub connection: String,
+    pub namespace: String,
+    pub database: String,
+    pub table: String,
+}
+
 #[derive(Debug, Clone)]
-pub struct DB {
+pub struct DBQuotes {
     db: Surreal<surrealdb::engine::any::Any>,
     table: String,
 }
 
-impl DB {
+impl DBQuotes {
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
@@ -172,11 +179,11 @@ impl DB {
         })
     }
 
-    async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBQuote>> {
+    async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBEntryQuote>> {
         self.db.select((&self.table, qid)).await
     }
 
-    async fn store(&self, quote: DBQuote) -> SurrealResult<Option<DBQuote>> {
+    async fn store(&self, quote: DBEntryQuote) -> SurrealResult<Option<DBEntryQuote>> {
         self.db
             .insert((&self.table, quote.quote_id))
             .content(quote)
@@ -185,7 +192,7 @@ impl DB {
 
     async fn list_by_status(
         &self,
-        status: DBQuoteStatus,
+        status: DBEntryQuoteStatus,
         since: Option<TStamp>,
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
@@ -203,8 +210,8 @@ impl DB {
         query.await?.take("quote_id")
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<DBQuote>> {
-        let results: Vec<DBQuote> = self.db
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<DBEntryQuote>> {
+        let results: Vec<DBEntryQuote> = self.db
             .query("SELECT * FROM type::table($table) WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
@@ -214,7 +221,7 @@ impl DB {
 }
 
 #[async_trait]
-impl Repository for DB {
+impl Repository for DBQuotes {
     async fn load(&self, qid: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
         self.load(qid)
             .await?
@@ -230,8 +237,8 @@ impl Repository for DB {
         self.db
             .query("UPDATE $rid CONTENT $new WHERE status == $status")
             .bind(("rid", recordid))
-            .bind(("new", DBQuote::from(new)))
-            .bind(("status", DBQuoteStatus::Pending))
+            .bind(("new", DBEntryQuote::from(new)))
+            .bind(("status", DBEntryQuoteStatus::Pending))
             .await?;
         Ok(())
     }
@@ -244,20 +251,20 @@ impl Repository for DB {
         self.db
             .query("UPDATE $rid CONTENT $new WHERE status == $status")
             .bind(("rid", recordid))
-            .bind(("new", DBQuote::from(new)))
-            .bind(("status", DBQuoteStatus::Offered))
+            .bind(("new", DBEntryQuote::from(new)))
+            .bind(("status", DBEntryQuoteStatus::Offered))
             .await?;
         Ok(())
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
-        self.list_by_status(DBQuoteStatus::Pending, since)
+        self.list_by_status(DBEntryQuoteStatus::Pending, since)
             .await
             .map_err(Into::into)
     }
 
     async fn list_offers(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
-        self.list_by_status(DBQuoteStatus::Accepted, since)
+        self.list_by_status(DBEntryQuoteStatus::Accepted, since)
             .await
             .map_err(Into::into)
     }

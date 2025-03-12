@@ -2,6 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
+use bcr_wdc_key_client::Error as KeysHandlerError;
 use bcr_wdc_keys::Error as KeysError;
 use thiserror::Error;
 // ----- local modules
@@ -21,8 +22,8 @@ pub enum Error {
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
-    #[error("keys repository error {0}")]
-    KeysFactory(AnyError),
+    #[error("keys handler error {0}")]
+    KeysHandler(KeysHandlerError),
 
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
@@ -50,7 +51,7 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::Keys(_) => (StatusCode::BAD_REQUEST, String::new()),
 
-            Error::KeysFactory(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
