@@ -13,7 +13,6 @@ use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 use crate::id::KeysetID;
 use crate::KeysetEntry;
 
-
 #[derive(Default, Clone)]
 pub struct InMemoryMap {
     keys: Arc<RwLock<HashMap<KeysetID, KeysetEntry>>>,

@@ -9,8 +9,8 @@ use utoipa::ToSchema;
 ///--------------------------- Pre-sign blinded message
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct PreSignRequest {
-   pub kid: cdk02::Id,
-   pub qid: uuid::Uuid,
-   pub expire: chrono::DateTime<chrono::Utc>,
-   pub msg: cdk00::BlindedMessage,
+    pub kid: cdk02::Id,
+    pub qid: uuid::Uuid,
+    pub expire: chrono::DateTime<chrono::Utc>,
+    pub msg: cdk00::BlindedMessage,
 }
