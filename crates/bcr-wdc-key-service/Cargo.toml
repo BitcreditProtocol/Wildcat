@@ -7,17 +7,23 @@ edition = "2021"
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
+bcr-wdc-keys = { path = "../bcr-wdc-keys"}
+bcr-wdc-webapi = { path = "../bcr-wdc-webapi"}
+bitcoin.workspace = true
 cashu.workspace = true
 chrono.workspace = true
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
+futures.workspace = true
 log.workspace = true
 serde.workspace = true
+surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 utoipa = {workspace = true, features = ["axum_extras"]}
 utoipa-swagger-ui.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+bip39 = {version = "2"}

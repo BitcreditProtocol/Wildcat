@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_webapi::keys as web_keys;
 use cashu::nut00 as cdk00;
 use cashu::nut02 as cdk02;
 use thiserror::Error;
@@ -79,5 +80,27 @@ impl KeyClient {
         }
         res.error_for_status()?;
         Ok(true)
+    }
+
+    pub async fn pre_sign(
+        &self,
+        kid: cdk02::Id,
+        qid: uuid::Uuid,
+        tstamp: chrono::DateTime<chrono::Utc>,
+        msg: &cdk00::BlindedMessage,
+    ) -> Result<cdk00::BlindSignature> {
+        let url = self.base.join("/v1/admin/keys/pre_sign")?;
+        let msg = web_keys::PreSignRequest {
+            kid,
+            qid,
+            expire: tstamp,
+            msg: msg.clone(),
+        };
+        let res = self.cl.post(url).json(&msg).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        let sig = res.json::<cdk00::BlindSignature>().await?;
+        Ok(sig)
     }
 }
