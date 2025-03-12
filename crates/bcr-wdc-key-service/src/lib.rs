@@ -9,17 +9,22 @@ use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod error;
+mod factory;
 mod persistence;
 mod service;
 mod web;
 // ----- local imports
 
-pub type ProdKeysRepository = persistence::surreal::DB;
-pub type ProdKeysService = service::Service<ProdKeysRepository>;
+type TStamp = chrono::DateTime<chrono::Utc>;
+
+pub type ProdQuoteKeysRepository = persistence::surreal::DBQuoteKeys;
+pub type ProdKeysRepository = persistence::surreal::DBKeys;
+pub type ProdKeysService = service::Service<ProdQuoteKeysRepository, ProdKeysRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
-    keys: persistence::surreal::ConnectionConfig,
+    keys_cfg: persistence::surreal::ConnectionConfig,
+    quotekeys_cfg: persistence::surreal::ConnectionConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -28,11 +33,19 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub async fn new(cfg: AppConfig) -> Self {
-        let repo = ProdKeysRepository::new(cfg.keys)
+    pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
+        let keys_repo = ProdKeysRepository::new(cfg.keys_cfg)
             .await
             .expect("DB connection to keys failed");
-        let srv = ProdKeysService { keys: repo };
+        let quotekeys_repo = ProdQuoteKeysRepository::new(cfg.quotekeys_cfg)
+            .await
+            .expect("DB connection to quotekeys failed");
+        let keygen = factory::Factory::new(seed);
+        let srv = ProdKeysService {
+            keys: keys_repo,
+            quote_keys: quotekeys_repo,
+            keygen,
+        };
         Self { keys: srv }
     }
 }
@@ -46,6 +59,7 @@ pub fn routes(ctrl: AppController) -> Router {
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route("/v1/admin/keys/sign", post(admin::sign_blind))
+        .route("/v1/admin/keys/pre_sign", post(admin::pre_sign))
         .route("/v1/admin/keys/verify", post(admin::verify_proof));
 
     Router::new()

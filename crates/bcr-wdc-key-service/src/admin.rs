@@ -1,10 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, State};
+use bcr_wdc_webapi::keys as web_keys;
 use cashu::nuts::nut00 as cdk00;
 // ----- local imports
 use crate::error::Result;
-use crate::service::{KeysRepository, Service};
+use crate::service::{KeysRepository, QuoteKeysRepository, Service};
 
 #[utoipa::path(
     post,
@@ -15,8 +16,8 @@ use crate::service::{KeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn sign_blind<KR>(
-    State(ctrl): State<Service<KR>>,
+pub async fn sign_blind<QKR, KR>(
+    State(ctrl): State<Service<QKR, KR>>,
     Json(blind): Json<cdk00::BlindedMessage>,
 ) -> Result<Json<cdk00::BlindSignature>>
 where
@@ -35,8 +36,8 @@ where
         (status = 400, description = "proof verification failed"),
     )
 )]
-pub async fn verify_proof<KR>(
-    State(ctrl): State<Service<KR>>,
+pub async fn verify_proof<QKR, KR>(
+    State(ctrl): State<Service<QKR, KR>>,
     Json(proof): Json<cdk00::Proof>,
 ) -> Result<()>
 where
@@ -44,4 +45,27 @@ where
 {
     log::debug!("Received verify proof request");
     ctrl.verify_proof(proof).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/admin/keys/pre_sign/",
+    request_body(content = web_keys::PreSignRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = cdk00::BlindedSignature, content_type = "application/json"),
+        (status = 404, description = "keyset id not  found"),
+    )
+)]
+pub async fn pre_sign<QKR, KR>(
+    State(ctrl): State<Service<QKR, KR>>,
+    Json(request): Json<web_keys::PreSignRequest>,
+) -> Result<Json<cdk00::BlindSignature>>
+where
+    QKR: QuoteKeysRepository,
+{
+    log::debug!("Received pre_sign request");
+    let sig = ctrl
+        .pre_sign(request.kid, request.qid, request.expire, &request.msg)
+        .await?;
+    Ok(Json(sig))
 }

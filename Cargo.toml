@@ -16,6 +16,7 @@ cashu = {version = "0.7", default-features = false, features = ["mint", "swagger
 chrono = {version = "0.4", features = ["serde"]}
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
+futures = {version = "0.3"}
 log = {version = "0.4", features = ["serde"]}
 mockall = {version = "0.13"}
 rand = {version = "0.9"}

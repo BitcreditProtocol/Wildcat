@@ -18,8 +18,8 @@ use crate::service::{KeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn lookup_keyset<KR>(
-    State(ctrl): State<Service<KR>>,
+pub async fn lookup_keyset<QKR, KR>(
+    State(ctrl): State<Service<QKR, KR>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySetInfo>>
 where
@@ -43,8 +43,8 @@ where
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn lookup_keys<KR>(
-    State(ctrl): State<Service<KR>>,
+pub async fn lookup_keys<QKR, KR>(
+    State(ctrl): State<Service<QKR, KR>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySet>>
 where
