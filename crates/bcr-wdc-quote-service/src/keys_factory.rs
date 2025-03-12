@@ -3,7 +3,7 @@
 use anyhow::{Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use bcr_wdc_keys as keys;
-use bcr_wdc_keys::persistence::KeysetEntry;
+use bcr_wdc_keys::KeysetEntry;
 use bcr_wdc_keys::KeysetID;
 use bitcoin::bip32 as btc32;
 use cashu::mint as cdk_mint;
