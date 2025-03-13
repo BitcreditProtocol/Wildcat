@@ -219,7 +219,7 @@ where
         discount: Decimal,
         now: TStamp,
         ttl: Option<TStamp>,
-    ) -> Result<()> {
+    ) -> Result<(Decimal, TStamp)> {
         let discounted_amount =
             Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
@@ -241,13 +241,17 @@ where
         let signatures: Vec<cdk00::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
 
+        let signed_amount = signatures
+            .iter()
+            .fold(Amount::ZERO, |acc, sig| acc + sig.amount);
+        let discounted = Decimal::from(*signed_amount.as_ref());
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
         self.quotes
             .update_if_pending(quote)
             .await
             .map_err(Error::QuotesRepository)?;
-        Ok(())
+        Ok((discounted, expiration))
     }
 }
 

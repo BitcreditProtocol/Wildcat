@@ -69,7 +69,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .route("/v1/admin/credit/quote/:id", get(admin::admin_lookup_quote))
         .route(
             "/v1/admin/credit/quote/:id",
-            post(admin::admin_resolve_quote),
+            post(admin::admin_update_quote),
         )
         .with_state(ctrl)
         .merge(swagger)
@@ -88,7 +88,8 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         bcr_wdc_webapi::quotes::InfoReply,
         bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::ResolveOffer,
-        bcr_wdc_webapi::quotes::ResolveRequest,
+        bcr_wdc_webapi::quotes::UpdateQuoteRequest,
+        bcr_wdc_webapi::quotes::UpdateQuoteResponse,
         bcr_wdc_webapi::quotes::StatusReply,
         cashu::Amount,
         cdk00::BlindSignature,
@@ -102,7 +103,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         crate::admin::list_pending_quotes,
         crate::admin::list_quotes,
         crate::admin::admin_lookup_quote,
-        crate::admin::admin_resolve_quote,
+        crate::admin::admin_update_quote,
         crate::web::resolve_offer,
     )
 )]
