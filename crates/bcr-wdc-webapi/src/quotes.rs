@@ -171,14 +171,23 @@ pub enum InfoReply {
     },
 }
 
-/// --------------------------- Resolve quote request
+/// --------------------------- Update quote status request
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "action")]
-pub enum ResolveRequest {
+pub enum UpdateQuoteRequest {
     Deny,
     Offer {
         discount: Decimal,
         ttl: Option<chrono::DateTime<chrono::Utc>>,
+    },
+}
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase", tag = "status")]
+pub enum UpdateQuoteResponse {
+    Denied,
+    Offered {
+        discount: Decimal,
+        ttl: chrono::DateTime<chrono::Utc>,
     },
 }
 

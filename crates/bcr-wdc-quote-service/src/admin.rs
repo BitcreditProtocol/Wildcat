@@ -148,22 +148,26 @@ where
         (status = 200, description = "Successful response"),
     )
 )]
-pub async fn admin_resolve_quote<KG, QR>(
+pub async fn admin_update_quote<KG, QR>(
     State(ctrl): State<Service<KG, QR>>,
     Path(id): Path<uuid::Uuid>,
-    Json(req): Json<web_quotes::ResolveRequest>,
-) -> Result<()>
+    Json(req): Json<web_quotes::UpdateQuoteRequest>,
+) -> Result<Json<web_quotes::UpdateQuoteResponse>>
 where
     KG: KeysHandler,
     QR: Repository,
 {
-    log::debug!("Received mint quote resolve request for id: {}", id);
+    log::debug!("Received mint quote update request for id: {}", id);
 
-    match req {
-        web_quotes::ResolveRequest::Deny => ctrl.deny(id).await?,
-        web_quotes::ResolveRequest::Offer { discount, ttl } => {
-            ctrl.offer(id, discount, chrono::Utc::now(), ttl).await?
+    let response = match req {
+        web_quotes::UpdateQuoteRequest::Deny => {
+            ctrl.deny(id).await?;
+            web_quotes::UpdateQuoteResponse::Denied
         }
-    }
-    Ok(())
+        web_quotes::UpdateQuoteRequest::Offer { discount, ttl } => {
+            let (discount, ttl) = ctrl.offer(id, discount, chrono::Utc::now(), ttl).await?;
+            web_quotes::UpdateQuoteResponse::Offered { discount, ttl }
+        }
+    };
+    Ok(Json(response))
 }
