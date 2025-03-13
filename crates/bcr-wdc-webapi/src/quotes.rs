@@ -104,8 +104,9 @@ pub struct EnquireReply {
 }
 
 /// --------------------------- Look up quote
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase", tag = "status")]
+#[derive(Serialize, Deserialize, ToSchema, strum::EnumDiscriminants)]
+#[strum_discriminants(derive(Serialize, Deserialize, ToSchema))]
+#[serde(tag = "status")]
 pub enum StatusReply {
     Pending,
     Denied,
@@ -125,6 +126,17 @@ pub enum StatusReply {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ListReply {
     pub quotes: Vec<uuid::Uuid>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct LightInfo {
+    pub id: uuid::Uuid,
+    pub status: StatusReplyDiscriminants,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ListReplyLight {
+    pub quotes: Vec<LightInfo>,
 }
 
 /// --------------------------- Quote info request
@@ -159,14 +171,23 @@ pub enum InfoReply {
     },
 }
 
-/// --------------------------- Resolve quote request
+/// --------------------------- Update quote status request
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase", tag = "action")]
-pub enum ResolveRequest {
+pub enum UpdateQuoteRequest {
     Deny,
     Offer {
         discount: Decimal,
         ttl: Option<chrono::DateTime<chrono::Utc>>,
+    },
+}
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase", tag = "status")]
+pub enum UpdateQuoteResponse {
+    Denied,
+    Offered {
+        discount: Decimal,
+        ttl: chrono::DateTime<chrono::Utc>,
     },
 }
 

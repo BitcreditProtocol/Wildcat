@@ -12,7 +12,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::quotes::{BillInfo, Quote, QuoteStatus};
+use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus};
 use crate::utils;
 use crate::TStamp;
 
@@ -24,7 +24,7 @@ pub trait Repository: Send + Sync {
     async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
     async fn update_if_offered(&self, quote: Quote) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    async fn list_offers(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    async fn list_light(&self, since: Option<TStamp>) -> AnyResult<Vec<LightQuote>>;
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> AnyResult<()>;
 }
@@ -200,9 +200,9 @@ where
             .map_err(Error::QuotesRepository)
     }
 
-    pub async fn list_offers(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
+    pub async fn list_light(&self, since: Option<TStamp>) -> Result<Vec<LightQuote>> {
         self.quotes
-            .list_offers(since)
+            .list_light(since)
             .await
             .map_err(Error::QuotesRepository)
     }
@@ -219,7 +219,7 @@ where
         discount: Decimal,
         now: TStamp,
         ttl: Option<TStamp>,
-    ) -> Result<()> {
+    ) -> Result<(Decimal, TStamp)> {
         let discounted_amount =
             Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
@@ -241,13 +241,17 @@ where
         let signatures: Vec<cdk00::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
 
+        let signed_amount = signatures
+            .iter()
+            .fold(Amount::ZERO, |acc, sig| acc + sig.amount);
+        let discounted = Decimal::from(*signed_amount.as_ref());
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
         quote.offer(signatures, expiration)?;
         self.quotes
             .update_if_pending(quote)
             .await
             .map_err(Error::QuotesRepository)?;
-        Ok(())
+        Ok((discounted, expiration))
     }
 }
 

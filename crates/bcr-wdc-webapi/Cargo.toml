@@ -12,5 +12,6 @@ cashu.workspace = true
 chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
+strum = {workspace = true, features = ["derive"]}
 utoipa.workspace = true
 uuid.workspace = true

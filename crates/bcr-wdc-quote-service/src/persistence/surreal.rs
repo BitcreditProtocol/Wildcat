@@ -32,10 +32,21 @@ impl From<&quotes::QuoteStatus> for DBEntryQuoteStatus {
         }
     }
 }
+impl From<DBEntryQuoteStatus> for quotes::QuoteStatusDiscriminants {
+    fn from(value: DBEntryQuoteStatus) -> Self {
+        match value {
+            DBEntryQuoteStatus::Pending => Self::Pending,
+            DBEntryQuoteStatus::Denied => Self::Denied,
+            DBEntryQuoteStatus::Offered => Self::Offered,
+            DBEntryQuoteStatus::Rejected => Self::Rejected,
+            DBEntryQuoteStatus::Accepted => Self::Accepted,
+        }
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryQuote {
-    quote_id: surrealdb::Uuid, // can't be `id`, reserved world in surreal
+    qid: surrealdb::Uuid, // can't be `id`, reserved world in surreal
     bill: quotes::BillInfo,
     submitted: TStamp,
     status: DBEntryQuoteStatus,
@@ -49,7 +60,7 @@ impl From<quotes::Quote> for DBEntryQuote {
     fn from(q: quotes::Quote) -> Self {
         match q.status {
             quotes::QuoteStatus::Pending { blinds } => Self {
-                quote_id: q.id,
+                qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Pending,
@@ -59,7 +70,7 @@ impl From<quotes::Quote> for DBEntryQuote {
                 rejection: Default::default(),
             },
             quotes::QuoteStatus::Denied => Self {
-                quote_id: q.id,
+                qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Denied,
@@ -69,7 +80,7 @@ impl From<quotes::Quote> for DBEntryQuote {
                 rejection: Default::default(),
             },
             quotes::QuoteStatus::Offered { signatures, ttl } => Self {
-                quote_id: q.id,
+                qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Accepted,
@@ -79,7 +90,7 @@ impl From<quotes::Quote> for DBEntryQuote {
                 rejection: Default::default(),
             },
             quotes::QuoteStatus::Rejected { tstamp } => Self {
-                quote_id: q.id,
+                qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Rejected,
@@ -89,7 +100,7 @@ impl From<quotes::Quote> for DBEntryQuote {
                 ttl: Default::default(),
             },
             quotes::QuoteStatus::Accepted { signatures } => Self {
-                quote_id: q.id,
+                qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Accepted,
@@ -107,7 +118,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
     fn try_from(dbq: DBEntryQuote) -> Result<Self, Self::Error> {
         match dbq.status {
             DBEntryQuoteStatus::Pending => Ok(Self {
-                id: dbq.quote_id,
+                id: dbq.qid,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Pending {
@@ -115,13 +126,13 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 },
             }),
             DBEntryQuoteStatus::Denied => Ok(Self {
-                id: dbq.quote_id,
+                id: dbq.qid,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Denied,
             }),
             DBEntryQuoteStatus::Offered => Ok(Self {
-                id: dbq.quote_id,
+                id: dbq.qid,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Offered {
@@ -132,7 +143,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 },
             }),
             DBEntryQuoteStatus::Rejected => Ok(Self {
-                id: dbq.quote_id,
+                id: dbq.qid,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Rejected {
@@ -140,7 +151,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 },
             }),
             DBEntryQuoteStatus::Accepted => Ok(Self {
-                id: dbq.quote_id,
+                id: dbq.qid,
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Accepted {
@@ -149,6 +160,20 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                         .ok_or_else(|| anyhow!("missing signatures"))?,
                 },
             }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct DBEntryLightQuote {
+    qid: uuid::Uuid,
+    status: DBEntryQuoteStatus,
+}
+impl From<DBEntryLightQuote> for quotes::LightQuote {
+    fn from(dbq: DBEntryLightQuote) -> Self {
+        Self {
+            id: dbq.qid,
+            status: dbq.status.into(),
         }
     }
 }
@@ -185,9 +210,22 @@ impl DBQuotes {
 
     async fn store(&self, quote: DBEntryQuote) -> SurrealResult<Option<DBEntryQuote>> {
         self.db
-            .insert((&self.table, quote.quote_id))
+            .insert((&self.table, quote.qid))
             .content(quote)
             .await
+    }
+
+    async fn light_list(&self, since: Option<TStamp>) -> SurrealResult<Vec<DBEntryLightQuote>> {
+        let mut query = self
+            .db
+            .query("SELECT qid, status FROM type::table($table) ORDER BY submitted DESC")
+            .bind(("table", self.table.clone()));
+        if let Some(since) = since {
+            query = query
+                .query(" AND submitted >= $since")
+                .bind(("since", since));
+        }
+        query.await?.take(0)
     }
 
     async fn list_by_status(
@@ -263,10 +301,13 @@ impl Repository for DBQuotes {
             .map_err(Into::into)
     }
 
-    async fn list_offers(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
-        self.list_by_status(DBEntryQuoteStatus::Accepted, since)
-            .await
-            .map_err(Into::into)
+    async fn list_light(&self, since: Option<TStamp>) -> AnyResult<Vec<quotes::LightQuote>> {
+        let db_result = self.light_list(since).await?;
+        let response = db_result
+            .into_iter()
+            .map(std::convert::Into::into)
+            .collect();
+        Ok(response)
     }
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
