@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -76,14 +77,16 @@ impl Repository for QuotesIDMap {
             .collect();
         Ok(a)
     }
-    async fn list_offers(&self, _since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_light(&self, _since: Option<TStamp>) -> AnyResult<Vec<quotes::LightQuote>> {
         let a = self
             .quotes
             .read()
             .unwrap()
             .iter()
-            .filter(|(_, q)| matches!(q.status, quotes::QuoteStatus::Accepted { .. }))
-            .map(|(id, _)| *id)
+            .map(|(id, quote)| quotes::LightQuote {
+                id: *id,
+                status: quote.status.discriminant(),
+            })
             .collect();
         Ok(a)
     }
