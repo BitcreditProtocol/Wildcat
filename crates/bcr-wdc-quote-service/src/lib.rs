@@ -65,10 +65,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),
         )
-        .route(
-            "/v1/admin/credit/quote/accepted",
-            get(admin::list_accepted_quotes),
-        )
+        .route("/v1/admin/credit/quote", get(admin::list_quotes))
         .route("/v1/admin/credit/quote/:id", get(admin::admin_lookup_quote))
         .route(
             "/v1/admin/credit/quote/:id",
@@ -103,7 +100,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         crate::web::enquire_quote,
         crate::web::lookup_quote,
         crate::admin::list_pending_quotes,
-        crate::admin::list_accepted_quotes,
+        crate::admin::list_quotes,
         crate::admin::admin_lookup_quote,
         crate::admin::admin_resolve_quote,
         crate::web::resolve_offer,

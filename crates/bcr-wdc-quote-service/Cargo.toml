@@ -24,7 +24,7 @@ hex = {version = "0.4"}
 log.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
-strum = {version = "0", features = ["derive"]}
+strum = {workspace = true, features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

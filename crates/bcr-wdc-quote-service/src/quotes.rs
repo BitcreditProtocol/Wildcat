@@ -49,7 +49,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, strum::EnumDiscriminants)]
 pub enum QuoteStatus {
     Pending {
         blinds: Vec<cdk00::BlindedMessage>,
@@ -73,6 +73,11 @@ pub struct Quote {
     pub id: Uuid,
     pub bill: BillInfo,
     pub submitted: TStamp,
+}
+
+pub struct LightQuote {
+    pub id: Uuid,
+    pub status: QuoteStatusDiscriminants,
 }
 
 impl Quote {

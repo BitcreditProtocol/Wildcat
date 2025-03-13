@@ -33,28 +33,48 @@ where
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
+fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo {
+    let status = match quote.status {
+        quotes::QuoteStatusDiscriminants::Pending => web_quotes::StatusReplyDiscriminants::Pending,
+        quotes::QuoteStatusDiscriminants::Offered => web_quotes::StatusReplyDiscriminants::Offered,
+        quotes::QuoteStatusDiscriminants::Denied => web_quotes::StatusReplyDiscriminants::Denied,
+        quotes::QuoteStatusDiscriminants::Rejected => {
+            web_quotes::StatusReplyDiscriminants::Rejected
+        }
+        quotes::QuoteStatusDiscriminants::Accepted => {
+            web_quotes::StatusReplyDiscriminants::Accepted
+        }
+    };
+    web_quotes::LightInfo {
+        id: quote.id,
+        status,
+    }
+}
 #[utoipa::path(
     get,
-    path = "/v1/admin/credit/quote/accepted",
+    path = "/v1/admin/credit/quote",
     params(
-        ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "only accepted quotes younger than `since`")
+        ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "quotes younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
     )
 )]
-pub async fn list_accepted_quotes<KG, QR>(
+pub async fn list_quotes<KG, QR>(
     State(ctrl): State<Service<KG, QR>>,
     since: Option<Query<chrono::NaiveDateTime>>,
-) -> Result<Json<web_quotes::ListReply>>
+) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KG: KeysHandler,
     QR: Repository,
 {
-    log::debug!("Received request to list accepted quotes");
+    log::debug!("Received request to list quotes");
 
-    let quotes = ctrl.list_offers(since.map(|q| q.0.and_utc())).await?;
-    Ok(Json(web_quotes::ListReply { quotes }))
+    let quotes = ctrl.list_light(since.map(|q| q.0.and_utc())).await?;
+    let response = web_quotes::ListReplyLight {
+        quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
+    };
+    Ok(Json(response))
 }
 
 /// --------------------------- Look up request
