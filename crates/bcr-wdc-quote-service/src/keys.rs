@@ -13,7 +13,7 @@ use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct KeysRestConfig {
-    pub base: String,
+    pub base_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +21,7 @@ pub struct KeysRestHandler(KeyClient);
 
 impl KeysRestHandler {
     pub fn new(cfg: KeysRestConfig) -> Result<Self> {
-        let cl = KeyClient::new(&cfg.base).map_err(Error::KeysHandler)?;
+        let cl = KeyClient::new(&cfg.base_url).map_err(Error::KeysHandler)?;
         Ok(Self(cl))
     }
 }
