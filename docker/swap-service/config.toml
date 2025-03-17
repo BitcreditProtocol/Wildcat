@@ -1,5 +1,5 @@
 
-bind_address = "0.0.0.0:3338"
+bind_address = "0.0.0.0:3337"
 log_level = "DEBUG"
 
 
@@ -11,4 +11,4 @@ table = "proofs"
 
 
 [appcfg.keys_cl]
-base_url = "http://key-service:3338"
+base_url = "http://key-service:3335"

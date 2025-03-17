@@ -1,0 +1,12 @@
+
+bind_address = "0.0.0.0:3336"
+log_level = "DEBUG"
+
+
+[appcfg.credit]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "credit"
+secrets = "secrets"
+counters = "counters"
+signatures = "signatures"
