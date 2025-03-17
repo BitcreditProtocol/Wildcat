@@ -1,0 +1,26 @@
+[package]
+name = "bcr-wdc-treasury-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait.workspace = true
+axum.workspace = true
+bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
+bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
+bitcoin.workspace = true
+cashu = { workspace = true, features = ["wallet"]}
+chrono.workspace = true
+config.workspace = true
+env_logger.workspace = true
+futures = {version = "0.3"}
+log.workspace = true
+serde.workspace = true
+surrealdb.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
+bcr-wdc-keys = { path = "../bcr-wdc-keys" , features = ["test-utils"] }
