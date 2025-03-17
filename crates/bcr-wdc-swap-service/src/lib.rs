@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use axum::Router;
 use axum::extract::FromRef;
 use axum::routing::post;
+use axum::Router;
 // ----- local modules
 mod error;
 mod keys;

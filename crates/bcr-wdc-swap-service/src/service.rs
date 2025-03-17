@@ -1,9 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use cashu::Amount;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
+use cashu::Amount;
 use futures::future::JoinAll;
 use itertools::Itertools;
 // ----- local imports
