@@ -14,6 +14,7 @@ mod persistence;
 mod quotes;
 mod service;
 mod utils;
+mod wallet;
 mod web;
 // ----- local imports
 
@@ -22,12 +23,14 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
 
 pub type ProdKeysHandler = keys::KeysRestHandler;
-pub type ProdQuotingService = service::Service<ProdKeysHandler, ProdQuoteRepository>;
+pub type ProdWallet = wallet::Client;
+pub type ProdQuotingService = service::Service<ProdKeysHandler, ProdWallet, ProdQuoteRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
     quotes: persistence::surreal::ConnectionConfig,
     keys: keys::KeysRestConfig,
+    wallet: wallet::WalletConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -37,14 +40,20 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
-        let AppConfig { quotes, keys } = cfg;
+        let AppConfig {
+            quotes,
+            keys,
+            wallet,
+        } = cfg;
         let quotes_repository = ProdQuoteRepository::new(quotes)
             .await
             .expect("DB connection to quotes failed");
 
         let keys_hndlr = ProdKeysHandler::new(keys).expect("Keys handler creation failed");
+        let wallet = ProdWallet::new(&wallet).expect("Wallet creation failed");
         let quoting_service = ProdQuotingService {
             keys_hndlr,
+            wallet,
             quotes: quotes_repository,
         };
 

@@ -5,7 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
-use crate::service::{KeysHandler, Repository, Service};
+use crate::service::{KeysHandler, Repository, Service, Wallet};
 use crate::utils;
 
 /// --------------------------- List quotes
@@ -19,12 +19,13 @@ use crate::utils;
         (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
     )
 )]
-pub async fn list_pending_quotes<KG, QR>(
-    State(ctrl): State<Service<KG, QR>>,
+pub async fn list_pending_quotes<KG, WL, QR>(
+    State(ctrl): State<Service<KG, WL, QR>>,
     since: Option<Query<chrono::DateTime<chrono::Utc>>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KG: KeysHandler,
+    WL: Wallet,
     QR: Repository,
 {
     log::debug!("Received request to list pending quotes");
@@ -60,12 +61,13 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
         (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
     )
 )]
-pub async fn list_quotes<KG, QR>(
-    State(ctrl): State<Service<KG, QR>>,
+pub async fn list_quotes<KG, WL, QR>(
+    State(ctrl): State<Service<KG, WL, QR>>,
     since: Option<Query<chrono::NaiveDateTime>>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KG: KeysHandler,
+    WL: Wallet,
     QR: Repository,
 {
     log::debug!("Received request to list quotes");
@@ -122,12 +124,13 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
-pub async fn admin_lookup_quote<KG, QR>(
-    State(ctrl): State<Service<KG, QR>>,
+pub async fn admin_lookup_quote<KG, WL, QR>(
+    State(ctrl): State<Service<KG, WL, QR>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::InfoReply>>
 where
     KG: KeysHandler,
+    WL: Wallet,
     QR: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
@@ -148,13 +151,14 @@ where
         (status = 200, description = "Successful response"),
     )
 )]
-pub async fn admin_update_quote<KG, QR>(
-    State(ctrl): State<Service<KG, QR>>,
+pub async fn admin_update_quote<KG, WL, QR>(
+    State(ctrl): State<Service<KG, WL, QR>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::UpdateQuoteRequest>,
 ) -> Result<Json<web_quotes::UpdateQuoteResponse>>
 where
     KG: KeysHandler,
+    WL: Wallet,
     QR: Repository,
 {
     log::debug!("Received mint quote update request for id: {}", id);

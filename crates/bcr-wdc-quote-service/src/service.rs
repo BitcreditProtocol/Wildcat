@@ -9,7 +9,6 @@ use cashu::Amount;
 use futures::future::JoinAll;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use uuid::Uuid;
-// ----- local modules
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus};
@@ -41,14 +40,32 @@ pub trait KeysHandler: Send + Sync {
     ) -> Result<cdk00::BlindSignature>;
 }
 
-// ---------- Service
-#[derive(Clone)]
-pub struct Service<KeysHndlr, QuotesRepo> {
-    pub keys_hndlr: KeysHndlr,
-    pub quotes: QuotesRepo,
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait Wallet: Send + Sync {
+    async fn get_blinds(
+        &self,
+        kid: KeysetID,
+        amount: Amount,
+    ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)>;
+
+    async fn store_signatures(
+        &self,
+        rid: Uuid,
+        expire: TStamp,
+        signatures: Vec<cdk00::BlindSignature>,
+    ) -> Result<()>;
 }
 
-impl<KeysHndlr, QuotesRepo> Service<KeysHndlr, QuotesRepo>
+// ---------- Service
+#[derive(Clone)]
+pub struct Service<KeysHndlr, Wlt, QuotesRepo> {
+    pub keys_hndlr: KeysHndlr,
+    pub quotes: QuotesRepo,
+    pub wallet: Wlt,
+}
+
+impl<KeysHndlr, Wlt, QuotesRepo> Service<KeysHndlr, Wlt, QuotesRepo>
 where
     QuotesRepo: Repository,
 {
@@ -208,14 +225,15 @@ where
     }
 }
 
-impl<KeysHndlr, QuotesRepo> Service<KeysHndlr, QuotesRepo>
+impl<KeysHndlr, Wlt, QuotesRepo> Service<KeysHndlr, Wlt, QuotesRepo>
 where
     KeysHndlr: KeysHandler,
+    Wlt: Wallet,
     QuotesRepo: Repository,
 {
     pub async fn offer(
         &self,
-        id: uuid::Uuid,
+        qid: uuid::Uuid,
         discount: Decimal,
         now: TStamp,
         ttl: Option<TStamp>,
@@ -223,16 +241,18 @@ where
         let discounted_amount =
             Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
 
-        let mut quote = self.lookup(id).await?;
-        let qid = quote.id;
-        let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
+        let mut quote = self.lookup(qid).await?;
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
 
-        let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
-        log::warn!("WARNING: we are leaving fees on the table, ... but we don't know how much (eBill data missing)");
+        let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
+        let id = kid.into();
+        if blinds.iter().any(|blind| blind.keyset_id != id) {
+            return Err(Error::InvalidKeysetId(id));
+        }
 
+        let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
         let maturity = quote.bill.maturity_date;
         let joined: JoinAll<_> = selected_blinds
             .iter()
@@ -244,13 +264,28 @@ where
         let signed_amount = signatures
             .iter()
             .fold(Amount::ZERO, |acc, sig| acc + sig.amount);
+        let bill_amount = Amount::from(quote.bill.sum);
+        let fees_amount = bill_amount - signed_amount;
+        let (request_id, fees_blinds) = self.wallet.get_blinds(kid, fees_amount).await?;
+        let joined: JoinAll<_> = fees_blinds
+            .iter()
+            .map(|blind| self.keys_hndlr.sign(kid, qid, maturity, blind))
+            .collect();
+        let signatures_fees: Vec<cdk00::BlindSignature> =
+            joined.await.into_iter().collect::<Result<_>>()?;
+
         let discounted = Decimal::from(*signed_amount.as_ref());
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
+
+        self.wallet.store_signatures(request_id, expiration, signatures_fees).await?;
+
         quote.offer(signatures, expiration)?;
         self.quotes
             .update_if_pending(quote)
             .await
             .map_err(Error::QuotesRepository)?;
+
+
         Ok((discounted, expiration))
     }
 }
@@ -364,9 +399,10 @@ mod tests {
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
 
         let rnd_bill = generate_random_bill();
-        let service = Service { quotes, keys_hndlr };
+        let service = Service { quotes, keys_hndlr, wallet };
         let test = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test.is_ok());
     }
@@ -389,10 +425,12 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
+            wallet,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_ok());
@@ -417,10 +455,12 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
+            wallet,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
@@ -451,10 +491,12 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
+            wallet,
         };
         let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test_id.is_err());
@@ -485,10 +527,12 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
+            wallet,
         };
         let test_id = service
             .enquire(

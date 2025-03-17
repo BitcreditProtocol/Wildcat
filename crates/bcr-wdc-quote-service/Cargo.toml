@@ -12,6 +12,7 @@ axum.workspace = true
 bcr-ebill-core.workspace = true
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
+bcr-wdc-treasury-client = { path = "../bcr-wdc-treasury-client" }
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
 borsh.workspace = true

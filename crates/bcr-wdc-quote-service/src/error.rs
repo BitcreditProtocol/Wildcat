@@ -4,6 +4,8 @@ use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeysHandlerError;
 use bcr_wdc_keys::Error as KeysError;
+use bcr_wdc_treasury_client::Error as WalletError;
+use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -24,6 +26,8 @@ pub enum Error {
     QuotesRepository(AnyError),
     #[error("keys handler error {0}")]
     KeysHandler(KeysHandlerError),
+    #[error("wallet error {0}")]
+    Wallet(WalletError),
 
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
@@ -31,11 +35,14 @@ pub enum Error {
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
     InvalidAmount(rust_decimal::Decimal),
+    #[error("Invalid blindedMessages: {0}")]
+    InvalidKeysetId( cdk02::Id),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let resp = match self {
+            Error::InvalidKeysetId(_) => (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID")),
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
             Error::UnknownQuoteID(_) => (StatusCode::NOT_FOUND, String::from("Quote ID not found")),
             Error::QuoteAlreadyResolved(_) => (
@@ -51,6 +58,7 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::Keys(_) => (StatusCode::BAD_REQUEST, String::new()),
 
+            Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

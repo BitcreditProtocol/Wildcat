@@ -16,7 +16,7 @@ type ProdService = service::Service<ProdRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
-    repo: persistence::surreal::ConnectionConfig,
+    credit: persistence::surreal::ConnectionConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -26,7 +26,7 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-        let repo = ProdRepository::new(cfg.repo)
+        let repo = ProdRepository::new(cfg.credit)
             .await
             .expect("Failed to create repository");
         let xpriv = btc32::Xpriv::new_master(bitcoin::NetworkKind::Main, seed)
