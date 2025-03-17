@@ -3,16 +3,14 @@ bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
 
-[appcfg.dbs]
-
 [appcfg.dbs.quotes]
 connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "quote"
 table = "quotes"
 
-[appcfg.dbs.quotes_keys]
-connection = "ws://surrealdb:8000"
-namespace = "test"
-database = "quote"
-table = "quotes_keys"
+[appcfg.keys]
+base_url = "http://key-service:3335"
+
+[appcfg.wallet]
+base_url = "http://treasury-service:3336"
