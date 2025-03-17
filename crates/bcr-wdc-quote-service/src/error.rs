@@ -36,13 +36,15 @@ pub enum Error {
     #[error("Invalid amount: {0}")]
     InvalidAmount(rust_decimal::Decimal),
     #[error("Invalid blindedMessages: {0}")]
-    InvalidKeysetId( cdk02::Id),
+    InvalidKeysetId(cdk02::Id),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let resp = match self {
-            Error::InvalidKeysetId(_) => (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID")),
+            Error::InvalidKeysetId(_) => {
+                (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID"))
+            }
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
             Error::UnknownQuoteID(_) => (StatusCode::NOT_FOUND, String::from("Quote ID not found")),
             Error::QuoteAlreadyResolved(_) => (

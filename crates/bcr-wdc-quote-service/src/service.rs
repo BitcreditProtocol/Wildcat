@@ -277,14 +277,15 @@ where
         let discounted = Decimal::from(*signed_amount.as_ref());
         let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
 
-        self.wallet.store_signatures(request_id, expiration, signatures_fees).await?;
+        self.wallet
+            .store_signatures(request_id, expiration, signatures_fees)
+            .await?;
 
         quote.offer(signatures, expiration)?;
         self.quotes
             .update_if_pending(quote)
             .await
             .map_err(Error::QuotesRepository)?;
-
 
         Ok((discounted, expiration))
     }
@@ -402,7 +403,11 @@ mod tests {
         let wallet = MockWallet::new();
 
         let rnd_bill = generate_random_bill();
-        let service = Service { quotes, keys_hndlr, wallet };
+        let service = Service {
+            quotes,
+            keys_hndlr,
+            wallet,
+        };
         let test = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
         assert!(test.is_ok());
     }
