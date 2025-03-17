@@ -2,9 +2,9 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeyClientError;
-use cashu::Amount;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
+use cashu::Amount;
 use thiserror::Error;
 // ----- local imports
 

@@ -6,7 +6,7 @@ use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
-use surrealdb::{Surreal, engine::any::Any};
+use surrealdb::{engine::any::Any, Surreal};
 // ----- local modules
 // ----- local imports
 use crate::error::{Error, Result};
