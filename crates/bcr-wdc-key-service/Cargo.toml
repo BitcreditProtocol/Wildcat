@@ -3,10 +3,14 @@ name = "bcr-wdc-key-service"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+test-utils = ["axum-test"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+axum-test = {workspace = true, optional = true}
 bcr-wdc-keys = { path = "../bcr-wdc-keys"}
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
@@ -23,6 +27,7 @@ tokio.workspace = true
 utoipa = {workspace = true, features = ["axum_extras"]}
 utoipa-swagger-ui.workspace = true
 uuid.workspace = true
+
 
 [dev-dependencies]
 mockall.workspace = true

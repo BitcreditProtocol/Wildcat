@@ -21,6 +21,10 @@ pub type ProdQuoteKeysRepository = persistence::surreal::DBQuoteKeys;
 pub type ProdKeysRepository = persistence::surreal::DBKeys;
 pub type ProdKeysService = service::Service<ProdQuoteKeysRepository, ProdKeysRepository>;
 
+pub type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
+pub type TestKeysRepository = persistence::inmemory::InMemoryMap;
+pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
     keys_cfg: persistence::surreal::ConnectionConfig,
@@ -49,7 +53,14 @@ impl AppController {
         Self { keys: srv }
     }
 }
-pub fn routes(ctrl: AppController) -> Router {
+
+pub fn routes<Cntrlr, Q, K>(ctrl: Cntrlr) -> Router
+where
+    Q: service::QuoteKeysRepository + Send + Sync + 'static,
+    K: service::KeysRepository + Send + Sync + 'static,
+    service::Service<Q, K>: FromRef<Cntrlr>,
+    Cntrlr: Send + Sync + Clone + 'static,
+{
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
@@ -87,3 +98,37 @@ pub fn routes(ctrl: AppController) -> Router {
     )
 )]
 struct ApiDoc;
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+
+    #[derive(Clone, FromRef)]
+    pub struct AppController {
+        keys: TestKeysService,
+    }
+
+    impl AppController {
+        pub fn new() -> Self {
+            let seed = [0u8; 32];
+            let keys_repo = TestKeysRepository::default();
+            let quotekeys_repo = TestQuoteKeysRepository::default();
+            let keygen = factory::Factory::new(&seed);
+            let srv = TestKeysService {
+                keys: keys_repo,
+                quote_keys: quotekeys_repo,
+                keygen,
+            };
+            Self { keys: srv }
+        }
+    }
+
+    pub fn build_test_server() -> axum_test::TestServer {
+        let cfg = axum_test::TestServerConfig {
+        transport: Some(axum_test::Transport::HttpRandomPort),
+        ..Default::default()
+        };
+        let cntrl = AppController::new();
+        axum_test::TestServer::new_with_config(routes(cntrl), cfg).expect("failed to start test server")
+    }
+}
