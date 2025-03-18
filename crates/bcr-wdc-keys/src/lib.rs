@@ -173,11 +173,7 @@ pub mod test_utils {
         let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
         let (b_, r) =
             cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
-        (
-            cdk00::BlindedMessage::new(amount, kid, b_),
-            secret,
-            r,
-        )
+        (cdk00::BlindedMessage::new(amount, kid, b_), secret, r)
     }
 
     pub const RANDOMS: [&str; 6] = [
