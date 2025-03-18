@@ -29,7 +29,7 @@ pub fn generate_blinds(
 ) -> Vec<(cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey)> {
     let mut blinds: Vec<(cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey)> = Vec::new();
     for amount in amounts {
-        blinds.push(generate_blind(keyset, amount));
+        blinds.push(generate_blind(keyset.id, *amount));
     }
     blinds
 }
