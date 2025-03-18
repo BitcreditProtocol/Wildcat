@@ -17,7 +17,7 @@ type ProdProofRepository = persistence::surreal::ProofDB;
 type ProdKeysService = crate::keys::RESTClient;
 type ProdService = service::Service<ProdKeysService, ProdProofRepository>;
 
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     proof_db: persistence::surreal::ConnectionConfig,
     keys_cl: crate::keys::KeysClientConfig,

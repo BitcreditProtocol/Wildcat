@@ -26,7 +26,7 @@ pub type ProdKeysHandler = keys::KeysRestHandler;
 pub type ProdWallet = wallet::Client;
 pub type ProdQuotingService = service::Service<ProdKeysHandler, ProdWallet, ProdQuoteRepository>;
 
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     quotes: persistence::surreal::ConnectionConfig,
     keys: keys::KeysRestConfig,
