@@ -6,12 +6,11 @@ use cashu::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
+pub use reqwest::Url;
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("URL parse error {0}")]
-    Url(#[from] url::ParseError),
     #[error("resource not found {0}")]
     ResourceNotFound(cdk02::Id),
     #[error("invalid request")]
@@ -28,16 +27,18 @@ pub struct KeyClient {
 }
 
 impl KeyClient {
-    pub fn new(base: &str) -> Result<Self> {
-        let url = reqwest::Url::parse(base)?;
+    pub fn new(base: reqwest::Url) -> Result<Self> {
         Ok(Self {
             cl: reqwest::Client::new(),
-            base: url,
+            base,
         })
     }
 
     pub async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
-        let url = self.base.join(&format!("/v1/keys/{}", kid))?;
+        let url = self
+            .base
+            .join(&format!("/v1/keys/{}", kid))
+            .expect("keys relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
@@ -47,7 +48,10 @@ impl KeyClient {
     }
 
     pub async fn keyset(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
-        let url = self.base.join(&format!("/v1/keysets/{}", kid))?;
+        let url = self
+            .base
+            .join(&format!("/v1/keysets/{}", kid))
+            .expect("keyset relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
@@ -57,7 +61,10 @@ impl KeyClient {
     }
 
     pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
-        let url = self.base.join("/v1/admin/keys/sign")?;
+        let url = self
+            .base
+            .join("/v1/admin/keys/sign")
+            .expect("sign relative path");
         let res = self.cl.post(url).json(msg).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
@@ -70,7 +77,10 @@ impl KeyClient {
     }
 
     pub async fn verify(&self, proof: &cdk00::Proof) -> Result<bool> {
-        let url = self.base.join("/v1/admin/keys/verify")?;
+        let url = self
+            .base
+            .join("/v1/admin/keys/verify")
+            .expect("verify relative path");
         let res = self.cl.post(url).json(proof).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(proof.keyset_id));
@@ -89,7 +99,10 @@ impl KeyClient {
         tstamp: chrono::DateTime<chrono::Utc>,
         msg: &cdk00::BlindedMessage,
     ) -> Result<cdk00::BlindSignature> {
-        let url = self.base.join("/v1/admin/keys/pre_sign")?;
+        let url = self
+            .base
+            .join("/v1/admin/keys/pre_sign")
+            .expect("pre_sign relative path");
         let msg = web_keys::PreSignRequest {
             kid,
             qid,

@@ -9,16 +9,16 @@ use cashu::nuts::nut02 as cdk02;
 use crate::error::{Error, Result};
 use crate::service::KeysService;
 
-#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct KeysClientConfig {
-    base_url: String,
+    base_url: bcr_wdc_key_client::Url,
 }
 
 #[derive(Debug, Clone)]
 pub struct RESTClient(KeyClient);
 impl RESTClient {
     pub async fn new(cfg: KeysClientConfig) -> Result<Self> {
-        let cl = KeyClient::new(&cfg.base_url).map_err(Error::KeysClient)?;
+        let cl = KeyClient::new(cfg.base_url).map_err(Error::KeysClient)?;
         Ok(Self(cl))
     }
 }
