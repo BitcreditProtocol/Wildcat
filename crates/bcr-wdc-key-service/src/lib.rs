@@ -125,10 +125,11 @@ pub mod test_utils {
 
     pub fn build_test_server() -> axum_test::TestServer {
         let cfg = axum_test::TestServerConfig {
-        transport: Some(axum_test::Transport::HttpRandomPort),
-        ..Default::default()
+            transport: Some(axum_test::Transport::HttpRandomPort),
+            ..Default::default()
         };
         let cntrl = AppController::new();
-        axum_test::TestServer::new_with_config(routes(cntrl), cfg).expect("failed to start test server")
+        axum_test::TestServer::new_with_config(routes(cntrl), cfg)
+            .expect("failed to start test server")
     }
 }
