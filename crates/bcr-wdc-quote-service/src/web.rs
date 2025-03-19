@@ -22,14 +22,14 @@ use crate::{
         (status = 404, description = "Quote request not accepted"),
     )
 )]
-pub async fn enquire_quote<KG, WL, QR>(
-    State(ctrl): State<Service<KG, WL, QR>>,
+pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Json(req): Json<web_quotes::EnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
-    KG: KeysHandler,
-    WL: Wallet,
-    QR: Repository,
+    KeysHndlr: KeysHandler,
+    Wlt: Wallet,
+    QuotesRepo: Repository,
 {
     log::debug!(
         "Received mint quote request for bill: {}, from node : {}",
@@ -84,14 +84,14 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
-pub async fn lookup_quote<KG, WL, QR>(
-    State(ctrl): State<Service<KG, WL, QR>>,
+pub async fn lookup_quote<KeysHndlr, Wlt, QuotesRepo>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::StatusReply>>
 where
-    KG: KeysHandler,
-    WL: Wallet,
-    QR: Repository,
+    KeysHndlr: KeysHandler,
+    Wlt: Wallet,
+    QuotesRepo: Repository,
 {
     log::debug!("Received mint quote lookup request for id: {}", id);
 
@@ -112,15 +112,15 @@ where
         (status = 409, description = "Quote already resolved"),
     )
 )]
-pub async fn resolve_offer<KG, WL, QR>(
-    State(ctrl): State<Service<KG, WL, QR>>,
+pub async fn resolve_offer<KeysHndlr, Wlt, QuotesRepo>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveOffer>,
 ) -> Result<()>
 where
-    KG: KeysHandler,
-    WL: Wallet,
-    QR: Repository,
+    KeysHndlr: KeysHandler,
+    Wlt: Wallet,
+    QuotesRepo: Repository,
 {
     log::debug!("Received mint quote resolve request for id: {}", id);
 
