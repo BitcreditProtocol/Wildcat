@@ -16,12 +16,12 @@ use crate::service::{KeysRepository, QuoteKeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn sign_blind<QKR, KR>(
-    State(ctrl): State<Service<QKR, KR>>,
+pub async fn sign_blind<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(blind): Json<cdk00::BlindedMessage>,
 ) -> Result<Json<cdk00::BlindSignature>>
 where
-    KR: KeysRepository,
+    KeysRepo: KeysRepository,
 {
     log::debug!("Received sign blind request");
     ctrl.sign_blind(blind).await.map(Json)
@@ -36,12 +36,12 @@ where
         (status = 400, description = "proof verification failed"),
     )
 )]
-pub async fn verify_proof<QKR, KR>(
-    State(ctrl): State<Service<QKR, KR>>,
+pub async fn verify_proof<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(proof): Json<cdk00::Proof>,
 ) -> Result<()>
 where
-    KR: KeysRepository,
+    KeysRepo: KeysRepository,
 {
     log::debug!("Received verify proof request");
     ctrl.verify_proof(proof).await
@@ -56,12 +56,12 @@ where
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn pre_sign<QKR, KR>(
-    State(ctrl): State<Service<QKR, KR>>,
+pub async fn pre_sign<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(request): Json<web_keys::PreSignRequest>,
 ) -> Result<Json<cdk00::BlindSignature>>
 where
-    QKR: QuoteKeysRepository,
+    QuotesKeysRepo: QuoteKeysRepository,
 {
     log::debug!("Received pre_sign request");
     let sig = ctrl
