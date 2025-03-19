@@ -16,6 +16,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Free up disk space
+        run: |
+          echo "Before cleanup:"
+          df -h
+          docker system prune -a -f
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          echo "After cleanup:"
+          df -h
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -39,12 +51,12 @@ jobs:
           RUSTFLAGS: "-Cinstrument-coverage"
 
       - name: Test crate
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
         env:
           LLVM_PROFILE_FILE: "target/coverage/prof/%p-%m.profraw"
           RUSTFLAGS: "-Cinstrument-coverage"
 
-      - name: Create coverage report
+      - name: Create coverage report for keys
         run: |
           grcov \
             --source-dir . \
@@ -53,13 +65,74 @@ jobs:
             --excl-start 'mod tests \{' \
             --ignore 'tests/*' \
             -t lcov \
-            -o lcov.info \
-            target/coverage/prof
+            -o lcov_keys.info \
+            crates/bcr-wdc-keys/target/coverage/prof
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage to Codecov for keys
         uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          files: lcov.info
+          files: lcov_keys.info
+          fail_ci_if_error: false
+
+      - name: Create coverage report for key-service
+        run: |
+          grcov \
+            --source-dir . \
+            --binary-path target/debug \
+            --branch \
+            --excl-start 'mod tests \{' \
+            --ignore 'tests/*' \
+            -t lcov \
+            -o lcov_key_service.info \
+            crates/bcr-wdc-key-service/target/coverage/prof
+
+      - name: Upload coverage to Codecov for key-service
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: lcov_key_service.info
+          fail_ci_if_error: false
+
+
+      - name: Create coverage report for quote-service
+        run: |
+          grcov \
+            --source-dir . \
+            --binary-path target/debug \
+            --branch \
+            --excl-start 'mod tests \{' \
+            --ignore 'tests/*' \
+            -t lcov \
+            -o lcov_quote_service.info \
+            crates/bcr-wdc-quote-service/target/coverage/prof
+
+      - name: Upload coverage to Codecov for API
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: lcov_quote_service.info
+          fail_ci_if_error: false
+
+      - name: Create coverage report for swap-service
+        run: |
+          grcov \
+            --source-dir . \
+            --binary-path target/debug \
+            --branch \
+            --excl-start 'mod tests \{' \
+            --ignore 'tests/*' \
+            -t lcov \
+            -o lcov_swap_service.info \
+            crates/bcr-wdc-swap-service/target/coverage/prof
+
+      - name: Upload coverage to Codecov for swap-service
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: lcov_swap_service.info
           fail_ci_if_error: false
