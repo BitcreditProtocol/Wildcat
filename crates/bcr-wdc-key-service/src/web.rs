@@ -18,12 +18,12 @@ use crate::service::{KeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn lookup_keyset<QKR, KR>(
-    State(ctrl): State<Service<QKR, KR>>,
+pub async fn lookup_keyset<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySetInfo>>
 where
-    KR: KeysRepository,
+    KeysRepo: KeysRepository,
 {
     log::debug!("Received keyset lookup request for id: {}", kid);
 
@@ -43,12 +43,12 @@ where
         (status = 404, description = "keyset id not  found"),
     )
 )]
-pub async fn lookup_keys<QKR, KR>(
-    State(ctrl): State<Service<QKR, KR>>,
+pub async fn lookup_keys<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySet>>
 where
-    KR: KeysRepository,
+    KeysRepo: KeysRepository,
 {
     log::debug!("Received keyset lookup request for id: {}", kid);
 
