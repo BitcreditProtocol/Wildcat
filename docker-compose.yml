@@ -71,7 +71,7 @@ services:
   surrealdb:
     image: surrealdb/surrealdb:latest
     volumes:
-      - ./data/surrealdb:/data
+      - ./.docker_data/surrealdb:/data
     command:
       - start
       - --unauthenticated
