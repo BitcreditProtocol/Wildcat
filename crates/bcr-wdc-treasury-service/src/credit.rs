@@ -9,6 +9,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait()]
 pub trait Repository: Send + Sync {
     async fn next_counter(&self, kid: cdk02::Id) -> Result<u32>;
