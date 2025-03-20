@@ -27,6 +27,12 @@ pub struct ListFilters {
     pub bill_holder_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum SortOrder {
+    BillMaturityDateAsc,
+    BillMaturityDateDesc,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
@@ -34,7 +40,11 @@ pub trait Repository: Send + Sync {
     async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
     async fn update_if_offered(&self, quote: Quote) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<LightQuote>>;
+    async fn list_light(
+        &self,
+        filters: ListFilters,
+        sort: Option<SortOrder>,
+    ) -> AnyResult<Vec<LightQuote>>;
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> AnyResult<()>;
 }
@@ -228,9 +238,13 @@ where
             .map_err(Error::QuotesRepository)
     }
 
-    pub async fn list_light(&self, filters: ListFilters) -> Result<Vec<LightQuote>> {
+    pub async fn list_light(
+        &self,
+        filters: ListFilters,
+        sort: Option<SortOrder>,
+    ) -> Result<Vec<LightQuote>> {
         self.quotes
-            .list_light(filters)
+            .list_light(filters, sort)
             .await
             .map_err(Error::QuotesRepository)
     }

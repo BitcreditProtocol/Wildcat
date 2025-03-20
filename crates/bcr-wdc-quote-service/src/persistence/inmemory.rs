@@ -9,7 +9,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::quotes;
-use crate::service::{ListFilters, Repository};
+use crate::service::{ListFilters, Repository, SortOrder};
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -77,8 +77,12 @@ impl Repository for QuotesIDMap {
             .collect();
         Ok(a)
     }
-    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<quotes::LightQuote>> {
-        let a = self
+    async fn list_light(
+        &self,
+        filters: ListFilters,
+        sort: Option<SortOrder>,
+    ) -> AnyResult<Vec<quotes::LightQuote>> {
+        let mut a: Vec<quotes::Quote> = self
             .quotes
             .read()
             .unwrap()
@@ -130,11 +134,23 @@ impl Repository for QuotesIDMap {
                 }
                 return true;
             })
-            .map(|(id, quote)| quotes::LightQuote {
-                id: *id,
+            .map(|(_, quote)| quote.clone())
+            .collect();
+        if let Some(sort) = sort {
+            a.sort_by(|q1, q2| match sort {
+                SortOrder::BillMaturityDateAsc => q1.bill.maturity_date.cmp(&q2.bill.maturity_date),
+                SortOrder::BillMaturityDateDesc => {
+                    q2.bill.maturity_date.cmp(&q1.bill.maturity_date)
+                }
+            });
+        }
+        let b = a
+            .into_iter()
+            .map(|quote| quotes::LightQuote {
+                id: quote.id,
                 status: quote.status.discriminant(),
             })
             .collect();
-        Ok(a)
+        Ok(b)
     }
 }

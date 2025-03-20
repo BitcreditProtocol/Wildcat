@@ -5,7 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
-use crate::service::{KeysHandler, ListFilters, Repository, Service, Wallet};
+use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
 use crate::utils;
 
 /// --------------------------- List quotes
@@ -91,6 +91,14 @@ fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilter
     }
 }
 
+fn convert_into_list_sort(sort: Option<web_quotes::ListSort>) -> Option<SortOrder> {
+    match sort {
+        None => None,
+        Some(web_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
+        Some(web_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/v1/admin/credit/quote",
@@ -104,6 +112,7 @@ fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilter
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Query(filters): Query<web_quotes::ListFilterParam>,
+    sort: Option<Query<web_quotes::ListSort>>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KeysHndlr: KeysHandler,
@@ -113,7 +122,8 @@ where
     log::debug!("Received request to list quotes");
 
     let filters = convert_into_list_filters(filters);
-    let quotes = ctrl.list_light(filters).await?;
+    let sort = convert_into_list_sort(sort.map(|q| q.0));
+    let quotes = ctrl.list_light(filters, sort).await?;
     let response = web_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
     };
