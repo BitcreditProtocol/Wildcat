@@ -41,7 +41,7 @@ services:
       surrealdb:
         condition: service_healthy
       key-service:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./docker/swap-service/config.toml:/swap-service/config.toml
 
@@ -55,7 +55,7 @@ services:
       surrealdb:
         condition: service_healthy
       key-service:
-        condition: service_started
+        condition: service_healthy
       treasury-service:
         condition: service_started
     volumes:
