@@ -15,7 +15,7 @@ pub struct BillInfo {
     pub id: String,
     pub drawee: IdentityPublicData,
     pub drawer: IdentityPublicData,
-    pub payee: IdentityPublicData,
+    pub payer: IdentityPublicData,
     pub holder: IdentityPublicData,
     pub sum: u64,
     pub maturity_date: String,
@@ -123,6 +123,24 @@ pub enum StatusReply {
 }
 
 /// --------------------------- List quotes
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ListFilterParam {
+    pub bill_maturity_date_from: Option<chrono::NaiveDate>,
+    pub bill_maturity_date_to: Option<chrono::NaiveDate>,
+    pub status: Option<StatusReplyDiscriminants>,
+    pub bill_drawee_id: Option<String>,
+    pub bill_drawer_id: Option<String>,
+    pub bill_payer_id: Option<String>,
+    pub bill_holder_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ListSort {
+    BillMaturityDateDesc,
+    BillMaturityDateAsc,
+}
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ListReply {
     pub quotes: Vec<uuid::Uuid>,

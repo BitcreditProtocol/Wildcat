@@ -9,7 +9,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::quotes;
-use crate::service::Repository;
+use crate::service::{ListFilters, Repository};
 use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
@@ -43,8 +43,19 @@ impl From<DBEntryQuoteStatus> for quotes::QuoteStatusDiscriminants {
         }
     }
 }
+impl From<quotes::QuoteStatusDiscriminants> for DBEntryQuoteStatus {
+    fn from(value: quotes::QuoteStatusDiscriminants) -> Self {
+        match value {
+            quotes::QuoteStatusDiscriminants::Pending => Self::Pending,
+            quotes::QuoteStatusDiscriminants::Denied => Self::Denied,
+            quotes::QuoteStatusDiscriminants::Offered => Self::Offered,
+            quotes::QuoteStatusDiscriminants::Rejected => Self::Rejected,
+            quotes::QuoteStatusDiscriminants::Accepted => Self::Accepted,
+        }
+    }
+}
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryQuote {
     qid: surrealdb::Uuid, // can't be `id`, reserved world in surreal
     bill: quotes::BillInfo,
@@ -192,6 +203,20 @@ pub struct DBQuotes {
     table: String,
 }
 
+macro_rules! add_filter_statement {
+    ($query:ident, $first:ident, $filter:expr, $statement:expr) => {
+        if $filter.is_some() {
+            if $first {
+                $first = false;
+                $query += " WHERE ";
+            } else {
+                $query += " AND ";
+            }
+            $query += $statement;
+        }
+    };
+}
+
 impl DBQuotes {
     pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -215,16 +240,58 @@ impl DBQuotes {
             .await
     }
 
-    async fn light_list(&self, since: Option<TStamp>) -> SurrealResult<Vec<DBEntryLightQuote>> {
-        let mut query = self
-            .db
-            .query("SELECT qid, status FROM type::table($table) ORDER BY submitted DESC")
-            .bind(("table", self.table.clone()));
-        if let Some(since) = since {
-            query = query
-                .query(" AND submitted >= $since")
-                .bind(("since", since));
+    async fn light_list(&self, filters: ListFilters) -> SurrealResult<Vec<DBEntryLightQuote>> {
+        let mut statement = String::from("SELECT qid, status FROM type::table($table)");
+
+        let mut first = true;
+
+        add_filter_statement!(
+            statement,
+            first,
+            filters.bill_maturity_date_from,
+            "bill.maturity_date >= $bill_maturity_date_from"
+        );
+        add_filter_statement!(
+            statement,
+            first,
+            filters.bill_maturity_date_to,
+            "bill.maturity_date <= $bill_maturity_date_to"
+        );
+        let status = filters.status.map(DBEntryQuoteStatus::from);
+        add_filter_statement!(statement, first, status, "status == $status");
+        add_filter_statement!(
+            statement,
+            first,
+            filters.bill_drawee_id,
+            "bill.drawee.node_id == $bill_drawee_id"
+        );
+        add_filter_statement!(
+            statement,
+            first,
+            filters.bill_drawer_id,
+            "bill.drawer.node_id == $bill_drawer_id"
+        );
+        add_filter_statement!(
+            statement,
+            first,
+            filters.bill_payer_id,
+            "bill.payer.node_id == $bill_payer_id"
+        );
+        #[allow(unused_assignments)]
+        {
+            add_filter_statement!(
+                statement,
+                first,
+                filters.bill_holder_id,
+                "bill.holder.node_id == $bill_holder_id"
+            );
         }
+        let query = self
+            .db
+            .query(statement)
+            .bind(("table", self.table.clone()))
+            .bind(filters);
+
         query.await?.take(0)
     }
 
@@ -301,8 +368,8 @@ impl Repository for DBQuotes {
             .map_err(Into::into)
     }
 
-    async fn list_light(&self, since: Option<TStamp>) -> AnyResult<Vec<quotes::LightQuote>> {
-        let db_result = self.light_list(since).await?;
+    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<quotes::LightQuote>> {
+        let db_result = self.light_list(filters).await?;
         let response = db_result
             .into_iter()
             .map(std::convert::Into::into)
@@ -321,5 +388,95 @@ impl Repository for DBQuotes {
     async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
         self.store(quote.into()).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service;
+    use bcr_ebill_core::contact::IdentityPublicData;
+    use std::str::FromStr;
+    use surrealdb::RecordId;
+
+    async fn init_mem_db() -> DBQuotes {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBQuotes {
+            db: sdb,
+            table: String::from("test"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_light() {
+        let db = init_mem_db().await;
+
+        let qid = Uuid::new_v4();
+        let rid = RecordId::from_table_key(&db.table, qid);
+        let entry = DBEntryQuote {
+            qid,
+            status: DBEntryQuoteStatus::Pending,
+            bill: quotes::BillInfo {
+                drawee: IdentityPublicData {
+                    node_id: String::from("drawee"),
+                    ..Default::default()
+                },
+                drawer: IdentityPublicData {
+                    node_id: String::from("drawer"),
+                    ..Default::default()
+                },
+                payer: IdentityPublicData {
+                    node_id: String::from("payer"),
+                    ..Default::default()
+                },
+                holder: IdentityPublicData {
+                    node_id: String::from("holder"),
+                    ..Default::default()
+                },
+                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+
+        let filters = service::ListFilters::default();
+        let res = db.list_light(filters).await.unwrap();
+        assert_eq!(res.len(), 1);
+
+        let date = chrono::NaiveDate::from_ymd_opt(2021, 1, 1);
+        let filters = service::ListFilters {
+            bill_maturity_date_from: date,
+            ..Default::default()
+        };
+        let res = db.list_light(filters).await.unwrap();
+        assert_eq!(res.len(), 1);
+
+        let date = chrono::NaiveDate::from_ymd_opt(2022, 1, 1);
+        let filters = service::ListFilters {
+            bill_maturity_date_from: date,
+            ..Default::default()
+        };
+        let res = db.list_light(filters).await.unwrap();
+        assert_eq!(res.len(), 0);
+
+        let filters = service::ListFilters {
+            status: Some(quotes::QuoteStatusDiscriminants::Pending),
+            bill_drawee_id: Some(String::from("none")),
+            ..Default::default()
+        };
+        let res = db.list_light(filters).await.unwrap();
+        assert_eq!(res.len(), 0);
+
+        let filters = service::ListFilters {
+            status: Some(quotes::QuoteStatusDiscriminants::Pending),
+            bill_drawee_id: Some(String::from("drawee")),
+            ..Default::default()
+        };
+        let res = db.list_light(filters).await.unwrap();
+        assert_eq!(res.len(), 1);
     }
 }
