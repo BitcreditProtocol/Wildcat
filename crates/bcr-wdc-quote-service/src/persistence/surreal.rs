@@ -9,7 +9,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::quotes;
-use crate::service::{ListFilters, Repository};
+use crate::service::{ListFilters, Repository, SortOrder};
 use crate::TStamp;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
@@ -240,8 +240,13 @@ impl DBQuotes {
             .await
     }
 
-    async fn light_list(&self, filters: ListFilters) -> SurrealResult<Vec<DBEntryLightQuote>> {
-        let mut statement = String::from("SELECT qid, status FROM type::table($table)");
+    async fn light_list(
+        &self,
+        filters: ListFilters,
+        sort: Option<SortOrder>,
+    ) -> SurrealResult<Vec<DBEntryLightQuote>> {
+        let mut statement =
+            String::from("SELECT qid, status, bill.maturity_date FROM type::table($table)");
 
         let mut first = true;
 
@@ -285,6 +290,12 @@ impl DBQuotes {
                 filters.bill_holder_id,
                 "bill.holder.node_id == $bill_holder_id"
             );
+        }
+        if let Some(sort) = sort {
+            statement += match sort {
+                SortOrder::BillMaturityDateAsc => " ORDER BY bill.maturity_date ASC",
+                SortOrder::BillMaturityDateDesc => " ORDER BY bill.maturity_date DESC",
+            };
         }
         let query = self
             .db
@@ -368,8 +379,12 @@ impl Repository for DBQuotes {
             .map_err(Into::into)
     }
 
-    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<quotes::LightQuote>> {
-        let db_result = self.light_list(filters).await?;
+    async fn list_light(
+        &self,
+        filters: ListFilters,
+        sort: Option<SortOrder>,
+    ) -> AnyResult<Vec<quotes::LightQuote>> {
+        let db_result = self.light_list(filters, sort).await?;
         let response = db_result
             .into_iter()
             .map(std::convert::Into::into)
@@ -411,7 +426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_light() {
+    async fn list_light_filter() {
         let db = init_mem_db().await;
 
         let qid = Uuid::new_v4();
@@ -444,7 +459,7 @@ mod tests {
         let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let filters = service::ListFilters::default();
-        let res = db.list_light(filters).await.unwrap();
+        let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 1);
 
         let date = chrono::NaiveDate::from_ymd_opt(2021, 1, 1);
@@ -452,7 +467,7 @@ mod tests {
             bill_maturity_date_from: date,
             ..Default::default()
         };
-        let res = db.list_light(filters).await.unwrap();
+        let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 1);
 
         let date = chrono::NaiveDate::from_ymd_opt(2022, 1, 1);
@@ -460,7 +475,7 @@ mod tests {
             bill_maturity_date_from: date,
             ..Default::default()
         };
-        let res = db.list_light(filters).await.unwrap();
+        let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
@@ -468,7 +483,7 @@ mod tests {
             bill_drawee_id: Some(String::from("none")),
             ..Default::default()
         };
-        let res = db.list_light(filters).await.unwrap();
+        let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
@@ -476,7 +491,71 @@ mod tests {
             bill_drawee_id: Some(String::from("drawee")),
             ..Default::default()
         };
-        let res = db.list_light(filters).await.unwrap();
+        let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn list_light_sort() {
+        let db = init_mem_db().await;
+
+        let qid1 = Uuid::new_v4();
+        let rid = RecordId::from_table_key(&db.table, qid1);
+        let entry = DBEntryQuote {
+            qid: qid1,
+            status: DBEntryQuoteStatus::Pending,
+            bill: quotes::BillInfo {
+                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+
+        let qid2 = Uuid::new_v4();
+        let rid = RecordId::from_table_key(&db.table, qid2);
+        let entry = DBEntryQuote {
+            qid: qid2,
+            status: DBEntryQuoteStatus::Pending,
+            bill: quotes::BillInfo {
+                maturity_date: TStamp::from_str("2020-01-01T00:00:00Z").unwrap(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+
+        let qid3 = Uuid::new_v4();
+        let rid = RecordId::from_table_key(&db.table, qid3);
+        let entry = DBEntryQuote {
+            qid: qid3,
+            status: DBEntryQuoteStatus::Pending,
+            bill: quotes::BillInfo {
+                maturity_date: TStamp::from_str("2022-01-01T00:00:00Z").unwrap(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+
+        let filters = service::ListFilters::default();
+        let res = db
+            .list_light(filters, Some(SortOrder::BillMaturityDateAsc))
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid2);
+        assert_eq!(res[1].id, qid1);
+        assert_eq!(res[2].id, qid3);
+
+        let filters = service::ListFilters::default();
+        let res = db
+            .list_light(filters, Some(SortOrder::BillMaturityDateDesc))
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid3);
+        assert_eq!(res[1].id, qid1);
+        assert_eq!(res[2].id, qid2);
     }
 }
