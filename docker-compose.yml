@@ -11,6 +11,13 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/key-service/config.toml:/key-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3335/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
 
   treasury-service:
     build:
@@ -53,6 +60,13 @@ services:
         condition: service_started
     volumes:
       - ./docker/quote-service/config.toml:/quote-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
 
   surrealdb:
     image: surrealdb/surrealdb:latest
