@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::nut00 as cdk00;
 use cashu::nut02 as cdk02;
 use serde::{Deserialize, Serialize};
@@ -25,4 +26,29 @@ pub struct StoreBlindedSignaturesRequest {
     pub rid: uuid::Uuid,
     pub signatures: Vec<cdk00::BlindSignature>,
     pub expiration: chrono::DateTime<chrono::Utc>,
+}
+
+/// --------------------------- request to mint from ebill description
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct RequestToMintFromEBillDesc {
+    pub ebill: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SignedRequestToMintFromEBillDesc {
+    pub data: RequestToMintFromEBillDesc,
+    pub signature: bitcoin::secp256k1::schnorr::Signature,
+}
+
+/// --------------------------- request to pay ebill
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct RequestToMintFromEBillRequest {
+    pub ebill: String,
+    pub amount: cashu::Amount,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct RequestToMintfromEBillResponse {
+    pub id: String,
+    pub request: String,
 }

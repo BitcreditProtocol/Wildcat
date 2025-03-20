@@ -7,8 +7,8 @@ use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 use uuid::Uuid;
 // ----- local imports
+use crate::credit::Repository;
 use crate::error::Result;
-use crate::service::Repository;
 
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryRepository {

@@ -12,8 +12,8 @@ use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
+use crate::credit::Repository;
 use crate::error::{Error, Result};
-use crate::service::Repository;
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct ConnectionConfig {
