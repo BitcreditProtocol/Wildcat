@@ -9,7 +9,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::quotes;
-use crate::service::Repository;
+use crate::service::{ListFilters, Repository};
 use crate::TStamp;
 
 #[derive(Default, Clone)]
@@ -77,12 +77,59 @@ impl Repository for QuotesIDMap {
             .collect();
         Ok(a)
     }
-    async fn list_light(&self, _since: Option<TStamp>) -> AnyResult<Vec<quotes::LightQuote>> {
+    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<quotes::LightQuote>> {
         let a = self
             .quotes
             .read()
             .unwrap()
             .iter()
+            .filter(|quote| {
+                let ListFilters {
+                    bill_maturity_date_from,
+                    bill_maturity_date_to,
+                    status,
+                    bill_drawee_id,
+                    bill_drawer_id,
+                    bill_payer_id,
+                    bill_holder_id,
+                } = &filters;
+                if let Some(bill_maturity_date_from) = bill_maturity_date_from {
+                    if quote.1.bill.maturity_date.date_naive() < *bill_maturity_date_from {
+                        return false;
+                    }
+                }
+                if let Some(bill_maturity_date_to) = bill_maturity_date_to {
+                    if quote.1.bill.maturity_date.date_naive() > *bill_maturity_date_to {
+                        return false;
+                    }
+                }
+                if let Some(status) = status {
+                    if quote.1.status.discriminant() != *status {
+                        return false;
+                    }
+                }
+                if let Some(bill_drawee_id) = bill_drawee_id {
+                    if quote.1.bill.drawee.node_id != *bill_drawee_id {
+                        return false;
+                    }
+                }
+                if let Some(bill_drawer_id) = bill_drawer_id {
+                    if quote.1.bill.drawer.node_id != *bill_drawer_id {
+                        return false;
+                    }
+                }
+                if let Some(bill_payer_id) = bill_payer_id {
+                    if quote.1.bill.payer.node_id != *bill_payer_id {
+                        return false;
+                    }
+                }
+                if let Some(bill_holder_id) = bill_holder_id {
+                    if quote.1.bill.holder.node_id != *bill_holder_id {
+                        return false;
+                    }
+                }
+                return true;
+            })
             .map(|(id, quote)| quotes::LightQuote {
                 id: *id,
                 status: quote.status.discriminant(),

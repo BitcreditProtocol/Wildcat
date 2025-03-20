@@ -11,11 +11,22 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus};
+use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus, QuoteStatusDiscriminants};
 use crate::utils;
 use crate::TStamp;
 
 // ---------- required traits
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ListFilters {
+    pub bill_maturity_date_from: Option<chrono::NaiveDate>,
+    pub bill_maturity_date_to: Option<chrono::NaiveDate>,
+    pub status: Option<QuoteStatusDiscriminants>,
+    pub bill_drawee_id: Option<String>,
+    pub bill_drawer_id: Option<String>,
+    pub bill_payer_id: Option<String>,
+    pub bill_holder_id: Option<String>,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
@@ -23,7 +34,7 @@ pub trait Repository: Send + Sync {
     async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
     async fn update_if_offered(&self, quote: Quote) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
-    async fn list_light(&self, since: Option<TStamp>) -> AnyResult<Vec<LightQuote>>;
+    async fn list_light(&self, filters: ListFilters) -> AnyResult<Vec<LightQuote>>;
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> AnyResult<()>;
 }
@@ -217,9 +228,9 @@ where
             .map_err(Error::QuotesRepository)
     }
 
-    pub async fn list_light(&self, since: Option<TStamp>) -> Result<Vec<LightQuote>> {
+    pub async fn list_light(&self, filters: ListFilters) -> Result<Vec<LightQuote>> {
         self.quotes
-            .list_light(since)
+            .list_light(filters)
             .await
             .map_err(Error::QuotesRepository)
     }
@@ -387,7 +398,7 @@ mod tests {
             id: ids.choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
-            payee: generate_random_identity(),
+            payer: generate_random_identity(),
             holder: generate_random_identity(),
             sum: rng.random_range(1000..100000),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.random_range(10..30)),

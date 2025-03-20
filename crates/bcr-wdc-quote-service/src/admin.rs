@@ -5,7 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
-use crate::service::{KeysHandler, Repository, Service, Wallet};
+use crate::service::{KeysHandler, ListFilters, Repository, Service, Wallet};
 use crate::utils;
 
 /// --------------------------- List quotes
@@ -51,6 +51,46 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
         status,
     }
 }
+
+fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilters {
+    let web_quotes::ListFilterParam {
+        bill_maturity_date_from,
+        bill_maturity_date_to,
+        status,
+        bill_drawee_id,
+        bill_drawer_id,
+        bill_payer_id,
+        bill_holder_id,
+    } = filters;
+    let status = match status {
+        None => None,
+        Some(web_quotes::StatusReplyDiscriminants::Pending) => {
+            Some(quotes::QuoteStatusDiscriminants::Pending)
+        }
+        Some(web_quotes::StatusReplyDiscriminants::Offered) => {
+            Some(quotes::QuoteStatusDiscriminants::Offered)
+        }
+        Some(web_quotes::StatusReplyDiscriminants::Denied) => {
+            Some(quotes::QuoteStatusDiscriminants::Denied)
+        }
+        Some(web_quotes::StatusReplyDiscriminants::Rejected) => {
+            Some(quotes::QuoteStatusDiscriminants::Rejected)
+        }
+        Some(web_quotes::StatusReplyDiscriminants::Accepted) => {
+            Some(quotes::QuoteStatusDiscriminants::Accepted)
+        }
+    };
+    ListFilters {
+        bill_maturity_date_from,
+        bill_maturity_date_to,
+        status,
+        bill_drawee_id,
+        bill_drawer_id,
+        bill_payer_id,
+        bill_holder_id,
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/v1/admin/credit/quote",
@@ -63,7 +103,7 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
 )]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    since: Option<Query<chrono::NaiveDateTime>>,
+    Query(filters): Query<web_quotes::ListFilterParam>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KeysHndlr: KeysHandler,
@@ -72,7 +112,8 @@ where
 {
     log::debug!("Received request to list quotes");
 
-    let quotes = ctrl.list_light(since.map(|q| q.0.and_utc())).await?;
+    let filters = convert_into_list_filters(filters);
+    let quotes = ctrl.list_light(filters).await?;
     let response = web_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
     };

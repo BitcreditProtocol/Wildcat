@@ -9,12 +9,12 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::TStamp;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BillInfo {
     pub id: String,
     pub drawee: IdentityPublicData,
     pub drawer: IdentityPublicData,
-    pub payee: IdentityPublicData,
+    pub payer: IdentityPublicData,
     pub holder: IdentityPublicData,
     pub sum: u64,
     pub maturity_date: TStamp,
@@ -27,7 +27,7 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
             id: bill.id,
             drawee: bill.drawee.into(),
             drawer: bill.drawer.into(),
-            payee: bill.payee.into(),
+            payer: bill.payer.into(),
             holder: bill.holder.into(),
             sum: bill.sum,
             maturity_date,
@@ -41,7 +41,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
             id: bill.id,
             drawee: bill.drawee.into(),
             drawer: bill.drawer.into(),
-            payee: bill.payee.into(),
+            payer: bill.payer.into(),
             holder: bill.holder.into(),
             sum: bill.sum,
             maturity_date,
@@ -50,6 +50,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants)]
+#[strum_discriminants(derive(serde::Serialize))]
 pub enum QuoteStatus {
     Pending {
         blinds: Vec<cdk00::BlindedMessage>,
