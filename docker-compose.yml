@@ -1,9 +1,8 @@
 services:
 
   key-service:
-    build:
-      context: .
-      dockerfile: ./docker/key-service/Dockerfile
+    image: wildcat/key-service
+    pull_policy: never
     ports:
       - "3335:3335"
     depends_on:
@@ -13,9 +12,8 @@ services:
       - ./docker/key-service/config.toml:/key-service/config.toml
 
   treasury-service:
-    build:
-      context: .
-      dockerfile: ./docker/treasury-service/Dockerfile
+    image: wildcat/treasury-service
+    pull_policy: never
     ports:
       - "3336:3336"
     depends_on:
@@ -25,9 +23,8 @@ services:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
 
   swap-service:
-    build:
-      context: .
-      dockerfile: ./docker/swap-service/Dockerfile
+    image: wildcat/swap-service
+    pull_policy: never
     ports:
       - "3337:3337"
     depends_on:
@@ -39,9 +36,8 @@ services:
       - ./docker/swap-service/config.toml:/swap-service/config.toml
 
   quote-service:
-    build:
-      context: .
-      dockerfile: ./docker/quote-service/Dockerfile
+    image: wildcat/quote-service
+    pull_policy: never
     ports:
       - "3338:3338"
     depends_on:

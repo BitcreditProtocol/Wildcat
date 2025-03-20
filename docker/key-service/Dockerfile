@@ -1,11 +1,4 @@
-##############################
-## Build Rust backend
-##############################
-FROM rust:1.85-bookworm@sha256:caa4a0e7bd1fe2e648caf3d904bc54c3bfcae9e74b4df2eb9ebe558c9e9e88c5 AS rust-builder
-
-WORKDIR /key-service
-COPY . .
-RUN cargo build --release -p bcr-wdc-key-service
+FROM wildcat/base-image AS rust-builder
 
 ##############################
 ## Create image
@@ -15,7 +8,7 @@ RUN apt-get update && apt install -y openssl
 
 WORKDIR /key-service
 
-COPY --from=rust-builder /key-service/target/release/bcr-wdc-key-service .
+COPY --from=rust-builder /wildcat/target/release/bcr-wdc-key-service .
 
 # Expose web server port
 EXPOSE 3338

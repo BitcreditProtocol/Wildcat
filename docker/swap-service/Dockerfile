@@ -1,11 +1,4 @@
-##############################
-## Build Rust backend
-##############################
-FROM rust:1.85-bookworm@sha256:caa4a0e7bd1fe2e648caf3d904bc54c3bfcae9e74b4df2eb9ebe558c9e9e88c5 AS rust-builder
-
-WORKDIR /swap-service
-COPY . .
-RUN cargo build --release -p bcr-wdc-swap-service
+FROM wildcat/base-image AS rust-builder
 
 ##############################
 ## Create image
@@ -15,7 +8,7 @@ RUN apt-get update && apt install -y openssl
 
 WORKDIR /swap-service
 
-COPY --from=rust-builder /swap-service/target/release/bcr-wdc-swap-service .
+COPY --from=rust-builder /wildcat/target/release/bcr-wdc-swap-service .
 
 # Expose web server port
 EXPOSE 3338
