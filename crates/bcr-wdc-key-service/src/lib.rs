@@ -27,8 +27,8 @@ pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRep
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
-    keys_cfg: persistence::surreal::ConnectionConfig,
-    quotekeys_cfg: persistence::surreal::ConnectionConfig,
+    keys: persistence::surreal::ConnectionConfig,
+    quotekeys: persistence::surreal::ConnectionConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -38,10 +38,10 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-        let keys_repo = ProdKeysRepository::new(cfg.keys_cfg)
+        let keys_repo = ProdKeysRepository::new(cfg.keys)
             .await
             .expect("DB connection to keys failed");
-        let quotekeys_repo = ProdQuoteKeysRepository::new(cfg.quotekeys_cfg)
+        let quotekeys_repo = ProdQuoteKeysRepository::new(cfg.quotekeys)
             .await
             .expect("DB connection to quotekeys failed");
         let keygen = factory::Factory::new(seed);
