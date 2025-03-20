@@ -3,8 +3,14 @@ bind_address = "0.0.0.0:3335"
 log_level = "DEBUG"
 
 
-[appcfg.keys]
+[appcfg.keys_cfg]
 connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "key"
 table = "keys"
+
+[appcfg.quotekeys_cfg]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "quote"
+table = "quotes"
