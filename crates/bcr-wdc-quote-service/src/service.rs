@@ -271,7 +271,12 @@ where
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
-        let holder_id = &quote.bill.endorsees.last().unwrap_or(&quote.bill.payee).node_id;
+        let holder_id = &quote
+            .bill
+            .endorsees
+            .last()
+            .unwrap_or(&quote.bill.payee)
+            .node_id;
 
         let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, holder_id);
         let id = kid.into();
@@ -325,7 +330,7 @@ mod tests {
     use bcr_ebill_core::contact::IdentityPublicData;
     use bcr_wdc_keys::test_utils as keysutils;
     use mockall::predicate::*;
-    use rand::{seq::IndexedRandom, Rng};
+    use rand::{seq::IteratorRandom, Rng};
 
     fn generate_random_identity() -> bcr_ebill_core::contact::IdentityPublicData {
         let identities = vec![
@@ -403,21 +408,21 @@ mod tests {
                 nostr_relay: None,
             },
         ];
-        let mut rng = rand::rng();
-        identities.choose(&mut rng).unwrap().clone()
+        let mut rng = rand::thread_rng();
+        identities.into_iter().choose(&mut rng).unwrap().clone()
     }
 
     fn generate_random_bill() -> BillInfo {
-        let mut rng = rand::rng();
+        let mut rng = rand::thread_rng();
         let ids = keysutils::publics();
         BillInfo {
-            id: ids.choose(&mut rng).unwrap().to_string(),
+            id: ids.into_iter().choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
             payee: generate_random_identity(),
             endorsees: Default::default(),
-            sum: rng.random_range(1000..100000),
-            maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.random_range(10..30)),
+            sum: rng.gen_range(1000..100000),
+            maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
         }
     }
 

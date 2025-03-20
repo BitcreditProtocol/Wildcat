@@ -123,6 +123,11 @@ pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: cdk00::Proof) -> Resu
     Ok(())
 }
 
+pub fn into_secp256k1_msg(msg: &[u8]) -> bitcoin::secp256k1::Message {
+    let sha = Sha256::hash(msg);
+    bitcoin::secp256k1::Message::from_digest(*sha.as_ref())
+}
+
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
 
