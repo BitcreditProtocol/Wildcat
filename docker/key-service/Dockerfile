@@ -50,7 +50,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 ## Create image
 ##############################
 FROM debian:bookworm-20250224-slim@sha256:12c396bd585df7ec21d5679bb6a83d4878bc4415ce926c9e5ea6426d23c60bdc
-RUN apt-get update && apt install -y openssl
+RUN apt-get update \
+  && apt-get install --quiet --no-install-recommends --no-install-suggests --yes openssl curl \
+  && apt-get clean \
+  && rm --recursive --force /var/lib/apt/lists/*
 
 WORKDIR /key-service
 
