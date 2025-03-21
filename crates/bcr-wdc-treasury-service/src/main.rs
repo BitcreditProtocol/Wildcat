@@ -1,4 +1,5 @@
 use tokio::signal;
+use std::str::FromStr;
 
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
@@ -22,7 +23,11 @@ async fn main() {
     env_logger::builder().filter_level(maincfg.log_level).init();
 
     let seed = [0u8; 32];
-    let app = bcr_wdc_treasury_service::AppController::new(&seed, maincfg.appcfg).await;
+    let secret = bitcoin::secp256k1::SecretKey::from_str(
+        "0a4d621638017a90cbb929e5bcbe8106a9c396d499a930a83e62814c52860bf2",
+    )
+    .expect("Failed to parse secret key from hex");
+    let app = bcr_wdc_treasury_service::AppController::new(&seed, secret, maincfg.appcfg).await;
     let router = bcr_wdc_treasury_service::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
