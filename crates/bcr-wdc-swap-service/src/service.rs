@@ -24,6 +24,7 @@ pub trait ProofRepository: Send + Sync {
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call
     async fn insert(&self, tokens: &[cdk00::Proof]) -> Result<()>;
+    async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -42,15 +43,17 @@ where
         Ok(())
     }
 
-    async fn verify_keys_are_active(&self, keys: &[cdk02::Id]) -> Result<()> {
-        let joined: JoinAll<_> = keys.iter().map(|kid| self.keys.info(kid)).collect();
+    async fn are_keysets_active(&self, kids: &[cdk02::Id]) -> Result<Vec<bool>> {
+        let joined: JoinAll<_> = kids.iter().map(|kid| self.keys.info(kid)).collect();
         let responses: Vec<_> = joined.await.into_iter().collect::<Result<_>>()?;
-        for (info, kid) in responses.into_iter().zip(keys.iter()) {
-            if !info.active {
-                return Err(Error::InactiveKeyset(*kid));
-            }
-        }
-        Ok(())
+        let statuses: Vec<bool> = responses.into_iter().map(|info| info.active).collect();
+        Ok(statuses)
+    }
+
+    async fn sign_blinds(&self, blinds: &[cdk00::BlindedMessage]) -> Result<Vec<cdk00::BlindSignature>> {
+        let joined: JoinAll<_> = blinds.iter().map(|blind| self.keys.sign_blind(blind)).collect();
+        let signatures: Vec<cdk00::BlindSignature> = joined.await.into_iter().collect::<Result<_>>()?;
+        Ok(signatures)
     }
 }
 
@@ -97,18 +100,49 @@ where
         }
         // expensive verifications
         // 1. verify keysets are active
-        self.verify_keys_are_active(&unique_ids).await?;
+        let statuses = self.are_keysets_active(&unique_ids).await?;
+        for (id, status) in unique_ids.iter().zip(statuses.iter()) {
+            if !status {
+                return Err(Error::InactiveKeyset(*id));
+            }
+        }
         // 2. verify proofs signatures
         self.verify_proofs_signatures(inputs).await?;
         // generate signatures
-        let joined: JoinAll<_> = outputs
-            .iter()
-            .map(|blind| self.keys.sign_blind(blind))
-            .collect();
-        let signatures: Vec<cdk00::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
+        let signatures = self.sign_blinds(outputs).await?;
         self.proofs.insert(inputs).await?;
         Ok(signatures)
+    }
+
+    pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<()> {
+        log::debug!("Received burn request: {} proofs", proofs.len(),);
+        // cheap verifications
+        // 1. no zero amounts proof
+        let zero_amount = proofs.iter().any(|output| output.amount == Amount::ZERO);
+        if zero_amount {
+            return Err(Error::ZeroAmount);
+        }
+        // expensive verifications
+        let unique_ids: Vec<_> = proofs.iter().map(|p| p.keyset_id).unique().collect();
+        // 1. verify keysets are inactive
+        let statuses = self.are_keysets_active(&unique_ids).await?;
+        for (id, status) in unique_ids.iter().zip(statuses.iter()) {
+            if *status {
+                return Err(Error::ActiveKeyset(*id));
+            }
+        }
+        // 2. verify proofs signatures
+        self.verify_proofs_signatures(proofs).await?;
+
+        self.proofs.insert(proofs).await?;
+        Ok(())
+    }
+
+    pub async fn recover(&self, proofs: &[cdk00::Proof]) -> Result<()> {
+        log::debug!("Received recover request: {} proofs", proofs.len(),);
+
+        self.proofs.remove(proofs).await?;
+        Ok(())
     }
 }
 
@@ -332,4 +366,81 @@ mod tests {
             outputs.into_iter().zip(bs.into_iter())
         ));
     }
+
+    #[tokio::test]
+    async fn burn_active_keyset() {
+        let (keyinfo, keyset) = keys_test::generate_keyset();
+        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+
+        let mut keysrvc = MockKeysService::new();
+        keysrvc
+            .expect_info()
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc.expect_verify_proof().returning(|_| Ok(()));
+        let mut proofrepo = MockProofRepository::new();
+        proofrepo
+            .expect_insert()
+            .returning(|_| Err(Error::ProofsAlreadySpent));
+        let swaps = Service {
+            keys: keysrvc,
+            proofs: proofrepo,
+        };
+        let r = swaps.burn(&inputs).await;
+        assert!(r.is_err());
+        let e = r.unwrap_err();
+        assert!(matches!(e, Error::ActiveKeyset(_)));
+    }
+
+    #[tokio::test]
+    async fn burn_spent_proofs() {
+        let (mut keyinfo, keyset) = keys_test::generate_keyset();
+        keyinfo.active = false;
+        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+
+        let mut keysrvc = MockKeysService::new();
+        keysrvc
+            .expect_info()
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc.expect_verify_proof().returning(|_| Ok(()));
+        let mut proofrepo = MockProofRepository::new();
+        proofrepo
+            .expect_insert()
+            .returning(|_| Err(Error::ProofsAlreadySpent));
+        let swaps = Service {
+            keys: keysrvc,
+            proofs: proofrepo,
+        };
+        let r = swaps.burn(&inputs).await;
+        assert!(r.is_err());
+        let e = r.unwrap_err();
+        assert!(matches!(e, Error::ProofsAlreadySpent));
+    }
+
+    #[tokio::test]
+    async fn burn_wrong_signatures() {
+        let (mut keyinfo, keyset) = keys_test::generate_keyset();
+        keyinfo.active = false;
+        let mut inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        inputs.get_mut(0).unwrap().c = keys_test::publics()[0];
+        let mut keysrvc = MockKeysService::new();
+        let proofrepo = MockProofRepository::new();
+        let kid = keyset.id;
+        keysrvc
+            .expect_info()
+            .with(eq(kid))
+            .returning(move |_| Ok(keyinfo.clone().into()));
+        keysrvc
+            .expect_verify_proof()
+            .returning(move |p| Err(Error::InvalidProof(p.secret.clone())));
+        let swaps = Service {
+            keys: keysrvc,
+            proofs: proofrepo,
+        };
+
+        let r = swaps.burn(&inputs).await;
+        assert!(r.is_err());
+        let e = r.unwrap_err();
+        assert!(matches!(e, Error::InvalidProof(_)));
+    }
+
 }
