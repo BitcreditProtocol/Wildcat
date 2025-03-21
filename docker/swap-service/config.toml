@@ -10,5 +10,5 @@ database = "swap"
 table = "proofs"
 
 
-[appcfg.keys_cl]
+[appcfg.keys_client]
 base_url = "http://key-service:3335"

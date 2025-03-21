@@ -38,10 +38,12 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-        let keys_repo = ProdKeysRepository::new(cfg.keys)
+      let AppConfig { keys, quotekeys } = cfg;
+
+        let keys_repo = ProdKeysRepository::new(keys)
             .await
             .expect("DB connection to keys failed");
-        let quotekeys_repo = ProdQuoteKeysRepository::new(cfg.quotekeys)
+        let quotekeys_repo = ProdQuoteKeysRepository::new(quotekeys)
             .await
             .expect("DB connection to quotekeys failed");
         let keygen = factory::Factory::new(seed);
