@@ -34,4 +34,13 @@ impl ProofRepository for ProofMap {
         }
         Ok(())
     }
+    async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for token in tokens {
+            let y = cdk_dhke::hash_to_curve(&token.secret.to_bytes()).map_err(Error::CdkDhke)?;
+            locked.remove(&y);
+        }
+        Ok(())
+    }
+
 }

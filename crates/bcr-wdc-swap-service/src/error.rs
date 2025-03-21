@@ -32,6 +32,8 @@ pub enum Error {
     UnknownKeyset(cdk02::Id),
     #[error("inactive keyset {0}")]
     InactiveKeyset(cdk02::Id),
+    #[error("active keyset {0}")]
+    ActiveKeyset(cdk02::Id),
     #[error("Unknown amount {1} for keyset {0}")]
     UnknownAmountForKeyset(cdk02::Id, Amount),
     #[error("Empty inputs/outputs")]
@@ -60,6 +62,7 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::NOT_FOUND,
                 String::from("Unknown amount for keyset"),
             ),
+            Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Active keyset")),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
             Error::ProofsAlreadySpent => (

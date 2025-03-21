@@ -70,6 +70,19 @@ impl ProofRepository for ProofDB {
             })?;
         Ok(())
     }
+
+    async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()> {
+        for tk in tokens {
+            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes()).map_err(Error::CdkDhke)?;
+            let rid = RecordId::from_table_key(&self.table, y.to_string());
+            let _p: Option<cdk00::Proof> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
