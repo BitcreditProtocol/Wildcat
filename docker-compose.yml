@@ -1,16 +1,16 @@
 services:
 
-  key-service:
-    build:
-      context: .
-      dockerfile: ./docker/key-service/Dockerfile
-    ports:
-      - "3335:3335"
-    depends_on:
-      surrealdb:
-        condition: service_healthy
-    volumes:
-      - ./docker/key-service/config.toml:/key-service/config.toml
+  # key-service:
+  #   build:
+  #     context: .
+  #     dockerfile: ./docker/key-service/Dockerfile
+  #   ports:
+  #     - "3335:3335"
+  #   depends_on:
+  #     surrealdb:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ./docker/key-service/config.toml:/key-service/config.toml
 
   treasury-service:
     build:
@@ -23,6 +23,7 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
+      - ./data/:/data/
 
   swap-service:
     build:

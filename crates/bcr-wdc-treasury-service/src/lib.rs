@@ -33,7 +33,7 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
+    pub async fn new(seed: &[u8], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
         let repo = ProdCrSatRepository::new(cfg.crsat_repo)
             .await
             .expect("Failed to create repository");
@@ -44,7 +44,6 @@ impl AppController {
         let wallet = ProdSatWallet::new(&cfg.cdk_mint_url, &cfg.wallet_redb_storage, seed)
             .expect("Failed to create wallet");
         let secp_ctx = secp256k1::Secp256k1::signing_only();
-        let secret = secp256k1::SecretKey::from_slice(seed).expect("Failed to create SecretKey");
         let signing_keys = secp256k1::Keypair::from_secret_key(&secp_ctx, &secret);
         let sat = ProdSatService {
             wallet,
