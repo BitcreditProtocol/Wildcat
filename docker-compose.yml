@@ -30,6 +30,7 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
+      - ./.docker_data/treasury-service/:/data/
 
   swap-service:
     build:

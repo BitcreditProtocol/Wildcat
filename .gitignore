@@ -19,3 +19,4 @@ Cargo.lock
 
 # docker compose data
 .docker_data/
+!.docker_data/treasury-service/.gitkeep
