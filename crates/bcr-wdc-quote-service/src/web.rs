@@ -31,11 +31,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!(
-        "Received mint quote request for bill: {}, from node : {}",
-        req.content.id,
-        req.content.holder.name
-    );
+    log::debug!("Received mint quote request for bill: {}", req.content.id,);
 
     verify_signature(&req)?;
 
@@ -48,11 +44,11 @@ where
 }
 
 fn verify_signature(req: &web_quotes::EnquireRequest) -> Result<()> {
-    let author = &req.content.holder;
+    let holder = req.content.endorsees.last().unwrap_or(&req.content.payee);
     let borshed = borsh::to_vec(&req.content)?;
     let msg = bitcoin::secp256k1::Message::from_digest(*Sha256::hash(&borshed).as_byte_array());
     let ctx = bitcoin::secp256k1::Secp256k1::verification_only();
-    let pub_key = bitcoin::secp256k1::PublicKey::from_str(&author.node_id)?;
+    let pub_key = bitcoin::secp256k1::PublicKey::from_str(&holder.node_id)?;
     ctx.verify_schnorr(&req.signature, &msg, &pub_key.x_only_public_key().0)?;
     Ok(())
 }

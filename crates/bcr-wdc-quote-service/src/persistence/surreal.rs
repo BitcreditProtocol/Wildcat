@@ -443,14 +443,11 @@ mod tests {
                     node_id: String::from("drawer"),
                     ..Default::default()
                 },
-                payer: IdentityPublicData {
+                payee: IdentityPublicData {
                     node_id: String::from("payer"),
                     ..Default::default()
                 },
-                holder: IdentityPublicData {
-                    node_id: String::from("holder"),
-                    ..Default::default()
-                },
+                endorsees: Default::default(),
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
