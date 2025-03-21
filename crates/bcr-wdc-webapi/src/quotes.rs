@@ -15,8 +15,8 @@ pub struct BillInfo {
     pub id: String,
     pub drawee: IdentityPublicData,
     pub drawer: IdentityPublicData,
-    pub payer: IdentityPublicData,
-    pub holder: IdentityPublicData,
+    pub payee: IdentityPublicData,
+    pub endorsees: Vec<IdentityPublicData>,
     pub sum: u64,
     pub maturity_date: String,
 }

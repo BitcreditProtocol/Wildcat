@@ -14,8 +14,8 @@ pub struct BillInfo {
     pub id: String,
     pub drawee: IdentityPublicData,
     pub drawer: IdentityPublicData,
-    pub payer: IdentityPublicData,
-    pub holder: IdentityPublicData,
+    pub payee: IdentityPublicData,
+    pub endorsees: Vec<IdentityPublicData>,
     pub sum: u64,
     pub maturity_date: TStamp,
 }
@@ -27,8 +27,8 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
             id: bill.id,
             drawee: bill.drawee.into(),
             drawer: bill.drawer.into(),
-            payer: bill.payer.into(),
-            holder: bill.holder.into(),
+            payee: bill.payee.into(),
+            endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
             sum: bill.sum,
             maturity_date,
         })
@@ -41,8 +41,8 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
             id: bill.id,
             drawee: bill.drawee.into(),
             drawer: bill.drawer.into(),
-            payer: bill.payer.into(),
-            holder: bill.holder.into(),
+            payee: bill.payee.into(),
+            endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
             sum: bill.sum,
             maturity_date,
         }

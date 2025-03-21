@@ -98,9 +98,10 @@ where
         submitted: TStamp,
         blinds: Vec<cdk00::BlindedMessage>,
     ) -> Result<uuid::Uuid> {
+        let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id;
         let mut quotes = self
             .quotes
-            .search_by_bill(&bill.id, &bill.holder.node_id)
+            .search_by_bill(&bill.id, holder_id)
             .await
             .map_err(Error::QuotesRepository)?;
 
@@ -270,8 +271,9 @@ where
         let QuoteStatus::Pending { ref mut blinds } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
+        let holder_id = &quote.bill.endorsees.last().unwrap_or(&quote.bill.payee).node_id;
 
-        let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, &quote.bill.holder.node_id);
+        let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, holder_id);
         let id = kid.into();
         if blinds.iter().any(|blind| blind.keyset_id != id) {
             return Err(Error::InvalidKeysetId(id));
@@ -412,8 +414,8 @@ mod tests {
             id: ids.choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
-            payer: generate_random_identity(),
-            holder: generate_random_identity(),
+            payee: generate_random_identity(),
+            endorsees: Default::default(),
             sum: rng.random_range(1000..100000),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.random_range(10..30)),
         }
@@ -444,7 +446,7 @@ mod tests {
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Pending { blinds: vec![] },
@@ -474,7 +476,7 @@ mod tests {
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Denied,
@@ -507,7 +509,7 @@ mod tests {
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
@@ -543,7 +545,7 @@ mod tests {
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.holder.node_id.clone()))
+            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {

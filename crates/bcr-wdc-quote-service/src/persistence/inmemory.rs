@@ -24,7 +24,15 @@ impl Repository for QuotesIDMap {
             .read()
             .unwrap()
             .iter()
-            .filter(|quote| quote.1.bill.id == bill && quote.1.bill.holder.node_id == endorser)
+            .filter(|(_, quote)| {
+                let holder = &quote
+                    .bill
+                    .endorsees
+                    .last()
+                    .unwrap_or(&quote.bill.payee)
+                    .node_id;
+                quote.bill.id == bill && holder == endorser
+            })
             .map(|x| x.1.clone())
             .collect())
     }
@@ -87,7 +95,7 @@ impl Repository for QuotesIDMap {
             .read()
             .unwrap()
             .iter()
-            .filter(|quote| {
+            .filter(|(_, quote)| {
                 let ListFilters {
                     bill_maturity_date_from,
                     bill_maturity_date_to,
@@ -98,41 +106,47 @@ impl Repository for QuotesIDMap {
                     bill_holder_id,
                 } = &filters;
                 if let Some(bill_maturity_date_from) = bill_maturity_date_from {
-                    if quote.1.bill.maturity_date.date_naive() < *bill_maturity_date_from {
+                    if quote.bill.maturity_date.date_naive() < *bill_maturity_date_from {
                         return false;
                     }
                 }
                 if let Some(bill_maturity_date_to) = bill_maturity_date_to {
-                    if quote.1.bill.maturity_date.date_naive() > *bill_maturity_date_to {
+                    if quote.bill.maturity_date.date_naive() > *bill_maturity_date_to {
                         return false;
                     }
                 }
                 if let Some(status) = status {
-                    if quote.1.status.discriminant() != *status {
+                    if quote.status.discriminant() != *status {
                         return false;
                     }
                 }
                 if let Some(bill_drawee_id) = bill_drawee_id {
-                    if quote.1.bill.drawee.node_id != *bill_drawee_id {
+                    if quote.bill.drawee.node_id != *bill_drawee_id {
                         return false;
                     }
                 }
                 if let Some(bill_drawer_id) = bill_drawer_id {
-                    if quote.1.bill.drawer.node_id != *bill_drawer_id {
+                    if quote.bill.drawer.node_id != *bill_drawer_id {
                         return false;
                     }
                 }
                 if let Some(bill_payer_id) = bill_payer_id {
-                    if quote.1.bill.payer.node_id != *bill_payer_id {
+                    if quote.bill.payee.node_id != *bill_payer_id {
                         return false;
                     }
                 }
                 if let Some(bill_holder_id) = bill_holder_id {
-                    if quote.1.bill.holder.node_id != *bill_holder_id {
+                    let holder_id = &quote
+                        .bill
+                        .endorsees
+                        .last()
+                        .unwrap_or(&quote.bill.payee)
+                        .node_id;
+                    if *holder_id != *bill_holder_id {
                         return false;
                     }
                 }
-                return true;
+                true
             })
             .map(|(_, quote)| quote.clone())
             .collect();
