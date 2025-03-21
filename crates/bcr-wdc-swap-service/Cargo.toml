@@ -3,10 +3,14 @@ name = "bcr-wdc-swap-service"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+test-utils = ["axum-test"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+axum-test = {workspace = true, optional = true}
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 cashu.workspace = true
