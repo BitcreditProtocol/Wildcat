@@ -2,8 +2,11 @@
 bind_address = "0.0.0.0:3336"
 log_level = "DEBUG"
 
+[appcfg]
+cdk_mint_url = "http://localhost:3338"
+wallet_redb_storage = "/data/cdk-wallet-redb.redb"
 
-[appcfg.credit]
+[appcfg.crsat_repo]
 connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "credit"
