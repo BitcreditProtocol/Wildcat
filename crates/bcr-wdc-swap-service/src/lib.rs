@@ -20,7 +20,7 @@ type ProdService = service::Service<ProdKeysService, ProdProofRepository>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     proof_db: persistence::surreal::ConnectionConfig,
-    keys_cl: crate::keys::KeysClientConfig,
+    keys_client: crate::keys::KeysClientConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -30,9 +30,9 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
-        let AppConfig { proof_db, keys_cl } = cfg;
+        let AppConfig { proof_db, keys_client } = cfg;
 
-        let keys_repo = ProdKeysService::new(keys_cl)
+        let keys_repo = ProdKeysService::new(keys_client)
             .await
             .expect("Failed to create keys client");
         let proofs_repo = ProdProofRepository::new(proof_db)
