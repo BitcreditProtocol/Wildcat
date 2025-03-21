@@ -4,6 +4,7 @@ use axum::extract::FromRef;
 use axum::routing::post;
 use axum::Router;
 // ----- local modules
+mod admin;
 mod error;
 mod keys;
 mod persistence;
@@ -51,7 +52,12 @@ impl AppController {
 }
 
 pub fn routes(app: AppController) -> Router {
-    Router::new()
+    let web = Router::new()
         .route("/v1/swap", post(crate::web::swap_tokens))
-        .with_state(app)
+        .route("/v1/burn", post(crate::web::burn_tokens));
+    // separate admin as it will likely have different auth requirements
+    let admin = Router::new()
+        .route("/v1/recover", post(crate::admin::recover_tokens));
+
+    Router::new().merge(web).merge(admin).with_state(app)
 }
