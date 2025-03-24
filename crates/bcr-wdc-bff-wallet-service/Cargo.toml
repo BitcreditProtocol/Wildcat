@@ -13,6 +13,7 @@ axum.workspace = true
 axum-test = {workspace = true, optional = true}
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 cashu.workspace = true
+cdk = {version = "0.7", default-features = false, features = ["wallet"]}
 chrono.workspace = true
 config = {version = "0.15"}
 env_logger = {version = "0.11"}

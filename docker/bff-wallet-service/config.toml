@@ -2,5 +2,8 @@
 bind_address = "0.0.0.0:13339"
 log_level = "DEBUG"
 
+[appcfg]
+cdk_mint_url = "http://cdk_mint:8085"
+
 [appcfg.keys_client]
 base_url = "http://key-service:3335"
