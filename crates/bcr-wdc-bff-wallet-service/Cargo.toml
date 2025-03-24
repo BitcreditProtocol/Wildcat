@@ -1,0 +1,28 @@
+[package]
+name = "bcr-wdc-bff-wallet-service"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+test-utils = ["axum-test"]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+axum-test = {workspace = true, optional = true}
+bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
+bitcoin.workspace = true
+cashu.workspace = true
+chrono.workspace = true
+config = {version = "0.15"}
+env_logger = {version = "0.11"}
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+surrealdb.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+utoipa = {workspace = true, features = ["axum_extras"]}
+utoipa-swagger-ui.workspace = true
+uuid.workspace = true
