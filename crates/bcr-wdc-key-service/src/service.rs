@@ -56,7 +56,7 @@ where
 
     pub async fn verify_proof(&self, proof: cdk00::Proof) -> Result<()> {
         let keyset = self.keys(proof.keyset_id).await?;
-        bcr_wdc_keys::verify_with_keys(&keyset, proof)?;
+        bcr_wdc_keys::verify_with_keys(&keyset, &proof)?;
         Ok(())
     }
 }
