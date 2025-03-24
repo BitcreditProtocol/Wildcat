@@ -63,6 +63,29 @@ services:
       start_period: 60s
       start_interval: 3s
 
+  bff-wallet-service:
+    build:
+      context: .
+      dockerfile: ./docker/bff-wallet-service/Dockerfile
+    ports:
+      - "13339:13339"
+    depends_on:
+      key-service:
+        condition: service_healthy
+      swap-service:
+        condition: service_started # no healthcheck yet
+      cdk_mint:
+        condition: service_started # no healthcheck yet
+    volumes:
+      - ./docker/bff-wallet-service/config.toml:/bff-wallet-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:13339/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
   surrealdb:
     image: surrealdb/surrealdb:latest
     volumes:
@@ -87,10 +110,3 @@ services:
     command: ["cdk-mintd"]
     ports:
       - "8085:8085"
-    healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-      start_interval: 3s
