@@ -93,7 +93,6 @@ pub mod test_utils {
         async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()> {
             self.keys.verify(proof).await.map_err(Error::KeysClient)?;
             Ok(())
-
         }
     }
 
@@ -113,10 +112,7 @@ pub mod test_utils {
         }
     }
 
-    pub fn build_test_server() -> (
-        axum_test::TestServer,
-        TestKeysService,
-    ) {
+    pub fn build_test_server() -> (axum_test::TestServer, TestKeysService) {
         let cfg = axum_test::TestServerConfig {
             transport: Some(axum_test::Transport::HttpRandomPort),
             ..Default::default()
