@@ -50,9 +50,16 @@ where
         Ok(statuses)
     }
 
-    async fn sign_blinds(&self, blinds: &[cdk00::BlindedMessage]) -> Result<Vec<cdk00::BlindSignature>> {
-        let joined: JoinAll<_> = blinds.iter().map(|blind| self.keys.sign_blind(blind)).collect();
-        let signatures: Vec<cdk00::BlindSignature> = joined.await.into_iter().collect::<Result<_>>()?;
+    async fn sign_blinds(
+        &self,
+        blinds: &[cdk00::BlindedMessage],
+    ) -> Result<Vec<cdk00::BlindSignature>> {
+        let joined: JoinAll<_> = blinds
+            .iter()
+            .map(|blind| self.keys.sign_blind(blind))
+            .collect();
+        let signatures: Vec<cdk00::BlindSignature> =
+            joined.await.into_iter().collect::<Result<_>>()?;
         Ok(signatures)
     }
 }
@@ -442,5 +449,4 @@ mod tests {
         let e = r.unwrap_err();
         assert!(matches!(e, Error::InvalidProof(_)));
     }
-
 }

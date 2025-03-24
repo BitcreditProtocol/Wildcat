@@ -42,5 +42,4 @@ impl ProofRepository for ProofMap {
         }
         Ok(())
     }
-
 }

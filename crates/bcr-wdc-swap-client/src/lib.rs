@@ -50,7 +50,10 @@ impl SwapClient {
     }
 
     pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::RecoverResponse> {
-        let url = self.base.join("/v1/recover").expect("recover relative path");
+        let url = self
+            .base
+            .join("/v1/recover")
+            .expect("recover relative path");
         let request = web_swap::RecoverRequest { proofs };
         let res = self.cl.post(url).json(&request).send().await?;
         let recover_resp: web_swap::RecoverResponse = res.json().await?;
