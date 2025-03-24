@@ -30,7 +30,6 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -38,25 +37,25 @@ async fn main() {
 }
 
 async fn shutdown_signal() {
-  let ctrl_c = async {
-    signal::ctrl_c()
-          .await
-          .expect("failed to install Ctrl+C handler");
-  };
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
 
-  #[cfg(unix)]
-  let terminate = async {
-      signal::unix::signal(signal::unix::SignalKind::terminate())
-          .expect("failed to install signal handler")
-          .recv()
-          .await;
-  };
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
 
-  #[cfg(not(unix))]
-  let terminate = std::future::pending::<()>();
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
 
-  tokio::select! {
-      _ = ctrl_c => {},
-      _ = terminate => {},
-  }
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
