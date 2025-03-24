@@ -30,7 +30,10 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
-        let AppConfig { proof_db, keys_client } = cfg;
+        let AppConfig {
+            proof_db,
+            keys_client,
+        } = cfg;
 
         let keys_repo = ProdKeysService::new(keys_client)
             .await

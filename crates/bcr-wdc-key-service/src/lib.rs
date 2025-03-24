@@ -38,7 +38,7 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-      let AppConfig { keys, quotekeys } = cfg;
+        let AppConfig { keys, quotekeys } = cfg;
 
         let keys_repo = ProdKeysRepository::new(keys)
             .await
