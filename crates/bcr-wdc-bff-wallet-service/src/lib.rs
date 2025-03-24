@@ -6,6 +6,7 @@ use axum::Router;
 use axum::extract::FromRef;
 use axum::routing::get;
 use cashu::mint_url::MintUrl;
+use utoipa::OpenApi;
 
 mod error;
 mod keys;
@@ -70,8 +71,16 @@ impl AppController {
 }
 
 pub fn routes(app: AppController) -> Router {
+    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
+
     Router::new()
         .route("/health", get(web::health))
         .route("/v1/keys", get(web::keys))
         .with_state(app)
+        .merge(swagger)
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(crate::web::health, crate::web::keys,))]
+struct ApiDoc;
