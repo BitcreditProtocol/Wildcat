@@ -11,14 +11,13 @@ use cashu::nuts::nut02 as cdk02;
 use crate::error::Result;
 use crate::service::{KeysRepository, QuoteKeysRepository};
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct InMemoryMap {
     keys: Arc<RwLock<HashMap<cdk02::Id, KeysetEntry>>>,
 }
 
-#[async_trait]
-impl KeysRepository for InMemoryMap {
-    async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
+impl InMemoryMap {
+    pub async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
         let a = self
             .keys
             .read()
@@ -27,7 +26,8 @@ impl KeysRepository for InMemoryMap {
             .map(|(info, _)| info.clone());
         Ok(a)
     }
-    async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
+
+    pub async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
         let a = self
             .keys
             .read()
@@ -37,9 +37,22 @@ impl KeysRepository for InMemoryMap {
         Ok(a)
     }
 
-    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    pub async fn store(&self, entry: KeysetEntry) -> Result<()> {
         self.keys.write().unwrap().insert(entry.0.id, entry);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl KeysRepository for InMemoryMap {
+    async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
+        self.info(kid).await
+    }
+    async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
+        self.keyset(kid).await
+    }
+    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+        self.store(entry).await
     }
 }
 
