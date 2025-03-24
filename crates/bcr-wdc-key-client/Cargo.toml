@@ -3,8 +3,13 @@ name = "bcr-wdc-key-client"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+test-utils = ["bcr-wdc-key-service", "bcr-wdc-keys"]
+
 [dependencies]
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
+bcr-wdc-keys = {path = "../bcr-wdc-keys", features = ["test-utils"], optional = true}
+bcr-wdc-key-service = {path = "../bcr-wdc-key-service", optional = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = { version = "0.12", features = ["json"] }

@@ -76,7 +76,7 @@ impl KeyClient {
         Ok(sig)
     }
 
-    pub async fn verify(&self, proof: &cdk00::Proof) -> Result<bool> {
+    pub async fn verify(&self, proof: &cdk00::Proof) -> Result<()> {
         let url = self
             .base
             .join("/v1/admin/keys/verify")
@@ -86,10 +86,10 @@ impl KeyClient {
             return Err(Error::ResourceNotFound(proof.keyset_id));
         }
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
-            return Ok(false);
+            return Err(Error::InvalidRequest);
         }
         res.error_for_status()?;
-        Ok(true)
+        Ok(())
     }
 
     pub async fn pre_sign(
@@ -115,5 +115,59 @@ impl KeyClient {
         }
         let sig = res.json::<cdk00::BlindSignature>().await?;
         Ok(sig)
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+
+    #[derive(Debug, Default, Clone)]
+    pub struct KeyClient {
+        pub keys: bcr_wdc_key_service::InMemoryRepository,
+    }
+
+    impl KeyClient {
+        pub async fn keyset(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
+            let res = self.keys.keyset(&kid).await.expect("InMemoryRepository");
+            res.ok_or(Error::ResourceNotFound(kid))
+                .map(std::convert::Into::into)
+        }
+        pub async fn info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
+            self.keys
+                .info(&kid)
+                .await
+                .expect("InMemoryRepository")
+                .ok_or(Error::ResourceNotFound(kid))
+                .map(std::convert::Into::into)
+        }
+        pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+            let res = self
+                .keys
+                .keyset(&msg.keyset_id)
+                .await
+                .expect("InMemoryRepository");
+            let keys = res.ok_or(Error::ResourceNotFound(msg.keyset_id))?;
+            bcr_wdc_keys::sign_with_keys(&keys, msg).map_err(|_| Error::InvalidRequest)
+        }
+        pub async fn verify(&self, proof: &cdk00::Proof) -> Result<bool> {
+            let res = self
+                .keys
+                .keyset(&proof.keyset_id)
+                .await
+                .expect("InMemoryRepository");
+            let keys = res.ok_or(Error::ResourceNotFound(proof.keyset_id))?;
+            bcr_wdc_keys::verify_with_keys(&keys, proof).map_err(|_| Error::InvalidRequest)?;
+            Ok(true)
+        }
+        pub async fn pre_sign(
+            &self,
+            _kid: cdk02::Id,
+            _qid: uuid::Uuid,
+            _tstamp: chrono::DateTime<chrono::Utc>,
+            _msg: &cdk00::BlindedMessage,
+        ) -> Result<cdk00::BlindSignature> {
+            todo!()
+        }
     }
 }
