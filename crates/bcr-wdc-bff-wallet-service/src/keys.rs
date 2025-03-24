@@ -1,19 +1,12 @@
+use async_trait::async_trait;
+use cashu::KeysResponse;
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_key_client::Error as KeyClientError;
+use crate::service::KeysService;
+use bcr_wdc_key_client::Error::InvalidRequest;
 use bcr_wdc_key_client::KeyClient;
-use thiserror::Error;
 // ----- local imports
-
-#[allow(dead_code)]
-#[derive(Debug, Error)]
-pub enum Error {
-    // external errors wrappers
-    #[error("Keyset Client error: {0}")]
-    KeysClient(KeyClientError),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KeysClientConfig {
@@ -26,5 +19,12 @@ impl RESTClient {
     pub async fn new(cfg: KeysClientConfig) -> Result<Self> {
         let cl = KeyClient::new(cfg.base_url).map_err(Error::KeysClient)?;
         Ok(Self(cl))
+    }
+}
+
+#[async_trait]
+impl KeysService for RESTClient {
+    async fn keys(&self) -> Result<KeysResponse> {
+        Err(Error::KeysClient(InvalidRequest))
     }
 }

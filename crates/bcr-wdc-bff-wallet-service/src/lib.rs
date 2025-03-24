@@ -23,8 +23,7 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    keys_client: keys::RESTClient,
-    bff: service::Service<mint_client::MintClient>,
+    bff: service::Service<mint_client::MintClient, keys::RESTClient>,
 }
 
 impl AppController {
@@ -64,8 +63,8 @@ impl AppController {
         }
 
         Self {
-            keys_client,
             bff: Service {
+                key_service: keys_client,
                 mint_service: mint_client,
             },
         }

@@ -12,9 +12,16 @@ pub trait MintService {
     async fn keys(&self) -> crate::error::Result<cdk01::KeysResponse>;
 }
 
-#[derive(Clone)]
-pub struct Service<MS> {
-    pub mint_service: MS,
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait KeysService: Send + Sync {
+    async fn keys(&self) -> crate::error::Result<cdk01::KeysResponse>;
 }
 
-impl<MS> Service<MS> where MS: MintService {}
+#[derive(Clone)]
+pub struct Service<MS, KS> {
+    pub mint_service: MS,
+    pub key_service: KS,
+}
+
+impl<MS, KS> Service<MS, KS> where MS: MintService {}
