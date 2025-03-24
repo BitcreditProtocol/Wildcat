@@ -15,6 +15,8 @@ mod service;
 mod web;
 // ----- local imports
 
+pub type InMemoryRepository = persistence::inmemory::InMemoryMap;
+
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::surreal::DBQuoteKeys;
