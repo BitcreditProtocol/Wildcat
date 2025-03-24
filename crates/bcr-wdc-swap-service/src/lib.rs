@@ -9,8 +9,8 @@ mod error;
 mod keys;
 mod persistence;
 mod service;
-#[cfg(test)]
-mod utils;
+#[cfg(feature = "test-utils")]
+pub mod utils;
 mod web;
 // ----- local imports
 
@@ -21,7 +21,7 @@ type ProdSwapService = service::Service<ProdKeysService, ProdProofRepository>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     proof_db: persistence::surreal::ConnectionConfig,
-    keys_cl: crate::keys::KeysClientConfig,
+    keys_client: crate::keys::KeysClientConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -36,7 +36,7 @@ impl AppController {
             keys_client,
         } = cfg;
 
-        let keys_client = ProdKeysService::new(keys_cl)
+        let keys_client = ProdKeysService::new(keys_client)
             .await
             .expect("Failed to create keys client");
         let proofs_repo = ProdProofRepository::new(proof_db)
@@ -69,9 +69,33 @@ where
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
+
     type TestProofRepository = persistence::inmemory::ProofMap;
-    type TestSwapService = service::Service<ProdKeysService, TestProofRepository>;
+    type TestSwapService = service::Service<TestKeysService, TestProofRepository>;
+
     use super::*;
+    use crate::error::{Error, Result};
+    use cashu::nut00 as cdk00;
+    use cashu::nut02 as cdk02;
+
+    #[derive(Debug, Default, Clone)]
+    pub struct TestKeysService {
+        pub keys: bcr_wdc_key_client::test_utils::KeyClient,
+    }
+    #[async_trait::async_trait]
+    impl service::KeysService for TestKeysService {
+        async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo> {
+            self.keys.info(*id).await.map_err(Error::KeysClient)
+        }
+        async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+            self.keys.sign(blind).await.map_err(Error::KeysClient)
+        }
+        async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()> {
+            self.keys.verify(proof).await.map_err(Error::KeysClient)?;
+            Ok(())
+
+        }
+    }
 
     #[derive(Clone, FromRef)]
     pub struct AppController {
@@ -79,29 +103,28 @@ pub mod test_utils {
     }
 
     impl AppController {
-        pub fn new() -> Self {
-            let keys_cfg = crate::keys::KeysClientConfig {
-                base_url: "http://localhost:8080".parse().expect("valid url"),
-            };
-            let keys_client = ProdKeysService::new(keys_cfg)
-                .await
-                .expect("Failed to create keys client");
+        pub fn new(keys: TestKeysService) -> Self {
             let proofs_repo = TestProofRepository::default();
             let srv = TestSwapService {
-                keys: keys_client,
+                keys,
                 proofs: proofs_repo,
             };
             Self { keys: srv }
         }
     }
 
-    pub fn build_test_server() -> axum_test::TestServer {
+    pub fn build_test_server() -> (
+        axum_test::TestServer,
+        TestKeysService,
+    ) {
         let cfg = axum_test::TestServerConfig {
             transport: Some(axum_test::Transport::HttpRandomPort),
             ..Default::default()
         };
-        let cntrl = AppController::new();
-        axum_test::TestServer::new_with_config(routes(cntrl), cfg)
-            .expect("failed to start test server")
+        let keys = TestKeysService::default();
+        let cntrl = AppController::new(keys.clone());
+        let srv = axum_test::TestServer::new_with_config(routes(cntrl), cfg)
+            .expect("failed to start test server");
+        (srv, keys)
     }
 }

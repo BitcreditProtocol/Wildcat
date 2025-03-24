@@ -4,14 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-utils = ["axum-test"]
+test-utils = ["axum-test", "bcr-wdc-keys", "bcr-wdc-key-client/test-utils", "rand"]
 
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
 axum-test = {workspace = true, optional = true}
+axum.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"], optional = true }
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 cashu.workspace = true
 chrono.workspace = true
@@ -20,6 +21,7 @@ env_logger.workspace = true
 futures.workspace = true
 itertools = {version = "0.14"}
 log.workspace = true
+rand = {workspace = true, optional = true}
 serde.workspace = true
 surrealdb.workspace = true
 thiserror.workspace = true
