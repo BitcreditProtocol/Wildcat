@@ -101,7 +101,7 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
-pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: cdk00::Proof) -> Result<()> {
+pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: &cdk00::Proof) -> Result<()> {
     // ref: https://docs.rs/cdk/latest/cdk/mint/struct.Mint.html#method.verify_proof
     if let Ok(secret) = <&cashu::secret::Secret as TryInto<cdk10::Secret>>::try_into(&proof.secret)
     {
@@ -212,6 +212,6 @@ mod tests {
         let c = cashu::dhke::unblind_message(&sig.c, &secretkey, &mintpub).unwrap();
         let p = cdk00::Proof::new(blind.amount, keyset.id, secret, c);
 
-        verify_with_keys(&keyset, p).unwrap();
+        verify_with_keys(&keyset, &p).unwrap();
     }
 }
