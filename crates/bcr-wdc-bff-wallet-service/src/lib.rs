@@ -6,14 +6,12 @@ use axum::Router;
 use axum::extract::FromRef;
 use axum::routing::get;
 use cashu::mint_url::MintUrl;
-use cdk::HttpClient;
-use cdk::wallet::client::MintConnector;
-use serde::de::Unexpected::Option;
 
 mod error;
 mod keys;
 mod mint_client;
 mod service;
+mod web;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -23,7 +21,7 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    bff: service::Service<mint_client::MintClient, keys::RESTClient>,
+    bff: Service<mint_client::MintClient, keys::RESTClient>,
 }
 
 impl AppController {
@@ -72,9 +70,8 @@ impl AppController {
 }
 
 pub fn routes(app: AppController) -> Router {
-    Router::new().route("/health", get(health)).with_state(app)
-}
-
-async fn health() -> &'static str {
-    "{ \"status\": \"OK\" }"
+    Router::new()
+        .route("/health", get(web::health))
+        .route("/v1/keys", get(web::keys))
+        .with_state(app)
 }

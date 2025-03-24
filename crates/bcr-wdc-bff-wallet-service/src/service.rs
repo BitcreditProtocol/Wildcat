@@ -24,4 +24,15 @@ pub struct Service<MS, KS> {
     pub key_service: KS,
 }
 
-impl<MS, KS> Service<MS, KS> where MS: MintService {}
+impl<MS, KS> Service<MS, KS>
+where
+    MS: MintService,
+    KS: KeysService,
+{
+    pub async fn keys(&self) -> crate::error::Result<cdk01::KeysResponse> {
+        let mint_keys = self.mint_service.keys().await;
+        // TODO: merge with key service response
+        // let key_keys = self.key_service.keys().await;
+        Ok(mint_keys?)
+    }
+}
