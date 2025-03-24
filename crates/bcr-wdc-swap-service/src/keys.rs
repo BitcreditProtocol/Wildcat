@@ -47,9 +47,9 @@ impl KeysService for RESTClient {
     async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()> {
         let response = self.0.verify(proof).await;
         match response {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(Error::InvalidProof(proof.secret.clone())),
+            Ok(()) => Ok(()),
             Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeyClientError::InvalidRequest) => Err(Error::InvalidProof(proof.secret.clone())),
             Err(e) => Err(Error::KeysClient(e)),
         }
     }
