@@ -1,28 +1,36 @@
 use std::str::FromStr;
+use std::sync::Arc;
 // ----- standard library imports
 // ----- extra library imports
-use crate::service::{MintService, Service};
+use crate::error::Error;
+use crate::service::Service;
 use axum::Router;
 use axum::extract::FromRef;
 use axum::routing::get;
+use bcr_wdc_key_client::KeyClient;
 use cashu::mint_url::MintUrl;
+use cdk::HttpClient;
+use cdk::wallet::client::MintConnector;
 use utoipa::OpenApi;
 
 mod error;
-mod keys;
-mod mint_client;
 mod service;
 mod web;
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct KeysClientConfig {
+    base_url: bcr_wdc_key_client::Url,
+}
+
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    keys_client: keys::KeysClientConfig,
+    keys_client: KeysClientConfig,
     cdk_mint_url: String,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    bff: Service<mint_client::MintClient, keys::RESTClient>,
+    bff: Service,
 }
 
 impl AppController {
@@ -32,18 +40,16 @@ impl AppController {
             cdk_mint_url,
         } = cfg;
 
-        let keys_client = keys::RESTClient::new(keys_client)
-            .await
+        let keys_client = KeyClient::new(keys_client.base_url)
+            .map_err(Error::KeysClient)
             .expect("Failed to create keys client");
 
         let _mint_url =
             MintUrl::from_str(cdk_mint_url.as_str()).expect("Failed to create mint url");
 
-        let mint_client = mint_client::MintClient::new(_mint_url)
-            .await
-            .expect("Failed to create mint client");
+        let mint_client = HttpClient::new(_mint_url);
 
-        let info = mint_client.info().await;
+        let info = mint_client.get_mint_info().await;
         match info {
             Ok(_) => {
                 log::info!(
@@ -64,7 +70,7 @@ impl AppController {
         Self {
             bff: Service {
                 key_service: keys_client,
-                mint_service: mint_client,
+                mint_service: Arc::new(mint_client),
             },
         }
     }
@@ -76,11 +82,16 @@ pub fn routes(app: AppController) -> Router {
 
     Router::new()
         .route("/health", get(web::health))
-        .route("/v1/keys", get(web::keys))
+        .route("/v1/keys", get(web::get_mint_keys))
+        .route("/v1/keys/:kid", get(web::get_mint_keyset))
         .with_state(app)
         .merge(swagger)
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(crate::web::health, crate::web::keys,))]
+#[openapi(paths(
+    crate::web::health,
+    crate::web::get_mint_keys,
+    crate::web::get_mint_keyset,
+))]
 struct ApiDoc;
