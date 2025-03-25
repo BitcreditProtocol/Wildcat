@@ -1,3 +1,4 @@
+use axum::body::Body;
 // ----- standard library imports
 // ----- extra library imports
 use crate::error::Error::CDKClient;
@@ -5,6 +6,7 @@ use axum::extract::{Json, Path, State};
 use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut04 as cdk04;
 use cashu::nuts::nut06 as cdk06;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
@@ -101,4 +103,23 @@ pub async fn get_mint_keyset(
                 keysets: Vec::from([it]),
             })
         })
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/mint/quote/bolt11",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_mint_quote(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk04::MintQuoteBolt11Request>,
+) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
+    log::debug!("Requested /v1/mint/quote/bolt11");
+
+    ctrl.post_mint_quote(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
 }

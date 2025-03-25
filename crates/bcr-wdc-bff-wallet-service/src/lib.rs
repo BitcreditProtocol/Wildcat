@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::service::Service;
 use axum::Router;
 use axum::extract::FromRef;
-use axum::routing::get;
+use axum::routing::{get, post};
 use bcr_wdc_key_client::KeyClient;
 use cashu::mint_url::MintUrl;
 use cdk::HttpClient;
@@ -86,6 +86,7 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keys/:kid", get(web::get_mint_keyset))
+        .route("/v1/mint/quote/bolt11", post(web::post_mint_quote))
         .with_state(app)
         .merge(swagger)
 }
@@ -97,5 +98,6 @@ pub fn routes(app: AppController) -> Router {
     crate::web::get_mint_keys,
     crate::web::get_mint_keysets,
     crate::web::get_mint_keyset,
+    crate::web::post_mint_quote,
 ))]
 struct ApiDoc;
