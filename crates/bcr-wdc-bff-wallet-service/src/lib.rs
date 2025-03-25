@@ -83,6 +83,7 @@ pub fn routes(app: AppController) -> Router {
     Router::new()
         .route("/health", get(web::health))
         .route("/v1/keys", get(web::get_mint_keys))
+        .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keys/:kid", get(web::get_mint_keyset))
         .with_state(app)
         .merge(swagger)
@@ -92,6 +93,7 @@ pub fn routes(app: AppController) -> Router {
 #[openapi(paths(
     crate::web::health,
     crate::web::get_mint_keys,
+    crate::web::get_mint_keysets,
     crate::web::get_mint_keyset,
 ))]
 struct ApiDoc;

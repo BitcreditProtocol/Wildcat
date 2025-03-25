@@ -21,7 +21,6 @@ pub async fn health() -> Result<&'static str> {
     Ok("{ \"status\": \"OK\" }")
 }
 
-/// --------------------------- Look up keys
 #[utoipa::path(
     get,
     path = "/v1/keys",
@@ -30,12 +29,28 @@ pub async fn health() -> Result<&'static str> {
     )
 )]
 pub async fn get_mint_keys(State(ctrl): State<Service>) -> Result<Json<cdk01::KeysResponse>> {
-    log::debug!("Received /v1/keys request");
+    log::debug!("Requested /v1/keys");
 
     ctrl.get_mint_keys()
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(KeysResponse { keysets: it }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/keysets",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_mint_keysets(State(ctrl): State<Service>) -> Result<Json<cdk02::KeysetResponse>> {
+    log::debug!("Requested /v1/keysets");
+
+    ctrl.get_mint_keysets()
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
 }
 
 #[utoipa::path(
@@ -53,7 +68,7 @@ pub async fn get_mint_keyset(
     State(ctrl): State<Service>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk01::KeysResponse>> {
-    log::debug!("Received keyset lookup request for id: {}", kid);
+    log::debug!("Requested /v1/keys/{}", kid);
 
     ctrl.get_mint_keyset(kid)
         .await
