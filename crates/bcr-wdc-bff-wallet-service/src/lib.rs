@@ -87,6 +87,10 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keys/:kid", get(web::get_mint_keyset))
         .route("/v1/mint/quote/bolt11", post(web::post_mint_quote))
+        .route(
+            "/v1/mint/quote/bolt11/:quote_id",
+            get(web::get_mint_quote_status),
+        )
         .with_state(app)
         .merge(swagger)
 }
@@ -94,10 +98,10 @@ pub fn routes(app: AppController) -> Router {
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
     crate::web::health,
-    crate::web::get_mint_info,
     crate::web::get_mint_keys,
     crate::web::get_mint_keysets,
     crate::web::get_mint_keyset,
     crate::web::post_mint_quote,
+    crate::web::get_mint_quote_status,
 ))]
 struct ApiDoc;

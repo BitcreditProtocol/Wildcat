@@ -1,7 +1,5 @@
-use axum::body::Body;
 // ----- standard library imports
 // ----- extra library imports
-use crate::error::Error::CDKClient;
 use axum::extract::{Json, Path, State};
 use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
@@ -11,6 +9,7 @@ use cashu::nuts::nut06 as cdk06;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
 use crate::error::Result;
+use crate::error::Error::CDKClient;
 use crate::service::Service;
 
 #[utoipa::path(
@@ -86,7 +85,7 @@ pub async fn get_mint_keysets(State(ctrl): State<Service>) -> Result<Json<cdk02:
     ),
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
-        (status = 404, description = "keyset id not found"),
+        (status = 404, description = "Keyset not found"),
     )
 )]
 pub async fn get_mint_keyset(
@@ -106,7 +105,7 @@ pub async fn get_mint_keyset(
 }
 
 #[utoipa::path(
-    get,
+    post,
     path = "/v1/mint/quote/bolt11",
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
@@ -119,6 +118,29 @@ pub async fn post_mint_quote(
     log::debug!("Requested /v1/mint/quote/bolt11");
 
     ctrl.post_mint_quote(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/mint/quote/bolt11/{quote_id}",
+    params(
+        ("quote_id" = &str, Path, description = "The quote id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "Quote not found"),
+    )
+)]
+pub async fn get_mint_quote_status(
+    State(ctrl): State<Service>,
+    Path(quote_id): Path<String>,
+) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
+    log::debug!("Requested /v1/mint/quote/bolt11/{}", quote_id);
+
+    ctrl.get_mint_quote_status(quote_id.as_str())
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
