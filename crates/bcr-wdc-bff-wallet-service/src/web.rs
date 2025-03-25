@@ -165,6 +165,7 @@ pub async fn post_mint(
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
 }
+
 #[utoipa::path(
     post,
     path = "/v1/melt/quote/bolt11",
@@ -179,6 +180,29 @@ pub async fn post_melt_quote(
     log::debug!("Requested /v1/melt/quote/bolt11");
 
     ctrl.post_melt_quote(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/melt/quote/bolt11/{quote_id}",
+    params(
+        ("quote_id" = &str, Path, description = "The quote id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "Quote not found"),
+    )
+)]
+pub async fn get_melt_quote_status(
+    State(ctrl): State<Service>,
+    Path(quote_id): Path<String>,
+) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
+    log::debug!("Requested /v1/melt/quote/bolt11/{}", quote_id);
+
+    ctrl.get_melt_quote_status(quote_id.as_str())
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
