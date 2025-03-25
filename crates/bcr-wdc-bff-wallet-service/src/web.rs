@@ -8,6 +8,7 @@ use cashu::nuts::nut03 as cdk03;
 use cashu::nuts::nut04 as cdk04;
 use cashu::nuts::nut05 as cdk05;
 use cashu::nuts::nut06 as cdk06;
+use cashu::nuts::nut07 as cdk07;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
 use crate::error::Error::CDKClient;
@@ -242,6 +243,25 @@ pub async fn post_swap(
     log::debug!("Requested /v1/swap");
 
     ctrl.post_swap(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/checkstate",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_check_state(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk07::CheckStateRequest>,
+) -> Result<Json<cdk07::CheckStateResponse>> {
+    log::debug!("Requested /v1/checkstate");
+
+    ctrl.post_check_state(request)
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
