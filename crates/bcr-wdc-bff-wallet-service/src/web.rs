@@ -4,6 +4,7 @@ use axum::extract::{Json, Path, State};
 use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut03 as cdk03;
 use cashu::nuts::nut04 as cdk04;
 use cashu::nuts::nut05 as cdk05;
 use cashu::nuts::nut06 as cdk06;
@@ -222,6 +223,25 @@ pub async fn post_melt(
     log::debug!("Requested /v1/melt/bolt11");
 
     ctrl.post_melt(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/swap",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_swap(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk03::SwapRequest>,
+) -> Result<Json<cdk03::SwapResponse>> {
+    log::debug!("Requested /v1/swap");
+
+    ctrl.post_swap(request)
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
