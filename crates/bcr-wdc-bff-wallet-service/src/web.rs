@@ -5,6 +5,7 @@ use axum::extract::{Json, Path, State};
 use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut06 as cdk06;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
 use crate::error::Result;
@@ -19,6 +20,28 @@ use crate::service::Service;
 )]
 pub async fn health() -> Result<&'static str> {
     Ok("{ \"status\": \"OK\" }")
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/info",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_mint_info(State(ctrl): State<Service>) -> Result<Json<cdk06::MintInfo>> {
+    log::debug!("Requested /v1/info");
+
+    ctrl.get_mint_info()
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| {
+            Json(
+                it.name("bcr-wdc-bff-wallet")
+                    .description("Bitcredit Wildcat Mint BFF")
+                    .long_description("Bitcredit Wildcat Mint Backend-For-Frontend"),
+            )
+        })
 }
 
 #[utoipa::path(

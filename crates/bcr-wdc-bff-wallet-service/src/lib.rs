@@ -82,6 +82,7 @@ pub fn routes(app: AppController) -> Router {
 
     Router::new()
         .route("/health", get(web::health))
+        .route("/v1/info", get(web::get_mint_info))
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keys/:kid", get(web::get_mint_keyset))
@@ -92,6 +93,7 @@ pub fn routes(app: AppController) -> Router {
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
     crate::web::health,
+    crate::web::get_mint_info,
     crate::web::get_mint_keys,
     crate::web::get_mint_keysets,
     crate::web::get_mint_keyset,
