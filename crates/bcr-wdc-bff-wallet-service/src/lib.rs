@@ -97,6 +97,7 @@ pub fn routes(app: AppController) -> Router {
             "/v1/melt/quote/bolt11/:quote_id",
             get(web::get_melt_quote_status),
         )
+        .route("/v1/melt/bolt11", post(web::post_melt))
         .with_state(app)
         .merge(swagger)
 }
@@ -112,5 +113,6 @@ pub fn routes(app: AppController) -> Router {
     crate::web::post_mint,
     crate::web::post_melt_quote,
     crate::web::get_melt_quote_status,
+    crate::web::post_melt,
 ))]
 struct ApiDoc;

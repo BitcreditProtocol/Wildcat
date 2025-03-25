@@ -207,3 +207,22 @@ pub async fn get_melt_quote_status(
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
 }
+
+#[utoipa::path(
+    post,
+    path = "/v1/melt/bolt11",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_melt(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk05::MeltBolt11Request<String>>,
+) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
+    log::debug!("Requested /v1/melt/bolt11");
+
+    ctrl.post_melt(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
