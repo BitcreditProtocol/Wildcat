@@ -15,12 +15,17 @@ members = [
 [workspace.dependencies]
 anyhow = {version = "1"}
 async-trait = {version = "0.1"}
-axum = {version = "0.7", features = ["macros"]}
-axum-test = {version = "16"}
-bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/E-Bill.git", branch = "master"}
+axum = {version = "0.8", features = ["macros"]}
+axum-extra = {version = "0.10"}
+axum-test = {version = "17"}
+bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/E-Bill.git", tag = "v0.3.0"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5", features = ["derive"]}
-cashu = {version = "0.7", default-features = false, features = ["mint", "swagger"]}
+cashu = {version = "0.8", default-features = false, features = ["mint", "swagger"]}
+cdk = {version = "0.8"}
+cdk-common = {version = "0.8"}
+cdk-payment-processor = {version = "0.8"}
+cdk-redb = {version = "0.8"}
 chrono = {version = "0.4", features = ["serde"]}
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
@@ -30,10 +35,12 @@ mockall = {version = "0.13"}
 rand = {version = "0.8"}
 rust_decimal = {version = "1"}
 serde = {version = "1", features = ["derive"]}
-surrealdb = {version = "2.2", features = ["kv-mem"]}
+serde_json = {version = "1"}
 strum = {version = "0"}
+surrealdb = {version = "2.2", features = ["kv-mem"]}
 thiserror = {version = "2"}
 tokio = {version = "1", features = ["macros", "rt-multi-thread", "signal"]}
-utoipa = {version = "4", features = ["axum_extras", "chrono", "uuid", "decimal"]} # compatibility with cdk
-utoipa-swagger-ui = {version = "7", features = ["axum"]}
+utoipa = {version = "5", features = ["axum_extras", "chrono", "uuid", "decimal"]}
+utoipa-swagger-ui = {version = "9", features = ["axum"]}
 uuid = {version = "1", features = ["serde", "v4"]}
+zip = {version = "=2.4.2"} # forcing version as 2.5 breaks utoipa-swagger-ui

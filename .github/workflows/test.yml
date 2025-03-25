@@ -24,6 +24,8 @@ jobs:
 
       - name: Activate cache
         uses: Swatinem/rust-cache@v2.7.5
+        with:
+          prefix-key: "wildcat-01-"
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
@@ -32,7 +34,7 @@ jobs:
         run: cargo install grcov
 
       - name: run tests
-        run: cargo test --workspace --verbose
+        run: cargo update -p zip --precise 2.4.2 && cargo test --workspace --verbose
         env:
           LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"
           RUSTFLAGS: "-Cinstrument-coverage"

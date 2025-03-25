@@ -2,9 +2,9 @@
 // ----- extra library imports
 use bcr_wdc_keys as keys;
 use bitcoin::bip32 as btc32;
-use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
+use cdk_common::mint as cdk_mint;
 // ----- local modules
 // ----- local imports
 use crate::TStamp;

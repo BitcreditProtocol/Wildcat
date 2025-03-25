@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
-use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount as cdk_Amount;
+use cdk_common::mint as cdk_mint;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::id::KeysetID;

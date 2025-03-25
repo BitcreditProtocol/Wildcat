@@ -4,12 +4,12 @@ use std::collections::{BTreeMap, HashMap};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_wdc_keys::KeysetEntry;
-use cashu::mint as cdk_mint;
-use cashu::mint::MintKeySetInfo;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount;
+use cdk_common::mint as cdk_mint;
+use cdk_common::mint::MintKeySetInfo;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::error::{Error, Result};

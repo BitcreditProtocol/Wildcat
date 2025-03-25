@@ -29,7 +29,7 @@ where
 
 pub async fn store_signatures<Repo>(
     State(ctrl): State<credit::Service<Repo>>,
-    Json(request): Json<web_signatures::StoreBlindedSignaturesRequest>,
+    Json(request): Json<web_signatures::StoreBlindSignaturesRequest>,
 ) -> Result<()>
 where
     Repo: credit::Repository,
