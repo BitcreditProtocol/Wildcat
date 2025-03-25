@@ -8,8 +8,8 @@ use cashu::nuts::nut04 as cdk04;
 use cashu::nuts::nut06 as cdk06;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
-use crate::error::Result;
 use crate::error::Error::CDKClient;
+use crate::error::Result;
 use crate::service::Service;
 
 #[utoipa::path(
@@ -141,6 +141,25 @@ pub async fn get_mint_quote_status(
     log::debug!("Requested /v1/mint/quote/bolt11/{}", quote_id);
 
     ctrl.get_mint_quote_status(quote_id.as_str())
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/mint/bolt11",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_mint(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk04::MintBolt11Request<String>>,
+) -> Result<Json<cdk04::MintBolt11Response>> {
+    log::debug!("Requested /v1/mint/bolt11");
+
+    ctrl.post_mint(request)
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))

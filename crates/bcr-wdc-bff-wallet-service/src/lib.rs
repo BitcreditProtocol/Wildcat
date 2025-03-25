@@ -91,6 +91,7 @@ pub fn routes(app: AppController) -> Router {
             "/v1/mint/quote/bolt11/:quote_id",
             get(web::get_mint_quote_status),
         )
+        .route("/v1/mint/bolt11", post(web::post_mint))
         .with_state(app)
         .merge(swagger)
 }
@@ -103,5 +104,6 @@ pub fn routes(app: AppController) -> Router {
     crate::web::get_mint_keyset,
     crate::web::post_mint_quote,
     crate::web::get_mint_quote_status,
+    crate::web::post_mint,
 ))]
 struct ApiDoc;
