@@ -39,10 +39,16 @@ impl MintConnector for Service {
     }
 
     async fn get_mint_keyset(&self, keyset_id: Id) -> Result<KeySet, Error> {
-        let response = self.mint_service.get_mint_keyset(keyset_id).await;
-        match response {
+        let key_response = self.key_service.keys(keyset_id).await;
+        match key_response {
             Ok(it) => Ok(it),
-            Err(e) => Err(e),
+            Err(_) => {
+                let response = self.mint_service.get_mint_keyset(keyset_id).await;
+                match response {
+                    Ok(it) => Ok(it),
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 
@@ -58,60 +64,60 @@ impl MintConnector for Service {
         &self,
         request: MintQuoteBolt11Request,
     ) -> Result<MintQuoteBolt11Response<String>, Error> {
-        self.mint_service.post_mint_quote(request)
+        self.mint_service.post_mint_quote(request).await
     }
 
     async fn get_mint_quote_status(
         &self,
         quote_id: &str,
     ) -> Result<MintQuoteBolt11Response<String>, Error> {
-        self.mint_service.get_mint_quote_status(quote_id)
+        self.mint_service.get_mint_quote_status(quote_id).await
     }
 
     async fn post_mint(
         &self,
         request: MintBolt11Request<String>,
     ) -> Result<MintBolt11Response, Error> {
-        self.mint_service.post_mint(request)
+        self.mint_service.post_mint(request).await
     }
 
     async fn post_melt_quote(
         &self,
         request: MeltQuoteBolt11Request,
     ) -> Result<MeltQuoteBolt11Response<String>, Error> {
-        self.mint_service.post_melt_quote(request)
+        self.mint_service.post_melt_quote(request).await
     }
 
     async fn get_melt_quote_status(
         &self,
         quote_id: &str,
     ) -> Result<MeltQuoteBolt11Response<String>, Error> {
-        self.mint_service.get_melt_quote_status(quote_id)
+        self.mint_service.get_melt_quote_status(quote_id).await
     }
 
     async fn post_melt(
         &self,
         request: MeltBolt11Request<String>,
     ) -> Result<MeltQuoteBolt11Response<String>, Error> {
-        self.mint_service.post_melt(request)
+        self.mint_service.post_melt(request).await
     }
 
     async fn post_swap(&self, request: SwapRequest) -> Result<SwapResponse, Error> {
-        self.mint_service.post_swap(request)
+        self.mint_service.post_swap(request).await
     }
 
     async fn get_mint_info(&self) -> Result<MintInfo, Error> {
-        self.mint_service.get_mint_info()
+        self.mint_service.get_mint_info().await
     }
 
     async fn post_check_state(
         &self,
         request: CheckStateRequest,
     ) -> Result<CheckStateResponse, Error> {
-        self.mint_service.post_check_state(request)
+        self.mint_service.post_check_state(request).await
     }
 
     async fn post_restore(&self, request: RestoreRequest) -> Result<RestoreResponse, Error> {
-        self.mint_service.post_restore(request)
+        self.mint_service.post_restore(request).await
     }
 }
