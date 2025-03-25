@@ -5,6 +5,7 @@ use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::nuts::nut04 as cdk04;
+use cashu::nuts::nut05 as cdk05;
 use cashu::nuts::nut06 as cdk06;
 use cdk::wallet::client::MintConnector;
 // ----- local imports
@@ -160,6 +161,24 @@ pub async fn post_mint(
     log::debug!("Requested /v1/mint/bolt11");
 
     ctrl.post_mint(request)
+        .await
+        .map_err(|e| CDKClient(e))
+        .map(|it| Json(it))
+}
+#[utoipa::path(
+    post,
+    path = "/v1/melt/quote/bolt11",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn post_melt_quote(
+    State(ctrl): State<Service>,
+    Json(request): Json<cdk05::MeltQuoteBolt11Request>,
+) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
+    log::debug!("Requested /v1/melt/quote/bolt11");
+
+    ctrl.post_melt_quote(request)
         .await
         .map_err(|e| CDKClient(e))
         .map(|it| Json(it))
