@@ -100,6 +100,7 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/melt/bolt11", post(web::post_melt))
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
+        .route("/v1/restore", post(web::post_restore))
         .with_state(app)
         .merge(swagger)
 }
@@ -118,5 +119,6 @@ pub fn routes(app: AppController) -> Router {
     crate::web::post_melt,
     crate::web::post_swap,
     crate::web::post_check_state,
+    crate::web::post_restore,
 ))]
 struct ApiDoc;
