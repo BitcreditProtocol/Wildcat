@@ -1,63 +1,40 @@
 use async_trait::async_trait;
+use bcr_wdc_key_client::KeyClient;
 use cashu::{
     CheckStateRequest, CheckStateResponse, Id, KeySet, KeysetResponse, MeltBolt11Request,
     MeltQuoteBolt11Request, MeltQuoteBolt11Response, MintBolt11Request, MintBolt11Response,
     MintInfo, MintQuoteBolt11Request, MintQuoteBolt11Response, RestoreRequest, RestoreResponse,
     SwapRequest, SwapResponse,
 };
-use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
-// ----- standard library imports
-// ----- extra library imports
-use bcr_wdc_key_client::KeyClient;
 use cdk::Error;
 use cdk::wallet::client::MintConnector;
+use std::fmt::Debug;
+use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Service {
     pub mint_service: Arc<dyn MintConnector + Send + Sync>,
     pub key_service: KeyClient,
 }
 
-impl Debug for Service {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
 #[async_trait]
 impl MintConnector for Service {
-    /// Get Active Mint Keys [NUT-01]
     async fn get_mint_keys(&self) -> Result<Vec<KeySet>, Error> {
-        let response = self.mint_service.get_mint_keys().await;
+        self.mint_service.get_mint_keys().await
         // TODO: merge with key service response
         // let key_keys = self.key_service.keys().await;
-        match response {
-            Ok(it) => Ok(it),
-            Err(e) => Err(e),
-        }
     }
 
     async fn get_mint_keyset(&self, keyset_id: Id) -> Result<KeySet, Error> {
         let key_response = self.key_service.keys(keyset_id).await;
         match key_response {
             Ok(it) => Ok(it),
-            Err(_) => {
-                let response = self.mint_service.get_mint_keyset(keyset_id).await;
-                match response {
-                    Ok(it) => Ok(it),
-                    Err(e) => Err(e),
-                }
-            }
+            Err(_) => self.mint_service.get_mint_keyset(keyset_id).await,
         }
     }
 
     async fn get_mint_keysets(&self) -> Result<KeysetResponse, Error> {
-        let response = self.mint_service.get_mint_keysets().await;
-        match response {
-            Ok(it) => Ok(it),
-            Err(e) => Err(e),
-        }
+        self.mint_service.get_mint_keysets().await
     }
 
     async fn post_mint_quote(

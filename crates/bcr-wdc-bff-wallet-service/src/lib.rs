@@ -1,7 +1,3 @@
-use std::str::FromStr;
-use std::sync::Arc;
-// ----- standard library imports
-// ----- extra library imports
 use crate::error::Error;
 use crate::service::Service;
 use axum::Router;
@@ -11,6 +7,8 @@ use bcr_wdc_key_client::KeyClient;
 use cashu::mint_url::MintUrl;
 use cdk::HttpClient;
 use cdk::wallet::client::MintConnector;
+use std::str::FromStr;
+use std::sync::Arc;
 use utoipa::OpenApi;
 
 mod error;
@@ -57,9 +55,7 @@ impl AppController {
                     info.map(|it| it.name)
                         .unwrap()
                         .filter(|s| !s.is_empty())
-                        .or(Some("(empty)".to_string()))
-                        .unwrap()
-                        .to_string()
+                        .unwrap_or("(empty)".to_string())
                 );
             }
             Err(e) => {

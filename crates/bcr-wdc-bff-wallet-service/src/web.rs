@@ -1,5 +1,6 @@
-// ----- standard library imports
-// ----- extra library imports
+use crate::error::Error::CDKClient;
+use crate::error::Result;
+use crate::service::Service;
 use axum::extract::{Json, Path, State};
 use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
@@ -11,10 +12,6 @@ use cashu::nuts::nut06 as cdk06;
 use cashu::nuts::nut07 as cdk07;
 use cashu::nuts::nut09 as cdk09;
 use cdk::wallet::client::MintConnector;
-// ----- local imports
-use crate::error::Error::CDKClient;
-use crate::error::Result;
-use crate::service::Service;
 
 #[utoipa::path(
     get,
@@ -37,16 +34,13 @@ pub async fn health() -> Result<&'static str> {
 pub async fn get_mint_info(State(ctrl): State<Service>) -> Result<Json<cdk06::MintInfo>> {
     log::debug!("Requested /v1/info");
 
-    ctrl.get_mint_info()
-        .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| {
-            Json(
-                it.name("bcr-wdc-bff-wallet")
-                    .description("Bitcredit Wildcat Mint BFF")
-                    .long_description("Bitcredit Wildcat Mint Backend-For-Frontend"),
-            )
-        })
+    ctrl.get_mint_info().await.map_err(CDKClient).map(|it| {
+        Json(
+            it.name("bcr-wdc-bff-wallet")
+                .description("Bitcredit Wildcat Mint BFF")
+                .long_description("Bitcredit Wildcat Mint Backend-For-Frontend"),
+        )
+    })
 }
 
 #[utoipa::path(
@@ -61,7 +55,7 @@ pub async fn get_mint_keys(State(ctrl): State<Service>) -> Result<Json<cdk01::Ke
 
     ctrl.get_mint_keys()
         .await
-        .map_err(|e| CDKClient(e))
+        .map_err(CDKClient)
         .map(|it| Json(KeysResponse { keysets: it }))
 }
 
@@ -75,10 +69,7 @@ pub async fn get_mint_keys(State(ctrl): State<Service>) -> Result<Json<cdk01::Ke
 pub async fn get_mint_keysets(State(ctrl): State<Service>) -> Result<Json<cdk02::KeysetResponse>> {
     log::debug!("Requested /v1/keysets");
 
-    ctrl.get_mint_keysets()
-        .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+    ctrl.get_mint_keysets().await.map_err(CDKClient).map(Json)
 }
 
 #[utoipa::path(
@@ -100,7 +91,7 @@ pub async fn get_mint_keyset(
 
     ctrl.get_mint_keyset(kid)
         .await
-        .map_err(|e| CDKClient(e))
+        .map_err(CDKClient)
         .map(|it| {
             Json(KeysResponse {
                 keysets: Vec::from([it]),
@@ -123,8 +114,8 @@ pub async fn post_mint_quote(
 
     ctrl.post_mint_quote(request)
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }
 
 #[utoipa::path(
@@ -146,8 +137,8 @@ pub async fn get_mint_quote_status(
 
     ctrl.get_mint_quote_status(quote_id.as_str())
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }
 
 #[utoipa::path(
@@ -163,10 +154,7 @@ pub async fn post_mint(
 ) -> Result<Json<cdk04::MintBolt11Response>> {
     log::debug!("Requested /v1/mint/bolt11");
 
-    ctrl.post_mint(request)
-        .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+    ctrl.post_mint(request).await.map_err(CDKClient).map(Json)
 }
 
 #[utoipa::path(
@@ -184,8 +172,8 @@ pub async fn post_melt_quote(
 
     ctrl.post_melt_quote(request)
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }
 
 #[utoipa::path(
@@ -207,8 +195,8 @@ pub async fn get_melt_quote_status(
 
     ctrl.get_melt_quote_status(quote_id.as_str())
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }
 
 #[utoipa::path(
@@ -224,10 +212,7 @@ pub async fn post_melt(
 ) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
     log::debug!("Requested /v1/melt/bolt11");
 
-    ctrl.post_melt(request)
-        .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+    ctrl.post_melt(request).await.map_err(CDKClient).map(Json)
 }
 
 #[utoipa::path(
@@ -243,10 +228,7 @@ pub async fn post_swap(
 ) -> Result<Json<cdk03::SwapResponse>> {
     log::debug!("Requested /v1/swap");
 
-    ctrl.post_swap(request)
-        .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+    ctrl.post_swap(request).await.map_err(CDKClient).map(Json)
 }
 
 #[utoipa::path(
@@ -264,8 +246,8 @@ pub async fn post_check_state(
 
     ctrl.post_check_state(request)
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }
 
 #[utoipa::path(
@@ -283,6 +265,6 @@ pub async fn post_restore(
 
     ctrl.post_restore(request)
         .await
-        .map_err(|e| CDKClient(e))
-        .map(|it| Json(it))
+        .map_err(CDKClient)
+        .map(Json)
 }

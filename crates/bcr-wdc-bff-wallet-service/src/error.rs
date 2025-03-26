@@ -1,10 +1,7 @@
-// ----- standard library imports
-// ----- extra library imports
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeyClientError;
 use cdk::Error as CDKError;
 use thiserror::Error;
-// ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
 
