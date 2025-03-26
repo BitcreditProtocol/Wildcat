@@ -45,7 +45,7 @@ services:
     image: wildcat/quote-service
     pull_policy: never
     ports:
-      - "3338:3338"
+      - "3339:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -57,6 +57,28 @@ services:
       - ./docker/quote-service/config.toml:/quote-service/config.toml
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  bff-wallet-service:
+    image: wildcat/bff-wallet-service
+    pull_policy: never
+    ports:
+      - "3338:3338"
+    depends_on:
+      key-service:
+        condition: service_healthy
+      swap-service:
+        condition: service_started # no healthcheck yet
+      cdk_mint:
+        condition: service_started # no healthcheck yet
+    volumes:
+      - ./docker/bff-wallet-service/config.toml:/bff-wallet-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -87,10 +109,3 @@ services:
     command: ["cdk-mintd"]
     ports:
       - "8085:8085"
-    healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-      start_interval: 3s
