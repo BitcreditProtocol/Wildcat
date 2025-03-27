@@ -12,7 +12,7 @@ use crate::service::{KeysRepository, QuoteKeysRepository, Service};
     path = "/v1/admin/keys/sign/",
     request_body(content = cdk00::BlindedMessage, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk00::BlindedSignature, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cdk00::BlindSignature, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]
@@ -52,7 +52,7 @@ where
     path = "/v1/admin/keys/pre_sign/",
     request_body(content = web_keys::PreSignRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk00::BlindedSignature, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cdk00::BlindSignature, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]

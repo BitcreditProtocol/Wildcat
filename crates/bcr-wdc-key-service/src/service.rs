@@ -2,9 +2,9 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_keys::KeysetEntry;
-use cashu::mint::MintKeySetInfo;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
+use cdk_common::mint::MintKeySetInfo;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::factory::Factory;

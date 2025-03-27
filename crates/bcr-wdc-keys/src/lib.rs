@@ -4,13 +4,13 @@ use bitcoin::bip32 as btc32;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 use cashu::dhke as cdk_dhke;
-use cashu::mint as cdk_mint;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
 use cashu::nuts::nut10 as cdk10;
 use cashu::nuts::nut11 as cdk11;
 use cashu::nuts::nut14 as cdk14;
 use cashu::Amount as cdk_Amount;
+use cdk_common::mint as cdk_mint;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -133,9 +133,9 @@ pub mod test_utils {
 
     use super::*;
     use bitcoin::bip32::DerivationPath;
-    use cashu::mint as cdk_mint;
     use cashu::nuts::nut01 as cdk01;
     use cashu::secret as cdk_secret;
+    use cdk_common::mint as cdk_mint;
     use once_cell::sync::Lazy;
 
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =

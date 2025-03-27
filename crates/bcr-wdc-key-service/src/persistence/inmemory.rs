@@ -4,9 +4,9 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_keys::KeysetEntry;
-use cashu::mint as cdk_mint;
-use cashu::mint::MintKeySetInfo;
 use cashu::nuts::nut02 as cdk02;
+use cdk_common::mint as cdk_mint;
+use cdk_common::mint::MintKeySetInfo;
 // ----- local imports
 use crate::error::Result;
 use crate::service::{KeysRepository, QuoteKeysRepository};
