@@ -1,12 +1,13 @@
 // ----- standard library imports
 // ----- extra library imports
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{Json, Path, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
 use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
 use crate::utils;
+use crate::TStamp;
 
 /// --------------------------- List quotes
 #[utoipa::path(
@@ -16,12 +17,12 @@ use crate::utils;
         ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::ListReply, content_type = "application/json"),
     )
 )]
 pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    since: Option<Query<chrono::DateTime<chrono::Utc>>>,
+    since: axum_extra::extract::OptionalQuery<TStamp>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KeysHndlr: KeysHandler,
@@ -30,7 +31,7 @@ where
 {
     log::debug!("Received request to list pending quotes");
 
-    let quotes = ctrl.list_pendings(since.map(|q| q.0)).await?;
+    let quotes = ctrl.list_pendings(since.0).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
@@ -52,8 +53,8 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
     }
 }
 
-fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilters {
-    let web_quotes::ListFilterParam {
+fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Option<SortOrder>) {
+    let web_quotes::ListParam {
         bill_maturity_date_from,
         bill_maturity_date_to,
         status,
@@ -61,7 +62,8 @@ fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilter
         bill_drawer_id,
         bill_payer_id,
         bill_holder_id,
-    } = filters;
+        sort,
+    } = params;
     let status = match status {
         None => None,
         Some(web_quotes::StatusReplyDiscriminants::Pending) => {
@@ -80,7 +82,12 @@ fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilter
             Some(quotes::QuoteStatusDiscriminants::Accepted)
         }
     };
-    ListFilters {
+    let sort = match sort {
+        None => None,
+        Some(web_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
+        Some(web_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
+    };
+    let filters = ListFilters {
         bill_maturity_date_from,
         bill_maturity_date_to,
         status,
@@ -88,15 +95,8 @@ fn convert_into_list_filters(filters: web_quotes::ListFilterParam) -> ListFilter
         bill_drawer_id,
         bill_payer_id,
         bill_holder_id,
-    }
-}
-
-fn convert_into_list_sort(sort: Option<web_quotes::ListSort>) -> Option<SortOrder> {
-    match sort {
-        None => None,
-        Some(web_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
-        Some(web_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
-    }
+    };
+    (filters, sort)
 }
 
 #[utoipa::path(
@@ -106,13 +106,12 @@ fn convert_into_list_sort(sort: Option<web_quotes::ListSort>) -> Option<SortOrde
         ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "quotes younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::ListReplyLight, content_type = "application/json"),
     )
 )]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    Query(filters): Query<web_quotes::ListFilterParam>,
-    sort: Option<Query<web_quotes::ListSort>>,
+    params: axum_extra::extract::OptionalQuery<web_quotes::ListParam>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KeysHndlr: KeysHandler,
@@ -121,8 +120,7 @@ where
 {
     log::debug!("Received request to list quotes");
 
-    let filters = convert_into_list_filters(filters);
-    let sort = convert_into_list_sort(sort.map(|q| q.0));
+    let (filters, sort) = convert_into_list_params(params.0.unwrap_or_default());
     let quotes = ctrl.list_light(filters, sort).await?;
     let response = web_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
@@ -171,7 +169,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         ("id" = String, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = InfoReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::InfoReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -197,9 +195,9 @@ where
     params(
         ("id" = String, Path, description = "The quote id")
     ),
-    request_body(content = ResolveRequest, content_type = "application/json"),
+    request_body(content = web_quotes::UpdateQuoteRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response"),
+        (status = 200, description = "Successful response", body = web_quotes::UpdateQuoteResponse, content_type = "application/json"),
     )
 )]
 pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo>(
