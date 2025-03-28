@@ -52,7 +52,7 @@ impl TreasuryClient {
         expiration: chrono::DateTime<chrono::Utc>,
         signatures: Vec<cdk00::BlindSignature>,
     ) -> Result<()> {
-        let request = web_signatures::StoreBlindedSignaturesRequest {
+        let request = web_signatures::StoreBlindSignaturesRequest {
             rid,
             expiration,
             signatures,
