@@ -13,15 +13,16 @@ bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 bitcoin.workspace = true
 borsh = { workspace = true }
 cashu = { workspace = true, features = ["wallet"]}
-cdk = {version = "0.7", default-features = false, features = ["wallet"]}
-cdk-redb = {version = "0.7"}
+cdk = {workspace = true, default-features = false, features = ["wallet"]}
+cdk-common = {workspace = true}
+cdk-redb = { workspace = true }
 chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures = {version = "0.3"}
 log.workspace = true
 serde.workspace = true
-serde_json = {version = "1"}
+serde_json = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
