@@ -24,6 +24,8 @@ jobs:
 
       - name: Activate cache
         uses: Swatinem/rust-cache@v2.7.5
+        with:
+          prefix-key: "wildcat-01-"
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
