@@ -104,7 +104,8 @@ mod tests {
         );
         let mint_quote = cdk::wallet::MintQuote {
             id: String::from("mint_quote_id"),
-            mint_url: cashu::mint_url::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+            mint_url: cdk_common::mint_url::MintUrl::from_str("http://test_mint_url.com:3338")
+                .unwrap(),
             amount,
             unit: cdk00::CurrencyUnit::Sat,
             request: Default::default(),
