@@ -230,14 +230,13 @@ impl DBQuotes {
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBEntryQuote>> {
-        self.db.select((&self.table, qid)).await
+        let rid = surrealdb::RecordId::from_table_key(&self.table, qid.to_string());
+        self.db.select(rid).await
     }
 
     async fn store(&self, quote: DBEntryQuote) -> SurrealResult<Option<DBEntryQuote>> {
-        self.db
-            .insert((&self.table, quote.qid))
-            .content(quote)
-            .await
+        let rid = surrealdb::RecordId::from_table_key(&self.table, quote.qid);
+        self.db.insert(rid).content(quote).await
     }
 
     async fn light_list(
