@@ -21,6 +21,7 @@ thiserror.workspace = true
 tokio.workspace = true
 utoipa = {workspace = true, features = ["axum_extras"]}
 utoipa-swagger-ui.workspace = true
+tower-http = { version = "0.6.2", features = ["cors"] }
 
 [dev-dependencies]
 mockall.workspace = true
