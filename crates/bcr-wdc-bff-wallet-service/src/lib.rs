@@ -9,6 +9,7 @@ use cdk::HttpClient;
 use cdk::wallet::client::MintConnector;
 use std::str::FromStr;
 use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
 use utoipa::OpenApi;
 
 mod error;
@@ -97,6 +98,7 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
+        .layer(CorsLayer::new().allow_origin(Any).expose_headers(Any))
         .with_state(app)
         .merge(swagger)
 }
