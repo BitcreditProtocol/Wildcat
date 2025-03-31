@@ -123,8 +123,8 @@ pub enum StatusReply {
 }
 
 /// --------------------------- List quotes
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct ListFilterParam {
+#[derive(Default, Serialize, Deserialize, ToSchema)]
+pub struct ListParam {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
     pub status: Option<StatusReplyDiscriminants>,
@@ -132,6 +132,7 @@ pub struct ListFilterParam {
     pub bill_drawer_id: Option<String>,
     pub bill_payer_id: Option<String>,
     pub bill_holder_id: Option<String>,
+    pub sort: Option<ListSort>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
