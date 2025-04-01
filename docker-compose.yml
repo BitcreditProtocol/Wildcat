@@ -102,10 +102,28 @@ services:
       retries: 5
 
   cdk_mint:
-    image: thesimplekid/cdk-mintd:v0.7.4@sha256:9da05978f0e18a11ff08a2f6494d87bc2efdc1d70f733278f0c5dd4f74db1579
+    image: thesimplekid/cdk-mintd:0.8
     volumes:
       - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
     restart: unless-stopped
     command: ["cdk-mintd"]
     ports:
       - "8085:8085"
+    depends_on:
+      ebpp:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ebpp:
+    image: wildcat/ebpp
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/ebpp/config.toml:/ebpp/config.toml
+      - ./.docker_data/ebpp/:/data/

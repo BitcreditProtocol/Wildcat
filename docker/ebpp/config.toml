@@ -1,0 +1,10 @@
+
+log_level = "DEBUG"
+
+[appcfg]
+bind_address = "0.0.0.0:9090"
+
+[appcfg.onchain]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+network = "testnet"
+main_store = "/data/main_onchain.sqlite" 
