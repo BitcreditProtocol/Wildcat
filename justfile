@@ -17,4 +17,7 @@ build-docker-quote-service: build-docker-base-image
 build-docker-bff-wallet-service: build-docker-base-image
     docker build -t wildcat/bff-wallet-service -f docker/bff-wallet-service/Dockerfile .
 
-build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-bff-wallet-service
+build-docker-ebpp: build-docker-base-image
+    docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
+
+build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-bff-wallet-service build-docker-ebpp

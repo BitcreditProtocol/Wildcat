@@ -5,6 +5,7 @@ FROM rust:1.85-bookworm AS rust-builder
 
 WORKDIR /wildcat
 
+RUN apt-get update && apt-get install --quiet --no-install-recommends --no-install-suggests --yes protobuf-compiler
 RUN cargo install cargo-chef
 
 COPY recipe.json recipe.json
