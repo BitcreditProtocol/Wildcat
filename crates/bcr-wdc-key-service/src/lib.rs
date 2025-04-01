@@ -13,19 +13,14 @@ mod factory;
 mod persistence;
 mod service;
 mod web;
-// ----- local imports
 
-pub type InMemoryRepository = persistence::inmemory::InMemoryMap;
+// ----- end imports
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteKeysRepository = persistence::surreal::DBQuoteKeys;
 pub type ProdKeysRepository = persistence::surreal::DBKeys;
 pub type ProdKeysService = service::Service<ProdQuoteKeysRepository, ProdKeysRepository>;
-
-pub type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
-pub type TestKeysRepository = persistence::inmemory::InMemoryMap;
-pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
@@ -106,6 +101,11 @@ struct ApiDoc;
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
+
+    pub type InMemoryRepository = persistence::inmemory::InMemoryMap;
+    pub type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
+    pub type TestKeysRepository = persistence::inmemory::InMemoryMap;
+    pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
 
     #[derive(Clone, FromRef)]
     pub struct AppController {

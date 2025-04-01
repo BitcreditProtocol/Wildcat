@@ -4,9 +4,10 @@ use bcr_wdc_webapi::keys as web_keys;
 use cashu::nut00 as cdk00;
 use cashu::nut02 as cdk02;
 use thiserror::Error;
-// ----- local modules
 // ----- local imports
 pub use reqwest::Url;
+
+// ----- end imports
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
@@ -124,7 +125,7 @@ pub mod test_utils {
 
     #[derive(Debug, Default, Clone)]
     pub struct KeyClient {
-        pub keys: bcr_wdc_key_service::InMemoryRepository,
+        pub keys: bcr_wdc_key_service::test_utils::InMemoryRepository,
     }
 
     impl KeyClient {
