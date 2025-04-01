@@ -6,6 +6,8 @@ use cashu::nuts::nut02 as cdk02;
 use crate::error::Result;
 use crate::service::{KeysRepository, Service};
 
+// ----- end imports
+
 /// --------------------------- Look up keysets info
 #[utoipa::path(
     get,
