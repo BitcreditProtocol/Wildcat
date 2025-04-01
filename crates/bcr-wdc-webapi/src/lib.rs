@@ -5,4 +5,6 @@ pub mod keys;
 pub mod quotes;
 pub mod signatures;
 pub mod swap;
-// ----- local imports
+pub mod wallet;
+
+// ----- end imports

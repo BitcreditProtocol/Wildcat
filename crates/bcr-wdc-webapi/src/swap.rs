@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
 
+// ----- end imports
+
 ///--------------------------- Burn tokens
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct BurnRequest {
