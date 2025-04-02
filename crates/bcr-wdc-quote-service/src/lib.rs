@@ -4,7 +4,10 @@ use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
 use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::nut11 as cdk11;
 use cashu::nuts::nut12 as cdk12;
+use cashu::nuts::nut14 as cdk14;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -87,24 +90,29 @@ pub fn credit_routes(ctrl: AppController) -> Router {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
-        //bcr_ebill_core::contact::IdentityPublicData,
         bcr_wdc_webapi::quotes::BillInfo,
-        bcr_wdc_webapi::quotes::IdentityPublicData,
         bcr_wdc_webapi::quotes::ContactType,
-        bcr_wdc_webapi::quotes::PostalAddress,
         bcr_wdc_webapi::quotes::EnquireReply,
         bcr_wdc_webapi::quotes::EnquireRequest,
+        bcr_wdc_webapi::quotes::IdentityPublicData,
         bcr_wdc_webapi::quotes::InfoReply,
+        bcr_wdc_webapi::quotes::LightInfo,
         bcr_wdc_webapi::quotes::ListReply,
+        bcr_wdc_webapi::quotes::ListReplyLight,
+        bcr_wdc_webapi::quotes::PostalAddress,
         bcr_wdc_webapi::quotes::ResolveOffer,
+        bcr_wdc_webapi::quotes::StatusReply,
+        bcr_wdc_webapi::quotes::StatusReplyDiscriminants,
         bcr_wdc_webapi::quotes::UpdateQuoteRequest,
         bcr_wdc_webapi::quotes::UpdateQuoteResponse,
-        bcr_wdc_webapi::quotes::StatusReply,
         cashu::Amount,
         cdk00::BlindSignature,
         cdk00::BlindedMessage,
         cdk00::Witness,
+        cdk02::Id,
+        cdk11::P2PKWitness,
         cdk12::BlindSignatureDleq,
+        cdk14::HTLCWitness,
     ),),
     paths(
         crate::web::enquire_quote,
