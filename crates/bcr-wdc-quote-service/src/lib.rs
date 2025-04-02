@@ -127,10 +127,19 @@ pub fn credit_routes(ctrl: AppController) -> Router {
 pub struct ApiDoc;
 
 impl ApiDoc {
-    pub fn generate_yml() -> String {
-        ApiDoc::openapi().to_yaml().unwrap()
+    pub fn generate_yml() -> Option<String> {
+        ApiDoc::openapi().to_yaml().ok()
     }
-    pub fn generate_json() -> String {
-        ApiDoc::openapi().to_pretty_json().unwrap()
+    pub fn generate_json() -> Option<String> {
+        ApiDoc::openapi().to_pretty_json().ok()
     }
+}
+
+#[test]
+fn it_should_successfully_generate_openapi_docs() {
+    let yml = ApiDoc::generate_yml();
+    assert_eq!(yml.is_some(), true);
+
+    let json = ApiDoc::generate_json();
+    assert_eq!(json.is_some(), true);
 }
