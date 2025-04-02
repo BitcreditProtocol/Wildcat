@@ -22,5 +22,9 @@ build-docker-ebpp: build-docker-base-image
 
 build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-bff-wallet-service build-docker-ebpp
 
-generate-openapi-docs:
+openapi-generate-docs:
   @cargo run --package bcr-wdc-quote-service --bin gen_api
+
+openapi-validate-docs:
+  # make sure you have "schemathesis" installed (`pip3 install schemathesis`)
+  @st run openapi.json --dry-run # dry-run: Simulate test execution without making any actual requests, useful for validating data generation
