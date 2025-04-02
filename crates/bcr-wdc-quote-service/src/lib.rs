@@ -124,4 +124,13 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         crate::web::resolve_offer,
     )
 )]
-struct ApiDoc;
+pub struct ApiDoc;
+
+impl ApiDoc {
+    pub fn generate_yml() -> String {
+        ApiDoc::openapi().to_yaml().unwrap()
+    }
+    pub fn generate_json() -> String {
+        ApiDoc::openapi().to_pretty_json().unwrap()
+    }
+}

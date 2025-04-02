@@ -20,3 +20,8 @@ Cargo.lock
 # docker compose data
 .docker_data/
 !.docker_data/treasury-service/.gitkeep
+
+# open api related files (definitions, helpers, etc.)
+/openapi.json
+/openapi.yml
+/.hypothesis/
