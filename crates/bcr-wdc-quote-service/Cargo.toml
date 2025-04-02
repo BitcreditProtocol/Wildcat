@@ -30,7 +30,7 @@ strum = {workspace = true, features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-utoipa = {workspace = true, features = ["axum_extras"]}
+utoipa = {workspace = true, features = ["axum_extras", "yaml"]}
 utoipa-swagger-ui.workspace = true
 uuid.workspace = true
 
