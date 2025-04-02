@@ -14,9 +14,9 @@ use crate::{
 #[utoipa::path(
     post,
     path = "/v1/mint/credit/quote",
-    request_body(content = web_quotes::EnquireRequest, content_type = "application/json"),
+    request_body(content = EnquireRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Quote request admitted", body = web_quotes::EnquireReply, content_type = "application/json"),
+        (status = 200, description = "Quote request admitted", body = EnquireReply, content_type = "application/json"),
         (status = 404, description = "Quote request not accepted"),
     )
 )]
@@ -74,7 +74,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         ("id" = Uuid, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::StatusReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = StatusReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -99,7 +99,7 @@ where
     params(
         ("id" = Uuid, Path, description = "The quote id")
     ),
-    request_body(content = web_quotes::ResolveOffer, content_type = "application/json"),
+    request_body(content = ResolveOffer, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response"),
         (status = 404, description = "Quote not found"),

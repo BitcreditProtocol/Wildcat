@@ -17,7 +17,7 @@ use crate::TStamp;
         ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
     )
 )]
 pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
@@ -106,7 +106,7 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
         ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "quotes younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::ListReplyLight, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
     )
 )]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
@@ -169,7 +169,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         ("id" = String, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::InfoReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = InfoReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -195,9 +195,9 @@ where
     params(
         ("id" = String, Path, description = "The quote id")
     ),
-    request_body(content = web_quotes::UpdateQuoteRequest, content_type = "application/json"),
+    request_body(content = UpdateQuoteRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::UpdateQuoteResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = UpdateQuoteResponse, content_type = "application/json"),
     )
 )]
 pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo>(
