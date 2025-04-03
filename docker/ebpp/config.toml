@@ -1,10 +1,27 @@
 
 log_level = "DEBUG"
+bind_address = "0.0.0.0:3338"
 
 [appcfg]
-bind_address = "0.0.0.0:9090"
+
+grpc_address = "0.0.0.0:9090"
+esplora_url = "https://blockstream.info/testnet/api"
 
 [appcfg.onchain]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 network = "testnet"
-main_store = "/data/main_onchain.sqlite" 
+store_path = "/data/"
+stop_gap = 2
+update_interval = 1000
+
+[appcfg.private_keys]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "ebpp"
+table = "privates"
+
+[appcfg.payments]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "ebpp"
+table = "payments"

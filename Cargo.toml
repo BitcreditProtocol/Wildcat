@@ -43,6 +43,7 @@ strum = {version = "0"}
 surrealdb = {version = "2.2", features = ["kv-mem"]}
 thiserror = {version = "2"}
 tokio = {version = "1", features = ["macros", "rt-multi-thread", "signal"]}
+tokio-util = { version = "0.7"}
 utoipa = {version = "4", features = ["axum_extras", "chrono", "uuid", "decimal"]} # compatibility with cdk
 utoipa-swagger-ui = {version = "7", features = ["axum"]}
 uuid = {version = "1", features = ["serde", "v4"]}

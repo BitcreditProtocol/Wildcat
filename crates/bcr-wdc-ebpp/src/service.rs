@@ -5,6 +5,8 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_wdc_webapi::signatures::{RequestToMintFromEBillDesc, SignedRequestToMintFromEBillDesc};
+use bdk_wallet::bitcoin as btc;
 use cdk_common::mint::MeltQuote;
 use cdk_common::{
     nuts::{MeltQuoteState, MintQuoteState},
@@ -19,6 +21,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 // ----- local imports
 use crate::error::Result;
+use crate::payment;
 
 // ----- end imports
 
@@ -26,27 +29,45 @@ type PaymentResult<T> = std::result::Result<T, PaymentError>;
 
 #[async_trait]
 pub trait OnChainWallet: Sync {
-    async fn new_payment_request(&self, amount: bitcoin::Amount) -> Result<bip21::Uri>;
+    fn generate_new_recipient(&self) -> Result<btc::Address>;
+    async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
     async fn balance(&self) -> Result<bdk_wallet::Balance>;
 }
 
+#[async_trait]
+pub trait PaymentRepository: Sync {
+    async fn load_request(&self, reqid: Uuid) -> Result<payment::Request>;
+    async fn store_request(&self, req: payment::Request) -> Result<()>;
+}
+
+#[async_trait]
+pub trait EBillNode: Sync {
+    /// Returns a string representing the bitcoin descriptor where payment is expected
+    async fn request_to_pay(&self, bill: &str, amount: Amount) -> Result<String>;
+}
+
 #[derive(Debug, Clone)]
-pub struct Service<OnChainWlt> {
+pub struct Service<OnChainWlt, PayRepo, EBillCl> {
     pub onchain: OnChainWlt,
+    pub payrepo: PayRepo,
+    pub ebill: EBillCl,
+
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<String>>>>,
 }
 
-impl<OnChainWlt> Service<OnChainWlt> {
-    pub async fn new(onchain: OnChainWlt) -> Self {
+impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl> {
+    pub async fn new(onchain: OnChainWlt, payrepo: PayRepo, ebill: EBillCl) -> Self {
         let payment_notifier = Arc::new(Mutex::new(None));
         Self {
             onchain,
+            payrepo,
+            ebill,
             payment_notifier,
         }
     }
 }
 
-impl<OnChainWlt> Service<OnChainWlt>
+impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl>
 where
     OnChainWlt: OnChainWallet,
 {
@@ -56,9 +77,11 @@ where
 }
 
 #[async_trait]
-impl<OnChainWlt> MintPayment for Service<OnChainWlt>
+impl<OnChainWlt, PayRepo, EBillCl> MintPayment for Service<OnChainWlt, PayRepo, EBillCl>
 where
     OnChainWlt: OnChainWallet,
+    PayRepo: PaymentRepository,
+    EBillCl: EBillNode,
 {
     type Err = cdk_common::payment::Error;
 
@@ -78,27 +101,40 @@ where
         amount: Amount,
         unit: &CurrencyUnit,
         description: String,
-        _unix_expiry: Option<u64>,
+        unix_expiry: Option<u64>,
     ) -> PaymentResult<CreateIncomingPaymentResponse> {
         log::info!(
             "create_incoming_payment_request: description: {}",
             description
         );
-        let amount = match unit {
-            CurrencyUnit::Sat => bitcoin::Amount::from_sat(*amount.as_ref()),
-            CurrencyUnit::Msat => bitcoin::Amount::from_sat(*amount.as_ref() * 1000_u64),
-            _ => return Err(PaymentError::UnsupportedUnit),
+
+        let payment_t = if let Ok(request) =
+            serde_json::from_str::<SignedRequestToMintFromEBillDesc>(&description)
+        {
+            let request = validate_ebill_request_signature(&request)?;
+            let output = self.ebill.request_to_pay(&request.ebill, amount).await?;
+            let address = self.onchain.add_descriptor(&output).await?;
+            payment::PaymentType::EBill(address)
+        } else {
+            if !matches!(unit, CurrencyUnit::Sat) {
+                return Err(PaymentError::UnsupportedUnit);
+            };
+            let address = self
+                .onchain
+                .generate_new_recipient()
+                .map_err(PaymentError::from)?;
+            payment::PaymentType::OnChain(address)
         };
-        let qid = Uuid::new_v4();
-        let uri = self
-            .onchain
-            .new_payment_request(amount)
-            .await
-            .map_err(PaymentError::from)?;
+        let payment = payment::Request {
+            reqid: Uuid::new_v4(),
+            amount,
+            currency: unit.clone(),
+            payment_type: payment_t,
+        };
         let response = CreateIncomingPaymentResponse {
-            expiry: None,
-            request_lookup_id: qid.to_string(),
-            request: uri.to_string(),
+            expiry: unix_expiry,
+            request_lookup_id: payment.reqid.to_string(),
+            request: payment.to_string(),
         };
         Ok(response)
     }
@@ -190,4 +226,11 @@ where
         };
         Ok(response)
     }
+}
+
+fn validate_ebill_request_signature(
+    signed: &SignedRequestToMintFromEBillDesc,
+) -> Result<&RequestToMintFromEBillDesc> {
+    // TODO: Implement the signature validation logic
+    Ok(&signed.data)
 }

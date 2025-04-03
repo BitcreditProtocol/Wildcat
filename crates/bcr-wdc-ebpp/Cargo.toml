@@ -9,13 +9,13 @@ async-stream = {version = "0.3"}
 async-trait = { workspace = true}
 axum = { workspace = true}
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
-bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
+bdk_core = {version = "0.4"}
 bdk_esplora = {version = "0.20", features = ["tokio"]}
+bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
 bip21 = {version = "0.5"}
-bitcoin = {workspace = true}
 cashu = { version = "0.8"}
 cdk-common = {version = "0.8"}
-cdk-payment-processor = {version = "0.8"}
+cdk-payment-processor = {version = "0.8", default-features = false, features = ["fake"]}
 chrono = {workspace = true}
 config = {workspace = true}
 env_logger = {workspace = true}
@@ -25,9 +25,14 @@ rand = {workspace = true}
 reqwest = {workspace = true}
 serde = {workspace = true}
 serde_json = { workspace = true}
+serde_with = {version = "3", default-features = false, features = ["chrono"]}
 surrealdb = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
+tokio-util = {workspace = true}
 utoipa = { workspace = true}
 utoipa-swagger-ui = {workspace = true}
 uuid = {workspace = true}
+
+[dev-dependencies]
+mockall = {workspace = true}

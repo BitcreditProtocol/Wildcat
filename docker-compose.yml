@@ -24,6 +24,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+      cdk_mint:
+        condition: service_started
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
       - ./.docker_data/treasury-service/:/data/
@@ -112,18 +114,21 @@ services:
     depends_on:
       ebpp:
         condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-      start_interval: 3s
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
+    #   interval: 10s
+    #   timeout: 10s
+    #   retries: 20
+    #   start_period: 60s
+    #   start_interval: 3s
 
   ebpp:
     image: wildcat/ebpp
     ports:
       - "9090:9090"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
