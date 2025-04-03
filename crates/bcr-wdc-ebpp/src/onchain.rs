@@ -1,11 +1,15 @@
 // ----- standard library imports
 use std::sync::{Arc, Mutex};
 // ----- extra library imports
-use anyhow::anyhow;
 use async_trait::async_trait;
 use bdk_esplora::EsploraAsyncExt;
 use bdk_wallet::{
-    bitcoin::{bip32::Xpriv, hashes::Hash, Network},
+    bitcoin::{
+        self as btc,
+        bip32::Xpriv,
+        hashes::{sha256, Hash},
+        Network,
+    },
     descriptor::template::Bip84,
     keys::{bip39::Mnemonic, DerivableKey, ExtendedKey},
     miniscript::{descriptor::KeyMap, Descriptor, DescriptorPublicKey},
@@ -14,6 +18,7 @@ use bdk_wallet::{
 };
 use futures::future::JoinAll;
 use rand::Rng;
+use serde_with::serde_as;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::OnChainWallet;
@@ -22,21 +27,23 @@ use crate::service::OnChainWallet;
 
 pub type BdkWallet = bdk_wallet::PersistedWallet<bdk_wallet::rusqlite::Connection>;
 pub type PersistedBdkWallet = (BdkWallet, bdk_wallet::rusqlite::Connection);
-pub type SingleKeyWallet = (Descriptor<DescriptorPublicKey>, KeyMap);
+pub type SingleSecretKeyDescriptor = (Descriptor<DescriptorPublicKey>, KeyMap);
 
+#[serde_as]
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct WalletConfig {
     mnemonic: Mnemonic,
     network: Network,
     store_path: std::path::PathBuf,
     stop_gap: usize,
+    #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     update_interval: chrono::Duration,
 }
 
 #[async_trait]
 pub trait PrivateKeysRepository {
-    async fn get_private_keys(&self) -> Result<Vec<SingleKeyWallet>>;
-    async fn add_key(&self, key: SingleKeyWallet) -> Result<()>;
+    async fn get_private_keys(&self) -> Result<Vec<SingleSecretKeyDescriptor>>;
+    async fn add_key(&self, key: SingleSecretKeyDescriptor) -> Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +56,14 @@ pub struct Wallet<KeyRepo, Syncer> {
     update_interval: core::time::Duration,
     repo: KeyRepo,
     syncer: Syncer,
+    network: Network,
+    stop_gap: usize,
+}
+
+impl<KeyRepo, Syncer> Wallet<KeyRepo, Syncer> {
+    pub fn network(&self) -> Network {
+        self.network
+    }
 }
 
 impl<KeyRepo, Syncer> Wallet<KeyRepo, Syncer>
@@ -68,35 +83,32 @@ where
         let exkey: ExtendedKey = cfg.mnemonic.into_extended_key().map_err(Error::BDKKey)?;
         let xpriv = exkey.into_xprv(cfg.network).ok_or(Error::MnemonicToXpriv)?;
         let main_store = cfg.store_path.join(Self::MAIN_STORE_FNAME);
-        let main = initialize_main_wallet(
-            &main_store,
-            xpriv,
-            cfg.network,
-            syncer.clone(),
-            cfg.stop_gap,
-        )
-        .await?;
+        let (age, main) = initialize_main_wallet(&main_store, xpriv, cfg.network)?;
         let main = Arc::new(Mutex::new(main));
 
         let interval = random_update_interval(update_interval);
-        tokio::spawn(wallet_update_loop(main.clone(), syncer.clone(), interval));
+        tokio::spawn(wallet_update_loop(
+            main.clone(),
+            age,
+            syncer.clone(),
+            cfg.stop_gap,
+            interval,
+        ));
 
         let keys = repo.get_private_keys().await?;
-        let cloned = syncer.clone();
         let joined: JoinAll<_> = keys
             .into_iter()
             .map(|key| async {
-                let wlt = initialize_single_wallet(
-                    &cfg.store_path,
-                    key,
-                    cfg.network,
-                    cloned.clone(),
-                    cfg.stop_gap,
-                )
-                .await?;
+                let (age, wlt) = initialize_single_wallet(&cfg.store_path, key, cfg.network)?;
                 let wlt = Arc::new(Mutex::new(wlt));
                 let interval = random_update_interval(update_interval);
-                tokio::spawn(wallet_update_loop(wlt.clone(), syncer.clone(), interval));
+                tokio::spawn(wallet_update_loop(
+                    wlt.clone(),
+                    age,
+                    syncer.clone(),
+                    cfg.stop_gap,
+                    interval,
+                ));
                 Ok(wlt)
             })
             .collect();
@@ -110,51 +122,24 @@ where
             update_interval,
             store_path: cfg.store_path,
             syncer,
+            network: cfg.network,
+            stop_gap: cfg.stop_gap,
         })
-    }
-
-    pub async fn add_secret_key(&self, key: SingleKeyWallet) -> Result<()> {
-        let network = {
-            let locked = self.main.lock().unwrap();
-            let (wlt, _) = &*locked;
-            wlt.network()
-        };
-        self.repo.add_key(key.clone()).await?;
-        let wlt = initialize_single_wallet(
-            self.store_path.as_path(),
-            key,
-            network,
-            self.syncer.clone(),
-            1,
-        )
-        .await?;
-        let wlt = Arc::new(Mutex::new(wlt));
-        let interval = random_update_interval(self.update_interval);
-        tokio::spawn(wallet_update_loop(
-            wlt.clone(),
-            self.syncer.clone(),
-            interval,
-        ));
-        let mut locked = self.onetimes.lock().unwrap();
-        locked.push(wlt);
-        Ok(())
     }
 }
 
 #[async_trait]
 impl<KeyRepo, Syncer> OnChainWallet for Wallet<KeyRepo, Syncer>
 where
-    KeyRepo: Sync,
-    Syncer: Sync,
+    KeyRepo: PrivateKeysRepository + Sync,
+    Syncer: EsploraAsyncExt + Sync + Send + Clone + 'static,
 {
-    async fn new_payment_request(&self, amount: bitcoin::Amount) -> Result<bip21::Uri> {
+    fn generate_new_recipient(&self) -> Result<btc::Address> {
         let mut locked = self.main.lock().unwrap();
         let (wlt, db) = &mut *locked;
-        let address = wlt.reveal_next_address(KeychainKind::External);
+        let address_info = wlt.reveal_next_address(KeychainKind::External);
         wlt.persist(db).map_err(Error::BDKSQLite)?;
-        let mut uri = bip21::Uri::new(address.address);
-        uri.amount = Some(amount);
-        Ok(uri)
+        Ok(address_info.address)
     }
 
     async fn balance(&self) -> Result<bdk_wallet::Balance> {
@@ -171,15 +156,43 @@ where
         }
         Ok(balance)
     }
+
+    async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address> {
+        let desc: SingleSecretKeyDescriptor = {
+            let locked = self.main.lock().unwrap();
+            let (wlt, _) = &*locked;
+            let secp_ctx = wlt.secp_ctx();
+            Descriptor::parse_descriptor(secp_ctx, descriptor).map_err(Error::Miniscript)?
+        };
+        self.repo.add_key(desc.clone()).await?;
+        let (age, mut wlt) = initialize_single_wallet(&self.store_path, desc, self.network)?;
+        let addr_info = wlt.0.reveal_next_address(KeychainKind::External);
+        wlt.0.persist(&mut wlt.1).map_err(Error::BDKSQLite)?;
+        let wlt = Arc::new(Mutex::new(wlt));
+        let interval = random_update_interval(self.update_interval);
+        tokio::spawn(wallet_update_loop(
+            wlt.clone(),
+            age,
+            self.syncer.clone(),
+            self.stop_gap,
+            interval,
+        ));
+        let mut locked = self.onetimes.lock().unwrap();
+        locked.push(wlt);
+        Ok(addr_info.address)
+    }
 }
 
-async fn initialize_main_wallet<Syncer: EsploraAsyncExt + Sync>(
+enum WalletAge {
+    New,
+    Old,
+}
+
+fn initialize_main_wallet(
     store_file: &std::path::Path,
     xpriv: Xpriv,
     network: Network,
-    syncer: Syncer,
-    stop_gap: usize,
-) -> Result<PersistedBdkWallet> {
+) -> Result<(WalletAge, PersistedBdkWallet)> {
     let internal = Bip84(xpriv, KeychainKind::Internal);
     let external = Bip84(xpriv, KeychainKind::External);
 
@@ -190,7 +203,7 @@ async fn initialize_main_wallet<Syncer: EsploraAsyncExt + Sync>(
     )
     .map_err(Error::BDKSQLite)?;
     if pre_existed {
-        let mut wallet = bdk_wallet::LoadParams::new()
+        let wallet = bdk_wallet::LoadParams::new()
             .descriptor(KeychainKind::Internal, Some(internal))
             .descriptor(KeychainKind::External, Some(external))
             .extract_keys()
@@ -198,43 +211,22 @@ async fn initialize_main_wallet<Syncer: EsploraAsyncExt + Sync>(
             .load_wallet(&mut conn)
             .map_err(Error::BDKLoadWithPersisted)?
             .ok_or_else(|| Error::BDKEmptyOption(String::from("load_wallet")))?;
-        let request = wallet.start_sync_with_revealed_spks();
-        let update = syncer
-            .sync(request, 1)
-            .await
-            .map_err(|e| Error::EsploraSync(anyhow!(e)))?;
-        wallet
-            .apply_update(update)
-            .map_err(Error::BDKCannotConnect)?;
-        wallet.persist(&mut conn).map_err(Error::BDKSQLite)?;
-        Ok((wallet, conn))
+        Ok((WalletAge::Old, (wallet, conn)))
     } else {
-        let mut wallet = bdk_wallet::CreateParams::new(external, internal)
+        let wallet = bdk_wallet::CreateParams::new(external, internal)
             .network(network)
             .create_wallet(&mut conn)
             .map_err(Error::BDKCreateWithPersisted)?;
-        let request = wallet.start_full_scan();
-        let result = syncer
-            .full_scan(request, stop_gap, 1)
-            .await
-            .map_err(|e| Error::EsploraFullScan(anyhow!(e)))?;
-        wallet
-            .apply_update(result)
-            .map_err(Error::BDKCannotConnect)?;
-        wallet.persist(&mut conn).map_err(Error::BDKSQLite)?;
-        Ok((wallet, conn))
+        Ok((WalletAge::New, (wallet, conn)))
     }
 }
 
-async fn initialize_single_wallet<Syncer: EsploraAsyncExt + Sync>(
+fn initialize_single_wallet(
     store_path: &std::path::Path,
-    (desc, kmap): SingleKeyWallet,
+    (desc, kmap): SingleSecretKeyDescriptor,
     network: Network,
-    syncer: Syncer,
-    stop_gap: usize,
-) -> Result<PersistedBdkWallet> {
-    let fname =
-        bitcoin::hashes::sha256::Hash::hash(desc.to_string().as_bytes()).to_string() + ".sqlite";
+) -> Result<(WalletAge, PersistedBdkWallet)> {
+    let fname = sha256::Hash::hash(desc.to_string().as_bytes()).to_string() + ".sqlite";
     let store = store_path.join(fname);
     let pre_existed = store.exists();
     let mut conn = bdk_wallet::rusqlite::Connection::open_with_flags(
@@ -243,48 +235,53 @@ async fn initialize_single_wallet<Syncer: EsploraAsyncExt + Sync>(
     )
     .map_err(Error::BDKSQLite)?;
     if pre_existed {
-        let mut wallet = bdk_wallet::LoadParams::new()
+        let wallet = bdk_wallet::LoadParams::new()
             .descriptor(KeychainKind::External, Some((desc, kmap)))
             .extract_keys()
             .check_network(network)
             .load_wallet(&mut conn)
             .map_err(Error::BDKLoadWithPersisted)?
             .ok_or_else(|| Error::BDKEmptyOption(String::from("load_wallet")))?;
-        let request = wallet.start_sync_with_revealed_spks();
-        let result = syncer
-            .sync(request, 1)
-            .await
-            .map_err(|e| Error::EsploraFullScan(anyhow!(e)))?;
-        wallet
-            .apply_update(result)
-            .map_err(Error::BDKCannotConnect)?;
-        wallet.persist(&mut conn).map_err(Error::BDKSQLite)?;
-        Ok((wallet, conn))
+        Ok((WalletAge::Old, (wallet, conn)))
     } else {
-        let mut wallet = bdk_wallet::CreateParams::new_single((desc, kmap))
+        let wallet = bdk_wallet::CreateParams::new_single((desc, kmap))
             .network(network)
             .create_wallet(&mut conn)
             .map_err(Error::BDKCreateWithPersisted)?;
-        let request = wallet.start_full_scan();
-        let result = syncer
-            .full_scan(request, stop_gap, 1)
-            .await
-            .map_err(|e| Error::EsploraFullScan(anyhow!(e)))?;
-        wallet
-            .apply_update(result)
-            .map_err(Error::BDKCannotConnect)?;
-        wallet.persist(&mut conn).map_err(Error::BDKSQLite)?;
-        Ok((wallet, conn))
+        Ok((WalletAge::New, (wallet, conn)))
     }
 }
 
 async fn wallet_update_loop<Syncer: EsploraAsyncExt>(
     wlt: Arc<Mutex<PersistedBdkWallet>>,
+    age: WalletAge,
     syncer: Syncer,
+    stop_gap: usize,
     pause: core::time::Duration,
 ) {
+    if matches!(age, WalletAge::New) {
+        let request = {
+            let mut locked = wlt.lock().unwrap();
+            let (wallet, _) = &mut *locked;
+            wallet.start_full_scan()
+        };
+        let result = syncer.full_scan(request, stop_gap, 1).await;
+        if result.is_err() {
+            log::error!("full scan error: {}", result.unwrap_err());
+            return;
+        }
+    }
     loop {
         tokio::time::sleep(pause).await;
+
+        if Arc::strong_count(&wlt) == 1 {
+            let mut locked = wlt.lock().unwrap();
+            let (wallet, _) = &mut *locked;
+            let desc = wallet.public_descriptor(KeychainKind::External);
+            log::info!("wallet {} update loop stopping", desc);
+            break;
+        }
+
         let request = {
             let mut locked = wlt.lock().unwrap();
             let (wallet, _) = &mut *locked;

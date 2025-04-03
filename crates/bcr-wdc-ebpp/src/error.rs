@@ -3,6 +3,7 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use thiserror::Error;
+use uuid::Uuid;
 // ----- local imports
 
 // ----- end imports
@@ -22,6 +23,11 @@ pub enum Error {
     BDKEmptyOption(String),
     #[error("bdk_wallet::chain: {0}")]
     BDKCannotConnect(bdk_wallet::chain::local_chain::CannotConnectError),
+    #[error("bitcoin::address parse: {0}")]
+    BTCAddressParse(bdk_wallet::bitcoin::address::ParseError),
+
+    #[error("miniscript: {0}")]
+    Miniscript(bdk_wallet::miniscript::Error),
 
     #[error("full_scan error: {0}")]
     EsploraFullScan(AnyError),
@@ -39,19 +45,29 @@ pub enum Error {
 
     #[error("chrono conversion: {0}")]
     Chrono(chrono::OutOfRangeError),
+
+    #[error("payment request not found {0}")]
+    PaymentRequestNotFound(Uuid),
 }
 
 impl std::convert::From<Error> for cdk_common::payment::Error {
     fn from(e: Error) -> Self {
+        log::error!("Error --> PaymentError: {:?}", e);
         match e {
-            _ => unreachable!("this should never be called"),
+            Error::PaymentRequestNotFound(_) => cdk_common::payment::Error::UnknownPaymentState,
+            _ => unreachable!("this should never be happening"),
         }
     }
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        log::error!("Error --> axum::Response: {:?}", self);
         let resp = match self {
+            Error::PaymentRequestNotFound(reqid) => (
+                StatusCode::NOT_FOUND,
+                format!("Payment request not found {0}", reqid),
+            ),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
