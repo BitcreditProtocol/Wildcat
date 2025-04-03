@@ -10,17 +10,22 @@ async-trait = { workspace = true}
 axum = { workspace = true}
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
+bdk_esplora = {version = "0.20", features = ["tokio"]}
 bip21 = {version = "0.5"}
 bitcoin = {workspace = true}
 cashu = { version = "0.8"}
 cdk-common = {version = "0.8"}
 cdk-payment-processor = {version = "0.8"}
+chrono = {workspace = true}
 config = {workspace = true}
 env_logger = {workspace = true}
 futures = {workspace = true}
 log = {workspace = true}
+rand = {workspace = true}
+reqwest = {workspace = true}
 serde = {workspace = true}
 serde_json = { workspace = true}
+surrealdb = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 utoipa = { workspace = true}

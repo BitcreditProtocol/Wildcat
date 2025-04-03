@@ -25,40 +25,40 @@ use crate::error::Result;
 type PaymentResult<T> = std::result::Result<T, PaymentError>;
 
 #[async_trait]
-pub trait Bip39Wallet: Sync {
+pub trait OnChainWallet: Sync {
     async fn new_payment_request(&self, amount: bitcoin::Amount) -> Result<bip21::Uri>;
     async fn balance(&self) -> Result<bdk_wallet::Balance>;
 }
 
 #[derive(Debug, Clone)]
-pub struct Service<Bip39Wlt> {
-    pub bip39_wallet: Bip39Wlt,
+pub struct Service<OnChainWlt> {
+    pub onchain: OnChainWlt,
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<String>>>>,
 }
 
-impl<Bip39Wlt> Service<Bip39Wlt> {
-    pub async fn new(bip39_wallet: Bip39Wlt) -> Self {
+impl<OnChainWlt> Service<OnChainWlt> {
+    pub async fn new(onchain: OnChainWlt) -> Self {
         let payment_notifier = Arc::new(Mutex::new(None));
         Self {
-            bip39_wallet,
+            onchain,
             payment_notifier,
         }
     }
 }
 
-impl<Bip39Wlt> Service<Bip39Wlt>
+impl<OnChainWlt> Service<OnChainWlt>
 where
-    Bip39Wlt: Bip39Wallet,
+    OnChainWlt: OnChainWallet,
 {
-    pub async fn onchain_balance(&self) -> Result<bdk_wallet::Balance> {
-        self.bip39_wallet.balance().await
+    pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
+        self.onchain.balance().await
     }
 }
 
 #[async_trait]
-impl<Bip39Wlt> MintPayment for Service<Bip39Wlt>
+impl<OnChainWlt> MintPayment for Service<OnChainWlt>
 where
-    Bip39Wlt: Bip39Wallet,
+    OnChainWlt: OnChainWallet,
 {
     type Err = cdk_common::payment::Error;
 
@@ -91,7 +91,7 @@ where
         };
         let qid = Uuid::new_v4();
         let uri = self
-            .bip39_wallet
+            .onchain
             .new_payment_request(amount)
             .await
             .map_err(PaymentError::from)?;

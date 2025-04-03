@@ -5,7 +5,7 @@ use axum::extract::{Json, State};
 use bcr_wdc_webapi::wallet::Balance;
 // ----- local imports
 use crate::error::Result;
-use crate::service::{Bip39Wallet, Service};
+use crate::service::{OnChainWallet, Service};
 
 // ----- end imports
 
@@ -19,12 +19,14 @@ use crate::service::{Bip39Wallet, Service};
         (status = 200, description = "Successful response", body = Balance, content_type = "application/json"),
     )
 )]
-pub async fn balance<Bip39Wlt>(State(ctrl): State<Arc<Service<Bip39Wlt>>>) -> Result<Json<Balance>>
+pub async fn balance<OnChainWlt>(
+    State(ctrl): State<Arc<Service<OnChainWlt>>>,
+) -> Result<Json<Balance>>
 where
-    Bip39Wlt: Bip39Wallet,
+    OnChainWlt: OnChainWallet,
 {
     log::debug!("Received balance");
 
-    let info = ctrl.onchain_balance().await?;
+    let info = ctrl.balance().await?;
     Ok(Json(info.into()))
 }
