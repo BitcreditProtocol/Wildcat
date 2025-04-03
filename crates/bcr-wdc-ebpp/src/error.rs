@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::anyhow;
+use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use thiserror::Error;
 // ----- local imports
@@ -20,19 +20,31 @@ pub enum Error {
     BDKCreateWithPersisted(bdk_wallet::CreateWithPersistError<bdk_wallet::rusqlite::Error>),
     #[error("bdk_wallet:: empty Option on {0} call")]
     BDKEmptyOption(String),
+    #[error("bdk_wallet::chain: {0}")]
+    BDKCannotConnect(bdk_wallet::chain::local_chain::CannotConnectError),
+
+    #[error("full_scan error: {0}")]
+    EsploraFullScan(AnyError),
+    #[error("sync error: {0}")]
+    EsploraSync(AnyError),
+
+    #[error("DB errror: {0}")]
+    DB(AnyError),
+
     #[error("Mnemonic to xpriv conversion failed")]
     MnemonicToXpriv,
+
+    #[error("onchain wallet storage path error: {0}")]
+    OnChainStore(std::path::PathBuf),
+
+    #[error("chrono conversion: {0}")]
+    Chrono(chrono::OutOfRangeError),
 }
 
 impl std::convert::From<Error> for cdk_common::payment::Error {
     fn from(e: Error) -> Self {
         match e {
-            Error::MnemonicToXpriv => Self::Anyhow(anyhow!(e)),
-            Error::BDKEmptyOption(s) => Self::Anyhow(anyhow!(s)),
-            Error::BDKCreateWithPersisted(e) => Self::Anyhow(anyhow!(e)),
-            Error::BDKLoadWithPersisted(e) => Self::Anyhow(anyhow!(e)),
-            Error::BDKSQLite(e) => Self::Anyhow(anyhow!(e)),
-            Error::BDKKey(e) => Self::Anyhow(anyhow!(e)),
+            _ => unreachable!("this should never be called"),
         }
     }
 }
@@ -40,12 +52,7 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let resp = match self {
-            Error::MnemonicToXpriv => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BDKEmptyOption(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BDKCreateWithPersisted(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BDKLoadWithPersisted(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BDKSQLite(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BDKKey(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
     }

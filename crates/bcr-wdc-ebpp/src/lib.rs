@@ -7,23 +7,29 @@ use axum::{
     routing::{get, Router},
 };
 use bcr_wdc_webapi::wallet::Balance;
+use bdk_esplora::esplora_client::AsyncClient;
 use cdk_payment_processor::PaymentProcessorServer;
 use utoipa::OpenApi;
 // ----- local modules
-mod bip39;
 mod error;
+mod onchain;
+mod persistence;
 mod service;
 mod web;
 
 // ----- end imports
 
-pub type ProdBip39Wallet = bip39::Wallet;
-pub type ProdService = service::Service<ProdBip39Wallet>;
+pub type ProdPrivateKeysRepository = persistence::surreal::DBPrivateKeys;
+pub type ProdOnChainSyncer = AsyncClient;
+pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainSyncer>;
+pub type ProdService = service::Service<ProdOnChainWallet>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     grpc_address: std::net::SocketAddr,
-    onchain: bip39::WalletConfig,
+    onchain: onchain::WalletConfig,
+    private_keys: persistence::surreal::ConnectionConfig,
+    esplora_url: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -34,12 +40,28 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
-        let onchain_wallet = ProdBip39Wallet::new(cfg.onchain).expect("onchain wallet");
+        let AppConfig {
+            grpc_address,
+            onchain,
+            private_keys,
+            esplora_url,
+        } = cfg;
+
+        let key_repo = ProdPrivateKeysRepository::new(private_keys)
+            .await
+            .expect("private keys repo");
+        let client = reqwest::Client::new();
+        let esplora_client: AsyncClient =
+            bdk_esplora::esplora_client::AsyncClient::from_client(esplora_url, client);
+
+        let onchain_wallet = ProdOnChainWallet::new(onchain, key_repo, esplora_client)
+            .await
+            .expect("onchain wallet");
         let processor = ProdService::new(onchain_wallet).await;
 
         Self {
             srvc: Arc::new(processor),
-            grpc_address: cfg.grpc_address,
+            grpc_address,
         }
     }
 
