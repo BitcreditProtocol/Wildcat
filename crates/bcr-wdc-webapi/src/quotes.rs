@@ -6,7 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 // ----- local imports
 
 ///--------------------------- Enquire mint quote
@@ -123,7 +123,7 @@ pub enum StatusReply {
 }
 
 /// --------------------------- List quotes
-#[derive(Default, Serialize, Deserialize, ToSchema)]
+#[derive(Default, Serialize, Deserialize, IntoParams)]
 pub struct ListParam {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,

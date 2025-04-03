@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use axum::extract::{Json, Path, State};
+use axum::extract::{Json, Path, Query, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
@@ -102,16 +102,14 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
 #[utoipa::path(
     get,
     path = "/v1/admin/credit/quote",
-    params(
-        ("since" = Option<chrono::DateTime<chrono::Utc>>, Query, description = "quotes younger than `since`")
-    ),
+    params(web_quotes::ListParam),
     responses (
         (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
     )
 )]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    params: axum_extra::extract::OptionalQuery<web_quotes::ListParam>,
+    params: Query<web_quotes::ListParam>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KeysHndlr: KeysHandler,
@@ -120,7 +118,7 @@ where
 {
     log::debug!("Received request to list quotes");
 
-    let (filters, sort) = convert_into_list_params(params.0.unwrap_or_default());
+    let (filters, sort) = convert_into_list_params(params.0);
     let quotes = ctrl.list_light(filters, sort).await?;
     let response = web_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
