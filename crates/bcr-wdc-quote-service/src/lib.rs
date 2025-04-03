@@ -99,6 +99,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         bcr_wdc_webapi::quotes::LightInfo,
         bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::ListReplyLight,
+        bcr_wdc_webapi::quotes::ListSort,
         bcr_wdc_webapi::quotes::PostalAddress,
         bcr_wdc_webapi::quotes::ResolveOffer,
         bcr_wdc_webapi::quotes::StatusReply,
