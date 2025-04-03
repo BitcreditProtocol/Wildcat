@@ -12,7 +12,7 @@ bcr-wdc-keys = {path = "../bcr-wdc-keys", features = ["test-utils"], optional = 
 bcr-wdc-key-service = {path = "../bcr-wdc-key-service", optional = true}
 cashu.workspace = true
 chrono.workspace = true
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = {workspace = true}
 thiserror.workspace = true
 uuid.workspace = true
 

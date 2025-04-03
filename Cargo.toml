@@ -35,6 +35,7 @@ futures = {version = "0.3"}
 log = {version = "0.4", features = ["serde"]}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
+reqwest = { version = "0.11", features = ["json"] }
 rust_decimal = {version = "1"}
 serde = {version = "1", features = ["derive"]}
 serde_json = {version = "1"}
