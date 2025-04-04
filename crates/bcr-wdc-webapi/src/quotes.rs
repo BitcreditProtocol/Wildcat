@@ -2,6 +2,7 @@
 // ----- extra library imports
 use bcr_ebill_core as EBillCore;
 use bcr_ebill_core::contact as EBillContact;
+use bitcoin::Amount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
 use rust_decimal::Decimal;
@@ -153,7 +154,7 @@ pub struct ListReply {
 pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
-    pub sum: u64,
+    pub sum: Amount,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
