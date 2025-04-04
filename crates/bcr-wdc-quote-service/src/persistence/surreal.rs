@@ -179,12 +179,14 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
 struct DBEntryLightQuote {
     qid: uuid::Uuid,
     status: DBEntryQuoteStatus,
+    sum: u64,
 }
 impl From<DBEntryLightQuote> for quotes::LightQuote {
     fn from(dbq: DBEntryLightQuote) -> Self {
         Self {
             id: dbq.qid,
             status: dbq.status.into(),
+            sum: dbq.sum,
         }
     }
 }

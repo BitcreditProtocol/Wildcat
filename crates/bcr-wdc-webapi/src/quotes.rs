@@ -153,6 +153,7 @@ pub struct ListReply {
 pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
+    pub sum: u64,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

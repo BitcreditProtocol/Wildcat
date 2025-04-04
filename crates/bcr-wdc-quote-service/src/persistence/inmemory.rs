@@ -163,6 +163,7 @@ impl Repository for QuotesIDMap {
             .map(|quote| quotes::LightQuote {
                 id: quote.id,
                 status: quote.status.discriminant(),
+                sum: quote.bill.sum,
             })
             .collect();
         Ok(b)
