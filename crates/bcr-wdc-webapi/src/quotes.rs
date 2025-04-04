@@ -2,12 +2,17 @@
 // ----- extra library imports
 use bcr_ebill_core as EBillCore;
 use bcr_ebill_core::contact as EBillContact;
+use bitcoin::Amount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 // ----- local imports
+
+#[derive(Serialize, Deserialize, ToSchema)]
+#[schema(value_type = u64)]
+pub struct BitcoinAmount(pub Amount);
 
 ///--------------------------- Enquire mint quote
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
@@ -151,6 +156,7 @@ pub struct ListReply {
 pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
+    pub sum: BitcoinAmount,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

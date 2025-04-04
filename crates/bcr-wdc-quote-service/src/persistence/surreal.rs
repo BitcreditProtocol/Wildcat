@@ -2,6 +2,7 @@
 // ----- extra library imports
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
+use bitcoin::Amount;
 use cashu::nuts::nut00 as cdk00;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
@@ -179,12 +180,14 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
 struct DBEntryLightQuote {
     qid: uuid::Uuid,
     status: DBEntryQuoteStatus,
+    sum: u64,
 }
 impl From<DBEntryLightQuote> for quotes::LightQuote {
     fn from(dbq: DBEntryLightQuote) -> Self {
         Self {
             id: dbq.qid,
             status: dbq.status.into(),
+            sum: Amount::from_sat(dbq.sum),
         }
     }
 }
@@ -245,7 +248,7 @@ impl DBQuotes {
         sort: Option<SortOrder>,
     ) -> SurrealResult<Vec<DBEntryLightQuote>> {
         let mut statement =
-            String::from("SELECT qid, status, bill.maturity_date FROM type::table($table)");
+            String::from("SELECT qid, status, bill.sum AS sum, bill.maturity_date FROM type::table($table)");
 
         let mut first = true;
 

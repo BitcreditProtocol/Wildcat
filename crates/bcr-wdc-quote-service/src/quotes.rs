@@ -2,6 +2,7 @@
 use std::str::FromStr;
 // ----- extra library imports
 use bcr_ebill_core::contact::IdentityPublicData;
+use bitcoin::Amount;
 use cashu::nuts::nut00 as cdk00;
 use uuid::Uuid;
 // ----- local modules
@@ -79,6 +80,7 @@ pub struct Quote {
 pub struct LightQuote {
     pub id: Uuid,
     pub status: QuoteStatusDiscriminants,
+    pub sum: Amount,
 }
 
 impl Quote {
