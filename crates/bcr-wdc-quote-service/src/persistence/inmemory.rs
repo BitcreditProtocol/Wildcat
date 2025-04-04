@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use bitcoin::Amount;
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
@@ -163,7 +164,7 @@ impl Repository for QuotesIDMap {
             .map(|quote| quotes::LightQuote {
                 id: quote.id,
                 status: quote.status.discriminant(),
-                sum: quote.bill.sum,
+                sum: Amount::from_sat(quote.bill.sum),
             })
             .collect();
         Ok(b)
