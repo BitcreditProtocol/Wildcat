@@ -50,6 +50,7 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
     web_quotes::LightInfo {
         id: quote.id,
         status,
+        sum: quote.sum,
     }
 }
 

@@ -79,6 +79,7 @@ pub struct Quote {
 pub struct LightQuote {
     pub id: Uuid,
     pub status: QuoteStatusDiscriminants,
+    pub sum: u64,
 }
 
 impl Quote {
