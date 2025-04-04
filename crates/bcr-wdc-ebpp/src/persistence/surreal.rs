@@ -5,14 +5,20 @@ use std::str::FromStr;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bdk_wallet::miniscript::{
-    bitcoin::hashes::Hash,
+    bitcoin::{
+        self as btc,
+        hashes::{sha256, Hash},
+    },
     descriptor::{DescriptorSecretKey, KeyMap},
     Descriptor, DescriptorPublicKey,
 };
 use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
+use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::onchain::{PrivateKeysRepository, SingleKeyWallet};
+use crate::onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor};
+use crate::payment::{PaymentType, Request};
+use crate::service::PaymentRepository;
 
 // ----- end imports
 
@@ -23,7 +29,7 @@ pub struct KeysDBEntry {
 }
 
 impl From<(Descriptor<DescriptorPublicKey>, KeyMap)> for KeysDBEntry {
-    fn from(ke: SingleKeyWallet) -> Self {
+    fn from(ke: SingleSecretKeyDescriptor) -> Self {
         let (desc, kmap) = ke;
         let mut serialized_keys: HashMap<_, _> = Default::default();
         for (k, v) in kmap {
@@ -36,7 +42,7 @@ impl From<(Descriptor<DescriptorPublicKey>, KeyMap)> for KeysDBEntry {
     }
 }
 
-impl From<KeysDBEntry> for SingleKeyWallet {
+impl From<KeysDBEntry> for SingleSecretKeyDescriptor {
     fn from(dbk: KeysDBEntry) -> Self {
         let KeysDBEntry { desc, kmap } = dbk;
         let mut keysmap: KeyMap = Default::default();
@@ -84,14 +90,14 @@ impl DBPrivateKeys {
 
 #[async_trait]
 impl PrivateKeysRepository for DBPrivateKeys {
-    async fn get_private_keys(&self) -> Result<Vec<SingleKeyWallet>> {
+    async fn get_private_keys(&self) -> Result<Vec<SingleSecretKeyDescriptor>> {
         let dbkeys = self.list_keys().await.map_err(|e| Error::DB(anyhow!(e)))?;
         let keys = dbkeys.into_iter().map(From::from).collect();
         Ok(keys)
     }
 
-    async fn add_key(&self, key: SingleKeyWallet) -> Result<()> {
-        let rkey = bitcoin::hashes::sha256::Hash::hash(key.0.to_string().as_bytes()).to_string();
+    async fn add_key(&self, key: SingleSecretKeyDescriptor) -> Result<()> {
+        let rkey = sha256::Hash::hash(key.0.to_string().as_bytes()).to_string();
         let rid = surrealdb::RecordId::from_table_key(&self.table, rkey);
         let dbkey = KeysDBEntry::from(key);
         let _resp: Option<KeysDBEntry> = self
@@ -100,6 +106,110 @@ impl PrivateKeysRepository for DBPrivateKeys {
             .content(dbkey)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PaymentTypeDBEntry {
+    OnChain(btc::Address<btc::address::NetworkUnchecked>),
+    EBill(btc::Address<btc::address::NetworkUnchecked>),
+}
+impl std::convert::From<PaymentType> for PaymentTypeDBEntry {
+    fn from(pt: PaymentType) -> Self {
+        match pt {
+            PaymentType::OnChain(addr) => PaymentTypeDBEntry::OnChain(addr.into_unchecked()),
+            PaymentType::EBill(addr) => PaymentTypeDBEntry::EBill(addr.into_unchecked()),
+        }
+    }
+}
+fn into_payment_type(pt: PaymentTypeDBEntry, network: btc::Network) -> Result<PaymentType> {
+    match pt {
+        PaymentTypeDBEntry::OnChain(addr) => {
+            let addr = addr
+                .require_network(network)
+                .map_err(Error::BTCAddressParse)?;
+            Ok(PaymentType::OnChain(addr))
+        }
+        PaymentTypeDBEntry::EBill(addr) => {
+            let addr = addr
+                .require_network(network)
+                .map_err(Error::BTCAddressParse)?;
+            Ok(PaymentType::EBill(addr))
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PaymentRequestDBEntry {
+    reqid: Uuid,
+    amount: cashu::Amount,
+    currency: cashu::CurrencyUnit,
+    payment_type: PaymentTypeDBEntry,
+}
+impl std::convert::From<Request> for PaymentRequestDBEntry {
+    fn from(req: Request) -> Self {
+        Self {
+            reqid: req.reqid,
+            amount: req.amount,
+            currency: req.currency,
+            payment_type: req.payment_type.into(),
+        }
+    }
+}
+fn into_request(dbreq: PaymentRequestDBEntry, network: btc::Network) -> Result<Request> {
+    let ttype = into_payment_type(dbreq.payment_type, network)?;
+    Ok(Request {
+        reqid: dbreq.reqid,
+        amount: dbreq.amount,
+        currency: dbreq.currency,
+        payment_type: ttype,
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct DBPayments {
+    db: Surreal<surrealdb::engine::any::Any>,
+    table: String,
+    network: btc::Network,
+}
+
+impl DBPayments {
+    pub async fn new(cfg: ConnectionConfig, network: btc::Network) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
+        Ok(Self {
+            db: db_connection,
+            table: cfg.table,
+            network,
+        })
+    }
+
+    async fn load(&self, reqid: Uuid) -> SurrealResult<Option<PaymentRequestDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.table, reqid);
+        self.db.select(rid).await
+    }
+
+    async fn store(&self, request: PaymentRequestDBEntry) -> SurrealResult<()> {
+        let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
+        let _r: Option<PaymentRequestDBEntry> = self.db.insert(rid).content(request).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl PaymentRepository for DBPayments {
+    async fn load_request(&self, reqid: Uuid) -> Result<Request> {
+        let dbreq = self.load(reqid).await.map_err(|e| Error::DB(anyhow!(e)))?;
+        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid))?;
+        into_request(dbreq, self.network)
+    }
+
+    async fn store_request(&self, req: Request) -> Result<()> {
+        let dbreq = PaymentRequestDBEntry::from(req);
+        self.store(dbreq).await.map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 }

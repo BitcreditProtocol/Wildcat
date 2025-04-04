@@ -19,8 +19,8 @@ use crate::service::{OnChainWallet, Service};
         (status = 200, description = "Successful response", body = Balance, content_type = "application/json"),
     )
 )]
-pub async fn balance<OnChainWlt>(
-    State(ctrl): State<Arc<Service<OnChainWlt>>>,
+pub async fn balance<OnChainWlt, PayRepo, EBillCl>(
+    State(ctrl): State<Arc<Service<OnChainWlt, PayRepo, EBillCl>>>,
 ) -> Result<Json<Balance>>
 where
     OnChainWlt: OnChainWallet,

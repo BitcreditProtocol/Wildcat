@@ -53,7 +53,7 @@ pub struct CDKWallet {
 }
 
 impl CDKWallet {
-    pub fn new(mint_url: &str, storage: &std::path::Path, seed: &[u8]) -> AnyResult<Self> {
+    pub async fn new(mint_url: &str, storage: &std::path::Path, seed: &[u8]) -> AnyResult<Self> {
         let storage = cdk_redb::WalletRedbDatabase::new(storage)?;
         let arced_storage = std::sync::Arc::new(storage);
         let wlt = cdk::Wallet::new(
@@ -63,6 +63,8 @@ impl CDKWallet {
             seed,
             None,
         )?;
+        // make the wallet aware of the mint info
+        wlt.get_mint_info().await.map_err(Error::CDKWallet)?;
         Ok(Self { wlt })
     }
 }

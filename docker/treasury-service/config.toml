@@ -3,7 +3,7 @@ bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
 [appcfg]
-cdk_mint_url = "http://localhost:3338"
+cdk_mint_url = "http://cdk_mint:8085"
 wallet_redb_storage = "/data/cdk-wallet-redb.redb"
 
 [appcfg.crsat_repo]

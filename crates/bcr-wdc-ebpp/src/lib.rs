@@ -11,8 +11,10 @@ use bdk_esplora::esplora_client::AsyncClient;
 use cdk_payment_processor::PaymentProcessorServer;
 use utoipa::OpenApi;
 // ----- local modules
+mod ebill;
 mod error;
 mod onchain;
+mod payment;
 mod persistence;
 mod service;
 mod web;
@@ -20,15 +22,18 @@ mod web;
 // ----- end imports
 
 pub type ProdPrivateKeysRepository = persistence::surreal::DBPrivateKeys;
+pub type ProdPaymentRepository = persistence::surreal::DBPayments;
 pub type ProdOnChainSyncer = AsyncClient;
 pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainSyncer>;
-pub type ProdService = service::Service<ProdOnChainWallet>;
+pub type ProdService =
+    service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::DummyEbillNode>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     grpc_address: std::net::SocketAddr,
     onchain: onchain::WalletConfig,
     private_keys: persistence::surreal::ConnectionConfig,
+    payments: persistence::surreal::ConnectionConfig,
     esplora_url: String,
 }
 
@@ -44,6 +49,7 @@ impl AppController {
             grpc_address,
             onchain,
             private_keys,
+            payments,
             esplora_url,
         } = cfg;
 
@@ -53,11 +59,17 @@ impl AppController {
         let client = reqwest::Client::new();
         let esplora_client: AsyncClient =
             bdk_esplora::esplora_client::AsyncClient::from_client(esplora_url, client);
-
         let onchain_wallet = ProdOnChainWallet::new(onchain, key_repo, esplora_client)
             .await
             .expect("onchain wallet");
-        let processor = ProdService::new(onchain_wallet).await;
+
+        let payrepo = ProdPaymentRepository::new(payments, onchain_wallet.network())
+            .await
+            .expect("payment repo");
+
+        let ebillnode = ebill::DummyEbillNode {};
+
+        let processor = ProdService::new(onchain_wallet, payrepo, ebillnode).await;
 
         Self {
             srvc: Arc::new(processor),
