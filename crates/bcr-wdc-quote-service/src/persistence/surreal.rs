@@ -248,7 +248,7 @@ impl DBQuotes {
         sort: Option<SortOrder>,
     ) -> SurrealResult<Vec<DBEntryLightQuote>> {
         let mut statement =
-            String::from("SELECT qid, status, bill.maturity_date FROM type::table($table)");
+            String::from("SELECT qid, status, bill.sum AS sum, bill.maturity_date FROM type::table($table)");
 
         let mut first = true;
 

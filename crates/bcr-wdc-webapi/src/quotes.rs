@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 // ----- local imports
 
+#[derive(Serialize, Deserialize, ToSchema)]
+#[schema(value_type = u64)]
+pub struct BitcoinAmount(pub Amount);
+
 ///--------------------------- Enquire mint quote
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillInfo {
@@ -152,7 +156,7 @@ pub struct ListReply {
 pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
-    pub sum: Amount,
+    pub sum: BitcoinAmount,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
