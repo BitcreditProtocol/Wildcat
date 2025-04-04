@@ -28,6 +28,7 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        log::error!("Error: {}", self);
         let resp = match self {
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
