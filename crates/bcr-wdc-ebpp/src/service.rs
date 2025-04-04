@@ -122,7 +122,6 @@ where
             let address = self
                 .onchain
                 .generate_new_recipient()
-                .await
                 .map_err(PaymentError::from)?;
             payment::PaymentType::OnChain(address.into())
         };
