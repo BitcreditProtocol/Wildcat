@@ -189,6 +189,38 @@ where
         locked.push(active_wlt);
         Ok(addr_info.address)
     }
+
+    async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
+        let script = addr.script_pubkey();
+        {
+            let locked = self.main.0.lock().unwrap();
+            let (wlt, _) = &*locked;
+            if wlt.is_mine(script.clone()) {
+                let total: btc::Amount = wlt
+                    .list_unspent()
+                    .filter(|output| !output.is_spent)
+                    .filter(|output| output.txout.script_pubkey == script)
+                    .fold(btc::Amount::ZERO, |sum, output| sum + output.txout.value);
+                return Ok(total);
+            }
+        }
+        {
+            let locked = self.onetimes.lock().unwrap();
+            for (active_wlt, _) in locked.iter() {
+                let wlt_locked = active_wlt.lock().unwrap();
+                let (wlt, _) = &*wlt_locked;
+                if wlt.is_mine(script.clone()) {
+                    let total: btc::Amount = wlt
+                        .list_unspent()
+                        .filter(|output| !output.is_spent)
+                        .filter(|output| output.txout.script_pubkey == script)
+                        .fold(btc::Amount::ZERO, |sum, output| sum + output.txout.value);
+                    return Ok(total);
+                }
+            }
+        }
+        Err(Error::UnknownAddress(addr.clone()))
+    }
 }
 
 enum WalletAge {

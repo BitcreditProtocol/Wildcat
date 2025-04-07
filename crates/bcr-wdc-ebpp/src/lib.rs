@@ -35,6 +35,7 @@ pub struct AppConfig {
     private_keys: persistence::surreal::ConnectionConfig,
     payments: persistence::surreal::ConnectionConfig,
     esplora_url: String,
+    refresh_interval: chrono::Duration,
 }
 
 #[derive(Clone, FromRef)]
@@ -51,6 +52,7 @@ impl AppController {
             private_keys,
             payments,
             esplora_url,
+            refresh_interval,
         } = cfg;
 
         let key_repo = ProdPrivateKeysRepository::new(private_keys)
@@ -69,7 +71,12 @@ impl AppController {
 
         let ebillnode = ebill::DummyEbillNode {};
 
-        let processor = ProdService::new(onchain_wallet, payrepo, ebillnode).await;
+        let refresh_interval = refresh_interval
+            .to_std()
+            .expect("refresh_interval conversion");
+
+        let processor =
+            ProdService::new(onchain_wallet, payrepo, ebillnode, refresh_interval).await;
 
         Self {
             srvc: Arc::new(processor),

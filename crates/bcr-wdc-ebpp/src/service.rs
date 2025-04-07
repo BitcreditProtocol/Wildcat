@@ -18,6 +18,7 @@ use cdk_common::{
 };
 use futures::Stream;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 // ----- local imports
 use crate::error::Result;
@@ -32,12 +33,14 @@ pub trait OnChainWallet: Sync {
     fn generate_new_recipient(&self) -> Result<btc::Address>;
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
     async fn balance(&self) -> Result<bdk_wallet::Balance>;
+    async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount>;
 }
 
 #[async_trait]
 pub trait PaymentRepository: Sync {
     async fn load_request(&self, reqid: Uuid) -> Result<payment::Request>;
     async fn store_request(&self, req: payment::Request) -> Result<()>;
+    async fn update_request(&self, req: payment::Request) -> Result<()>;
 }
 
 #[async_trait]
@@ -53,16 +56,25 @@ pub struct Service<OnChainWlt, PayRepo, EBillCl> {
     pub ebill: EBillCl,
 
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<String>>>>,
+    interval: core::time::Duration,
+    notif_cancel_tokens: Arc<Mutex<Vec<CancellationToken>>>,
 }
 
 impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl> {
-    pub async fn new(onchain: OnChainWlt, payrepo: PayRepo, ebill: EBillCl) -> Self {
+    pub async fn new(
+        onchain: OnChainWlt,
+        payrepo: PayRepo,
+        ebill: EBillCl,
+        refresh_interval: core::time::Duration,
+    ) -> Self {
         let payment_notifier = Arc::new(Mutex::new(None));
         Self {
             onchain,
             payrepo,
             ebill,
             payment_notifier,
+            interval: refresh_interval,
+            notif_cancel_tokens: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -79,7 +91,7 @@ where
 #[async_trait]
 impl<OnChainWlt, PayRepo, EBillCl> MintPayment for Service<OnChainWlt, PayRepo, EBillCl>
 where
-    OnChainWlt: OnChainWallet,
+    OnChainWlt: OnChainWallet + Send + Clone + 'static,
     PayRepo: PaymentRepository,
     EBillCl: EBillNode,
 {
@@ -130,12 +142,27 @@ where
             amount,
             currency: unit.clone(),
             payment_type: payment_t,
+            status: MintQuoteState::Unpaid,
         };
         let response = CreateIncomingPaymentResponse {
             expiry: unix_expiry,
             request_lookup_id: payment.reqid.to_string(),
             request: payment.to_string(),
         };
+        let locked_notifier = self.payment_notifier.lock().unwrap();
+        if let Some(sender) = &*locked_notifier {
+            let token = CancellationToken::new();
+            let cloned = token.clone();
+            tokio::spawn(notify_payment(
+                self.onchain.clone(),
+                payment,
+                sender.clone(),
+                self.interval,
+                cloned,
+            ));
+            let mut locked_tokens = self.notif_cancel_tokens.lock().unwrap();
+            locked_tokens.push(token);
+        }
         Ok(response)
     }
 
@@ -145,7 +172,7 @@ where
         _unit: &CurrencyUnit,
         _options: Option<MeltOptions>,
     ) -> PaymentResult<PaymentQuoteResponse> {
-        log::info!("get_payment_quote, {}", request);
+        log::warn!("TODO!!! get_payment_quote, {}", request);
 
         let response = PaymentQuoteResponse {
             request_lookup_id: String::new(),
@@ -162,7 +189,7 @@ where
         _partial_amount: Option<Amount>,
         _max_fee_amount: Option<Amount>,
     ) -> PaymentResult<MakePaymentResponse> {
-        log::info!("make_payment, {}", melt_quote.request_lookup_id);
+        log::warn!("TODO!!! make_payment, {}", melt_quote.request_lookup_id);
 
         let response = MakePaymentResponse {
             payment_lookup_id: String::new(),
@@ -193,12 +220,22 @@ where
 
     fn is_wait_invoice_active(&self) -> bool {
         log::info!("is_wait_invoice_active");
-
-        false
+        let locked_sender = self.payment_notifier.lock().unwrap();
+        if let Some(sender) = &*locked_sender {
+            !sender.is_closed()
+        } else {
+            false
+        }
     }
 
     fn cancel_wait_invoice(&self) {
         log::info!("cancel_wait_invoice");
+        let mut locked_tokens = self.notif_cancel_tokens.lock().unwrap();
+        *self.payment_notifier.lock().unwrap() = None;
+        for token in locked_tokens.iter() {
+            token.cancel();
+        }
+        locked_tokens.clear();
     }
 
     async fn check_incoming_payment_status(
@@ -207,7 +244,15 @@ where
     ) -> PaymentResult<MintQuoteState> {
         log::info!("check_incoming_payment_status");
 
-        let response = MintQuoteState::Unpaid;
+        let reqid =
+            Uuid::parse_str(_request_lookup_id).map_err(|_| PaymentError::UnknownPaymentState)?;
+
+        let mut request = self.payrepo.load_request(reqid).await?;
+        if request.status == MintQuoteState::Unpaid {
+            request.status = check_incoming_payment(&request, &self.onchain).await?;
+        }
+        let response = request.status;
+        self.payrepo.update_request(request).await?;
         Ok(response)
     }
 
@@ -215,7 +260,7 @@ where
         &self,
         _request_lookup_id: &str,
     ) -> PaymentResult<MakePaymentResponse> {
-        log::info!("check_outgoing_payment");
+        log::warn!("TODO!! check_outgoing_payment");
 
         let response = MakePaymentResponse {
             payment_lookup_id: String::new(),
@@ -233,4 +278,73 @@ fn validate_ebill_request_signature(
 ) -> Result<&RequestToMintFromEBillDesc> {
     // TODO: Implement the signature validation logic
     Ok(&signed.data)
+}
+
+async fn notify_payment<OnChain>(
+    onchain: OnChain,
+    request: payment::Request,
+    sender: mpsc::Sender<String>,
+    pause: core::time::Duration,
+    token: CancellationToken,
+) where
+    OnChain: OnChainWallet,
+{
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => {
+                log::info!("wallet update loop stopping");
+                break;
+            }
+            _ = tokio::time::sleep(pause) => {
+                log::debug!("wallet update loop waking up");
+            }
+        }
+
+        if sender.is_closed() {
+            log::warn!(
+                "validate_ebill_request_signature for {}, channel closed, exiting",
+                request.reqid
+            );
+            return;
+        }
+        let state_res = check_incoming_payment(&request, &onchain).await;
+        if let Err(e) = state_res {
+            log::error!(
+                "error in checking payment for reqid {}, error: {}",
+                request.reqid,
+                e,
+            );
+            continue;
+        }
+    }
+}
+
+async fn check_incoming_payment<OnChain>(
+    request: &payment::Request,
+    onchain: &OnChain,
+) -> Result<cdk_common::MintQuoteState>
+where
+    OnChain: OnChainWallet,
+{
+    let (amount, currency) = match &request.payment_type {
+        payment::PaymentType::EBill(addr) => {
+            let btc_amount = onchain.get_address_balance(addr).await?;
+            (
+                cashu::Amount::from(btc_amount.to_sat()),
+                cashu::CurrencyUnit::Sat,
+            )
+        }
+        payment::PaymentType::OnChain(addr) => {
+            let btc_amount = onchain.get_address_balance(addr).await?;
+            (
+                cashu::Amount::from(btc_amount.to_sat()),
+                cashu::CurrencyUnit::Sat,
+            )
+        }
+    };
+    if currency == request.currency && amount >= request.amount {
+        Ok(cdk_common::MintQuoteState::Paid)
+    } else {
+        Ok(cdk_common::MintQuoteState::Unpaid)
+    }
 }
