@@ -2,6 +2,7 @@
 // ----- extra library imports
 use bdk_wallet::bitcoin;
 use cashu::{Amount, CurrencyUnit};
+use cdk_common::MintQuoteState;
 use uuid::Uuid;
 // ----- local imports
 
@@ -13,6 +14,7 @@ pub struct Request {
     pub payment_type: PaymentType,
     pub amount: Amount,
     pub currency: CurrencyUnit,
+    pub status: MintQuoteState,
 }
 
 #[derive(Debug, Clone)]

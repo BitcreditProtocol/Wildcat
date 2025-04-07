@@ -43,6 +43,8 @@ pub enum Error {
 
     #[error("payment request not found {0}")]
     PaymentRequestNotFound(Uuid),
+    #[error("unknown address {0}")]
+    UnknownAddress(bdk_wallet::bitcoin::Address),
 }
 
 impl std::convert::From<Error> for cdk_common::payment::Error {

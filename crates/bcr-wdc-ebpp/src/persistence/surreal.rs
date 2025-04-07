@@ -146,6 +146,7 @@ struct PaymentRequestDBEntry {
     amount: cashu::Amount,
     currency: cashu::CurrencyUnit,
     payment_type: PaymentTypeDBEntry,
+    status: cdk_common::MintQuoteState,
 }
 impl std::convert::From<Request> for PaymentRequestDBEntry {
     fn from(req: Request) -> Self {
@@ -154,6 +155,7 @@ impl std::convert::From<Request> for PaymentRequestDBEntry {
             amount: req.amount,
             currency: req.currency,
             payment_type: req.payment_type.into(),
+            status: req.status,
         }
     }
 }
@@ -164,6 +166,7 @@ fn into_request(dbreq: PaymentRequestDBEntry, network: btc::Network) -> Result<R
         amount: dbreq.amount,
         currency: dbreq.currency,
         payment_type: ttype,
+        status: dbreq.status,
     })
 }
 
@@ -192,10 +195,20 @@ impl DBPayments {
         self.db.select(rid).await
     }
 
-    async fn store(&self, request: PaymentRequestDBEntry) -> SurrealResult<()> {
+    async fn store(
+        &self,
+        request: PaymentRequestDBEntry,
+    ) -> SurrealResult<Option<PaymentRequestDBEntry>> {
         let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
-        let _r: Option<PaymentRequestDBEntry> = self.db.insert(rid).content(request).await?;
-        Ok(())
+        self.db.insert(rid).content(request).await
+    }
+
+    async fn update(
+        &self,
+        request: PaymentRequestDBEntry,
+    ) -> SurrealResult<Option<PaymentRequestDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
+        self.db.update(rid).content(request).await
     }
 }
 
@@ -210,6 +223,18 @@ impl PaymentRepository for DBPayments {
     async fn store_request(&self, req: Request) -> Result<()> {
         let dbreq = PaymentRequestDBEntry::from(req);
         self.store(dbreq).await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn update_request(&self, req: Request) -> Result<()> {
+        let reqid = req.reqid;
+        let res: Option<PaymentRequestDBEntry> = self
+            .update(req.into())
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if res.is_none() {
+            return Err(Error::PaymentRequestNotFound(reqid));
+        }
         Ok(())
     }
 }
