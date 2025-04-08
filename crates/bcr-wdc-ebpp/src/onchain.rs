@@ -148,7 +148,7 @@ where
         Ok(address_info.address)
     }
 
-    async fn balance(&self) -> Result<bdk_wallet::Balance> {
+    fn balance(&self) -> Result<bdk_wallet::Balance> {
         let mut balance = {
             let locked = self.main.0.lock().unwrap();
             let (wlt, _) = &*locked;
@@ -190,7 +190,7 @@ where
         Ok(addr_info.address)
     }
 
-    async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
+    fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
         let script = addr.script_pubkey();
         {
             let locked = self.main.0.lock().unwrap();
