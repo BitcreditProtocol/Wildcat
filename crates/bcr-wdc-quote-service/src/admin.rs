@@ -2,7 +2,6 @@
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_wdc_webapi::quotes as web_quotes;
-use bcr_wdc_webapi::quotes::BitcoinAmount;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
@@ -51,7 +50,7 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo 
     web_quotes::LightInfo {
         id: quote.id,
         status,
-        sum: BitcoinAmount(quote.sum),
+        sum: quote.sum,
     }
 }
 
