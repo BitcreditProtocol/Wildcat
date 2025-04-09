@@ -117,6 +117,20 @@ impl KeyClient {
         let sig = res.json::<cdk00::BlindSignature>().await?;
         Ok(sig)
     }
+
+    pub async fn activate_keyset(&self, kid: cdk02::Id, qid: uuid::Uuid) -> Result<()> {
+        let url = self
+            .base
+            .join("/v1/admin/keys/activate")
+            .expect("activate relative path");
+        let msg = web_keys::ActivateKeysetRequest { kid, qid };
+        let res = self.cl.post(url).json(&msg).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(kid));
+        }
+        res.error_for_status()?;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "test-utils")]
