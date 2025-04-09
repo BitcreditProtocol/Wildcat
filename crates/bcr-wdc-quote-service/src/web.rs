@@ -43,11 +43,12 @@ where
 
 fn verify_signature(req: &web_quotes::EnquireRequest) -> Result<()> {
     let holder = req.content.endorsees.last().unwrap_or(&req.content.payee);
-    let borshed = borsh::to_vec(&req.content)?;
-    let msg = bcr_wdc_keys::into_secp256k1_msg(&borshed);
-    let ctx = bitcoin::secp256k1::Secp256k1::verification_only();
     let pub_key = bitcoin::secp256k1::PublicKey::from_str(&holder.node_id)?;
-    ctx.verify_schnorr(&req.signature, &msg, &pub_key.x_only_public_key().0)?;
+    bcr_wdc_keys::schnorr_verify_borsh_msg_with_key(
+        &req.content,
+        &req.signature,
+        &pub_key.x_only_public_key().0,
+    )?;
     Ok(())
 }
 

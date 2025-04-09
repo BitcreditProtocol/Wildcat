@@ -22,7 +22,6 @@ pub trait Wallet {
 pub struct Service<Wlt> {
     pub wallet: Wlt,
 
-    pub secp_ctx: bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::SignOnly>,
     pub signing_keys: bitcoin::secp256k1::Keypair,
 }
 
@@ -36,9 +35,8 @@ where
         amount: Amount,
     ) -> Result<cdk::wallet::MintQuote> {
         let request = web::signatures::RequestToMintFromEBillDesc { ebill: ebill_id };
-        let borshed = borsh::to_vec(&request).map_err(Error::BorshIO)?;
-        let msg = bcr_wdc_keys::into_secp256k1_msg(&borshed);
-        let signature = self.secp_ctx.sign_schnorr(&msg, &self.signing_keys);
+        let signature = bcr_wdc_keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
+            .map_err(Error::SchnorrborshMsg)?;
         let signed_request = web::signatures::SignedRequestToMintFromEBillDesc {
             data: request,
             signature,
@@ -119,11 +117,12 @@ mod tests {
             .expect_mint_quote()
             .with(eq(amount), signed_request_check)
             .returning(move |_, _| Ok(mint_quote.clone()));
-        let secp_ctx = bitcoin::secp256k1::Secp256k1::signing_only();
-        let signing_keys = bitcoin::secp256k1::Keypair::new(&secp_ctx, &mut rand::thread_rng());
+        let signing_keys = bitcoin::secp256k1::Keypair::new(
+            bitcoin::secp256k1::global::SECP256K1,
+            &mut rand::thread_rng(),
+        );
         let service = Service {
             wallet,
-            secp_ctx: bitcoin::secp256k1::Secp256k1::signing_only(),
             signing_keys,
         };
         let quote = service.mint_from_ebill(ebill_id, amount).await.unwrap();

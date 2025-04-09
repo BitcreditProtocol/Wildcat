@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
-use bitcoin::bip32 as btc32;
-use bitcoin::hashes::sha256::Hash as Sha256;
-use bitcoin::hashes::Hash;
+use bitcoin::{
+    bip32 as btc32,
+    hashes::{sha256::Hash as Sha256, Hash},
+    key::rand,
+};
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
@@ -21,22 +23,6 @@ pub mod persistence;
 pub use crate::id::KeysetID;
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
-type TStamp = chrono::DateTime<chrono::Utc>;
-
-pub type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("no key for amount {0}")]
-    NoKeyForAmount(cdk_Amount),
-    #[error("cdk::dhke error {0}")]
-    CdkDHKE(#[from] cdk_dhke::Error),
-    #[error("Nut11 error {0}")]
-    Cdk11(#[from] cdk11::Error),
-    #[error("Nut14 error {0}")]
-    Cdk14(#[from] cdk14::Error),
-    #[error("invalid timestamp {0}")]
-    TStamp(TStamp),
-}
 
 pub fn generate_path_index_from_keysetid(kid: KeysetID) -> btc32::ChildNumber {
     const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
@@ -83,14 +69,22 @@ pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
     }
 }
 
+pub type SignWithKeysResult<T> = std::result::Result<T, SignWithKeysError>;
+#[derive(Debug, Error)]
+pub enum SignWithKeysError {
+    #[error("no key for amount {0}")]
+    NoKeyForAmount(cdk_Amount),
+    #[error("cdk::dhke error {0}")]
+    CdkDHKE(#[from] cdk_dhke::Error),
+}
 pub fn sign_with_keys(
     keyset: &cdk02::MintKeySet,
     blind: &cdk00::BlindedMessage,
-) -> Result<cdk00::BlindSignature> {
+) -> SignWithKeysResult<cdk00::BlindSignature> {
     let key = keyset
         .keys
         .get(&blind.amount)
-        .ok_or(Error::NoKeyForAmount(blind.amount))?;
+        .ok_or(SignWithKeysError::NoKeyForAmount(blind.amount))?;
     let raw_signature = cdk_dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
     let signature = cdk00::BlindSignature {
         amount: blind.amount,
@@ -101,7 +95,22 @@ pub fn sign_with_keys(
     Ok(signature)
 }
 
-pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: &cdk00::Proof) -> Result<()> {
+pub type VerifyWithKeysResult<T> = std::result::Result<T, VerifyWithKeysError>;
+#[derive(Debug, Error)]
+pub enum VerifyWithKeysError {
+    #[error("no key for amount {0}")]
+    NoKeyForAmount(cdk_Amount),
+    #[error("cdk::dhke error {0}")]
+    CdkDHKE(#[from] cdk_dhke::Error),
+    #[error("Nut11 error {0}")]
+    Cdk11(#[from] cdk11::Error),
+    #[error("Nut14 error {0}")]
+    Cdk14(#[from] cdk14::Error),
+}
+pub fn verify_with_keys(
+    keyset: &cdk02::MintKeySet,
+    proof: &cdk00::Proof,
+) -> VerifyWithKeysResult<()> {
     // ref: https://docs.rs/cdk/latest/cdk/mint/struct.Mint.html#method.verify_proof
     if let Ok(secret) = <&cashu::secret::Secret as TryInto<cdk10::Secret>>::try_into(&proof.secret)
     {
@@ -118,14 +127,54 @@ pub fn verify_with_keys(keyset: &cdk02::MintKeySet, proof: &cdk00::Proof) -> Res
     let keypair = keyset
         .keys
         .get(&proof.amount)
-        .ok_or(Error::NoKeyForAmount(proof.amount))?;
+        .ok_or(VerifyWithKeysError::NoKeyForAmount(proof.amount))?;
     cashu::dhke::verify_message(&keypair.secret_key, proof.c, proof.secret.as_bytes())?;
     Ok(())
 }
 
-pub fn into_secp256k1_msg(msg: &[u8]) -> bitcoin::secp256k1::Message {
-    let sha = Sha256::hash(msg);
-    bitcoin::secp256k1::Message::from_digest(*sha.as_ref())
+pub type SchnorrSignBorshResult<T> = std::result::Result<T, SchnorrBorshMsgError>;
+#[derive(Debug, Error)]
+pub enum SchnorrBorshMsgError {
+    #[error("Borsh error {0}")]
+    Borsh(borsh::io::Error),
+    #[error("Secp256k1 error {0}")]
+    Secp256k1(bitcoin::secp256k1::Error),
+}
+
+pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {
+    let mut rng = rand::thread_rng();
+    bitcoin::secp256k1::Keypair::new(bitcoin::secp256k1::global::SECP256K1, &mut rng)
+}
+
+pub fn schnorr_sign_borsh_msg_with_key<Message>(
+    msg: &Message,
+    keys: &bitcoin::secp256k1::Keypair,
+) -> SchnorrSignBorshResult<bitcoin::secp256k1::schnorr::Signature>
+where
+    Message: borsh::BorshSerialize,
+{
+    let serialized = borsh::to_vec(&msg).map_err(SchnorrBorshMsgError::Borsh)?;
+    let sha = Sha256::hash(&serialized);
+    let secp_msg = bitcoin::secp256k1::Message::from_digest(*sha.as_ref());
+
+    Ok(bitcoin::secp256k1::global::SECP256K1.sign_schnorr(&secp_msg, keys))
+}
+
+pub fn schnorr_verify_borsh_msg_with_key<Message>(
+    msg: &Message,
+    signature: &bitcoin::secp256k1::schnorr::Signature,
+    key: &bitcoin::secp256k1::XOnlyPublicKey,
+) -> SchnorrSignBorshResult<()>
+where
+    Message: borsh::BorshSerialize,
+{
+    let serialized = borsh::to_vec(&msg).map_err(SchnorrBorshMsgError::Borsh)?;
+    let sha = Sha256::hash(&serialized);
+    let secp_msg = bitcoin::secp256k1::Message::from_digest(*sha.as_ref());
+
+    bitcoin::secp256k1::global::SECP256K1
+        .verify_schnorr(signature, &secp_msg, key)
+        .map_err(SchnorrBorshMsgError::Secp256k1)
 }
 
 #[cfg(any(feature = "test-utils", test))]

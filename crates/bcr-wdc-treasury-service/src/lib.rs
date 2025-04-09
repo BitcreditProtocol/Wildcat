@@ -44,11 +44,10 @@ impl AppController {
         let wallet = ProdSatWallet::new(&cfg.cdk_mint_url, &cfg.wallet_redb_storage, seed)
             .await
             .expect("Failed to create wallet");
-        let secp_ctx = secp256k1::Secp256k1::signing_only();
-        let signing_keys = secp256k1::Keypair::from_secret_key(&secp_ctx, &secret);
+        let signing_keys =
+            secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::global::SECP256K1, &secret);
         let sat = ProdSatService {
             wallet,
-            secp_ctx,
             signing_keys,
         };
 

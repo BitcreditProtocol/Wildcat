@@ -18,12 +18,12 @@ pub enum Error {
     CDKWallet(CDKError),
     #[error("DB error {0}")]
     DB(SurrealError),
-    #[error("Borsh io error {0}")]
-    BorshIO(borsh::io::Error),
     #[error("Secp256k1 error {0}")]
     Secp256k1(bitcoin::secp256k1::Error),
     #[error("Serde_json error {0}")]
     SerdeJson(serde_json::Error),
+    #[error("schnorr borsh message {0}")]
+    SchnorrborshMsg(bcr_wdc_keys::SchnorrBorshMsgError),
 }
 
 impl axum::response::IntoResponse for Error {
@@ -33,7 +33,7 @@ impl axum::response::IntoResponse for Error {
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BorshIO(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::SchnorrborshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
