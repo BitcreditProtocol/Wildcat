@@ -43,7 +43,7 @@ impl TreasuryClient {
         let url = self.base.join("/v1/credit/generate_blinds")?;
         let res = self.cl.post(url).json(&request).send().await?;
         let response: web_signatures::GenerateBlindedMessagesResponse = res.json().await?;
-        Ok((response.rid, response.messages))
+        Ok((response.request_id, response.messages))
     }
 
     pub async fn store_signatures(

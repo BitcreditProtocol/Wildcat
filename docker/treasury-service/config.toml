@@ -5,6 +5,7 @@ log_level = "DEBUG"
 [appcfg]
 cdk_mint_url = "http://cdk_mint:8085"
 wallet_redb_storage = "/data/cdk-wallet-redb.redb"
+proof_url = "http://swap-service:3338"
 
 [appcfg.crsat_repo]
 connection = "ws://surrealdb:8000"
