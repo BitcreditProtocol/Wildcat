@@ -124,7 +124,7 @@ where
             serde_json::from_str::<SignedRequestToMintFromEBillDesc>(&description)
         {
             let request = validate_ebill_request_signature(&request)?;
-            let output = self.ebill.request_to_pay(&request.ebill, amount).await?;
+            let output = self.ebill.request_to_pay(&request.ebill_id, amount).await?;
             let address = self.onchain.add_descriptor(&output).await?;
             payment::PaymentType::EBill(address)
         } else {

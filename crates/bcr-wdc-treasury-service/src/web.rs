@@ -2,6 +2,7 @@
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::signatures as web_signatures;
+use cashu::nut03 as cdk03;
 // ----- local imports
 use crate::credit;
 use crate::debit;
@@ -22,7 +23,7 @@ where
 
     let (rid, blinds) = ctrl.generate_blinds(request.kid, request.total).await?;
     Ok(Json(web_signatures::GenerateBlindedMessagesResponse {
-        rid,
+        request_id: rid,
         messages: blinds,
     }))
 }
@@ -45,17 +46,39 @@ where
     Ok(())
 }
 
-pub async fn request_mint_from_ebill<Wlt>(
-    State(ctrl): State<debit::Service<Wlt>>,
+pub async fn request_mint_from_ebill<Wlt, ProofCl>(
+    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
     Json(request): Json<web_signatures::RequestToMintFromEBillRequest>,
 ) -> Result<Json<web_signatures::RequestToMintfromEBillResponse>>
 where
     Wlt: debit::Wallet,
 {
-    let quote = ctrl.mint_from_ebill(request.ebill, request.amount).await?;
+    log::debug!("Received request to mint from ebill {}", request.ebill_id);
+
+    let quote = ctrl
+        .mint_from_ebill(request.ebill_id, request.amount)
+        .await?;
     let response = web_signatures::RequestToMintfromEBillResponse {
-        id: quote.id,
+        request_id: quote.id,
         request: quote.request,
     };
+    Ok(Json(response))
+}
+
+pub async fn redeem<Wlt, ProofCl>(
+    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
+    Json(request): Json<cdk03::SwapRequest>,
+) -> Result<Json<cdk03::SwapResponse>>
+where
+    Wlt: debit::Wallet,
+    ProofCl: debit::ProofClient,
+{
+    log::debug!(
+        "Received request to redeem {} inputs",
+        request.inputs().len()
+    );
+
+    let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
+    let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }

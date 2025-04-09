@@ -33,6 +33,7 @@ chrono = {version = "0.4"}
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
 futures = {version = "0.3"}
+itertools = {version = "0.14"}
 log = {version = "0.4"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}

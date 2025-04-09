@@ -17,13 +17,15 @@ type ProdCrSatRepository = persistence::surreal::DBRepository;
 type ProdCrSatService = credit::Service<ProdCrSatRepository>;
 
 type ProdSatWallet = debit::CDKWallet;
-type ProdSatService = debit::Service<ProdSatWallet>;
+type ProdProofClient = debit::ProofCl;
+type ProdSatService = debit::Service<ProdSatWallet, ProdProofClient>;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct AppConfig {
     crsat_repo: persistence::surreal::ConnectionConfig,
     cdk_mint_url: String,
     wallet_redb_storage: std::path::PathBuf,
+    proof_url: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -44,11 +46,15 @@ impl AppController {
         let wallet = ProdSatWallet::new(&cfg.cdk_mint_url, &cfg.wallet_redb_storage, seed)
             .await
             .expect("Failed to create wallet");
+        let proof_url = cfg.proof_url.parse().expect("Invalid proof URL");
+        let proof_client = ProdProofClient::new(proof_url);
+        let secp_ctx = secp256k1::Secp256k1::signing_only();
         let signing_keys =
             secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::global::SECP256K1, &secret);
         let sat = ProdSatService {
             wallet,
             signing_keys,
+            proof: proof_client,
         };
 
         Self { crsat, sat }
