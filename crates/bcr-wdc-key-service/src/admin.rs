@@ -2,7 +2,7 @@
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::keys as web_keys;
-use cashu::nuts::nut00 as cdk00;
+use cashu::nut00 as cdk00;
 // ----- local imports
 use crate::error::Result;
 use crate::service::{KeysRepository, QuoteKeysRepository, Service};
@@ -68,4 +68,29 @@ where
         .pre_sign(request.kid, request.qid, request.expire, &request.msg)
         .await?;
     Ok(Json(sig))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/admin/keys/activate/",
+    request_body(content = web_keys::ActivateKeysetRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response"),
+        (status = 404, description = "keyset id not found"),
+    )
+)]
+pub async fn activate<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+    Json(request): Json<web_keys::ActivateKeysetRequest>,
+) -> Result<()>
+where
+    QuotesKeysRepo: QuoteKeysRepository,
+    KeysRepo: KeysRepository,
+{
+    log::debug!(
+        "Received activate request for kid {} qid {}",
+        request.kid,
+        request.qid
+    );
+    ctrl.activate(&request.kid, &request.qid).await
 }

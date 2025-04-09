@@ -70,7 +70,8 @@ where
     let admin = Router::new()
         .route("/v1/admin/keys/sign", post(admin::sign_blind))
         .route("/v1/admin/keys/pre_sign", post(admin::pre_sign))
-        .route("/v1/admin/keys/verify", post(admin::verify_proof));
+        .route("/v1/admin/keys/verify", post(admin::verify_proof))
+        .route("/v1/admin/keys/activate", post(admin::activate));
 
     Router::new()
         .merge(web)
@@ -82,18 +83,21 @@ where
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
-        cdk00::BlindedMessage,
+        bcr_wdc_webapi::keys::ActivateKeysetRequest,
+        bcr_wdc_webapi::keys::PreSignRequest,
         cdk00::BlindSignature,
+        cdk00::BlindedMessage,
         cdk00::Proof,
         cdk02::Id,
-        cdk02::KeySetInfo,
         cdk02::KeySet,
+        cdk02::KeySetInfo,
     ),),
     paths(
-        web::lookup_keyset,
-        web::lookup_keys,
+        admin::activate,
         admin::sign_blind,
         admin::verify_proof,
+        web::lookup_keys,
+        web::lookup_keyset,
     )
 )]
 struct ApiDoc;
@@ -112,8 +116,8 @@ pub mod test_utils {
         keys: TestKeysService,
     }
 
-    impl AppController {
-        pub fn new() -> Self {
+    impl std::default::Default for AppController {
+        fn default() -> Self {
             let seed = [0u8; 32];
             let keys_repo = TestKeysRepository::default();
             let quotekeys_repo = TestQuoteKeysRepository::default();
@@ -132,7 +136,7 @@ pub mod test_utils {
             transport: Some(axum_test::Transport::HttpRandomPort),
             ..Default::default()
         };
-        let cntrl = AppController::new();
+        let cntrl = AppController::default();
         axum_test::TestServer::new_with_config(routes(cntrl), cfg)
             .expect("failed to start test server")
     }

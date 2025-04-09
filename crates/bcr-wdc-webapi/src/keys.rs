@@ -14,3 +14,10 @@ pub struct PreSignRequest {
     pub expire: chrono::DateTime<chrono::Utc>,
     pub msg: cdk00::BlindedMessage,
 }
+
+///--------------------------- Activate keyset
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ActivateKeysetRequest {
+    pub kid: cdk02::Id,
+    pub qid: uuid::Uuid,
+}
