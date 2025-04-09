@@ -154,6 +154,7 @@ pub struct ListReply {
 pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
+    #[schema(value_type = u64)]
     pub sum: Amount,
 }
 

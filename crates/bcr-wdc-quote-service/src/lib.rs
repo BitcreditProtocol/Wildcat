@@ -106,7 +106,6 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         bcr_wdc_webapi::quotes::StatusReplyDiscriminants,
         bcr_wdc_webapi::quotes::UpdateQuoteRequest,
         bcr_wdc_webapi::quotes::UpdateQuoteResponse,
-        bcr_wdc_webapi::quotes::BitcoinAmount,
         cashu::Amount,
         cdk00::BlindSignature,
         cdk00::BlindedMessage,
