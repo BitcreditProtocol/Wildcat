@@ -9,7 +9,7 @@ use cashu::Amount;
 async fn swap() {
     let (server, keys_service) = bcr_wdc_swap_service::test_utils::build_test_server();
     let server_url = server.server_address().expect("address");
-    let client = SwapClient::new(server_url).expect("client");
+    let client = SwapClient::new(server_url);
 
     let keys_entry = key_utils::generate_keyset();
     keys_service

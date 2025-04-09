@@ -22,11 +22,11 @@ pub struct SwapClient {
 }
 
 impl SwapClient {
-    pub fn new(base: reqwest::Url) -> Result<Self> {
-        Ok(Self {
+    pub fn new(base: reqwest::Url) -> Self {
+        Self {
             cl: reqwest::Client::new(),
             base,
-        })
+        }
     }
 
     pub async fn swap(
