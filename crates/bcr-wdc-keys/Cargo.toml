@@ -12,18 +12,16 @@ persistence = ["serde", "surrealdb"]
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-bitcoin.workspace = true
+bitcoin = { workspace = true}
+borsh = {workspace = true}
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
 mockall = { workspace = true, optional = true}
 once_cell = {version = "1.20", optional = true}
 rand = {workspace = true, optional  = true}
+secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true, optional = true}
 surrealdb = {workspace = true, optional = true}
 thiserror.workspace = true
 uuid.workspace = true
-
-[dev-dependencies]
-once_cell = {version = "1.20"}
-rand = {workspace = true}

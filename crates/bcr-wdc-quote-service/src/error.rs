@@ -3,7 +3,7 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeysHandlerError;
-use bcr_wdc_keys::Error as KeysError;
+use bcr_wdc_keys::SignWithKeysError;
 use bcr_wdc_treasury_client::Error as WalletError;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
@@ -14,12 +14,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
-    #[error("Borsh error {0}")]
-    Borsh(#[from] borsh::io::Error),
-    #[error("Secp256k1 error {0}")]
+    #[error("Secp256k1 {0}")]
     Secp256k1(#[from] bitcoin::secp256k1::Error),
+    #[error("schnorr borsh message {0}")]
+    SchnorrBorshMsg(#[from] bcr_wdc_keys::SchnorrBorshMsgError),
     #[error("Keys error {0}")]
-    Keys(#[from] KeysError),
+    SignWithKeys(#[from] SignWithKeysError),
     #[error("Error in parsing datetime: {0}")]
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
@@ -54,17 +54,20 @@ impl axum::response::IntoResponse for Error {
 
             Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
 
-            Error::Keys(KeysError::NoKeyForAmount(amount)) => (
+            Error::SignWithKeys(SignWithKeysError::NoKeyForAmount(amount)) => (
                 StatusCode::NOT_FOUND,
                 format!("No key for amount {}", amount),
             ),
-            Error::Keys(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::SignWithKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
 
             Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Secp256k1(_) => (
+                StatusCode::BAD_REQUEST,
+                String::from("Invalid signature or public key"),
+            ),
         };
         resp.into_response()
     }
