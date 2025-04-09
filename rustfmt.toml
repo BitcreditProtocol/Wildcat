@@ -1,4 +1,1 @@
-max_width = 100
-imports_indent = "Block"
-indent_style = "Block"
-tab_spaces = 4
+edition = "2021"
