@@ -19,7 +19,7 @@ chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures.workspace = true
-itertools = {version = "0.14"}
+itertools = {workspace = true}
 log = {workspace = true, features = ["serde"]}
 rand = {workspace = true, optional = true}
 serde.workspace = true
