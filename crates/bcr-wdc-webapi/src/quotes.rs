@@ -24,7 +24,7 @@ pub struct BillInfo {
     pub maturity_date: String,
 }
 
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct IdentityPublicData {
     #[serde(rename = "type")]
     pub t: ContactType,
@@ -37,14 +37,14 @@ pub struct IdentityPublicData {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 #[borsh(use_discriminant = true)]
 pub enum ContactType {
     Person = 0,
     Company = 1,
 }
 
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct PostalAddress {
     pub country: String,
     pub city: String,

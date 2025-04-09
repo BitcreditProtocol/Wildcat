@@ -4,8 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 
+[lib]
+name = "bcr_wdc_webapi"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bcr-wdc-webapi-devtool"
+path = "src/bin/devtool.rs"
+
 [dependencies]
 bcr-ebill-core.workspace = true
+bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 borsh = {workspace = true, features = ["derive"]}
