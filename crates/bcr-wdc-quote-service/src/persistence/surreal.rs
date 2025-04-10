@@ -2,7 +2,6 @@
 // ----- extra library imports
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
-use bitcoin::Amount;
 use cashu::nuts::nut00 as cdk00;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
@@ -180,14 +179,14 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
 struct DBEntryLightQuote {
     qid: uuid::Uuid,
     status: DBEntryQuoteStatus,
-    sum: u64,
+    sum: bitcoin::Amount,
 }
 impl From<DBEntryLightQuote> for quotes::LightQuote {
     fn from(dbq: DBEntryLightQuote) -> Self {
         Self {
             id: dbq.qid,
             status: dbq.status.into(),
-            sum: Amount::from_sat(dbq.sum),
+            sum: dbq.sum,
         }
     }
 }
