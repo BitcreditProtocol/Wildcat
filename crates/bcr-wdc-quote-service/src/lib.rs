@@ -71,16 +71,19 @@ pub fn credit_routes(ctrl: AppController) -> Router {
 
     Router::new()
         .route("/v1/mint/credit/quote", post(web::enquire_quote))
-        .route("/v1/mint/credit/quote/:id", get(web::lookup_quote))
-        .route("/v1/mint/credit/quote/:id", post(web::resolve_offer))
+        .route("/v1/mint/credit/quote/{id}", get(web::lookup_quote))
+        .route("/v1/mint/credit/quote/{id}", post(web::resolve_offer))
         .route(
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),
         )
         .route("/v1/admin/credit/quote", get(admin::list_quotes))
-        .route("/v1/admin/credit/quote/:id", get(admin::admin_lookup_quote))
         .route(
-            "/v1/admin/credit/quote/:id",
+            "/v1/admin/credit/quote/{id}",
+            get(admin::admin_lookup_quote),
+        )
+        .route(
+            "/v1/admin/credit/quote/{id}",
             post(admin::admin_update_quote),
         )
         .with_state(ctrl)

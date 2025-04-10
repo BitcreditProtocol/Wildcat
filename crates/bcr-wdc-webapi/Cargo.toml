@@ -5,14 +5,14 @@ edition = "2021"
 
 
 [dependencies]
-bdk_wallet = {workspace = true}
 bcr-ebill-core.workspace = true
+bdk_wallet = {workspace = true}
 bitcoin.workspace = true
-borsh.workspace = true
-cashu.workspace = true
+borsh = {workspace = true, features = ["derive"]}
+cashu = {workspace = true, features = ["swagger"]}
 chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 strum = {workspace = true, features = ["derive"]}
-utoipa.workspace = true
-uuid.workspace = true
+utoipa = {workspace = true, features = ["chrono", "uuid", "decimal"]}
+uuid = {workspace = true, features = ["serde"]}

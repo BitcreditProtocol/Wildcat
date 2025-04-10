@@ -6,7 +6,7 @@ use axum::routing::{get, post};
 use bcr_wdc_key_client::KeyClient;
 use cashu::mint_url::MintUrl;
 use cdk::HttpClient;
-use cdk::wallet::client::MintConnector;
+use cdk::wallet::MintConnector;
 use std::str::FromStr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -46,7 +46,7 @@ impl AppController {
         let _mint_url =
             MintUrl::from_str(cdk_mint_url.as_str()).expect("Failed to create mint url");
 
-        let mint_client = HttpClient::new(_mint_url);
+        let mint_client = HttpClient::new(_mint_url, None);
 
         let info = mint_client.get_mint_info().await;
         match info {
@@ -82,16 +82,16 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/info", get(web::get_mint_info))
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
-        .route("/v1/keys/:kid", get(web::get_mint_keyset))
+        .route("/v1/keys/{kid}", get(web::get_mint_keyset))
         .route("/v1/mint/quote/bolt11", post(web::post_mint_quote))
         .route(
-            "/v1/mint/quote/bolt11/:quote_id",
+            "/v1/mint/quote/bolt11/{quote_id}",
             get(web::get_mint_quote_status),
         )
         .route("/v1/mint/bolt11", post(web::post_mint))
         .route("/v1/melt/quote/bolt11", post(web::post_melt_quote))
         .route(
-            "/v1/melt/quote/bolt11/:quote_id",
+            "/v1/melt/quote/bolt11/{quote_id}",
             get(web::get_melt_quote_status),
         )
         .route("/v1/melt/bolt11", post(web::post_melt))

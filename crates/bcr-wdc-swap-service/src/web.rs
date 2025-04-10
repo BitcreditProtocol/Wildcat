@@ -16,7 +16,7 @@ where
     KeysSrvc: KeysService,
     ProofRepo: ProofRepository,
 {
-    let signatures = ctrl.swap(&request.inputs, &request.outputs).await?;
+    let signatures = ctrl.swap(request.inputs(), request.outputs()).await?;
     let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }

@@ -128,7 +128,7 @@ pub fn into_secp256k1_msg(msg: &[u8]) -> bitcoin::secp256k1::Message {
     bitcoin::secp256k1::Message::from_digest(*sha.as_ref())
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(feature = "test-utils", test))]
 pub mod test_utils {
 
     use super::*;

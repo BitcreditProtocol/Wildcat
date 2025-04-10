@@ -7,7 +7,6 @@ use crate::error::Result;
 use crate::quotes;
 use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
 use crate::utils;
-use crate::TStamp;
 
 /// --------------------------- List quotes
 #[utoipa::path(
@@ -17,12 +16,12 @@ use crate::TStamp;
         ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::ListReply, content_type = "application/json"),
     )
 )]
 pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    since: axum_extra::extract::OptionalQuery<TStamp>,
+    Query(since): Query<Option<chrono::DateTime<chrono::Utc>>>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KeysHndlr: KeysHandler,
@@ -31,7 +30,7 @@ where
 {
     log::debug!("Received request to list pending quotes");
 
-    let quotes = ctrl.list_pendings(since.0).await?;
+    let quotes = ctrl.list_pendings(since).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
@@ -104,7 +103,7 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
     path = "/v1/admin/credit/quote",
     params(web_quotes::ListParam),
     responses (
-        (status = 200, description = "Successful response", body = ListReplyLight, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::ListReplyLight, content_type = "application/json"),
     )
 )]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
@@ -167,7 +166,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         ("id" = String, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = InfoReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::InfoReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -193,9 +192,9 @@ where
     params(
         ("id" = String, Path, description = "The quote id")
     ),
-    request_body(content = UpdateQuoteRequest, content_type = "application/json"),
+    request_body(content = web_quotes::UpdateQuoteRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = UpdateQuoteResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_quotes::UpdateQuoteResponse, content_type = "application/json"),
     )
 )]
 pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo>(

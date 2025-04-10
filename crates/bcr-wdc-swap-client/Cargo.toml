@@ -12,6 +12,7 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-bcr-wdc-swap-service = {features = ["test-utils"], path = "../bcr-wdc-swap-service"}
+bcr-wdc-key-service = {path = "../bcr-wdc-key-service", features = ["test-utils"]}
 bcr-wdc-keys = {path = "../bcr-wdc-keys", features = ["test-utils"]}
+bcr-wdc-swap-service = {path = "../bcr-wdc-swap-service", features = ["test-utils"]}
 tokio.workspace = true

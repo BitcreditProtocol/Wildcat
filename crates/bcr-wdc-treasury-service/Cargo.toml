@@ -6,9 +6,9 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
-bcr-wdc-keys = { path = "../bcr-wdc-keys" }
+axum = {workspace = true, features = ["macros"]}
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
+bcr-wdc-keys = { path = "../bcr-wdc-keys" }
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 bitcoin.workspace = true
 borsh = { workspace = true }
@@ -20,15 +20,16 @@ chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures = {version = "0.3"}
-log.workspace = true
+log = {workspace = true, features = ["serde"]}
 serde.workspace = true
 serde_json = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = {workspace = true, features = ["signal"]}
 uuid.workspace = true
 
 [dev-dependencies]
-mockall.workspace = true
 bcr-wdc-keys = { path = "../bcr-wdc-keys" , features = ["test-utils"] }
+mockall.workspace = true
 rand.workspace = true
+surrealdb = {workspace = true, features = ["kv-mem"]}

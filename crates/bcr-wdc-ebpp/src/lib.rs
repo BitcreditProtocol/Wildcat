@@ -9,6 +9,7 @@ use axum::{
 use bcr_wdc_webapi::wallet::Balance;
 use bdk_esplora::esplora_client::AsyncClient;
 use cdk_payment_processor::PaymentProcessorServer;
+use serde_with::serde_as;
 use utoipa::OpenApi;
 // ----- local modules
 mod ebill;
@@ -28,6 +29,7 @@ pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnCh
 pub type ProdService =
     service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::DummyEbillNode>;
 
+#[serde_as]
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     grpc_address: std::net::SocketAddr,
@@ -35,6 +37,7 @@ pub struct AppConfig {
     private_keys: persistence::surreal::ConnectionConfig,
     payments: persistence::surreal::ConnectionConfig,
     esplora_url: String,
+    #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     refresh_interval: chrono::Duration,
 }
 

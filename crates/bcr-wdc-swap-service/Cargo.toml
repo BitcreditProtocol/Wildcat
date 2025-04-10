@@ -9,8 +9,8 @@ test-utils = ["axum-test", "bcr-wdc-keys", "bcr-wdc-key-client/test-utils", "ran
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-axum.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"], optional = true }
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
@@ -20,15 +20,16 @@ config.workspace = true
 env_logger.workspace = true
 futures.workspace = true
 itertools = {version = "0.14"}
-log.workspace = true
+log = {workspace = true, features = ["serde"]}
 rand = {workspace = true, optional = true}
 serde.workspace = true
 surrealdb.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = {workspace = true, features = ["signal"]}
 
 [dev-dependencies]
 bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
 bip39 = {version = "2"}
 mockall.workspace = true
 rand.workspace = true
+surrealdb = {workspace = true, features = ["kv-mem"]}

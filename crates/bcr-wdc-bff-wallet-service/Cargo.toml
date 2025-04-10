@@ -8,20 +8,20 @@ test-utils = ["axum-test"]
 
 [dependencies]
 async-trait.workspace = true
-axum.workspace = true
 axum-test = {workspace = true, optional = true}
+axum.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 cashu.workspace = true
-cdk = {version = "0.7", default-features = false, features = ["wallet"]}
-config = {version = "0.15"}
-env_logger = {version = "0.11"}
+cdk = {workspace = true, features = ["wallet"]}
+config = {workspace = true}
+env_logger = {workspace = true}
 log.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tower-http = { version = "0.6.2", features = ["cors"] }
 utoipa = {workspace = true, features = ["axum_extras"]}
 utoipa-swagger-ui.workspace = true
-tower-http = { version = "0.6.2", features = ["cors"] }
 
 [dev-dependencies]
 mockall.workspace = true
