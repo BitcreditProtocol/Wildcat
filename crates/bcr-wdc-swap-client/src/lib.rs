@@ -35,7 +35,7 @@ impl SwapClient {
         outputs: Vec<cdk00::BlindedMessage>,
     ) -> Result<Vec<cdk00::BlindSignature>> {
         let url = self.base.join("/v1/swap").expect("swap relative path");
-        let request = cdk03::SwapRequest { inputs, outputs };
+        let request = cdk03::SwapRequest::new(inputs, outputs);
         let res = self.cl.post(url).json(&request).send().await?;
         let signatures: cdk03::SwapResponse = res.json().await?;
         Ok(signatures.signatures)

@@ -7,8 +7,7 @@ edition = "2021"
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 cashu.workspace = true
 chrono.workspace = true
-reqwest = {workspace = true}
+reqwest = {workspace = true, features = ["json"]}
 thiserror.workspace = true
 url = {version = "2.4"}
 uuid.workspace = true
-

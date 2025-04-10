@@ -10,9 +10,13 @@ use utoipa::ToSchema;
 ///--------------------------- onchain wallet balance
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Balance {
+    #[schema(value_type=u64)]
     pub immature: Amount,
+    #[schema(value_type=u64)]
     pub trusted_pending: Amount,
+    #[schema(value_type=u64)]
     pub untrusted_pending: Amount,
+    #[schema(value_type=u64)]
     pub confirmed: Amount,
 }
 

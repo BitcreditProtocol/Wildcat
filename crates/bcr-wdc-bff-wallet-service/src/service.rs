@@ -7,7 +7,7 @@ use cashu::{
     SwapRequest, SwapResponse,
 };
 use cdk::Error;
-use cdk::wallet::client::MintConnector;
+use cdk::wallet::MintConnector;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -96,5 +96,13 @@ impl MintConnector for Service {
 
     async fn post_restore(&self, request: RestoreRequest) -> Result<RestoreResponse, Error> {
         self.mint_service.post_restore(request).await
+    }
+
+    async fn get_auth_wallet(&self) -> Option<cdk::wallet::AuthWallet> {
+        self.mint_service.get_auth_wallet().await
+    }
+
+    async fn set_auth_wallet(&self, wallet: Option<cdk::wallet::AuthWallet>) {
+        self.mint_service.set_auth_wallet(wallet).await
     }
 }

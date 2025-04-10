@@ -11,7 +11,7 @@ use cashu::nuts::nut05 as cdk05;
 use cashu::nuts::nut06 as cdk06;
 use cashu::nuts::nut07 as cdk07;
 use cashu::nuts::nut09 as cdk09;
-use cdk::wallet::client::MintConnector;
+use cdk::wallet::MintConnector;
 
 #[utoipa::path(
     get,

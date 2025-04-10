@@ -17,33 +17,34 @@ members = [
 [workspace.dependencies]
 anyhow = {version = "1"}
 async-trait = {version = "0.1"}
-axum = {version = "0.7", features = ["macros"]}
-axum-extra = { version = "0.9"}
-axum-test = {version = "16"}
-bdk_wallet = {version = "1.1"}
+axum = {version = "0.8"}
+axum-extra = {version = "0.10"}
+axum-test = {version = "17"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/E-Bill.git", tag = "v0.3.0"}
+bdk_wallet = {version = "1.1"}
 bitcoin = {version = "0.32"}
-borsh = {version = "1.5", features = ["derive"]}
-cashu = {version = "0.7", default-features = false, features = ["mint", "swagger"]}
-cdk = {version = "0.7"}
-cdk-common = {version = "0.7"}
-cdk-redb = {version = "0.7"}
-chrono = {version = "0.4", features = ["serde"]}
+borsh = {version = "1.5"}
+cashu = {version = "0.9", default-features = false}
+cdk = {version = "0.9"}
+cdk-common = {version = "0.9"}
+cdk-payment-processor = {version = "0.9"}
+cdk-redb = {version = "0.9"}
+chrono = {version = "0.4"}
 config = {version = "0.15"}
 env_logger = {version = "0.11"}
 futures = {version = "0.3"}
-log = {version = "0.4", features = ["serde"]}
+log = {version = "0.4"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11"}
 rust_decimal = {version = "1"}
-serde = {version = "1", features = ["derive"]}
+serde = {version = "1"}
 serde_json = {version = "1"}
 strum = {version = "0"}
-surrealdb = {version = "2.2", features = ["kv-mem"]}
+surrealdb = {version = "2.2"}
 thiserror = {version = "2"}
-tokio = {version = "1", features = ["macros", "rt-multi-thread", "signal"]}
-tokio-util = { version = "0.7"}
-utoipa = {version = "4", features = ["axum_extras", "chrono", "uuid", "decimal"]} # compatibility with cdk
-utoipa-swagger-ui = {version = "7", features = ["axum"]}
-uuid = {version = "1", features = ["serde", "v4"]}
+tokio = {version = "1"}
+tokio-util = {version = "0.7"}
+utoipa = {version = "5"}
+utoipa-swagger-ui = {version = "9"}
+uuid = {version = "1"}

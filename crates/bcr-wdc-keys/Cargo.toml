@@ -19,8 +19,11 @@ chrono.workspace = true
 mockall = { workspace = true, optional = true}
 once_cell = {version = "1.20", optional = true}
 rand = {workspace = true, optional  = true}
+serde = {workspace = true, optional = true}
+surrealdb = {workspace = true, optional = true}
 thiserror.workspace = true
 uuid.workspace = true
 
-serde = {workspace = true, optional = true}
-surrealdb = {workspace = true, optional = true}
+[dev-dependencies]
+once_cell = {version = "1.20"}
+rand = {workspace = true}

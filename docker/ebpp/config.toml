@@ -6,6 +6,7 @@ bind_address = "0.0.0.0:3338"
 
 grpc_address = "0.0.0.0:9090"
 esplora_url = "https://blockstream.info/testnet/api"
+refresh_interval=1000
 
 [appcfg.onchain]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

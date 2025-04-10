@@ -9,7 +9,7 @@ mod error;
 mod keys;
 mod persistence;
 mod service;
-#[cfg(feature = "test-utils")]
+#[cfg(any(feature = "test-utils", test))]
 pub mod utils;
 mod web;
 // ----- local imports
