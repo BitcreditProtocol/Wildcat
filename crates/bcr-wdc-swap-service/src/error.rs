@@ -46,6 +46,7 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        log::error!("Error: {}", self);
         let response = match self {
             Error::UnmatchingAmount(_, _) => {
                 (StatusCode::BAD_REQUEST, String::from("Unmatching amount"))
