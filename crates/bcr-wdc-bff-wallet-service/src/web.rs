@@ -2,7 +2,6 @@ use crate::error::Error::CDKClient;
 use crate::error::Result;
 use crate::service::Service;
 use axum::extract::{Json, Path, State};
-use cashu::KeysResponse;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::nuts::nut03 as cdk03;
@@ -11,6 +10,7 @@ use cashu::nuts::nut05 as cdk05;
 use cashu::nuts::nut06 as cdk06;
 use cashu::nuts::nut07 as cdk07;
 use cashu::nuts::nut09 as cdk09;
+use cashu::KeysResponse;
 use cdk::wallet::MintConnector;
 
 #[utoipa::path(
