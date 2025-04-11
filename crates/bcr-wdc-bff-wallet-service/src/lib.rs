@@ -98,7 +98,13 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
-        .layer(CorsLayer::new().allow_origin(Any).expose_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_headers(Any)
+                .allow_methods(Any)
+                .expose_headers(Any),
+        )
         .with_state(app)
         .merge(swagger)
 }
