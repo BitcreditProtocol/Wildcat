@@ -50,7 +50,7 @@ impl From<KeysDBEntry> for KeysetEntry {
             info, unit, keys, ..
         } = dbk;
         let mut keysmap: BTreeMap<Amount, cdk01::MintKeyPair> = BTreeMap::default();
-        for (val, keypair) in keys {
+        for (val, keypair) in keys.into_iter() {
             // ... and parse them back to the original type
             let uval = val.parse::<u64>().expect("Failed to parse amount");
             keysmap.insert(Amount::from(uval), keypair);
@@ -108,8 +108,12 @@ impl DB {
     }
 
     async fn keyset(&self, rid: RecordId) -> SurrealResult<Option<cdk02::MintKeySet>> {
-        let response: Option<KeysetEntry> = self.db.select(rid).await?;
-        Ok(response.map(|(_, keyset)| keyset))
+        let response: Option<KeysDBEntry> = self.db.select(rid).await?;
+        let Some(keysdbentry) = response else {
+            return Ok(None);
+        };
+        let (_, keyset) = KeysetEntry::from(keysdbentry);
+        Ok(Some(keyset))
     }
 }
 

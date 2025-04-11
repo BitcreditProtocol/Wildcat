@@ -232,7 +232,7 @@ impl DBQuotes {
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBEntryQuote>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.table, qid.to_string());
+        let rid = surrealdb::RecordId::from_table_key(&self.table, qid);
         self.db.select(rid).await
     }
 

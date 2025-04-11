@@ -118,10 +118,11 @@ impl Repository for DBRepository {
 
     async fn increment_counter(&self, kid: cdk02::Id, inc: u32) -> Result<()> {
         let rid = RecordId::from_table_key(&self.counters, kid.to_string());
-        let val: Option<DBEntryCounter> = self.db.select(rid.clone()).await.map_err(Error::DB)?;
-        let val = val.unwrap_or_default().counter += inc;
+        let mut val: Option<DBEntryCounter> =
+            self.db.select(rid.clone()).await.map_err(Error::DB)?;
+        val.get_or_insert_default().counter += inc;
         let _: Option<DBEntryCounter> =
-            self.db.insert(rid).content(val).await.map_err(Error::DB)?;
+            self.db.upsert(rid).content(val).await.map_err(Error::DB)?;
         Ok(())
     }
 
@@ -159,7 +160,7 @@ impl Repository for DBRepository {
             .content(entry)
             .await
             .map_err(Error::DB)?;
-        todo!()
+        Ok(())
     }
 }
 

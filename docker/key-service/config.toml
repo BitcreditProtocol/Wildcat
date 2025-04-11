@@ -12,5 +12,5 @@ table = "keys"
 [appcfg.quotekeys]
 connection = "ws://surrealdb:8000"
 namespace = "test"
-database = "quote"
+database = "key"
 table = "quotes"

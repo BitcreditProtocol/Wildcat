@@ -10,7 +10,7 @@ database = "quote"
 table = "quotes"
 
 [appcfg.keys]
-base_url = "http://key-service:3335"
+base_url = "http://key-service:3338"
 
 [appcfg.wallet]
-base_url = "http://treasury-service:3336"
+base_url = "http://treasury-service:3338"
