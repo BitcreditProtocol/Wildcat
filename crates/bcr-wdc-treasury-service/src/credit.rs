@@ -46,13 +46,13 @@ where
             &cashu::amount::SplitTarget::default(),
         )
         .map_err(Error::CDK13)?;
-        let rid = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
         let blinds = premint.blinded_messages();
-        self.repo.store_secrets(rid, premint).await?;
+        self.repo.store_secrets(request_id, premint).await?;
         self.repo
             .increment_counter(kid, blinds.len() as u32)
             .await?;
-        Ok((rid, blinds))
+        Ok((request_id, blinds))
     }
 
     pub async fn store_signatures(

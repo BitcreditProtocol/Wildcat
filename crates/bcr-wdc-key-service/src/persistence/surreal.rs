@@ -22,6 +22,7 @@ pub struct KeysDBEntry {
     info: cdk_mint::MintKeySetInfo,
     // unpacking MintKeySet because surrealdb doesn't support BTreeMap<K,V> where K is not a String
     unit: cdk00::CurrencyUnit,
+    // surrealdb supports only strings as key type
     keys: HashMap<String, cdk01::MintKeyPair>,
 }
 

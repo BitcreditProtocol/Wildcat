@@ -6,8 +6,8 @@ use cashu::{
     MintInfo, MintQuoteBolt11Request, MintQuoteBolt11Response, RestoreRequest, RestoreResponse,
     SwapRequest, SwapResponse,
 };
-use cdk::Error;
 use cdk::wallet::MintConnector;
+use cdk::Error;
 use std::fmt::Debug;
 use std::sync::Arc;
 

@@ -1,12 +1,12 @@
 use crate::error::Error;
 use crate::service::Service;
-use axum::Router;
 use axum::extract::FromRef;
 use axum::routing::{get, post};
+use axum::Router;
 use bcr_wdc_key_client::KeyClient;
 use cashu::mint_url::MintUrl;
-use cdk::HttpClient;
 use cdk::wallet::MintConnector;
+use cdk::HttpClient;
 use std::str::FromStr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
