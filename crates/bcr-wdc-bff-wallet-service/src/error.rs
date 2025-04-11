@@ -17,6 +17,7 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        log::error!("Error: {}", self);
         let response = match self {
             Error::KeysClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
