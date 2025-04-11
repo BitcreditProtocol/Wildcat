@@ -9,6 +9,7 @@ async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
 bcr-wdc-keys = { path = "../bcr-wdc-keys" }
+bcr-wdc-swap-client = { path = "../bcr-wdc-swap-client" }
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 bitcoin.workspace = true
 borsh = { workspace = true }
@@ -20,6 +21,7 @@ chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures = {version = "0.3"}
+itertools = {workspace = true}
 log = {workspace = true, features = ["serde"]}
 serde.workspace = true
 serde_json = {workspace = true}
@@ -30,6 +32,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-wdc-keys = { path = "../bcr-wdc-keys" , features = ["test-utils"] }
+bcr-wdc-swap-service = { path = "../bcr-wdc-swap-service", features = ["test-utils"] }
 mockall.workspace = true
 rand.workspace = true
+secp256k1 = {workspace = true, features = ["global-context"]}
 surrealdb = {workspace = true, features = ["kv-mem"]}

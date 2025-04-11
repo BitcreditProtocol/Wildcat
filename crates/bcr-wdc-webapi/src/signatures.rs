@@ -16,7 +16,7 @@ pub struct GenerateBlindedMessagesRequest {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct GenerateBlindedMessagesResponse {
-    pub rid: uuid::Uuid,
+    pub request_id: uuid::Uuid,
     pub messages: Vec<cdk00::BlindedMessage>,
 }
 
@@ -31,7 +31,7 @@ pub struct StoreBlindSignaturesRequest {
 /// --------------------------- request to mint from ebill description
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct RequestToMintFromEBillDesc {
-    pub ebill: String,
+    pub ebill_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,12 +43,12 @@ pub struct SignedRequestToMintFromEBillDesc {
 /// --------------------------- request to pay ebill
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct RequestToMintFromEBillRequest {
-    pub ebill: String,
+    pub ebill_id: String,
     pub amount: cashu::Amount,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct RequestToMintfromEBillResponse {
-    pub id: String,
+    pub request_id: String,
     pub request: String,
 }
