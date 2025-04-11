@@ -13,9 +13,9 @@ bdk_core = {version = "0.4"}
 bdk_esplora = {version = "0.20", features = ["tokio"]}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
 bip21 = {version = "0.5"}
-cashu = { version = "0.8"}
-cdk-common = {version = "0.8"}
-cdk-payment-processor = {version = "0.8", default-features = false, features = ["fake"]}
+cashu = {workspace = true}
+cdk-common = {workspace = true}
+cdk-payment-processor = {workspace = true, default-features = false, features = ["fake"]}
 chrono = {workspace = true}
 config = {workspace = true}
 env_logger = {workspace = true}
@@ -23,6 +23,7 @@ futures = {workspace = true}
 log = {workspace = true}
 rand = {workspace = true}
 reqwest = {workspace = true}
+secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true}
 serde_json = { workspace = true}
 serde_with = {version = "3", default-features = false, features = ["chrono"]}

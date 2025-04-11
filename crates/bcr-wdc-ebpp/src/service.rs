@@ -104,6 +104,7 @@ where
             mpp: false,
             unit: CurrencyUnit::Sat,
             invoice_description: true,
+            amountless: false,
         };
         serde_json::to_value(settings).map_err(PaymentError::Serde)
     }
