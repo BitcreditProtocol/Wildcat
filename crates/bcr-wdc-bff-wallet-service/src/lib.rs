@@ -39,9 +39,7 @@ impl AppController {
             cdk_mint_url,
         } = cfg;
 
-        let keys_client = KeyClient::new(keys_client.base_url)
-            .map_err(Error::KeysClient)
-            .expect("Failed to create keys client");
+        let keys_client = KeyClient::new(keys_client.base_url);
 
         let _mint_url =
             MintUrl::from_str(cdk_mint_url.as_str()).expect("Failed to create mint url");

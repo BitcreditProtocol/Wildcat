@@ -36,9 +36,7 @@ impl AppController {
             keys_client,
         } = cfg;
 
-        let keys_client = ProdKeysService::new(keys_client)
-            .await
-            .expect("Failed to create keys client");
+        let keys_client = ProdKeysService::new(keys_client);
         let proofs_repo = ProdProofRepository::new(proof_db)
             .await
             .expect("Failed to create proofs repository");

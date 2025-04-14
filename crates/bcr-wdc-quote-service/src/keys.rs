@@ -20,9 +20,9 @@ pub struct KeysRestConfig {
 pub struct KeysRestHandler(KeyClient);
 
 impl KeysRestHandler {
-    pub fn new(cfg: KeysRestConfig) -> Result<Self> {
-        let cl = KeyClient::new(cfg.base_url).map_err(Error::KeysHandler)?;
-        Ok(Self(cl))
+    pub fn new(cfg: KeysRestConfig) -> Self {
+        let cl = KeyClient::new(cfg.base_url);
+        Self(cl)
     }
 }
 

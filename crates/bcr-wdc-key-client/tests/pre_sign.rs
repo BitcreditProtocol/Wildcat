@@ -9,7 +9,7 @@ use cashu::Amount;
 async fn pre_sign() {
     let server = bcr_wdc_key_service::test_utils::build_test_server();
     let server_url = server.server_address().expect("address");
-    let client = KeyClient::new(server_url).expect("client");
+    let client = KeyClient::new(server_url);
 
     let kid = key_utils::generate_random_keysetid().into();
     let qid = uuid::Uuid::new_v4();
