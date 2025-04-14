@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use bdk_wallet::bitcoin::Amount;
+use bdk_wallet::bitcoin as btc;
+use cashu as cdk;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
@@ -11,13 +12,13 @@ use utoipa::ToSchema;
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Balance {
     #[schema(value_type=u64)]
-    pub immature: Amount,
+    pub immature: btc::Amount,
     #[schema(value_type=u64)]
-    pub trusted_pending: Amount,
+    pub trusted_pending: btc::Amount,
     #[schema(value_type=u64)]
-    pub untrusted_pending: Amount,
+    pub untrusted_pending: btc::Amount,
     #[schema(value_type=u64)]
-    pub confirmed: Amount,
+    pub confirmed: btc::Amount,
 }
 
 impl std::convert::From<bdk_wallet::Balance> for Balance {
@@ -29,4 +30,11 @@ impl std::convert::From<bdk_wallet::Balance> for Balance {
             confirmed: blnc.confirmed,
         }
     }
+}
+
+///--------------------------- eCash wallet balance
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ECashBalance {
+    pub amount: cdk::Amount,
+    pub unit: cdk::CurrencyUnit,
 }

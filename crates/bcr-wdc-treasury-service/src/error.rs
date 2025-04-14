@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use cashu::{nut02 as cdk02, nut13::Error as CDK13Error};
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
+use uuid::Uuid;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -25,7 +26,7 @@ pub enum Error {
     SchnorrBorshMsg(bcr_wdc_keys::SchnorrBorshMsgError),
     #[error("Proof client error {0}")]
     ProofCl(bcr_wdc_swap_client::Error),
-
+    //debit errors
     #[error("Empty inputs/outputs")]
     EmptyInputsOrOutputs,
     #[error("Zero amount is not allowed")]
@@ -36,12 +37,24 @@ pub enum Error {
     UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),
+    // credit errors
+    #[error("error in unblinding signatures {0}")]
+    UnblindSignatures(String),
+    #[error("request id not found {0}")]
+    RequestIDNotFound(Uuid),
+    #[error("keys client {0}")]
+    KeyClient(bcr_wdc_key_client::Error),
 }
-
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         log::error!("Error: {}", self);
         let resp = match self {
+            Error::KeyClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::RequestIDNotFound(request_id) => (
+                StatusCode::BAD_REQUEST,
+                format!("Request ID not found: {}", request_id),
+            ),
             Error::UnknownKeyset(keyset) => (
                 StatusCode::BAD_REQUEST,
                 format!("Unknown keyset: {}", keyset),

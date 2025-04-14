@@ -1,15 +1,16 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, State};
-use bcr_wdc_webapi::signatures as web_signatures;
-use cashu::nut03 as cdk03;
+use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
+use cashu::{self as cdk, nut03 as cdk03};
 // ----- local imports
 use crate::credit;
 use crate::debit;
 use crate::error::Result;
 
-pub async fn generate_blind_messages<Repo>(
-    State(ctrl): State<credit::Service<Repo>>,
+// ----- crsat APIs
+pub async fn generate_blind_messages<Repo, KeySrvc>(
+    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
     Json(request): Json<web_signatures::GenerateBlindedMessagesRequest>,
 ) -> Result<Json<web_signatures::GenerateBlindedMessagesResponse>>
 where
@@ -28,8 +29,8 @@ where
     }))
 }
 
-pub async fn store_signatures<Repo>(
-    State(ctrl): State<credit::Service<Repo>>,
+pub async fn store_signatures<Repo, KeySrvc>(
+    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
     Json(request): Json<web_signatures::StoreBlindSignaturesRequest>,
 ) -> Result<()>
 where
@@ -46,6 +47,24 @@ where
     Ok(())
 }
 
+pub async fn crsat_balance<Repo, KeySrvc>(
+    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
+) -> Result<Json<web_wallet::ECashBalance>>
+where
+    Repo: credit::Repository,
+    KeySrvc: credit::KeyService,
+{
+    log::debug!("Received request to crsat_balance");
+
+    let amount = ctrl.balance().await?;
+    let response = web_wallet::ECashBalance {
+        amount,
+        unit: cdk::CurrencyUnit::Custom("crsat".to_string()),
+    };
+    Ok(Json(response))
+}
+
+// ----- sat APIs
 pub async fn request_mint_from_ebill<Wlt, ProofCl>(
     State(ctrl): State<debit::Service<Wlt, ProofCl>>,
     Json(request): Json<web_signatures::RequestToMintFromEBillRequest>,
