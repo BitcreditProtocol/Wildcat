@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::FromRef;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::Router;
 use bitcoin::bip32 as btc32;
 use bitcoin::secp256k1;
@@ -14,14 +14,16 @@ mod web;
 // ----- local imports
 
 type ProdCrSatRepository = persistence::surreal::DBRepository;
-type ProdCrSatService = credit::Service<ProdCrSatRepository>;
+type ProdCrSatKeysService = credit::KeySrvc;
+type ProdCrSatService = credit::Service<ProdCrSatRepository, ProdCrSatKeysService>;
 
 type ProdSatWallet = debit::CDKWallet;
 type ProdProofClient = debit::ProofCl;
 type ProdSatService = debit::Service<ProdSatWallet, ProdProofClient>;
 
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
+    crsat_keys_service: credit::KeySrvcConfig,
     crsat_repo: persistence::surreal::ConnectionConfig,
     cdk_mint_url: String,
     wallet_redb_storage: std::path::PathBuf,
@@ -41,7 +43,8 @@ impl AppController {
             .expect("Failed to create repository");
         let xpriv = btc32::Xpriv::new_master(bitcoin::NetworkKind::Main, seed)
             .expect("Failed to create xpriv");
-        let crsat = ProdCrSatService { repo, xpriv };
+        let keys = ProdCrSatKeysService::new(cfg.crsat_keys_service);
+        let crsat = ProdCrSatService { repo, xpriv, keys };
 
         let wallet = ProdSatWallet::new(&cfg.cdk_mint_url, &cfg.wallet_redb_storage, seed)
             .await
@@ -67,6 +70,7 @@ pub fn routes(app: AppController) -> Router {
             post(web::generate_blind_messages),
         )
         .route("/v1/credit/store_signatures", post(web::store_signatures))
+        .route("/v1/credit/balance", get(web::crsat_balance))
         .route(
             "/v1/debit/request_to_mint_from_ebill",
             post(web::request_mint_from_ebill),
