@@ -186,6 +186,7 @@ pub mod test_utils {
     use cashu::secret as cdk_secret;
     use cdk_common::mint as cdk_mint;
     use once_cell::sync::Lazy;
+    use rand::RngCore;
 
     static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
         Lazy::new(bitcoin::secp256k1::Secp256k1::new);
@@ -202,6 +203,30 @@ pub mod test_utils {
         let set = cdk02::MintKeySet::generate_from_seed(
             &SECPCTX,
             &[],
+            10,
+            cdk00::CurrencyUnit::Sat,
+            path.clone(),
+        );
+        let info = cdk_mint::MintKeySetInfo {
+            id: set.id,
+            active: true,
+            unit: cdk00::CurrencyUnit::Sat,
+            valid_from: 0,
+            valid_to: None,
+            derivation_path_index: None,
+            derivation_path: path,
+            input_fee_ppk: 0,
+            max_order: 10,
+        };
+        (info, set)
+    }
+    pub fn generate_random_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
+        let path = DerivationPath::master();
+        let mut random_seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut random_seed);
+        let set = cdk02::MintKeySet::generate_from_seed(
+            &SECPCTX,
+            &random_seed,
             10,
             cdk00::CurrencyUnit::Sat,
             path.clone(),

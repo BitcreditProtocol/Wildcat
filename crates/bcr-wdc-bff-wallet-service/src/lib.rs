@@ -1,4 +1,3 @@
-use crate::error::Error;
 use crate::service::Service;
 use axum::extract::FromRef;
 use axum::routing::{get, post};
