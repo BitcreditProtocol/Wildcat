@@ -11,14 +11,19 @@ use crate::{
 
 // ----- end imports
 
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct ProofClientConfig {
+    pub proof_url: Url,
+}
+
 #[derive(Clone, Debug)]
 pub struct ProofCl {
     cl: SwapClient,
 }
 
 impl ProofCl {
-    pub fn new(base_url: Url) -> Self {
-        let cl = SwapClient::new(base_url);
+    pub fn new(cfg: ProofClientConfig) -> Self {
+        let cl = SwapClient::new(cfg.proof_url);
         Self { cl }
     }
 }
