@@ -18,6 +18,12 @@ use crate::{
 
 // ----- end imports
 
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct CDKWalletConfig {
+    pub mint_url: String,
+    pub storage: std::path::PathBuf,
+}
+
 #[derive(Clone)]
 pub struct CDKWallet {
     wlt: cdk::wallet::Wallet,
@@ -25,18 +31,18 @@ pub struct CDKWallet {
 }
 
 impl CDKWallet {
-    pub async fn new(mint_url: &str, storage: &std::path::Path, seed: &[u8]) -> AnyResult<Self> {
-        let storage = cdk_redb::WalletRedbDatabase::new(storage)?;
+    pub async fn new(cfg: CDKWalletConfig, seed: &[u8]) -> AnyResult<Self> {
+        let storage = cdk_redb::WalletRedbDatabase::new(&cfg.storage)?;
         let arced_storage = std::sync::Arc::new(storage);
         let wlt = cdk::Wallet::new(
-            mint_url,
+            &cfg.mint_url,
             cdk00::CurrencyUnit::Sat,
             arced_storage,
             seed,
             None,
         )?;
-        let minturl = MintUrl::from_str(mint_url)?;
-        let client = cdk::wallet::HttpClient::new(minturl, None);
+        let mint_url = MintUrl::from_str(&cfg.mint_url)?;
+        let client = cdk::wallet::HttpClient::new(mint_url, None);
         // make the wallet aware of the mint info
         wlt.get_mint_info().await.map_err(Error::CDKWallet)?;
         Ok(Self { wlt, client })

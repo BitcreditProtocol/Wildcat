@@ -25,9 +25,8 @@ type ProdSatService = debit::Service<ProdSatWallet, ProdProofClient>;
 pub struct AppConfig {
     crsat_keys_service: credit::KeySrvcConfig,
     crsat_repo: persistence::surreal::ConnectionConfig,
-    cdk_mint_url: String,
-    wallet_redb_storage: std::path::PathBuf,
-    proof_url: String,
+    sat_wallet: debit::CDKWalletConfig,
+    proof_client: debit::ProofClientConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -38,19 +37,24 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
-        let repo = ProdCrSatRepository::new(cfg.crsat_repo)
+        let AppConfig {
+            crsat_keys_service,
+            crsat_repo,
+            sat_wallet,
+            proof_client,
+        } = cfg;
+        let repo = ProdCrSatRepository::new(crsat_repo)
             .await
             .expect("Failed to create repository");
         let xpriv = btc32::Xpriv::new_master(bitcoin::NetworkKind::Main, seed)
             .expect("Failed to create xpriv");
-        let keys = ProdCrSatKeysService::new(cfg.crsat_keys_service);
+        let keys = ProdCrSatKeysService::new(crsat_keys_service);
         let crsat = ProdCrSatService { repo, xpriv, keys };
 
-        let wallet = ProdSatWallet::new(&cfg.cdk_mint_url, &cfg.wallet_redb_storage, seed)
+        let wallet = ProdSatWallet::new(sat_wallet, seed)
             .await
             .expect("Failed to create wallet");
-        let proof_url = cfg.proof_url.parse().expect("Invalid proof URL");
-        let proof_client = ProdProofClient::new(proof_url);
+        let proof_client = ProdProofClient::new(proof_client);
         let signing_keys =
             secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::global::SECP256K1, &secret);
         let sat = ProdSatService {

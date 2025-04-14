@@ -9,6 +9,6 @@ mod wallet;
 
 // ----- end imports
 
-pub use proof::ProofCl;
+pub use proof::{ProofCl, ProofClientConfig};
 pub use service::{ProofClient, Service, Wallet};
-pub use wallet::CDKWallet;
+pub use wallet::{CDKWallet, CDKWalletConfig};
