@@ -28,11 +28,11 @@ pub struct KeyClient {
 }
 
 impl KeyClient {
-    pub fn new(base: reqwest::Url) -> Result<Self> {
-        Ok(Self {
+    pub fn new(base: reqwest::Url) -> Self {
+        Self {
             cl: reqwest::Client::new(),
             base,
-        })
+        }
     }
 
     pub async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
@@ -48,7 +48,7 @@ impl KeyClient {
         Ok(ks)
     }
 
-    pub async fn keyset(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
+    pub async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
         let url = self
             .base
             .join(&format!("/v1/keysets/{}", kid))

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-utils = ["bcr-wdc-key-service", "bcr-wdc-keys"]
+test-utils = ["bcr-wdc-key-service", "bcr-wdc-keys", "bcr-wdc-key-service/test-utils"]
 
 [dependencies]
 bcr-wdc-key-service = {path = "../bcr-wdc-key-service", optional = true}

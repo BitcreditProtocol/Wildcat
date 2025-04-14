@@ -52,7 +52,7 @@ impl AppController {
             .await
             .expect("DB connection to quotes failed");
 
-        let keys_hndlr = ProdKeysHandler::new(keys).expect("Keys handler creation failed");
+        let keys_hndlr = ProdKeysHandler::new(keys);
         let wallet = ProdWallet::new(&wallet).expect("Wallet creation failed");
         let quoting_service = ProdQuotingService {
             keys_hndlr,

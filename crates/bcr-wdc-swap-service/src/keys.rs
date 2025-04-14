@@ -17,16 +17,16 @@ pub struct KeysClientConfig {
 #[derive(Debug, Clone)]
 pub struct RESTClient(KeyClient);
 impl RESTClient {
-    pub async fn new(cfg: KeysClientConfig) -> Result<Self> {
-        let cl = KeyClient::new(cfg.base_url).map_err(Error::KeysClient)?;
-        Ok(Self(cl))
+    pub fn new(cfg: KeysClientConfig) -> Self {
+        let cl = KeyClient::new(cfg.base_url);
+        Self(cl)
     }
 }
 
 #[async_trait]
 impl KeysService for RESTClient {
     async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo> {
-        let response = self.0.keyset(*id).await;
+        let response = self.0.keyset_info(*id).await;
         match response {
             Ok(info) => Ok(info),
             Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
