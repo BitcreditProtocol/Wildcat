@@ -74,11 +74,12 @@ pub fn routes(app: AppController) -> Router {
             post(web::generate_blind_messages),
         )
         .route("/v1/credit/store_signatures", post(web::store_signatures))
-        .route("/v1/credit/balance", get(web::crsat_balance))
         .route(
             "/v1/debit/request_to_mint_from_ebill",
             post(web::request_mint_from_ebill),
         )
         .route("/v1/debit/redeem", post(web::redeem))
+        .route("/v1/balance/credit", get(web::crsat_balance))
+        .route("/v1/balance/debit", get(web::sat_balance))
         .with_state(app)
 }

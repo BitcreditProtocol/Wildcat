@@ -26,6 +26,8 @@ pub trait Wallet {
         &self,
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>>;
+
+    async fn balance(&self) -> Result<Amount>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -60,6 +62,10 @@ where
             signature,
         };
         self.wallet.mint_quote(amount, signed_request).await
+    }
+
+    pub async fn balance(&self) -> Result<Amount> {
+        self.wallet.balance().await
     }
 }
 
