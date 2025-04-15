@@ -2,15 +2,21 @@
 bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
-[appcfg]
-cdk_mint_url = "http://cdk_mint:8085"
-wallet_redb_storage = "/data/cdk-wallet-redb.redb"
-proof_url = "http://swap-service:3338"
+[appcfg.crsat_keys_service]
+url = "http://key-service:3338"
 
 [appcfg.crsat_repo]
 connection = "ws://surrealdb:8000"
 namespace = "test"
-database = "credit"
+database = "treasury"
 secrets = "secrets"
 counters = "counters"
 signatures = "signatures"
+proofs = "proofs"
+
+[appcfg.sat_wallet]
+mint_url = "http://cdk_mint:8085"
+storage = "/data/cdk-wallet-redb.redb"
+
+[appcfg.proof_client]
+url = "http://swap-service:3338"

@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct ProofClientConfig {
-    pub proof_url: Url,
+    pub url: Url,
 }
 
 #[derive(Clone, Debug)]
@@ -23,7 +23,7 @@ pub struct ProofCl {
 
 impl ProofCl {
     pub fn new(cfg: ProofClientConfig) -> Self {
-        let cl = SwapClient::new(cfg.proof_url);
+        let cl = SwapClient::new(cfg.url);
         Self { cl }
     }
 }

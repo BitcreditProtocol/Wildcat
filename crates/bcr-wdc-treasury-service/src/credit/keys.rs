@@ -11,7 +11,7 @@ use crate::credit::KeyService;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct KeySrvcConfig {
-    pub base: bcr_wdc_key_client::Url,
+    pub url: bcr_wdc_key_client::Url,
 }
 
 #[derive(Clone)]
@@ -19,7 +19,7 @@ pub struct KeySrvc(KeyClient);
 
 impl KeySrvc {
     pub fn new(cfg: KeySrvcConfig) -> Self {
-        let client = KeyClient::new(cfg.base);
+        let client = KeyClient::new(cfg.url);
         Self(client)
     }
 }
