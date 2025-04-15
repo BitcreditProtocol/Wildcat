@@ -101,3 +101,19 @@ where
     let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }
+
+pub async fn sat_balance<Wlt, ProofCl>(
+    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
+) -> Result<Json<web_wallet::ECashBalance>>
+where
+    Wlt: debit::Wallet,
+{
+    log::debug!("Received request to sat_balance");
+
+    let amount = ctrl.balance().await?;
+    let response = web_wallet::ECashBalance {
+        amount,
+        unit: cdk::CurrencyUnit::Sat,
+    };
+    Ok(Json(response))
+}

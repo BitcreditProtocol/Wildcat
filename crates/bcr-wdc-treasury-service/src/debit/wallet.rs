@@ -113,4 +113,8 @@ impl Wallet for CDKWallet {
             }
         }
     }
+
+    async fn balance(&self) -> Result<Amount> {
+        self.wlt.total_balance().await.map_err(Error::CDKWallet)
+    }
 }
