@@ -1,71 +1,56 @@
-use crate::service::Service;
-use axum::extract::FromRef;
-use axum::routing::{get, post};
-use axum::Router;
-use bcr_wdc_key_client::KeyClient;
+// ----- standard library imports
+// ----- extra library imports
+use axum::{
+    extract::FromRef,
+    routing::{get, post},
+    Router,
+};
 use cashu::mint_url::MintUrl;
-use cdk::wallet::MintConnector;
 use cdk::HttpClient;
-use std::str::FromStr;
-use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use utoipa::OpenApi;
-
+// ----- local modules
 mod error;
-mod service;
 mod web;
+// ----- local imports
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct KeysClientConfig {
-    base_url: bcr_wdc_key_client::Url,
-}
+// ----- end imports
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    keys_client: KeysClientConfig,
-    cdk_mint_url: String,
+    cdk_mint_url: MintUrl,
+    keys_client_url: bcr_wdc_key_client::Url,
+    swap_client_url: bcr_wdc_swap_client::Url,
+    treasury_client_url: bcr_wdc_treasury_client::Url,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    bff: Service,
+    cdk_client: cdk::wallet::HttpClient,
+    keys_client: bcr_wdc_key_client::KeyClient,
+    swap_client: bcr_wdc_swap_client::SwapClient,
+    treasury_client: bcr_wdc_treasury_client::TreasuryClient,
 }
 
 impl AppController {
-    pub async fn new(cfg: AppConfig) -> Self {
+    pub fn new(cfg: AppConfig) -> Self {
         let AppConfig {
-            keys_client,
             cdk_mint_url,
+            keys_client_url,
+            swap_client_url,
+            treasury_client_url,
         } = cfg;
 
-        let keys_client = KeyClient::new(keys_client.base_url);
-
-        let _mint_url =
-            MintUrl::from_str(cdk_mint_url.as_str()).expect("Failed to create mint url");
-
-        let mint_client = HttpClient::new(_mint_url, None);
-
-        let info = mint_client.get_mint_info().await;
-        match info {
-            Ok(_) => {
-                log::info!(
-                    "Connected to mint: {}",
-                    info.map(|it| it.name)
-                        .unwrap()
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or("(empty)".to_string())
-                );
-            }
-            Err(e) => {
-                log::error!("Error on initial info request to mint: {}", e);
-            }
-        }
+        let cdk_client = HttpClient::new(cdk_mint_url, None);
+        let keys_client = bcr_wdc_key_client::KeyClient::new(keys_client_url);
+        let swap_client = bcr_wdc_swap_client::SwapClient::new(swap_client_url);
+        let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
 
         Self {
-            bff: Service {
-                key_service: keys_client,
-                mint_service: Arc::new(mint_client),
-            },
+            cdk_client,
+            keys_client,
+            swap_client,
+            treasury_client,
         }
     }
 }
