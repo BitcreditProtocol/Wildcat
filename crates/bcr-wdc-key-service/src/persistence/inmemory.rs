@@ -17,27 +17,53 @@ pub struct InMemoryMap {
 }
 
 impl InMemoryMap {
-    pub async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
+    pub fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
         let a = self
             .keys
             .read()
             .unwrap()
             .get(kid)
-            .map(|(info, _)| info.clone());
+            .map(|(info, _)| info)
+            .cloned();
         Ok(a)
     }
 
-    pub async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
+    pub fn list_info(&self) -> Result<Vec<cdk_mint::MintKeySetInfo>> {
+        let a = self
+            .keys
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(_, (info, _))| info)
+            .cloned()
+            .collect();
+        Ok(a)
+    }
+
+    pub fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
         let a = self
             .keys
             .read()
             .unwrap()
             .get(kid)
-            .map(|(_, keyset)| keyset.clone());
+            .map(|(_, keyset)| keyset)
+            .cloned();
         Ok(a)
     }
 
-    pub async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    pub fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
+        let a = self
+            .keys
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(_, (_, keyset))| keyset)
+            .cloned()
+            .collect();
+        Ok(a)
+    }
+
+    pub fn store(&self, entry: KeysetEntry) -> Result<()> {
         self.keys.write().unwrap().insert(entry.0.id, entry);
         Ok(())
     }
@@ -46,13 +72,19 @@ impl InMemoryMap {
 #[async_trait]
 impl KeysRepository for InMemoryMap {
     async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
-        self.info(kid).await
+        self.info(kid)
+    }
+    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
+        self.list_info()
     }
     async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
-        self.keyset(kid).await
+        self.keyset(kid)
+    }
+    async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
+        self.list_keyset()
     }
     async fn store(&self, entry: KeysetEntry) -> Result<()> {
-        self.store(entry).await
+        self.store(entry)
     }
 }
 

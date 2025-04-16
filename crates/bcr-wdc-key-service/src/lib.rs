@@ -3,8 +3,7 @@
 use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
-use cashu::nut00 as cdk00;
-use cashu::nut02 as cdk02;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -64,8 +63,10 @@ where
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let web = Router::new()
-        .route("/v1/keysets/{kid}", get(web::lookup_keyset))
-        .route("/v1/keys/{kid}", get(web::lookup_keys));
+        .route("/v1/keysets/{kid}", get(web::lookup_keysets))
+        .route("/v1/keysets", get(web::list_keysets))
+        .route("/v1/keys/{kid}", get(web::lookup_keys))
+        .route("/v1/keys", get(web::list_keys));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route("/v1/admin/keys/sign", post(admin::sign_blind))
@@ -88,16 +89,20 @@ where
         cdk00::BlindSignature,
         cdk00::BlindedMessage,
         cdk00::Proof,
+        cdk01::KeysResponse,
         cdk02::Id,
         cdk02::KeySet,
         cdk02::KeySetInfo,
+        cdk02::KeysetResponse,
     ),),
     paths(
         admin::activate,
         admin::sign_blind,
         admin::verify_proof,
+        web::list_keys,
+        web::list_keysets,
         web::lookup_keys,
-        web::lookup_keyset,
+        web::lookup_keysets,
     )
 )]
 struct ApiDoc;
