@@ -16,7 +16,6 @@ async fn swap() {
         .keys
         .keys
         .store(keys_entry.clone())
-        .await
         .expect("store");
 
     let amounts = vec![Amount::from(8_u64)];

@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::keys as web_keys;
-use cashu::nut00 as cdk00;
-use cashu::nut02 as cdk02;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use thiserror::Error;
 // ----- local imports
 pub use reqwest::Url;
@@ -48,6 +47,13 @@ impl KeyClient {
         Ok(ks)
     }
 
+    pub async fn list_keys(&self) -> Result<Vec<cdk02::KeySet>> {
+        let url = self.base.join("/v1/keys").expect("keys relative path");
+        let res = self.cl.get(url).send().await?;
+        let ks = res.json::<cdk01::KeysResponse>().await?;
+        Ok(ks.keysets)
+    }
+
     pub async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
         let url = self
             .base
@@ -59,6 +65,13 @@ impl KeyClient {
         }
         let ks = res.json::<cdk02::KeySetInfo>().await?;
         Ok(ks)
+    }
+
+    pub async fn list_keyset_info(&self) -> Result<Vec<cdk02::KeySetInfo>> {
+        let url = self.base.join("/v1/keysets").expect("keyset relative path");
+        let res = self.cl.get(url).send().await?;
+        let ks = res.json::<cdk02::KeysetResponse>().await?;
+        Ok(ks.keysets)
     }
 
     pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
@@ -144,23 +157,31 @@ pub mod test_utils {
 
     impl KeyClient {
         pub async fn keyset(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
-            let res = self.keys.keyset(&kid).await.expect("InMemoryRepository");
+            let res = self.keys.keyset(&kid).expect("InMemoryRepository");
             res.ok_or(Error::ResourceNotFound(kid))
                 .map(std::convert::Into::into)
         }
-        pub async fn info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
+        pub async fn list_keyset(&self) -> Result<Vec<cdk02::KeySet>> {
+            let res = self.keys.list_keyset().expect("InMemoryRepository");
+            let ret = res.into_iter().map(cdk02::KeySet::from).collect();
+            Ok(ret)
+        }
+        pub async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
             self.keys
                 .info(&kid)
-                .await
                 .expect("InMemoryRepository")
                 .ok_or(Error::ResourceNotFound(kid))
                 .map(std::convert::Into::into)
+        }
+        pub async fn list_keyset_info(&self) -> Result<Vec<cdk02::KeySetInfo>> {
+            let res = self.keys.list_info().expect("InMemoryRepository");
+            let ret = res.into_iter().map(cdk02::KeySetInfo::from).collect();
+            Ok(ret)
         }
         pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
             let res = self
                 .keys
                 .keyset(&msg.keyset_id)
-                .await
                 .expect("InMemoryRepository");
             let keys = res.ok_or(Error::ResourceNotFound(msg.keyset_id))?;
             bcr_wdc_keys::sign_with_keys(&keys, msg).map_err(|_| Error::InvalidRequest)
@@ -169,7 +190,6 @@ pub mod test_utils {
             let res = self
                 .keys
                 .keyset(&proof.keyset_id)
-                .await
                 .expect("InMemoryRepository");
             let keys = res.ok_or(Error::ResourceNotFound(proof.keyset_id))?;
             bcr_wdc_keys::verify_with_keys(&keys, proof).map_err(|_| Error::InvalidRequest)?;
