@@ -83,7 +83,7 @@ pub mod test_utils {
     #[async_trait::async_trait]
     impl service::KeysService for TestKeysService {
         async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo> {
-            self.keys.info(*id).await.map_err(Error::KeysClient)
+            self.keys.keyset_info(*id).await.map_err(Error::KeysClient)
         }
         async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
             self.keys.sign(blind).await.map_err(Error::KeysClient)
