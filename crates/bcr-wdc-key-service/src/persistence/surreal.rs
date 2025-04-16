@@ -107,6 +107,16 @@ impl DB {
         Ok(result)
     }
 
+    async fn list_info(&self) -> SurrealResult<Vec<cdk_mint::MintKeySetInfo>> {
+        let result: Vec<cdk_mint::MintKeySetInfo> = self
+            .db
+            .query("SELECT info FROM type::table($table)")
+            .bind(("table", self.table.clone()))
+            .await?
+            .take(0)?;
+        Ok(result)
+    }
+
     async fn keyset(&self, rid: RecordId) -> SurrealResult<Option<cdk02::MintKeySet>> {
         let response: Option<KeysDBEntry> = self.db.select(rid).await?;
         let Some(keysdbentry) = response else {
@@ -114,6 +124,20 @@ impl DB {
         };
         let (_, keyset) = KeysetEntry::from(keysdbentry);
         Ok(Some(keyset))
+    }
+
+    async fn list_keyset(&self) -> SurrealResult<Vec<cdk02::MintKeySet>> {
+        let response: Vec<KeysDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .await?
+            .take(0)?;
+        let sets = response
+            .into_iter()
+            .map(KeysetEntry::from)
+            .map(|(_, keyset)| keyset)
+            .collect();
+        Ok(sets)
     }
 }
 
@@ -135,10 +159,23 @@ impl KeysRepository for DBKeys {
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
+    async fn list_info(&self) -> Result<Vec<cdk_mint::MintKeySetInfo>> {
+        self.0
+            .list_info()
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
     async fn keyset(&self, kid: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>> {
         let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
         self.0
             .keyset(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+
+    async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
+        self.0
+            .list_keyset()
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }

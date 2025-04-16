@@ -16,7 +16,9 @@ use crate::TStamp;
 #[async_trait]
 pub trait KeysRepository {
     async fn info(&self, id: &cdk02::Id) -> Result<Option<MintKeySetInfo>>;
+    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>>;
     async fn keyset(&self, id: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>>;
+    async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>>;
     async fn store(&self, keys: KeysetEntry) -> Result<()>;
 }
 
@@ -60,6 +62,14 @@ where
         let keyset = self.keys(proof.keyset_id).await?;
         bcr_wdc_keys::verify_with_keys(&keyset, &proof)?;
         Ok(())
+    }
+
+    pub async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
+        self.keys.list_info().await
+    }
+
+    pub async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
+        self.keys.list_keyset().await
     }
 }
 
