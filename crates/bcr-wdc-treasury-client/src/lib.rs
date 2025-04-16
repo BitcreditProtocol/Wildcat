@@ -1,20 +1,16 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::signatures as web_signatures;
-use cashu::amount::Amount;
-use cashu::nut00 as cdk00;
-use cashu::nut02 as cdk02;
+use cashu::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03, Amount};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
+pub use reqwest::Url;
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("URL parse error {0}")]
-    Url(#[from] url::ParseError),
-
     #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
 }
@@ -26,12 +22,11 @@ pub struct TreasuryClient {
 }
 
 impl TreasuryClient {
-    pub fn new(base: &str) -> Result<Self> {
-        let url = reqwest::Url::parse(base)?;
-        Ok(Self {
+    pub fn new(base: reqwest::Url) -> Self {
+        Self {
             cl: reqwest::Client::new(),
-            base: url,
-        })
+            base,
+        }
     }
 
     pub async fn generate_blinds(
@@ -40,7 +35,10 @@ impl TreasuryClient {
         amount: Amount,
     ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
         let request = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
-        let url = self.base.join("/v1/credit/generate_blinds")?;
+        let url = self
+            .base
+            .join("/v1/credit/generate_blinds")
+            .expect("generate_blinds relative path");
         let res = self.cl.post(url).json(&request).send().await?;
         let response: web_signatures::GenerateBlindedMessagesResponse = res.json().await?;
         Ok((response.request_id, response.messages))
@@ -57,9 +55,27 @@ impl TreasuryClient {
             expiration,
             signatures,
         };
-        let url = self.base.join("/v1/credit/store_signatures")?;
+        let url = self
+            .base
+            .join("/v1/credit/store_signatures")
+            .expect("store_signatures relative path");
         let res = self.cl.post(url).json(&request).send().await?;
         res.error_for_status()?;
         Ok(())
+    }
+
+    pub async fn redeem(
+        &self,
+        inputs: Vec<cdk00::Proof>,
+        outputs: Vec<cdk00::BlindedMessage>,
+    ) -> Result<Vec<cdk00::BlindSignature>> {
+        let request = cdk03::SwapRequest::new(inputs, outputs);
+        let url = self
+            .base
+            .join("/v1/debit/redeem")
+            .expect("redeem relative path");
+        let res = self.cl.post(url).json(&request).send().await?;
+        let response: cdk03::SwapResponse = res.json().await?;
+        Ok(response.signatures)
     }
 }

@@ -11,9 +11,9 @@ use crate::error::{Error, Result};
 use crate::service::Wallet;
 use crate::TStamp;
 
-#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct WalletConfig {
-    base_url: String,
+    base_url: bcr_wdc_treasury_client::Url,
 }
 
 #[derive(Clone, Debug)]
@@ -22,9 +22,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(cfg: &WalletConfig) -> Result<Self> {
-        let cl = TreasuryClient::new(&cfg.base_url).map_err(Error::Wallet)?;
-        Ok(Self { cl })
+    pub fn new(cfg: WalletConfig) -> Self {
+        let WalletConfig { base_url } = cfg;
+        let cl = TreasuryClient::new(base_url);
+        Self { cl }
     }
 }
 #[async_trait]
