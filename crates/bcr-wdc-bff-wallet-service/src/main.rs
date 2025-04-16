@@ -1,4 +1,7 @@
-use tokio::signal;
+use tokio::signal::{
+    ctrl_c,
+    unix::{signal, SignalKind},
+};
 
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
@@ -21,7 +24,7 @@ async fn main() {
 
     env_logger::builder().filter_level(maincfg.log_level).init();
 
-    let app = bcr_wdc_bff_wallet_service::AppController::new(maincfg.appcfg).await;
+    let app = bcr_wdc_bff_wallet_service::AppController::new(maincfg.appcfg);
     let router = bcr_wdc_bff_wallet_service::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
@@ -35,25 +38,10 @@ async fn main() {
 }
 
 async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
+    let mut terminate = signal(SignalKind::terminate()).expect("failed to install signal handler");
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        _ = ctrl_c() => {},
+        _ = terminate.recv() => {},
     }
+    log::info!("Shutting down...");
 }
