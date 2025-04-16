@@ -39,9 +39,7 @@ pub trait ProofClient {
 #[derive(Clone)]
 pub struct Service<Wlt, ProofCl> {
     pub wallet: Wlt,
-
     pub proof: ProofCl,
-
     pub signing_keys: bitcoin::secp256k1::Keypair,
 }
 
