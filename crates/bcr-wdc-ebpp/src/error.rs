@@ -12,31 +12,27 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("bdk_wallet::keys {0}")]
-    BDKKey(bdk_wallet::keys::KeyError),
+    BDKKey(#[from] bdk_wallet::keys::KeyError),
     #[error("bdk_wallet::rusqlite {0}")]
-    BDKSQLite(bdk_wallet::rusqlite::Error),
+    BDKSQLite(#[from] bdk_wallet::rusqlite::Error),
     #[error("bdk_wallet::LoadWithPersisted {0}")]
-    BDKLoadWithPersisted(bdk_wallet::LoadWithPersistError<bdk_wallet::rusqlite::Error>),
+    BDKLoadWithPersisted(#[from] bdk_wallet::LoadWithPersistError<bdk_wallet::rusqlite::Error>),
     #[error("bdk_wallet::CreateWithPersisted {0}")]
-    BDKCreateWithPersisted(bdk_wallet::CreateWithPersistError<bdk_wallet::rusqlite::Error>),
-    #[error("bdk_wallet:: empty Option on {0} call")]
-    BDKEmptyOption(String),
+    BDKCreateWithPersisted(#[from] bdk_wallet::CreateWithPersistError<bdk_wallet::rusqlite::Error>),
     #[error("bdk_wallet::chain: {0}")]
-    BDKCannotConnect(bdk_wallet::chain::local_chain::CannotConnectError),
+    BDKCannotConnect(#[from] bdk_wallet::chain::local_chain::CannotConnectError),
     #[error("bitcoin::address parse: {0}")]
-    BTCAddressParse(bdk_wallet::bitcoin::address::ParseError),
+    BTCAddressParse(#[from] bdk_wallet::bitcoin::address::ParseError),
     #[error("miniscript: {0}")]
-    Miniscript(bdk_wallet::miniscript::Error),
-    #[error("full_scan error: {0}")]
-    EsploraFullScan(AnyError),
-    #[error("sync error: {0}")]
-    EsploraSync(AnyError),
+    Miniscript(#[from] bdk_wallet::miniscript::Error),
     #[error("DB errror: {0}")]
     DB(AnyError),
     #[error("Mnemonic to xpriv conversion failed")]
     MnemonicToXpriv,
     #[error("chrono conversion: {0}")]
-    Chrono(chrono::OutOfRangeError),
+    Chrono(#[from] chrono::OutOfRangeError),
+    #[error("electrum_client: {0}")]
+    Electrum(#[from] electrum_client::Error),
 
     #[error("onchain wallet storage path error: {0}")]
     OnChainStore(std::path::PathBuf),
