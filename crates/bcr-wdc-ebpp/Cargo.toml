@@ -10,7 +10,7 @@ async-trait = { workspace = true}
 axum = { workspace = true}
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bdk_core = {version = "0.4"}
-bdk_esplora = {version = "0.20", features = ["tokio"]}
+bdk_electrum = {version = "0.21"}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
 bip21 = {version = "0.5"}
 cashu = {workspace = true}
@@ -18,6 +18,7 @@ cdk-common = {workspace = true}
 cdk-payment-processor = {workspace = true, default-features = false, features = ["fake"]}
 chrono = {workspace = true}
 config = {workspace = true}
+electrum-client = {version = "0.23"}
 env_logger = {workspace = true}
 futures = {workspace = true}
 log = {workspace = true}

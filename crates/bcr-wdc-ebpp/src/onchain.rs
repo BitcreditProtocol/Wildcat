@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 // ----- extra library imports
 use async_trait::async_trait;
-use bdk_esplora::EsploraAsyncExt;
+use bdk_electrum::BdkElectrumClient;
 use bdk_wallet::{
     bitcoin::{
         self as btc,
@@ -49,8 +49,8 @@ pub trait PrivateKeysRepository {
 
 type SyncingWallet = (Arc<Mutex<PersistedBdkWallet>>, CancellationToken);
 
-#[derive(Debug, Clone)]
-pub struct Wallet<KeyRepo, Syncer> {
+#[derive(Debug)]
+pub struct Wallet<KeyRepo, ElectrumApi> {
     main: SyncingWallet,
     // each wallet has its own updating loop task
     // the vector is mutating as keys are added and removed
@@ -58,32 +58,51 @@ pub struct Wallet<KeyRepo, Syncer> {
     store_path: std::path::PathBuf,
     update_interval: core::time::Duration,
     repo: KeyRepo,
-    syncer: Syncer,
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     network: Network,
     stop_gap: usize,
 }
 
-impl<KeyRepo, Syncer> Wallet<KeyRepo, Syncer> {
+impl<KeyRepo, ElectrumApi> Wallet<KeyRepo, ElectrumApi> {
     pub fn network(&self) -> Network {
         self.network
     }
 }
 
-impl<KeyRepo, Syncer> Wallet<KeyRepo, Syncer>
+impl<KeyRepo, ElectrumApi> std::clone::Clone for Wallet<KeyRepo, ElectrumApi>
+where
+    KeyRepo: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            main: self.main.clone(),
+            onetimes: self.onetimes.clone(),
+            store_path: self.store_path.clone(),
+            update_interval: self.update_interval,
+            repo: self.repo.clone(),
+            electrum_client: self.electrum_client.clone(),
+            network: self.network,
+            stop_gap: self.stop_gap,
+        }
+    }
+}
+
+impl<KeyRepo, ElectrumApi> Wallet<KeyRepo, ElectrumApi>
 where
     KeyRepo: PrivateKeysRepository,
-    Syncer: EsploraAsyncExt + Clone + Send + Sync + 'static,
+    ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
 
-    pub async fn new(cfg: WalletConfig, repo: KeyRepo, syncer: Syncer) -> Result<Self> {
+    pub async fn new(cfg: WalletConfig, repo: KeyRepo, api: ElectrumApi) -> Result<Self> {
         if !cfg.store_path.is_dir() {
             return Err(Error::OnChainStore(cfg.store_path));
         }
 
-        let update_interval = cfg.update_interval.to_std().map_err(Error::Chrono)?;
+        let update_interval = cfg.update_interval.to_std()?;
+        let electrum_client = Arc::new(BdkElectrumClient::new(api));
 
-        let exkey: ExtendedKey = cfg.mnemonic.into_extended_key().map_err(Error::BDKKey)?;
+        let exkey: ExtendedKey = cfg.mnemonic.into_extended_key()?;
         let xpriv = exkey.into_xprv(cfg.network).ok_or(Error::MnemonicToXpriv)?;
         let main_store = cfg.store_path.join(Self::MAIN_STORE_FNAME);
         let (age, main) = initialize_main_wallet(&main_store, xpriv, cfg.network)?;
@@ -95,7 +114,7 @@ where
         tokio::spawn(wallet_update_loop(
             main.clone(),
             age,
-            syncer.clone(),
+            electrum_client.clone(),
             cfg.stop_gap,
             interval,
         ));
@@ -112,7 +131,7 @@ where
                 tokio::spawn(wallet_update_loop(
                     active_wlt.clone(),
                     age,
-                    syncer.clone(),
+                    electrum_client.clone(),
                     cfg.stop_gap,
                     interval,
                 ));
@@ -127,7 +146,7 @@ where
             repo,
             update_interval,
             store_path: cfg.store_path,
-            syncer,
+            electrum_client,
             network: cfg.network,
             stop_gap: cfg.stop_gap,
         })
@@ -135,16 +154,16 @@ where
 }
 
 #[async_trait]
-impl<KeyRepo, Syncer> OnChainWallet for Wallet<KeyRepo, Syncer>
+impl<KeyRepo, ElectrumApi> OnChainWallet for Wallet<KeyRepo, ElectrumApi>
 where
     KeyRepo: PrivateKeysRepository + Sync,
-    Syncer: EsploraAsyncExt + Sync + Send + Clone + 'static,
+    ElectrumApi: electrum_client::ElectrumApi + Sync + Send + 'static,
 {
     fn generate_new_recipient(&self) -> Result<btc::Address> {
         let mut locked = self.main.0.lock().unwrap();
         let (wlt, db) = &mut *locked;
         let address_info = wlt.reveal_next_address(KeychainKind::External);
-        wlt.persist(db).map_err(Error::BDKSQLite)?;
+        wlt.persist(db)?;
         Ok(address_info.address)
     }
 
@@ -168,12 +187,12 @@ where
             let locked = self.main.0.lock().unwrap();
             let (wlt, _) = &*locked;
             let secp_ctx = wlt.secp_ctx();
-            Descriptor::parse_descriptor(secp_ctx, descriptor).map_err(Error::Miniscript)?
+            Descriptor::parse_descriptor(secp_ctx, descriptor)?
         };
         self.repo.add_key(desc.clone()).await?;
         let (age, mut wlt) = initialize_single_wallet(&self.store_path, desc, self.network)?;
         let addr_info = wlt.0.reveal_next_address(KeychainKind::External);
-        wlt.0.persist(&mut wlt.1).map_err(Error::BDKSQLite)?;
+        wlt.0.persist(&mut wlt.1)?;
         let wlt = Arc::new(Mutex::new(wlt));
         let interval = random_update_interval(self.update_interval);
         let token = CancellationToken::new();
@@ -181,7 +200,7 @@ where
         tokio::spawn(wallet_update_loop(
             active_wlt.clone(),
             age,
-            self.syncer.clone(),
+            self.electrum_client.clone(),
             self.stop_gap,
             interval,
         ));
@@ -236,28 +255,24 @@ fn initialize_main_wallet(
     let internal = Bip84(xpriv, KeychainKind::Internal);
     let external = Bip84(xpriv, KeychainKind::External);
 
-    let pre_existed = store_file.exists();
     let mut conn = bdk_wallet::rusqlite::Connection::open_with_flags(
         store_file,
         OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )
-    .map_err(Error::BDKSQLite)?;
-    if pre_existed {
-        let wallet = bdk_wallet::LoadParams::new()
-            .descriptor(KeychainKind::Internal, Some(internal))
-            .descriptor(KeychainKind::External, Some(external))
-            .extract_keys()
-            .check_network(network)
-            .load_wallet(&mut conn)
-            .map_err(Error::BDKLoadWithPersisted)?
-            .ok_or_else(|| Error::BDKEmptyOption(String::from("load_wallet")))?;
-        Ok((WalletAge::Old, (wallet, conn)))
-    } else {
-        let wallet = bdk_wallet::CreateParams::new(external, internal)
-            .network(network)
-            .create_wallet(&mut conn)
-            .map_err(Error::BDKCreateWithPersisted)?;
-        Ok((WalletAge::New, (wallet, conn)))
+    )?;
+    let wallet_opt = bdk_wallet::LoadParams::new()
+        .descriptor(KeychainKind::Internal, Some(internal.clone()))
+        .descriptor(KeychainKind::External, Some(external.clone()))
+        .extract_keys()
+        .check_network(network)
+        .load_wallet(&mut conn)?;
+    match wallet_opt {
+        Some(wallet) => Ok((WalletAge::Old, (wallet, conn))),
+        None => {
+            let wallet = bdk_wallet::CreateParams::new(external, internal)
+                .network(network)
+                .create_wallet(&mut conn)?;
+            Ok((WalletAge::New, (wallet, conn)))
+        }
     }
 }
 
@@ -268,37 +283,35 @@ fn initialize_single_wallet(
 ) -> Result<(WalletAge, PersistedBdkWallet)> {
     let fname = sha256::Hash::hash(desc.to_string().as_bytes()).to_string() + ".sqlite";
     let store = store_path.join(fname);
-    let pre_existed = store.exists();
     let mut conn = bdk_wallet::rusqlite::Connection::open_with_flags(
         store,
         OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )
-    .map_err(Error::BDKSQLite)?;
-    if pre_existed {
-        let wallet = bdk_wallet::LoadParams::new()
-            .descriptor(KeychainKind::External, Some((desc, kmap)))
-            .extract_keys()
-            .check_network(network)
-            .load_wallet(&mut conn)
-            .map_err(Error::BDKLoadWithPersisted)?
-            .ok_or_else(|| Error::BDKEmptyOption(String::from("load_wallet")))?;
-        Ok((WalletAge::Old, (wallet, conn)))
-    } else {
-        let wallet = bdk_wallet::CreateParams::new_single((desc, kmap))
-            .network(network)
-            .create_wallet(&mut conn)
-            .map_err(Error::BDKCreateWithPersisted)?;
-        Ok((WalletAge::New, (wallet, conn)))
+    )?;
+    let wallet_opt = bdk_wallet::LoadParams::new()
+        .descriptor(KeychainKind::External, Some((desc.clone(), kmap.clone())))
+        .extract_keys()
+        .check_network(network)
+        .load_wallet(&mut conn)?;
+    match wallet_opt {
+        Some(wallet) => Ok((WalletAge::Old, (wallet, conn))),
+        None => {
+            let wallet = bdk_wallet::CreateParams::new_single((desc, kmap))
+                .network(network)
+                .create_wallet(&mut conn)?;
+            Ok((WalletAge::New, (wallet, conn)))
+        }
     }
 }
 
-async fn wallet_update_loop<Syncer: EsploraAsyncExt>(
+async fn wallet_update_loop<ElectrumApi>(
     wlt: SyncingWallet,
     age: WalletAge,
-    syncer: Syncer,
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     stop_gap: usize,
     pause: core::time::Duration,
-) {
+) where
+    ElectrumApi: electrum_client::ElectrumApi,
+{
     let (wlt, token) = wlt;
     if matches!(age, WalletAge::New) {
         let request = {
@@ -306,7 +319,7 @@ async fn wallet_update_loop<Syncer: EsploraAsyncExt>(
             let (wallet, _) = &mut *locked;
             wallet.start_full_scan()
         };
-        let result = syncer.full_scan(request, stop_gap, 1).await;
+        let result = electrum_client.full_scan(request, stop_gap, 1, false);
         if result.is_err() {
             log::error!("full scan error: {}", result.unwrap_err());
             return;
@@ -328,7 +341,7 @@ async fn wallet_update_loop<Syncer: EsploraAsyncExt>(
             let (wallet, _) = &mut *locked;
             wallet.start_sync_with_revealed_spks()
         };
-        let result = syncer.sync(request, 1).await;
+        let result = electrum_client.sync(request, 1, false);
         match result {
             Err(e) => {
                 log::error!("sync error: {}", e);
@@ -344,7 +357,7 @@ async fn wallet_update_loop<Syncer: EsploraAsyncExt>(
     }
 }
 
-// random interval to spread out the load on the syncer
+// random interval to spread out the load on the electrum server
 // given the average interval, we spread it by +/- 25%
 fn random_update_interval(avg: core::time::Duration) -> core::time::Duration {
     let jitter = avg / 4; // 25% jitter

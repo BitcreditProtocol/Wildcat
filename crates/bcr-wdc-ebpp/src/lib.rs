@@ -7,7 +7,6 @@ use axum::{
     routing::{get, Router},
 };
 use bcr_wdc_webapi::wallet::Balance;
-use bdk_esplora::esplora_client::AsyncClient;
 use cdk_payment_processor::PaymentProcessorServer;
 use serde_with::serde_as;
 use utoipa::OpenApi;
@@ -24,8 +23,8 @@ mod web;
 
 pub type ProdPrivateKeysRepository = persistence::surreal::DBPrivateKeys;
 pub type ProdPaymentRepository = persistence::surreal::DBPayments;
-pub type ProdOnChainSyncer = AsyncClient;
-pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainSyncer>;
+pub type ProdOnChainElectrumApi = bdk_electrum::electrum_client::Client;
+pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainElectrumApi>;
 pub type ProdService =
     service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::DummyEbillNode>;
 
@@ -36,7 +35,7 @@ pub struct AppConfig {
     onchain: onchain::WalletConfig,
     private_keys: persistence::surreal::ConnectionConfig,
     payments: persistence::surreal::ConnectionConfig,
-    esplora_url: String,
+    electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     refresh_interval: chrono::Duration,
 }
@@ -54,17 +53,16 @@ impl AppController {
             onchain,
             private_keys,
             payments,
-            esplora_url,
+            electrum_url,
             refresh_interval,
         } = cfg;
 
         let key_repo = ProdPrivateKeysRepository::new(private_keys)
             .await
             .expect("private keys repo");
-        let client = reqwest::Client::new();
-        let esplora_client: AsyncClient =
-            bdk_esplora::esplora_client::AsyncClient::from_client(esplora_url, client);
-        let onchain_wallet = ProdOnChainWallet::new(onchain, key_repo, esplora_client)
+        let electrum_client = bdk_electrum::electrum_client::Client::new(&electrum_url)
+            .expect("electrum_client::Client::new");
+        let onchain_wallet = ProdOnChainWallet::new(onchain, key_repo, electrum_client)
             .await
             .expect("onchain wallet");
 
