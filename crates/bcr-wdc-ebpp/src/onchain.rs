@@ -17,9 +17,7 @@ use bdk_wallet::{
     KeychainKind,
 };
 use futures::future::JoinAll;
-use rand::Rng;
 use serde_with::serde_as;
-use tokio_util::sync::CancellationToken;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::OnChainWallet;
@@ -47,14 +45,12 @@ pub trait PrivateKeysRepository {
     async fn add_key(&self, key: SingleSecretKeyDescriptor) -> Result<()>;
 }
 
-type SyncingWallet = (Arc<Mutex<PersistedBdkWallet>>, CancellationToken);
-
 #[derive(Debug)]
 pub struct Wallet<KeyRepo, ElectrumApi> {
-    main: SyncingWallet,
+    main: Arc<Mutex<PersistedBdkWallet>>,
     // each wallet has its own updating loop task
     // the vector is mutating as keys are added and removed
-    onetimes: Arc<Mutex<Vec<SyncingWallet>>>,
+    onetimes: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
     store_path: std::path::PathBuf,
     update_interval: core::time::Duration,
     repo: KeyRepo,
@@ -107,38 +103,26 @@ where
         let main_store = cfg.store_path.join(Self::MAIN_STORE_FNAME);
         let (age, main) = initialize_main_wallet(&main_store, xpriv, cfg.network)?;
         let main = Arc::new(Mutex::new(main));
+        let cloned_main = main.clone();
+        let cloned_electrum_client = electrum_client.clone();
+        let stop_gap = cfg.stop_gap;
+        tokio::task::spawn_blocking(move || {
+            wallet_full_scan(cloned_main, age, cloned_electrum_client, stop_gap);
+        });
 
-        let interval = random_update_interval(update_interval);
-        let token = CancellationToken::new();
-        let main = (main, token);
-        tokio::spawn(wallet_update_loop(
-            main.clone(),
-            age,
-            electrum_client.clone(),
-            cfg.stop_gap,
-            interval,
-        ));
-
+        let mut onetimes = Vec::new();
         let keys = repo.get_private_keys().await?;
-        let joined: JoinAll<_> = keys
-            .into_iter()
-            .map(|key| async {
-                let (age, wlt) = initialize_single_wallet(&cfg.store_path, key, cfg.network)?;
-                let wlt = Arc::new(Mutex::new(wlt));
-                let interval = random_update_interval(update_interval);
-                let token = CancellationToken::new();
-                let active_wlt = (wlt, token);
-                tokio::spawn(wallet_update_loop(
-                    active_wlt.clone(),
-                    age,
-                    electrum_client.clone(),
-                    cfg.stop_gap,
-                    interval,
-                ));
-                Ok(active_wlt)
-            })
-            .collect();
-        let onetimes: Vec<SyncingWallet> = joined.await.into_iter().collect::<Result<_>>()?;
+        for key in keys {
+            let (age, wlt) = initialize_single_wallet(&cfg.store_path, key, cfg.network)?;
+            let wlt = Arc::new(Mutex::new(wlt));
+            let cloned_wlt = main.clone();
+            let cloned_electrum_client = electrum_client.clone();
+            let stop_gap = cfg.stop_gap;
+            tokio::task::spawn_blocking(move || {
+                wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
+            });
+            onetimes.push(wlt);
+        }
 
         Ok(Self {
             main,
@@ -160,21 +144,27 @@ where
     ElectrumApi: electrum_client::ElectrumApi + Sync + Send + 'static,
 {
     fn generate_new_recipient(&self) -> Result<btc::Address> {
-        let mut locked = self.main.0.lock().unwrap();
+        let mut locked = self.main.lock().unwrap();
         let (wlt, db) = &mut *locked;
         let address_info = wlt.reveal_next_address(KeychainKind::External);
         wlt.persist(db)?;
         Ok(address_info.address)
     }
 
-    fn balance(&self) -> Result<bdk_wallet::Balance> {
+    async fn balance(&self) -> Result<bdk_wallet::Balance> {
+        wallets_sync(
+            self.main.clone(),
+            self.onetimes.clone(),
+            self.electrum_client.clone(),
+        )
+        .await?;
         let mut balance = {
-            let locked = self.main.0.lock().unwrap();
+            let locked = self.main.lock().unwrap();
             let (wlt, _) = &*locked;
             wlt.balance()
         };
-        let locked_vec = self.onetimes.lock().unwrap();
-        for (wlt, _) in locked_vec.iter() {
+        let locked_onetimes = self.onetimes.lock().unwrap();
+        for wlt in locked_onetimes.iter() {
             let locked = wlt.lock().unwrap();
             let (wlt, _) = &*locked;
             balance = balance + wlt.balance();
@@ -183,8 +173,14 @@ where
     }
 
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address> {
+        wallets_sync(
+            self.main.clone(),
+            self.onetimes.clone(),
+            self.electrum_client.clone(),
+        )
+        .await?;
         let desc: SingleSecretKeyDescriptor = {
-            let locked = self.main.0.lock().unwrap();
+            let locked = self.main.lock().unwrap();
             let (wlt, _) = &*locked;
             let secp_ctx = wlt.secp_ctx();
             Descriptor::parse_descriptor(secp_ctx, descriptor)?
@@ -194,25 +190,27 @@ where
         let addr_info = wlt.0.reveal_next_address(KeychainKind::External);
         wlt.0.persist(&mut wlt.1)?;
         let wlt = Arc::new(Mutex::new(wlt));
-        let interval = random_update_interval(self.update_interval);
-        let token = CancellationToken::new();
-        let active_wlt = (wlt, token);
-        tokio::spawn(wallet_update_loop(
-            active_wlt.clone(),
-            age,
-            self.electrum_client.clone(),
-            self.stop_gap,
-            interval,
-        ));
+        let cloned_wlt = wlt.clone();
+        let cloned_electrum_client = self.electrum_client.clone();
+        let stop_gap = self.stop_gap;
+        tokio::task::spawn_blocking(move || {
+            wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
+        });
         let mut locked = self.onetimes.lock().unwrap();
-        locked.push(active_wlt);
+        locked.push(wlt);
         Ok(addr_info.address)
     }
 
-    fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
+    async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
+        wallets_sync(
+            self.main.clone(),
+            self.onetimes.clone(),
+            self.electrum_client.clone(),
+        )
+        .await?;
         let script = addr.script_pubkey();
         {
-            let locked = self.main.0.lock().unwrap();
+            let locked = self.main.lock().unwrap();
             let (wlt, _) = &*locked;
             if wlt.is_mine(script.clone()) {
                 let total: btc::Amount = wlt
@@ -225,8 +223,8 @@ where
         }
         {
             let locked = self.onetimes.lock().unwrap();
-            for (active_wlt, _) in locked.iter() {
-                let wlt_locked = active_wlt.lock().unwrap();
+            for wlt in locked.iter() {
+                let wlt_locked = wlt.lock().unwrap();
                 let (wlt, _) = &*wlt_locked;
                 if wlt.is_mine(script.clone()) {
                     let total: btc::Amount = wlt
@@ -303,16 +301,14 @@ fn initialize_single_wallet(
     }
 }
 
-async fn wallet_update_loop<ElectrumApi>(
-    wlt: SyncingWallet,
+fn wallet_full_scan<ElectrumApi>(
+    wlt: Arc<Mutex<PersistedBdkWallet>>,
     age: WalletAge,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     stop_gap: usize,
-    pause: core::time::Duration,
 ) where
     ElectrumApi: electrum_client::ElectrumApi,
 {
-    let (wlt, token) = wlt;
     if matches!(age, WalletAge::New) {
         let request = {
             let mut locked = wlt.lock().unwrap();
@@ -322,48 +318,57 @@ async fn wallet_update_loop<ElectrumApi>(
         let result = electrum_client.full_scan(request, stop_gap, 1, false);
         if result.is_err() {
             log::error!("full scan error: {}", result.unwrap_err());
-            return;
-        }
-    }
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => {
-                log::info!("wallet update loop stopping");
-                break;
-            }
-            _ = tokio::time::sleep(pause) => {
-                log::debug!("wallet update loop waking up");
-            }
-        }
-
-        let request = {
-            let mut locked = wlt.lock().unwrap();
-            let (wallet, _) = &mut *locked;
-            wallet.start_sync_with_revealed_spks()
-        };
-        let result = electrum_client.sync(request, 1, false);
-        match result {
-            Err(e) => {
-                log::error!("sync error: {}", e);
-                continue;
-            }
-            Ok(update) => {
-                let mut locked = wlt.lock().unwrap();
-                let (wallet, db) = &mut *locked;
-                wallet.apply_update(update).unwrap();
-                wallet.persist(db).unwrap();
-            }
         }
     }
 }
 
-// random interval to spread out the load on the electrum server
-// given the average interval, we spread it by +/- 25%
-fn random_update_interval(avg: core::time::Duration) -> core::time::Duration {
-    let jitter = avg / 4; // 25% jitter
-    let start = avg - jitter;
-    let end = avg + jitter;
-    let mut rgen = rand::thread_rng();
-    let range = core::ops::Range { start, end };
-    rgen.gen_range(range)
+fn wallet_sync<ElectrumApi>(
+    wlt: Arc<Mutex<PersistedBdkWallet>>,
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
+) -> Result<()>
+where
+    ElectrumApi: electrum_client::ElectrumApi,
+{
+    let request = {
+        let mut locked = wlt.lock().unwrap();
+        let (wallet, _) = &mut *locked;
+        wallet.start_sync_with_revealed_spks()
+    };
+    let update = electrum_client
+        .sync(request, 1, false)
+        .map_err(Error::Electrum)?;
+    let mut locked = wlt.lock().unwrap();
+    let (wallet, db) = &mut *locked;
+    wallet.apply_update(update).unwrap();
+    wallet.persist(db).unwrap();
+    Ok(())
+}
+
+async fn wallets_sync<ElectrumApi>(
+    main: Arc<Mutex<PersistedBdkWallet>>,
+    onetimes: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
+) -> Result<()>
+where
+    ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
+{
+    let cloned_electrum_client = electrum_client.clone();
+    let main_sync_task = tokio::task::spawn_blocking(|| wallet_sync(main, cloned_electrum_client));
+    let joined: JoinAll<_> = {
+        let locked_onetimes = onetimes.lock().unwrap();
+        locked_onetimes
+            .iter()
+            .map(|wlt| {
+                let cloned_wlt = wlt.clone();
+                let cloned_electrum_client = electrum_client.clone();
+                tokio::task::spawn_blocking(move || wallet_sync(cloned_wlt, cloned_electrum_client))
+            })
+            .collect()
+    };
+
+    main_sync_task.await??;
+    for task in joined.await {
+        task??;
+    }
+    Ok(())
 }

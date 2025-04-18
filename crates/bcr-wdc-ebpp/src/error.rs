@@ -33,6 +33,8 @@ pub enum Error {
     Chrono(#[from] chrono::OutOfRangeError),
     #[error("electrum_client: {0}")]
     Electrum(#[from] electrum_client::Error),
+    #[error("tokio::spawn_blocking {0}")]
+    Join(#[from] tokio::task::JoinError),
 
     #[error("onchain wallet storage path error: {0}")]
     OnChainStore(std::path::PathBuf),
