@@ -14,7 +14,7 @@ tti = 60
 engine = "sqlite"
 
 [ln]
-ln_backend = "fakewallet"
+ln_backend = "grpcprocessor"
 
 [fake_wallet]
 supported_units = ["sat"]

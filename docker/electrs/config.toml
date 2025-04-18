@@ -1,0 +1,7 @@
+daemon_rpc_addr = "bitcoin-core:18443"
+daemon_p2p_addr="bitcoin-core:18444"
+db_dir = "/data/storage/index"
+network = "regtest"
+electrum_rpc_addr = "0.0.0.0:50001"
+log_filters = "DEBUG"
+auth="electrs:bitcredit"

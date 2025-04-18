@@ -32,8 +32,8 @@ type PaymentResult<T> = std::result::Result<T, PaymentError>;
 pub trait OnChainWallet: Sync {
     fn generate_new_recipient(&self) -> Result<btc::Address>;
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
-    fn balance(&self) -> Result<bdk_wallet::Balance>;
-    fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount>;
+    async fn balance(&self) -> Result<bdk_wallet::Balance>;
+    async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount>;
 }
 
 #[async_trait]
@@ -84,7 +84,7 @@ where
     OnChainWlt: OnChainWallet,
 {
     pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
-        self.onchain.balance()
+        self.onchain.balance().await
     }
 }
 
@@ -145,6 +145,7 @@ where
             payment_type: payment_t,
             status: MintQuoteState::Unpaid,
         };
+        self.payrepo.store_request(payment.clone()).await?;
         let response = CreateIncomingPaymentResponse {
             expiry: unix_expiry,
             request_lookup_id: payment.reqid.to_string(),
@@ -329,14 +330,14 @@ where
 {
     let (amount, currency) = match &request.payment_type {
         payment::PaymentType::EBill(addr) => {
-            let btc_amount = onchain.get_address_balance(addr)?;
+            let btc_amount = onchain.get_address_balance(addr).await?;
             (
                 cashu::Amount::from(btc_amount.to_sat()),
                 cashu::CurrencyUnit::Sat,
             )
         }
         payment::PaymentType::OnChain(addr) => {
-            let btc_amount = onchain.get_address_balance(addr)?;
+            let btc_amount = onchain.get_address_balance(addr).await?;
             (
                 cashu::Amount::from(btc_amount.to_sat()),
                 cashu::CurrencyUnit::Sat,

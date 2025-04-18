@@ -127,6 +127,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+      electrs:
+        condition: service_started
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
@@ -143,3 +145,28 @@ services:
     volumes:
       - ./docker/bff-dashboard-service/nginx.conf:/etc/nginx/nginx.conf
     restart: unless-stopped
+
+  bitcoin-core:
+    image: bitcoin/bitcoin:28.1
+    volumes:
+      - ./docker/bitcoin-core/bitcoin.conf:/root/.bitcoin/bitcoin.conf
+      - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
+      - ./.docker_data/bitcoin-core/:/home/bitcoin/data
+    environment:
+      BITCOIN_DATA: /home/bitcoin/data
+    command:
+      -printtoconsole
+      -regtest=1
+      -conf=/home/bitcoin/bitcoin.conf
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "getconnectioncount"]
+
+  electrs:
+    image: getumbrel/electrs:v0.10.9
+    depends_on:
+      bitcoin-core:
+        condition: service_healthy
+    volumes:
+      - ./docker/electrs/config.toml:/data/.electrs/config.toml
+    ports:
+      - "50001:50001"
