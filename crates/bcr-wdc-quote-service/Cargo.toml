@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-axum-extra = { workspace = true, features = ["query"] }
 axum.workspace = true
 bcr-ebill-core.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
@@ -21,7 +20,6 @@ chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures.workspace = true
-hex = {version = "0.4"}
 log.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true

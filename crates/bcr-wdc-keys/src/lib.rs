@@ -17,8 +17,6 @@ use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
 pub mod id;
-#[cfg(feature = "persistence")]
-pub mod persistence;
 // ----- local imports
 pub use crate::id::KeysetID;
 
