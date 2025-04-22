@@ -6,14 +6,13 @@ bind_address = "0.0.0.0:3338"
 
 grpc_address = "0.0.0.0:9090"
 electrum_url = "electrs:50001"
-refresh_interval=1000
+refresh_interval_secs=30
 
 [appcfg.onchain]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 network = "regtest"
 store_path = "/data/regtest"
 stop_gap = 2
-update_interval = 1000
 
 [appcfg.private_keys]
 connection = "ws://surrealdb:8000"

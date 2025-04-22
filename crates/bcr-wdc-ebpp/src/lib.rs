@@ -37,7 +37,7 @@ pub struct AppConfig {
     payments: persistence::surreal::ConnectionConfig,
     electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
-    refresh_interval: chrono::Duration,
+    refresh_interval_secs: chrono::Duration,
 }
 
 #[derive(Clone, FromRef)]
@@ -54,7 +54,7 @@ impl AppController {
             private_keys,
             payments,
             electrum_url,
-            refresh_interval,
+            refresh_interval_secs: refresh_interval,
         } = cfg;
 
         let key_repo = ProdPrivateKeysRepository::new(private_keys)

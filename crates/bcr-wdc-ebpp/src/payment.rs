@@ -15,6 +15,7 @@ pub struct Request {
     pub amount: Amount,
     pub currency: CurrencyUnit,
     pub status: MintQuoteState,
+    pub expiration: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone)]

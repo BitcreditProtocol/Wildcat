@@ -41,6 +41,7 @@ pub trait PaymentRepository: Sync {
     async fn load_request(&self, reqid: Uuid) -> Result<payment::Request>;
     async fn store_request(&self, req: payment::Request) -> Result<()>;
     async fn update_request(&self, req: payment::Request) -> Result<()>;
+    async fn list_unpaid_requests(&self) -> Result<Vec<payment::Request>>;
 }
 
 #[async_trait]
@@ -57,7 +58,7 @@ pub struct Service<OnChainWlt, PayRepo, EBillCl> {
 
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<String>>>>,
     interval: core::time::Duration,
-    notif_cancel_tokens: Arc<Mutex<Vec<CancellationToken>>>,
+    notif_cancel_token: Arc<Mutex<CancellationToken>>,
 }
 
 impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl> {
@@ -74,7 +75,7 @@ impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl> {
             ebill,
             payment_notifier,
             interval: refresh_interval,
-            notif_cancel_tokens: Arc::new(Mutex::new(Vec::new())),
+            notif_cancel_token: Arc::new(Mutex::new(CancellationToken::new())),
         }
     }
 }
@@ -138,12 +139,15 @@ where
                 .map_err(PaymentError::from)?;
             payment::PaymentType::OnChain(address)
         };
+        let expiration =
+            unix_expiry.and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0));
         let payment = payment::Request {
             reqid: Uuid::new_v4(),
             amount,
             currency: unit.clone(),
             payment_type: payment_t,
             status: MintQuoteState::Unpaid,
+            expiration,
         };
         self.payrepo.store_request(payment.clone()).await?;
         let response = CreateIncomingPaymentResponse {
@@ -153,8 +157,7 @@ where
         };
         let locked_notifier = self.payment_notifier.lock().unwrap();
         if let Some(sender) = &*locked_notifier {
-            let token = CancellationToken::new();
-            let cloned = token.clone();
+            let cloned = self.notif_cancel_token.lock().unwrap().clone();
             tokio::spawn(notify_payment(
                 self.onchain.clone(),
                 payment,
@@ -162,8 +165,6 @@ where
                 self.interval,
                 cloned,
             ));
-            let mut locked_tokens = self.notif_cancel_tokens.lock().unwrap();
-            locked_tokens.push(token);
         }
         Ok(response)
     }
@@ -214,6 +215,17 @@ where
                 yield msg;
                 }
         };
+        let unpaids = self.payrepo.list_unpaid_requests().await?;
+        for unpaid in unpaids {
+            let cloned = self.notif_cancel_token.lock().unwrap().clone();
+            tokio::spawn(notify_payment(
+                self.onchain.clone(),
+                unpaid,
+                sender.clone(),
+                self.interval,
+                cloned,
+            ));
+        }
         let mut locked_sender = self.payment_notifier.lock().unwrap();
         *locked_sender = Some(sender);
         let pinned = Box::pin(stream);
@@ -233,11 +245,9 @@ where
     fn cancel_wait_invoice(&self) {
         log::info!("cancel_wait_invoice");
         *self.payment_notifier.lock().unwrap() = None;
-        let mut locked_tokens = self.notif_cancel_tokens.lock().unwrap();
-        for token in locked_tokens.iter() {
-            token.cancel();
-        }
-        locked_tokens.clear();
+        let mut locked = self.notif_cancel_token.lock().unwrap();
+        locked.cancel();
+        *locked = CancellationToken::new();
     }
 
     async fn check_incoming_payment_status(
@@ -294,29 +304,35 @@ async fn notify_payment<OnChain>(
     loop {
         tokio::select! {
             _ = token.cancelled() => {
-                log::info!("wallet update loop stopping");
+                log::info!("notifier for {} update loop stopping", request.reqid);
                 break;
             }
             _ = tokio::time::sleep(pause) => {
-                log::debug!("wallet update loop waking up");
+                log::trace!("notifier for {} loop waking up", request.reqid);
             }
         }
 
         if sender.is_closed() {
-            log::warn!(
-                "validate_ebill_request_signature for {}, channel closed, exiting",
-                request.reqid
-            );
+            log::warn!("notifier for {}, channel closed, exiting", request.reqid);
             return;
         }
         let state_res = check_incoming_payment(&request, &onchain).await;
-        if let Err(e) = state_res {
-            log::error!(
+        match state_res {
+            Err(e) => log::error!(
                 "error in checking payment for reqid {}, error: {}",
                 request.reqid,
                 e,
-            );
-            continue;
+            ),
+            Ok(MintQuoteState::Paid) => {
+                let send_res = sender.send(request.reqid.to_string()).await;
+                if let Err(e) = send_res {
+                    log::error!("error in sending notification for {}: {}", request.reqid, e);
+                }
+                return;
+            }
+            Ok(status) => {
+                log::trace!("payment {} still {}", request.reqid, status);
+            }
         }
     }
 }

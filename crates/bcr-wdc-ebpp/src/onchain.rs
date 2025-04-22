@@ -10,6 +10,7 @@ use bdk_wallet::{
         hashes::{sha256, Hash},
         Network,
     },
+    chain::ChainPosition,
     descriptor::template::Bip84,
     keys::{bip39::Mnemonic, DerivableKey, ExtendedKey},
     miniscript::{descriptor::KeyMap, Descriptor, DescriptorPublicKey},
@@ -35,8 +36,6 @@ pub struct WalletConfig {
     network: Network,
     store_path: std::path::PathBuf,
     stop_gap: usize,
-    #[serde_as(as = "serde_with::DurationSeconds<i64>")]
-    update_interval: chrono::Duration,
 }
 
 #[async_trait]
@@ -52,7 +51,6 @@ pub struct Wallet<KeyRepo, ElectrumApi> {
     // the vector is mutating as keys are added and removed
     onetimes: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
     store_path: std::path::PathBuf,
-    update_interval: core::time::Duration,
     repo: KeyRepo,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     network: Network,
@@ -74,7 +72,6 @@ where
             main: self.main.clone(),
             onetimes: self.onetimes.clone(),
             store_path: self.store_path.clone(),
-            update_interval: self.update_interval,
             repo: self.repo.clone(),
             electrum_client: self.electrum_client.clone(),
             network: self.network,
@@ -95,7 +92,6 @@ where
             return Err(Error::OnChainStore(cfg.store_path));
         }
 
-        let update_interval = cfg.update_interval.to_std()?;
         let electrum_client = Arc::new(BdkElectrumClient::new(api));
 
         let exkey: ExtendedKey = cfg.mnemonic.into_extended_key()?;
@@ -128,7 +124,6 @@ where
             main,
             onetimes: Arc::new(Mutex::new(onetimes)),
             repo,
-            update_interval,
             store_path: cfg.store_path,
             electrum_client,
             network: cfg.network,
@@ -216,6 +211,9 @@ where
                 let total: btc::Amount = wlt
                     .list_unspent()
                     .filter(|output| !output.is_spent)
+                    .filter(|output| {
+                        matches!(output.chain_position, ChainPosition::Confirmed { .. })
+                    })
                     .filter(|output| output.txout.script_pubkey == script)
                     .fold(btc::Amount::ZERO, |sum, output| sum + output.txout.value);
                 return Ok(total);
@@ -230,6 +228,9 @@ where
                     let total: btc::Amount = wlt
                         .list_unspent()
                         .filter(|output| !output.is_spent)
+                        .filter(|output| {
+                            matches!(output.chain_position, ChainPosition::Confirmed { .. })
+                        })
                         .filter(|output| output.txout.script_pubkey == script)
                         .fold(btc::Amount::ZERO, |sum, output| sum + output.txout.value);
                     return Ok(total);
