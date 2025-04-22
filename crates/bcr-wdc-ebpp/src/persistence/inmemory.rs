@@ -5,6 +5,7 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
+use cashu::MintQuoteState;
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -61,5 +62,19 @@ impl PaymentRepository for InMemoryPaymentRepo {
         } else {
             Err(Error::PaymentRequestNotFound(req.reqid))
         }
+    }
+
+    async fn list_unpaid_requests(&self) -> Result<Vec<Request>> {
+        let locked = self.payments.lock().expect("update_request");
+
+        let values = locked
+            .iter()
+            .filter_map(|(_, v)| match v.status {
+                MintQuoteState::Unpaid => Some(v),
+                _ => None,
+            })
+            .cloned()
+            .collect();
+        Ok(values)
     }
 }

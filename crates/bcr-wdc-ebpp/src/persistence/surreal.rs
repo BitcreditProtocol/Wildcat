@@ -12,6 +12,7 @@ use bdk_wallet::miniscript::{
     descriptor::{DescriptorSecretKey, KeyMap},
     Descriptor, DescriptorPublicKey,
 };
+use cashu::MintQuoteState;
 use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
 use uuid::Uuid;
 // ----- local imports
@@ -147,6 +148,7 @@ struct PaymentRequestDBEntry {
     currency: cashu::CurrencyUnit,
     payment_type: PaymentTypeDBEntry,
     status: cdk_common::MintQuoteState,
+    expiration: Option<chrono::DateTime<chrono::Utc>>,
 }
 impl std::convert::From<Request> for PaymentRequestDBEntry {
     fn from(req: Request) -> Self {
@@ -156,6 +158,7 @@ impl std::convert::From<Request> for PaymentRequestDBEntry {
             currency: req.currency,
             payment_type: req.payment_type.into(),
             status: req.status,
+            expiration: req.expiration,
         }
     }
 }
@@ -167,6 +170,7 @@ fn into_request(dbreq: PaymentRequestDBEntry, network: btc::Network) -> Result<R
         currency: dbreq.currency,
         payment_type: ttype,
         status: dbreq.status,
+        expiration: dbreq.expiration,
     })
 }
 
@@ -210,6 +214,16 @@ impl DBPayments {
         let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
         self.db.update(rid).content(request).await
     }
+
+    async fn list_unpaid(&self) -> SurrealResult<Vec<PaymentRequestDBEntry>> {
+        let statement = "SELECT * FROM type::table($table) WHERE status = $status";
+        self.db
+            .query(statement)
+            .bind(("table", self.table.clone()))
+            .bind(("status", MintQuoteState::Unpaid))
+            .await?
+            .take(0)
+    }
 }
 
 #[async_trait]
@@ -236,5 +250,17 @@ impl PaymentRepository for DBPayments {
             return Err(Error::PaymentRequestNotFound(reqid));
         }
         Ok(())
+    }
+
+    async fn list_unpaid_requests(&self) -> Result<Vec<Request>> {
+        let result = self
+            .list_unpaid()
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let requests = result
+            .into_iter()
+            .map(|dbentry| into_request(dbentry, self.network))
+            .collect::<Result<_>>()?;
+        Ok(requests)
     }
 }
