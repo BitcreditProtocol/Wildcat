@@ -34,7 +34,7 @@ pub struct AppConfig {
     grpc_address: std::net::SocketAddr,
     onchain: onchain::WalletConfig,
     private_keys: persistence::surreal::ConnectionConfig,
-    payments: persistence::surreal::ConnectionConfig,
+    payments: persistence::surreal::PaymentConnectionConfig,
     electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     refresh_interval_secs: chrono::Duration,

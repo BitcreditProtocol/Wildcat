@@ -13,6 +13,9 @@ mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon aban
 network = "regtest"
 store_path = "/data/regtest"
 stop_gap = 2
+max_confirmation_blocks = 2
+avg_transaction_size_bytes = 300
+
 
 [appcfg.private_keys]
 connection = "ws://surrealdb:8000"
@@ -24,4 +27,5 @@ table = "privates"
 connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "ebpp"
-table = "payments"
+incoming_payments_table = "incomings"
+outgoing_payments_table = "outgoings"

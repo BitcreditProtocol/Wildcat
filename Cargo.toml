@@ -27,7 +27,7 @@ borsh = {version = "1.5"}
 cashu = {version = "0.9", default-features = false}
 cdk = {version = "0.9"}
 cdk-common = {version = "0.9"}
-cdk-payment-processor = {version = "0.9"}
+cdk-payment-processor = {version = "0.9", default-features = false}
 cdk-redb = {version = "0.9"}
 chrono = {version = "0.4"}
 config = {version = "0.15"}
@@ -37,7 +37,7 @@ itertools = {version = "0.14"}
 log = {version = "0.4"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
-reqwest = { version = "0.11"}
+reqwest = { version = "0.12"}
 rust_decimal = {version = "1"}
 secp256k1 = {version = "0.29"}
 serde = {version = "1"}

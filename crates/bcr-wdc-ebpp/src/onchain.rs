@@ -1,7 +1,8 @@
 // ----- standard library imports
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 // ----- extra library imports
 use async_trait::async_trait;
+use bdk_core::bitcoin::Amount;
 use bdk_electrum::BdkElectrumClient;
 use bdk_wallet::{
     bitcoin::{
@@ -15,7 +16,7 @@ use bdk_wallet::{
     keys::{bip39::Mnemonic, DerivableKey, ExtendedKey},
     miniscript::{descriptor::KeyMap, Descriptor, DescriptorPublicKey},
     rusqlite::OpenFlags,
-    KeychainKind,
+    KeychainKind, SignOptions, TxOrdering,
 };
 use futures::future::JoinAll;
 use serde_with::serde_as;
@@ -36,6 +37,8 @@ pub struct WalletConfig {
     network: Network,
     store_path: std::path::PathBuf,
     stop_gap: usize,
+    max_confirmation_blocks: usize,
+    avg_transaction_size_bytes: usize,
 }
 
 #[async_trait]
@@ -47,14 +50,16 @@ pub trait PrivateKeysRepository {
 #[derive(Debug)]
 pub struct Wallet<KeyRepo, ElectrumApi> {
     main: Arc<Mutex<PersistedBdkWallet>>,
-    // each wallet has its own updating loop task
     // the vector is mutating as keys are added and removed
-    onetimes: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
+    singles: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
     store_path: std::path::PathBuf,
     repo: KeyRepo,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
+    // configs
     network: Network,
-    stop_gap: usize,
+    stop_gap: usize,                   // number of unused addresses to stop scanning
+    max_confirmation_blocks: usize,    // number of blocks to confirm a transaction
+    avg_transaction_size_bytes: usize, // transaction size in bytes used to estimate fees
 }
 
 impl<KeyRepo, ElectrumApi> Wallet<KeyRepo, ElectrumApi> {
@@ -70,12 +75,14 @@ where
     fn clone(&self) -> Self {
         Self {
             main: self.main.clone(),
-            onetimes: self.onetimes.clone(),
+            singles: self.singles.clone(),
             store_path: self.store_path.clone(),
             repo: self.repo.clone(),
             electrum_client: self.electrum_client.clone(),
             network: self.network,
             stop_gap: self.stop_gap,
+            max_confirmation_blocks: self.max_confirmation_blocks,
+            avg_transaction_size_bytes: self.avg_transaction_size_bytes,
         }
     }
 }
@@ -86,6 +93,7 @@ where
     ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
+    const MIN_FEE_RATE_BTC_PER_KBYTE: f64 = 0.000005; // minimum fee rate in btc/KByte
 
     pub async fn new(cfg: WalletConfig, repo: KeyRepo, api: ElectrumApi) -> Result<Self> {
         if !cfg.store_path.is_dir() {
@@ -106,7 +114,7 @@ where
             wallet_full_scan(cloned_main, age, cloned_electrum_client, stop_gap);
         });
 
-        let mut onetimes = Vec::new();
+        let mut singles = Vec::new();
         let keys = repo.get_private_keys().await?;
         for key in keys {
             let (age, wlt) = initialize_single_wallet(&cfg.store_path, key, cfg.network)?;
@@ -117,17 +125,19 @@ where
             tokio::task::spawn_blocking(move || {
                 wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
             });
-            onetimes.push(wlt);
+            singles.push(wlt);
         }
 
         Ok(Self {
             main,
-            onetimes: Arc::new(Mutex::new(onetimes)),
+            singles: Arc::new(Mutex::new(singles)),
             repo,
             store_path: cfg.store_path,
             electrum_client,
             network: cfg.network,
             stop_gap: cfg.stop_gap,
+            max_confirmation_blocks: cfg.max_confirmation_blocks,
+            avg_transaction_size_bytes: cfg.avg_transaction_size_bytes,
         })
     }
 }
@@ -146,10 +156,14 @@ where
         Ok(address_info.address)
     }
 
+    fn network(&self) -> bdk_wallet::bitcoin::Network {
+        self.network
+    }
+
     async fn balance(&self) -> Result<bdk_wallet::Balance> {
         wallets_sync(
             self.main.clone(),
-            self.onetimes.clone(),
+            self.singles.clone(),
             self.electrum_client.clone(),
         )
         .await?;
@@ -158,8 +172,8 @@ where
             let (wlt, _) = &*locked;
             wlt.balance()
         };
-        let locked_onetimes = self.onetimes.lock().unwrap();
-        for wlt in locked_onetimes.iter() {
+        let locked_singles = self.singles.lock().unwrap();
+        for wlt in locked_singles.iter() {
             let locked = wlt.lock().unwrap();
             let (wlt, _) = &*locked;
             balance = balance + wlt.balance();
@@ -170,7 +184,7 @@ where
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address> {
         wallets_sync(
             self.main.clone(),
-            self.onetimes.clone(),
+            self.singles.clone(),
             self.electrum_client.clone(),
         )
         .await?;
@@ -191,7 +205,7 @@ where
         tokio::task::spawn_blocking(move || {
             wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
         });
-        let mut locked = self.onetimes.lock().unwrap();
+        let mut locked = self.singles.lock().unwrap();
         locked.push(wlt);
         Ok(addr_info.address)
     }
@@ -199,7 +213,7 @@ where
     async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
         wallets_sync(
             self.main.clone(),
-            self.onetimes.clone(),
+            self.singles.clone(),
             self.electrum_client.clone(),
         )
         .await?;
@@ -220,7 +234,7 @@ where
             }
         }
         {
-            let locked = self.onetimes.lock().unwrap();
+            let locked = self.singles.lock().unwrap();
             for wlt in locked.iter() {
                 let wlt_locked = wlt.lock().unwrap();
                 let (wlt, _) = &*wlt_locked;
@@ -239,8 +253,98 @@ where
         }
         Err(Error::UnknownAddress(addr.clone()))
     }
+    async fn estimate_fees(&self) -> Result<btc::Amount> {
+        let cloned = self.electrum_client.clone();
+        let max_confirmation_blocks = self.max_confirmation_blocks;
+        let avg_transaction_size = self.avg_transaction_size_bytes;
+        let hndlr = tokio::task::spawn_blocking(move || {
+            let fee_rate = cloned.inner.estimate_fee(max_confirmation_blocks)?;
+            let fee_rate = if fee_rate > Self::MIN_FEE_RATE_BTC_PER_KBYTE {
+                fee_rate
+            } else {
+                Self::MIN_FEE_RATE_BTC_PER_KBYTE
+            };
+            let fee = fee_rate * avg_transaction_size as f64 / 1000.0;
+            let amount = Amount::from_btc(fee)?;
+            Ok(amount)
+        });
+        hndlr.await?
+    }
+
+    async fn send_to(
+        &self,
+        recipient: btc::Address,
+        amount: btc::Amount,
+        max_fee: btc::Amount,
+    ) -> Result<(btc::Txid, btc::Amount)> {
+        wallets_sync(
+            self.main.clone(),
+            self.singles.clone(),
+            self.electrum_client.clone(),
+        )
+        .await?;
+        // 1. send from a single wallet whose balance is greater than amount + max_fee
+        {
+            let locked_singles = self.singles.lock().unwrap();
+            for wlt in locked_singles.iter() {
+                let locked = wlt.lock().unwrap();
+                if locked.0.balance().confirmed > amount + max_fee {
+                    let sweeping_address = {
+                        let mut locked = self.main.lock().unwrap();
+                        let (wlt, db) = &mut *locked;
+                        let address_info = wlt.reveal_next_address(KeychainKind::External);
+                        wlt.persist(db)?;
+                        address_info.address
+                    };
+                    return sweep_to(
+                        self.electrum_client.clone(),
+                        locked,
+                        recipient,
+                        sweeping_address,
+                        amount,
+                        max_fee,
+                    );
+                }
+            }
+        }
+        // 2. send from the main wallet
+        let main_locked = self.main.lock().unwrap();
+        return send_to(
+            self.electrum_client.clone(),
+            main_locked,
+            recipient,
+            amount,
+            max_fee,
+        );
+    }
+
+    async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool> {
+        wallets_sync(
+            self.main.clone(),
+            self.singles.clone(),
+            self.electrum_client.clone(),
+        )
+        .await?;
+        {
+            let locked_singles = self.singles.lock().unwrap();
+            for single in locked_singles.iter() {
+                let locked = single.lock().unwrap();
+                let (wlt, _) = &*locked;
+                if let Some(tx) = wlt.get_tx(tx_id) {
+                    return Ok(tx.chain_position.is_confirmed());
+                }
+            }
+        }
+        let locked = self.main.lock().unwrap();
+        let (wlt, _) = &*locked;
+        if let Some(tx) = wlt.get_tx(tx_id) {
+            return Ok(tx.chain_position.is_confirmed());
+        }
+        Err(Error::TxNotFound(tx_id))
+    }
 }
 
+#[derive(Debug, PartialEq)]
 enum WalletAge {
     New,
     Old,
@@ -258,7 +362,7 @@ fn initialize_main_wallet(
         store_file,
         OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_READ_WRITE,
     )?;
-    let wallet_opt = bdk_wallet::LoadParams::new()
+    let wallet_opt = bdk_wallet::Wallet::load()
         .descriptor(KeychainKind::Internal, Some(internal.clone()))
         .descriptor(KeychainKind::External, Some(external.clone()))
         .extract_keys()
@@ -267,7 +371,7 @@ fn initialize_main_wallet(
     match wallet_opt {
         Some(wallet) => Ok((WalletAge::Old, (wallet, conn))),
         None => {
-            let wallet = bdk_wallet::CreateParams::new(external, internal)
+            let wallet = bdk_wallet::Wallet::create(external, internal)
                 .network(network)
                 .create_wallet(&mut conn)?;
             Ok((WalletAge::New, (wallet, conn)))
@@ -286,7 +390,7 @@ fn initialize_single_wallet(
         store,
         OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_READ_WRITE,
     )?;
-    let wallet_opt = bdk_wallet::LoadParams::new()
+    let wallet_opt = bdk_wallet::Wallet::load()
         .descriptor(KeychainKind::External, Some((desc.clone(), kmap.clone())))
         .extract_keys()
         .check_network(network)
@@ -294,7 +398,7 @@ fn initialize_single_wallet(
     match wallet_opt {
         Some(wallet) => Ok((WalletAge::Old, (wallet, conn))),
         None => {
-            let wallet = bdk_wallet::CreateParams::new_single((desc, kmap))
+            let wallet = bdk_wallet::Wallet::create_single((desc, kmap))
                 .network(network)
                 .create_wallet(&mut conn)?;
             Ok((WalletAge::New, (wallet, conn)))
@@ -347,7 +451,7 @@ where
 
 async fn wallets_sync<ElectrumApi>(
     main: Arc<Mutex<PersistedBdkWallet>>,
-    onetimes: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
+    singles: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
 ) -> Result<()>
 where
@@ -356,8 +460,8 @@ where
     let cloned_electrum_client = electrum_client.clone();
     let main_sync_task = tokio::task::spawn_blocking(|| wallet_sync(main, cloned_electrum_client));
     let joined: JoinAll<_> = {
-        let locked_onetimes = onetimes.lock().unwrap();
-        locked_onetimes
+        let locked_singles = singles.lock().unwrap();
+        locked_singles
             .iter()
             .map(|wlt| {
                 let cloned_wlt = wlt.clone();
@@ -372,4 +476,124 @@ where
         task??;
     }
     Ok(())
+}
+
+// blocking function as we need to keep the wallet locked
+fn sweep_to<ElectrumApi>(
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
+    mut locked_wlt: MutexGuard<PersistedBdkWallet>,
+    recipient: btc::Address,
+    sweeping_address: btc::Address,
+    amount: btc::Amount,
+    max_fee: btc::Amount,
+) -> Result<(btc::Txid, btc::Amount)>
+where
+    ElectrumApi: electrum_client::ElectrumApi,
+{
+    let (wallet, db) = &mut *locked_wlt;
+    let mut psbt = {
+        let mut builder = wallet.build_tx();
+        builder
+            .ordering(TxOrdering::Untouched)
+            .add_recipient(recipient.script_pubkey(), amount)
+            .drain_wallet()
+            .drain_to(sweeping_address.script_pubkey())
+            .fee_absolute(max_fee);
+        builder.finish().map_err(Error::BDKCreateTx)?
+    };
+    let ok = wallet
+        .finalize_psbt(&mut psbt, SignOptions::default())
+        .map_err(Error::BDKSigner)?;
+    if !ok {
+        return Err(Error::BDKSignOpNotOK);
+    }
+    let total_fee = psbt.fee()?;
+    let tx = psbt.extract_tx()?;
+    let txid = electrum_client.transaction_broadcast(&tx)?;
+    wallet.persist(db)?;
+    let total_spent = amount + total_fee;
+    Ok((txid, total_spent))
+}
+
+// blocking function as we need to keep the wallet locked
+fn send_to<ElectrumApi>(
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
+    mut locked_wlt: MutexGuard<PersistedBdkWallet>,
+    recipient: btc::Address,
+    amount: btc::Amount,
+    max_fee: btc::Amount,
+) -> Result<(btc::Txid, btc::Amount)>
+where
+    ElectrumApi: electrum_client::ElectrumApi,
+{
+    let (wallet, db) = &mut *locked_wlt;
+    let mut psbt = {
+        let mut builder = wallet.build_tx();
+        builder
+            .ordering(TxOrdering::Untouched)
+            .add_recipient(recipient.script_pubkey(), amount)
+            .fee_absolute(max_fee);
+        builder.finish().map_err(Error::BDKCreateTx)?
+    };
+    let ok = wallet
+        .finalize_psbt(&mut psbt, SignOptions::default())
+        .map_err(Error::BDKSigner)?;
+    if !ok {
+        return Err(Error::BDKSignOpNotOK);
+    }
+    let total_fee = psbt.fee()?;
+    let tx = psbt.extract_tx()?;
+    let txid = electrum_client.transaction_broadcast(&tx)?;
+    let total_spent = amount + total_fee;
+    wallet.persist(db)?;
+    Ok((txid, total_spent))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn initialize_main_wallet_new() {
+        //iancoleman.io
+        let xpriv = btc::bip32::Xpriv::from_str("tprv8ZgxMBicQKsPdehyjwGnn4uRdK3oQZbRAuTi3TteaewxNLjWyxdZwmvYvpPSDEhJUtup7ndWFhK2pxB11ezuBoCzzKddCSdgikVAAUfWe8u").unwrap();
+        // derivation m/84'/1'/0'
+        let expected_external_derivation_path = "tpubDDJ48Eu2muRuDwQ3F31v8cctLJRCaXzTQHTrBxmk4pqvHos8L7genWReesxbcCuzu4RStW65GCDFrUGqWAnRWA5qbYFuC2vREvRtPYsL1rp";
+
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let store_file = tmp_dir.path().join("main.sqlite");
+        let network = btc::Network::Testnet;
+
+        let (age, wlt) = initialize_main_wallet(&store_file, xpriv, network).unwrap();
+        assert_eq!(age, WalletAge::New);
+        let external_desc = wlt.0.public_descriptor(bdk_wallet::KeychainKind::External);
+        assert!(external_desc
+            .to_string()
+            .contains(expected_external_derivation_path));
+    }
+
+    #[test]
+    fn initialize_single_wallet_new() {
+        // learnmeabitcoin.com/technical/keys/private-key/wif/
+        // learnmeabitcoin.com/technical/keys/
+        let descriptor = "wpkh(cQv7zQXyJ36AsbCqow8NwNp7QXyFG7bXcPfdEhnP7QmZx4S5S9Lw)";
+        let expected_publickey_compressed =
+            "03e416ffcdde3d5b83a1940fda7aec1179ed3382d080da9c2672c02115a37ad45e";
+        let (descr, keymap) =
+            Descriptor::parse_descriptor(secp256k1::global::SECP256K1, descriptor).unwrap();
+        dbg!(&descr);
+        dbg!(&keymap);
+
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let network = btc::Network::Testnet;
+
+        let (age, wlt) =
+            initialize_single_wallet(tmp_dir.path(), (descr, keymap), network).unwrap();
+        assert_eq!(age, WalletAge::New);
+        let external_desc = wlt.0.public_descriptor(bdk_wallet::KeychainKind::External);
+        assert!(external_desc
+            .to_string()
+            .contains(expected_publickey_compressed));
+    }
 }
