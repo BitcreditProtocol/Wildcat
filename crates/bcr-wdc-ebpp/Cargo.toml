@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = {workspace = true}
 async-stream = {version = "0.3"}
 async-trait = { workspace = true}
-axum = { workspace = true}
+axum = { workspace = true, features = ["macros"]}
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bdk_core = {version = "0.4"}
 bdk_electrum = {version = "0.21"}
@@ -21,9 +21,8 @@ config = {workspace = true}
 electrum-client = {version = "0.23"}
 env_logger = {workspace = true}
 futures = {workspace = true}
-log = {workspace = true}
+log = {workspace = true, features = ["serde"]}
 rand = {workspace = true}
-secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true}
 serde_json = { workspace = true}
 serde_with = {version = "3", default-features = false, features = ["chrono"]}
@@ -32,8 +31,10 @@ thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
 utoipa = { workspace = true}
-utoipa-swagger-ui = {workspace = true}
+utoipa-swagger-ui = {workspace = true, features = ["axum"]}
 uuid = {workspace = true}
 
 [dev-dependencies]
 mockall = {workspace = true}
+secp256k1 = {workspace = true, features = ["global-context"]}
+tempfile = {version = "3"}

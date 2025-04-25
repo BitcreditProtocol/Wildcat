@@ -18,7 +18,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor};
-use crate::payment::{PaymentType, Request};
+use crate::payment::{IncomingRequest, OutgoingRequest, PaymentType};
 use crate::service::PaymentRepository;
 
 // ----- end imports
@@ -142,84 +142,152 @@ fn into_payment_type(pt: PaymentTypeDBEntry, network: btc::Network) -> Result<Pa
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct PaymentRequestDBEntry {
+struct IncomingPaymentDBEntry {
     reqid: Uuid,
-    amount: cashu::Amount,
-    currency: cashu::CurrencyUnit,
+    amount: btc::Amount,
     payment_type: PaymentTypeDBEntry,
     status: cdk_common::MintQuoteState,
     expiration: Option<chrono::DateTime<chrono::Utc>>,
 }
-impl std::convert::From<Request> for PaymentRequestDBEntry {
-    fn from(req: Request) -> Self {
+impl std::convert::From<IncomingRequest> for IncomingPaymentDBEntry {
+    fn from(req: IncomingRequest) -> Self {
         Self {
             reqid: req.reqid,
             amount: req.amount,
-            currency: req.currency,
             payment_type: req.payment_type.into(),
             status: req.status,
             expiration: req.expiration,
         }
     }
 }
-fn into_request(dbreq: PaymentRequestDBEntry, network: btc::Network) -> Result<Request> {
+fn into_incoming_request(
+    dbreq: IncomingPaymentDBEntry,
+    network: btc::Network,
+) -> Result<IncomingRequest> {
     let ttype = into_payment_type(dbreq.payment_type, network)?;
-    Ok(Request {
+    Ok(IncomingRequest {
         reqid: dbreq.reqid,
         amount: dbreq.amount,
-        currency: dbreq.currency,
         payment_type: ttype,
         status: dbreq.status,
         expiration: dbreq.expiration,
     })
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OutgoingPaymentDBEntry {
+    reqid: Uuid,
+    recipient: btc::Address<btc::address::NetworkUnchecked>,
+    amount: btc::Amount,
+    status: cdk_common::MeltQuoteState,
+    proof: Option<btc::Txid>,
+    total_spent: Option<btc::Amount>,
+}
+impl std::convert::From<OutgoingRequest> for OutgoingPaymentDBEntry {
+    fn from(req: OutgoingRequest) -> Self {
+        Self {
+            reqid: req.reqid,
+            amount: req.amount,
+            status: req.status,
+            recipient: req.recipient.into_unchecked(),
+            proof: req.proof,
+            total_spent: req.total_spent,
+        }
+    }
+}
+fn into_outgoing_request(
+    dbreq: OutgoingPaymentDBEntry,
+    network: btc::Network,
+) -> Result<OutgoingRequest> {
+    let recipient = dbreq.recipient.require_network(network)?;
+    Ok(OutgoingRequest {
+        reqid: dbreq.reqid,
+        amount: dbreq.amount,
+        recipient,
+        status: dbreq.status,
+        proof: dbreq.proof,
+        total_spent: dbreq.total_spent,
+    })
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct PaymentConnectionConfig {
+    pub connection: String,
+    pub namespace: String,
+    pub database: String,
+    pub incoming_payments_table: String,
+    pub outgoing_payments_table: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct DBPayments {
     db: Surreal<surrealdb::engine::any::Any>,
-    table: String,
+    incoming_table: String,
+    outgoing_table: String,
     network: btc::Network,
 }
 
 impl DBPayments {
-    pub async fn new(cfg: ConnectionConfig, network: btc::Network) -> SurrealResult<Self> {
+    pub async fn new(cfg: PaymentConnectionConfig, network: btc::Network) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
         Ok(Self {
             db: db_connection,
-            table: cfg.table,
+            incoming_table: cfg.incoming_payments_table,
+            outgoing_table: cfg.outgoing_payments_table,
             network,
         })
     }
 
-    async fn load(&self, reqid: Uuid) -> SurrealResult<Option<PaymentRequestDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.table, reqid);
+    async fn load_incoming(&self, reqid: Uuid) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, reqid);
         self.db.select(rid).await
     }
 
-    async fn store(
+    async fn store_incoming(
         &self,
-        request: PaymentRequestDBEntry,
-    ) -> SurrealResult<Option<PaymentRequestDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
+        request: IncomingPaymentDBEntry,
+    ) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid);
         self.db.insert(rid).content(request).await
     }
 
-    async fn update(
+    async fn update_incoming(
         &self,
-        request: PaymentRequestDBEntry,
-    ) -> SurrealResult<Option<PaymentRequestDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.table, request.reqid);
+        request: IncomingPaymentDBEntry,
+    ) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid);
         self.db.update(rid).content(request).await
     }
 
-    async fn list_unpaid(&self) -> SurrealResult<Vec<PaymentRequestDBEntry>> {
+    async fn load_outgoing(&self, reqid: Uuid) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, reqid);
+        self.db.select(rid).await
+    }
+
+    async fn store_outgoing(
+        &self,
+        request: OutgoingPaymentDBEntry,
+    ) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid);
+        self.db.insert(rid).content(request).await
+    }
+
+    async fn update_outgoing(
+        &self,
+        request: OutgoingPaymentDBEntry,
+    ) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid);
+        self.db.update(rid).content(request).await
+    }
+
+    async fn list_unpaid(&self) -> SurrealResult<Vec<IncomingPaymentDBEntry>> {
         let statement = "SELECT * FROM type::table($table) WHERE status = $status";
         self.db
             .query(statement)
-            .bind(("table", self.table.clone()))
+            .bind(("table", self.incoming_table.clone()))
             .bind(("status", MintQuoteState::Unpaid))
             .await?
             .take(0)
@@ -228,22 +296,27 @@ impl DBPayments {
 
 #[async_trait]
 impl PaymentRepository for DBPayments {
-    async fn load_request(&self, reqid: Uuid) -> Result<Request> {
-        let dbreq = self.load(reqid).await.map_err(|e| Error::DB(anyhow!(e)))?;
+    async fn load_incoming(&self, reqid: Uuid) -> Result<IncomingRequest> {
+        let dbreq = self
+            .load_incoming(reqid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid))?;
-        into_request(dbreq, self.network)
+        into_incoming_request(dbreq, self.network)
     }
 
-    async fn store_request(&self, req: Request) -> Result<()> {
-        let dbreq = PaymentRequestDBEntry::from(req);
-        self.store(dbreq).await.map_err(|e| Error::DB(anyhow!(e)))?;
+    async fn store_incoming(&self, req: IncomingRequest) -> Result<()> {
+        let dbreq = IncomingPaymentDBEntry::from(req);
+        self.store_incoming(dbreq)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
-    async fn update_request(&self, req: Request) -> Result<()> {
+    async fn update_incoming(&self, req: IncomingRequest) -> Result<()> {
         let reqid = req.reqid;
-        let res: Option<PaymentRequestDBEntry> = self
-            .update(req.into())
+        let res: Option<IncomingPaymentDBEntry> = self
+            .update_incoming(req.into())
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         if res.is_none() {
@@ -252,14 +325,42 @@ impl PaymentRepository for DBPayments {
         Ok(())
     }
 
-    async fn list_unpaid_requests(&self) -> Result<Vec<Request>> {
+    async fn load_outgoing(&self, reqid: Uuid) -> Result<OutgoingRequest> {
+        let dbreq = self
+            .load_outgoing(reqid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid))?;
+        into_outgoing_request(dbreq, self.network)
+    }
+
+    async fn store_outgoing(&self, req: OutgoingRequest) -> Result<()> {
+        let dbreq = OutgoingPaymentDBEntry::from(req);
+        self.store_outgoing(dbreq)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+    async fn update_outgoing(&self, req: OutgoingRequest) -> Result<()> {
+        let reqid = req.reqid;
+        let res: Option<OutgoingPaymentDBEntry> = self
+            .update_outgoing(req.into())
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if res.is_none() {
+            return Err(Error::PaymentRequestNotFound(reqid));
+        }
+        Ok(())
+    }
+
+    async fn list_unpaid_incoming_requests(&self) -> Result<Vec<IncomingRequest>> {
         let result = self
             .list_unpaid()
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let requests = result
             .into_iter()
-            .map(|dbentry| into_request(dbentry, self.network))
+            .map(|dbentry| into_incoming_request(dbentry, self.network))
             .collect::<Result<_>>()?;
         Ok(requests)
     }

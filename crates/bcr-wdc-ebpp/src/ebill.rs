@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use cashu::Amount;
+use bdk_wallet::bitcoin::Amount;
 // ----- local imports
 use crate::error::Result;
 use crate::service::EBillNode;
