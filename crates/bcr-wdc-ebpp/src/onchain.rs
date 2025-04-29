@@ -501,10 +501,17 @@ where
             .fee_absolute(max_fee);
         builder.finish().map_err(Error::BDKCreateTx)?
     };
-    let ok = wallet
-        .finalize_psbt(&mut psbt, SignOptions::default())
+    let signopt = SignOptions::default();
+    let signok = wallet
+        .sign(&mut psbt, signopt.clone())
         .map_err(Error::BDKSigner)?;
-    if !ok {
+    if !signok {
+        return Err(Error::BDKSignOpNotOK);
+    }
+    let finalok = wallet
+        .finalize_psbt(&mut psbt, signopt)
+        .map_err(Error::BDKSigner)?;
+    if !finalok {
         return Err(Error::BDKSignOpNotOK);
     }
     let total_fee = psbt.fee()?;
@@ -535,10 +542,17 @@ where
             .fee_absolute(max_fee);
         builder.finish().map_err(Error::BDKCreateTx)?
     };
-    let ok = wallet
-        .finalize_psbt(&mut psbt, SignOptions::default())
+    let signopt = SignOptions::default();
+    let signok = wallet
+        .sign(&mut psbt, signopt.clone())
         .map_err(Error::BDKSigner)?;
-    if !ok {
+    if !signok {
+        return Err(Error::BDKSignOpNotOK);
+    }
+    let finalok = wallet
+        .finalize_psbt(&mut psbt, signopt)
+        .map_err(Error::BDKSigner)?;
+    if !finalok {
         return Err(Error::BDKSignOpNotOK);
     }
     let total_fee = psbt.fee()?;
