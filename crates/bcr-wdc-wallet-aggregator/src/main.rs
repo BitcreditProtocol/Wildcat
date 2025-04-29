@@ -6,7 +6,7 @@ use tokio::signal::{
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
-    appcfg: bcr_wdc_bff_wallet_service::AppConfig,
+    appcfg: bcr_wdc_wallet_aggregator::AppConfig,
     log_level: log::LevelFilter,
 }
 
@@ -14,7 +14,7 @@ struct MainConfig {
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("BFF_WALLET"))
+        .add_source(config::Environment::with_prefix("WALLET_AGGREGATOR"))
         .build()
         .expect("Failed to build wildcat config");
 
@@ -24,8 +24,8 @@ async fn main() {
 
     env_logger::builder().filter_level(maincfg.log_level).init();
 
-    let app = bcr_wdc_bff_wallet_service::AppController::new(maincfg.appcfg);
-    let router = bcr_wdc_bff_wallet_service::routes(app);
+    let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg);
+    let router = bcr_wdc_wallet_aggregator::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await

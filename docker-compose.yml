@@ -63,8 +63,8 @@ services:
       start_period: 60s
       start_interval: 3s
 
-  bff-wallet-service:
-    image: wildcat/bff-wallet-service
+  wallet-aggregator:
+    image: wildcat/wallet-aggregator
     pull_policy: never
     ports:
       - "3338:3338"
@@ -76,7 +76,7 @@ services:
       cdk_mint:
         condition: service_started # no healthcheck yet
     volumes:
-      - ./docker/bff-wallet-service/config.toml:/bff-wallet-service/config.toml
+      - ./docker/wallet-aggregator/config.toml:/wallet-aggregator/config.toml
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
       interval: 10s
