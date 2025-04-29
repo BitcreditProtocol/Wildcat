@@ -102,7 +102,7 @@ services:
       retries: 5
 
   cdk_mint:
-    image: thesimplekid/cdk-mintd:0.8
+    image: thesimplekid/cdk-mintd:0.9
     volumes:
       - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
     restart: unless-stopped
@@ -132,6 +132,17 @@ services:
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
+
+  bff-wallet-service:
+    image: nginx:stable-bookworm
+    ports:
+      - "4343:4242"
+    depends_on:
+      - quote-service
+      - wallet-aggregator
+    volumes:
+      - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
+    restart: unless-stopped
 
   bff-dashboard-service:
     image: nginx:stable-bookworm
