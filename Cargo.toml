@@ -9,7 +9,7 @@ members = [
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
     "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
-    "crates/bcr-wdc-bff-wallet-service",
+    "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-ebpp",
 ]
 

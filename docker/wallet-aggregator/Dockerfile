@@ -9,10 +9,10 @@ RUN apt-get update \
   && apt-get clean \
   && rm --recursive --force /var/lib/apt/lists/*
 
-WORKDIR /bff-wallet-service
-COPY --from=rust-builder /wildcat/target/release/bcr-wdc-bff-wallet-service .
+WORKDIR /wallet-aggregator
+COPY --from=rust-builder /wildcat/target/release/bcr-wdc-wallet-aggregator .
 
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/bff-wallet-service/bcr-wdc-bff-wallet-service"]
+CMD ["/wallet-aggregator/bcr-wdc-wallet-aggregator"]

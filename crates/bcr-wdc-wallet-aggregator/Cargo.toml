@@ -1,5 +1,5 @@
 [package]
-name = "bcr-wdc-bff-wallet-service"
+name = "bcr-wdc-wallet-aggregator"
 version = "0.1.0"
 edition = "2021"
 
