@@ -66,13 +66,15 @@ impl AppController {
     }
 }
 pub fn credit_routes(ctrl: AppController) -> Router {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
+    let swagger = utoipa_swagger_ui::SwaggerUi::new("/v1/admin/credit/swagger-ui")
+        .url("/v1/admin/credit/api-docs/openapi.json", ApiDoc::openapi());
 
-    Router::new()
+    let user_routes = Router::new()
         .route("/v1/mint/credit/quote", post(web::enquire_quote))
         .route("/v1/mint/credit/quote/{id}", get(web::lookup_quote))
-        .route("/v1/mint/credit/quote/{id}", post(web::resolve_offer))
+        .route("/v1/mint/credit/quote/{id}", post(web::resolve_offer));
+
+    let admin_routes = Router::new()
         .route(
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),
@@ -85,7 +87,11 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         .route(
             "/v1/admin/credit/quote/{id}",
             post(admin::admin_update_quote),
-        )
+        );
+
+    Router::new()
+        .merge(user_routes)
+        .merge(admin_routes)
         .with_state(ctrl)
         .merge(swagger)
 }
@@ -142,8 +148,8 @@ impl ApiDoc {
 #[test]
 fn it_should_successfully_generate_openapi_docs() {
     let yml = ApiDoc::generate_yml();
-    assert_eq!(yml.is_some(), true);
+    assert!(yml.is_some());
 
     let json = ApiDoc::generate_json();
-    assert_eq!(json.is_some(), true);
+    assert!(json.is_some());
 }

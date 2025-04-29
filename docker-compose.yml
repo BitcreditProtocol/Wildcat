@@ -3,8 +3,6 @@ services:
   key-service:
     image: wildcat/key-service
     pull_policy: never
-    ports:
-      - "3335:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -19,8 +17,6 @@ services:
   treasury-service:
     image: wildcat/treasury-service
     pull_policy: never
-    ports:
-      - "3336:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -33,8 +29,6 @@ services:
   swap-service:
     image: wildcat/swap-service
     pull_policy: never
-    ports:
-      - "3337:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -66,8 +60,6 @@ services:
   wallet-aggregator:
     image: wildcat/wallet-aggregator
     pull_policy: never
-    ports:
-      - "3338:3338"
     depends_on:
       key-service:
         condition: service_healthy
@@ -107,8 +99,6 @@ services:
       - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
     restart: unless-stopped
     command: ["cdk-mintd"]
-    ports:
-      - "8085:8085"
     depends_on:
       ebpp:
         condition: service_started
@@ -179,5 +169,3 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
-    ports:
-      - "50001:50001"
