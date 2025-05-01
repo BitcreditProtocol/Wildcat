@@ -159,7 +159,7 @@ fn unblind_signatures(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_utils::keys::test_utils as key_utils;
+    use bcr_wdc_utils::keys::test_utils as keys_utils;
     use bcr_wdc_utils::signatures as signatures_utils;
     use bitcoin::network::Network;
     use itertools::Itertools;
@@ -186,7 +186,7 @@ mod tests {
         let mut keys = MockKeyService::new();
         let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
-        let (info, keyset) = key_utils::generate_random_keyset();
+        let (info, keyset) = keys_utils::generate_random_keyset();
         let signatures = signatures_utils::generate_signatures(&keyset, &[Amount::from(16)]);
         let req_id = Uuid::new_v4();
         let premints = vec![(req_id, signatures.clone())];
@@ -216,7 +216,7 @@ mod tests {
         let mut keys = MockKeyService::new();
         let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
-        let (info, keyset) = key_utils::generate_random_keyset();
+        let (info, keyset) = keys_utils::generate_random_keyset();
 
         let (blinds, secrets, _): (Vec<_>, Vec<_>, Vec<_>) =
             signatures_utils::generate_blinds(&keyset, &[Amount::from(16)])
@@ -280,7 +280,7 @@ mod tests {
         repo.expect_list_premint_signatures()
             .returning(|| Ok(vec![]));
 
-        let (info, keyset) = key_utils::generate_random_keyset();
+        let (info, keyset) = keys_utils::generate_random_keyset();
         let kid = keyset.id;
         repo.expect_list_balance_by_keyset_id()
             .returning(move || Ok(vec![(kid, Amount::from(16))]));
