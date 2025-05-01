@@ -13,6 +13,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("resource not found {0}")]
     ResourceNotFound(cdk02::Id),
+    #[error("resource from id not found {0}")]
+    ResourceFromIdNotFound(uuid::Uuid),
     #[error("invalid request")]
     InvalidRequest,
 
@@ -108,9 +110,7 @@ impl KeyClient {
 
     pub async fn pre_sign(
         &self,
-        kid: cdk02::Id,
         qid: uuid::Uuid,
-        tstamp: chrono::DateTime<chrono::Utc>,
         msg: &cdk00::BlindedMessage,
     ) -> Result<cdk00::BlindSignature> {
         let url = self
@@ -118,9 +118,7 @@ impl KeyClient {
             .join("/v1/admin/keys/pre_sign")
             .expect("pre_sign relative path");
         let msg = web_keys::PreSignRequest {
-            kid,
             qid,
-            expire: tstamp,
             msg: msg.clone(),
         };
         let res = self.cl.post(url).json(&msg).send().await?;
@@ -131,15 +129,39 @@ impl KeyClient {
         Ok(sig)
     }
 
-    pub async fn activate_keyset(&self, kid: cdk02::Id, qid: uuid::Uuid) -> Result<()> {
+    pub async fn generate(
+        &self,
+        qid: uuid::Uuid,
+        amount: cashu::Amount,
+        public_key: cdk01::PublicKey,
+        expire: chrono::DateTime<chrono::Utc>,
+    ) -> Result<cdk02::Id> {
+        let url = self
+            .base
+            .join("/v1/admin/keys/generate")
+            .expect("generate relative path");
+        let msg = web_keys::GenerateKeysetRequest {
+            qid,
+            condition: web_keys::KeysetMintCondition { amount, public_key },
+            expire,
+        };
+        let res = self.cl.post(url).json(&msg).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        let kid = res.json::<cdk02::Id>().await?;
+        Ok(kid)
+    }
+
+    pub async fn activate_keyset(&self, qid: uuid::Uuid) -> Result<()> {
         let url = self
             .base
             .join("/v1/admin/keys/activate")
             .expect("activate relative path");
-        let msg = web_keys::ActivateKeysetRequest { kid, qid };
+        let msg = web_keys::ActivateKeysetRequest { qid };
         let res = self.cl.post(url).json(&msg).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(kid));
+            return Err(Error::ResourceFromIdNotFound(qid));
         }
         res.error_for_status()?;
         Ok(())

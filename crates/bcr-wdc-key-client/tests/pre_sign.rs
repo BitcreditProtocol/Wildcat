@@ -11,13 +11,18 @@ async fn pre_sign() {
     let server_url = server.server_address().expect("address");
     let client = KeyClient::new(server_url);
 
-    let kid = keys_utils::generate_random_keysetid().into();
     let qid = uuid::Uuid::new_v4();
     let expiration = chrono::Utc::now() + chrono::Duration::days(2);
-    let (blind, ..) = keys_utils::generate_blind(kid, Amount::from(8_u64));
-    let signature = client
-        .pre_sign(kid, qid, expiration, &blind)
+    let amount = Amount::from(1000);
+    let public_key = keys_utils::publics()[0];
+
+    let kid = client
+        .generate(qid, amount, public_key, expiration)
         .await
-        .expect("pre_sign call");
-    assert_eq!(kid, signature.keyset_id);
+        .expect("generate call");
+
+    let (blind, ..) = keys_utils::generate_blind(kid, Amount::from(8_u64));
+    let signature = client.pre_sign(qid, &blind).await.expect("pre_sign call");
+
+    assert_eq!(signature.keyset_id, kid);
 }

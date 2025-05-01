@@ -13,7 +13,7 @@ use cdk_common::mint::MintKeySetInfo;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::service::{KeysRepository, QuoteKeysRepository};
+use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository};
 
 // ----- end imports
 
@@ -24,44 +24,46 @@ pub struct KeysDBEntry {
     unit: cdk00::CurrencyUnit,
     // surrealdb supports only strings as key type
     keys: HashMap<String, cdk01::MintKeyPair>,
+
+    condition: MintCondition,
 }
 
-impl From<KeysetEntry> for KeysDBEntry {
-    fn from(ke: KeysetEntry) -> Self {
-        let (info, keyset) = ke;
-        let mut serialized_keys = HashMap::new();
-        let cdk02::MintKeySet { unit, mut keys, .. } = keyset;
-        while let Some((amount, keypair)) = keys.pop_last() {
-            // surrealDB does not accept map with keys of type anything but Strings
-            // so we need to serialize the keys to strings...
-            serialized_keys.insert(amount.to_string(), keypair);
-        }
-        Self {
-            info,
-            unit,
-            keys: serialized_keys,
-        }
+fn convert_from(ke: KeysetEntry, condition: MintCondition) -> KeysDBEntry {
+    let (info, keyset) = ke;
+    let mut serialized_keys = HashMap::new();
+    let cdk02::MintKeySet { unit, mut keys, .. } = keyset;
+    while let Some((amount, keypair)) = keys.pop_last() {
+        // surrealDB does not accept map with keys of type anything but Strings
+        // so we need to serialize the keys to strings...
+        serialized_keys.insert(amount.to_string(), keypair);
+    }
+    KeysDBEntry {
+        info,
+        unit,
+        keys: serialized_keys,
+        condition,
     }
 }
 
-impl From<KeysDBEntry> for KeysetEntry {
-    fn from(dbk: KeysDBEntry) -> Self {
-        let KeysDBEntry {
-            info, unit, keys, ..
-        } = dbk;
-        let mut keysmap: BTreeMap<Amount, cdk01::MintKeyPair> = BTreeMap::default();
-        for (val, keypair) in keys.into_iter() {
-            // ... and parse them back to the original type
-            let uval = val.parse::<u64>().expect("Failed to parse amount");
-            keysmap.insert(Amount::from(uval), keypair);
-        }
-        let keyset = cdk02::MintKeySet {
-            id: info.id,
-            unit,
-            keys: cdk01::MintKeys::new(keysmap),
-        };
-        (info, keyset)
+fn convert_to(dbk: KeysDBEntry) -> (KeysetEntry, MintCondition) {
+    let KeysDBEntry {
+        info,
+        unit,
+        keys,
+        condition,
+    } = dbk;
+    let mut keysmap: BTreeMap<Amount, cdk01::MintKeyPair> = BTreeMap::default();
+    for (val, keypair) in keys.into_iter() {
+        // ... and parse them back to the original type
+        let uval = val.parse::<u64>().expect("Failed to parse amount");
+        keysmap.insert(Amount::from(uval), keypair);
     }
+    let keyset = cdk02::MintKeySet {
+        id: info.id,
+        unit,
+        keys: cdk01::MintKeys::new(keysmap),
+    };
+    ((info, keyset), condition)
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -90,9 +92,33 @@ impl DB {
         })
     }
 
-    async fn store(&self, rid: RecordId, keys: KeysetEntry) -> SurrealResult<()> {
-        let dbkeys = KeysDBEntry::from(keys);
+    async fn store(
+        &self,
+        rid: RecordId,
+        keys: KeysetEntry,
+        condition: MintCondition,
+    ) -> SurrealResult<()> {
+        let dbkeys = convert_from(keys, condition);
         let _resp: Option<KeysDBEntry> = self.db.insert(rid).content(dbkeys).await?;
+        Ok(())
+    }
+
+    async fn condition(&self, rid: RecordId) -> SurrealResult<Option<MintCondition>> {
+        // more efficient than load and then extract info
+        let result: Option<MintCondition> = self
+            .db
+            .query("SELECT condition FROM $rid")
+            .bind(("rid", rid))
+            .await?
+            .take(0)?;
+        Ok(result)
+    }
+
+    async fn mark_as_minted(&self, rid: RecordId) -> SurrealResult<()> {
+        self.db
+            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+            .bind(("rid", rid))
+            .await?;
         Ok(())
     }
 
@@ -122,13 +148,18 @@ impl DB {
         Ok(sets)
     }
 
-    async fn keyset(&self, rid: RecordId) -> SurrealResult<Option<cdk02::MintKeySet>> {
+    async fn entry(&self, rid: RecordId) -> SurrealResult<Option<KeysetEntry>> {
         let response: Option<KeysDBEntry> = self.db.select(rid).await?;
         let Some(keysdbentry) = response else {
             return Ok(None);
         };
-        let (_, keyset) = KeysetEntry::from(keysdbentry);
-        Ok(Some(keyset))
+        let (entry, _) = convert_to(keysdbentry);
+        Ok(Some(entry))
+    }
+
+    async fn keyset(&self, rid: RecordId) -> SurrealResult<Option<cdk02::MintKeySet>> {
+        let keyset = self.entry(rid).await?.map(|(_, keyset)| keyset);
+        Ok(keyset)
     }
 
     async fn list_keyset(&self) -> SurrealResult<Vec<cdk02::MintKeySet>> {
@@ -139,8 +170,8 @@ impl DB {
             .take(0)?;
         let sets = response
             .into_iter()
-            .map(KeysetEntry::from)
-            .map(|(_, keyset)| keyset)
+            .map(convert_to)
+            .map(|((_, keyset), _)| keyset)
             .collect();
         Ok(sets)
     }
@@ -157,6 +188,21 @@ impl DBKeys {
 
 #[async_trait]
 impl KeysRepository for DBKeys {
+    async fn condition(&self, kid: &cdk02::Id) -> Result<Option<MintCondition>> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
+        self.0
+            .condition(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+    async fn mark_as_minted(&self, kid: &cdk02::Id) -> Result<()> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
+        self.0
+            .mark_as_minted(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+
     async fn info(&self, kid: &cdk02::Id) -> Result<Option<MintKeySetInfo>> {
         let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
         self.0
@@ -185,10 +231,10 @@ impl KeysRepository for DBKeys {
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
 
-    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn store(&self, entry: KeysetEntry, condition: MintCondition) -> Result<()> {
         let rid = RecordId::from_table_key(self.0.table.clone(), entry.0.id.to_string());
         self.0
-            .store(rid, entry)
+            .store(rid, entry, condition)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
@@ -205,29 +251,47 @@ impl DBQuoteKeys {
 
 #[async_trait]
 impl QuoteKeysRepository for DBQuoteKeys {
-    async fn info(&self, kid: &cdk02::Id, qid: &uuid::Uuid) -> Result<Option<MintKeySetInfo>> {
-        let record_key = format!("{}-{}", kid, qid);
-        let rid = RecordId::from_table_key(self.0.table.clone(), record_key);
+    async fn entry(&self, qid: &uuid::Uuid) -> Result<Option<KeysetEntry>> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), *qid);
+        self.0
+            .entry(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+
+    async fn info(&self, qid: &uuid::Uuid) -> Result<Option<MintKeySetInfo>> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), *qid);
         self.0
             .info(rid)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
 
-    async fn keyset(&self, kid: &cdk02::Id, qid: &uuid::Uuid) -> Result<Option<cdk02::MintKeySet>> {
-        let record_key = format!("{}-{}", kid, qid);
-        let rid = RecordId::from_table_key(self.0.table.clone(), record_key);
+    async fn condition(&self, qid: &uuid::Uuid) -> Result<Option<MintCondition>> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), *qid);
+        self.0
+            .condition(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+
+    async fn keyset(&self, qid: &uuid::Uuid) -> Result<Option<cdk02::MintKeySet>> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), *qid);
         self.0
             .keyset(rid)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
 
-    async fn store(&self, qid: &uuid::Uuid, entry: KeysetEntry) -> Result<()> {
-        let record_key = format!("{}-{}", entry.0.id, qid);
-        let rid = RecordId::from_table_key(self.0.table.clone(), record_key);
+    async fn store(
+        &self,
+        qid: &uuid::Uuid,
+        entry: KeysetEntry,
+        condition: MintCondition,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), *qid);
         self.0
-            .store(rid, entry)
+            .store(rid, entry, condition)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }

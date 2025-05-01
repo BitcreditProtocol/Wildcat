@@ -1,9 +1,10 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use cashu::{nut01 as cdk01, nut02 as cdk02};
+use cashu::{nut01 as cdk01, nut02 as cdk02, nut04 as cdk04};
 // ----- local imports
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::service::{KeysRepository, Service};
 
 // ----- end imports
@@ -109,5 +110,38 @@ where
         .map(cashu::KeySet::from)
         .collect();
     let response = cdk01::KeysResponse { keysets };
+    Ok(Json(response))
+}
+
+/// --------------------------- Mint
+#[utoipa::path(
+    post,
+    path = "/v1/mint/ebill",
+    request_body(content = cdk04::MintBolt11Request<String>, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = cdk04::MintBolt11Response, content_type = "application/json"),
+    )
+)]
+pub async fn mint_ebill<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+    Json(req): Json<cdk04::MintBolt11Request<String>>,
+) -> Result<Json<cdk04::MintBolt11Response>>
+where
+    KeysRepo: KeysRepository,
+{
+    log::debug!("Received mint request for qid {}", req.quote);
+
+    let kid = req
+        .outputs
+        .first()
+        .ok_or(Error::InvalidMintRequest)?
+        .keyset_id;
+    let pk = ctrl.authorized_public_key_to_mint(kid).await?;
+    req.verify_signature(pk)
+        .map_err(|_| Error::InvalidMintRequest)?;
+
+    let qid = uuid::Uuid::from_str(&req.quote).map_err(|_| Error::InvalidMintRequest)?;
+    let signatures = ctrl.mint(qid, req.outputs).await?;
+    let response = cdk04::MintBolt11Response { signatures };
     Ok(Json(response))
 }

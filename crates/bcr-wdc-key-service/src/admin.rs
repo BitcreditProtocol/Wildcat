@@ -2,7 +2,7 @@
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::keys as web_keys;
-use cashu::nut00 as cdk00;
+use cashu::{nut00 as cdk00, nut02 as cdk02};
 // ----- local imports
 use crate::error::Result;
 use crate::service::{KeysRepository, QuoteKeysRepository, Service};
@@ -24,7 +24,7 @@ where
     KeysRepo: KeysRepository,
 {
     log::debug!("Received sign blind request");
-    ctrl.sign_blind(blind).await.map(Json)
+    ctrl.sign_blind(&blind).await.map(Json)
 }
 
 #[utoipa::path(
@@ -49,6 +49,34 @@ where
 
 #[utoipa::path(
     post,
+    path = "/v1/admin/keys/generate",
+    request_body(content = web_keys::GenerateKeysetRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = cdk02::Id, content_type = "application/json"),
+        (status = 404, description = "keyset id not found"),
+    )
+)]
+pub async fn generate<QuotesKeysRepo, KeysRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+    Json(request): Json<web_keys::GenerateKeysetRequest>,
+) -> Result<Json<cdk02::Id>>
+where
+    QuotesKeysRepo: QuoteKeysRepository,
+{
+    log::debug!("Received generate request for qid {}", request.qid);
+    let kid = ctrl
+        .generate_keyset(
+            request.qid,
+            request.condition.amount,
+            request.condition.public_key,
+            request.expire,
+        )
+        .await?;
+    Ok(Json(kid))
+}
+
+#[utoipa::path(
+    post,
     path = "/v1/admin/keys/pre_sign/",
     request_body(content = web_keys::PreSignRequest, content_type = "application/json"),
     responses (
@@ -64,9 +92,7 @@ where
     QuotesKeysRepo: QuoteKeysRepository,
 {
     log::debug!("Received pre_sign request");
-    let sig = ctrl
-        .pre_sign(request.kid, request.qid, request.expire, &request.msg)
-        .await?;
+    let sig = ctrl.pre_sign(request.qid, &request.msg).await?;
     Ok(Json(sig))
 }
 
@@ -87,10 +113,6 @@ where
     QuotesKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
-    log::debug!(
-        "Received activate request for kid {} qid {}",
-        request.kid,
-        request.qid
-    );
-    ctrl.activate(&request.kid, &request.qid).await
+    log::debug!("Received activate request for qid {}", request.qid);
+    ctrl.activate(&request.qid).await
 }

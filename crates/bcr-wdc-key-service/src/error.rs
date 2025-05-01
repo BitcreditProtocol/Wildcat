@@ -3,7 +3,7 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_utils::keys as keys_utils;
-use cashu::nuts::nut02 as cdk02;
+use cashu::nut02 as cdk02;
 use thiserror::Error;
 // ----- local imports
 
@@ -20,12 +20,30 @@ pub enum Error {
 
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),
+    #[error("Unknown keyset from id {0}")]
+    UnknownKeysetFromId(uuid::Uuid),
+    #[error("invalid mint request")]
+    InvalidMintRequest,
+    #[error("invalid generate request {0}")]
+    InvalidGenerateRequest(uuid::Uuid),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         log::error!("Error: {}", self);
         let resp = match self {
+            Error::InvalidGenerateRequest(_) => (
+                StatusCode::BAD_REQUEST,
+                String::from("Invalid generate request"),
+            ),
+            Error::InvalidMintRequest => (
+                StatusCode::BAD_REQUEST,
+                String::from("Invalid mint request"),
+            ),
+            Error::UnknownKeysetFromId(_) => (
+                StatusCode::NOT_FOUND,
+                String::from("Unknown keyset from id"),
+            ),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
 
             Error::VerifyKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
