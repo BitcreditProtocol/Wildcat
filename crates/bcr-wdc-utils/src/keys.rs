@@ -139,11 +139,6 @@ pub enum SchnorrBorshMsgError {
     Secp256k1(bitcoin::secp256k1::Error),
 }
 
-pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {
-    let mut rng = rand::thread_rng();
-    bitcoin::secp256k1::Keypair::new(bitcoin::secp256k1::global::SECP256K1, &mut rng)
-}
-
 pub fn schnorr_sign_borsh_msg_with_key<Message>(
     msg: &Message,
     keys: &bitcoin::secp256k1::Keypair,
@@ -183,23 +178,25 @@ pub mod test_utils {
     use cashu::nuts::nut01 as cdk01;
     use cashu::secret as cdk_secret;
     use cdk_common::mint as cdk_mint;
-    use once_cell::sync::Lazy;
     use rand::RngCore;
 
-    static SECPCTX: Lazy<bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>> =
-        Lazy::new(bitcoin::secp256k1::Secp256k1::new);
+    pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {
+        let mut rng = rand::thread_rng();
+        bitcoin::secp256k1::Keypair::new(bitcoin::secp256k1::global::SECP256K1, &mut rng)
+    }
 
-    pub fn generate_random_keysetid() -> KeysetID {
-        KeysetID {
-            version: cdk02::KeySetVersion::Version00,
-            id: rand::random(),
-        }
+    pub fn generate_random_keysetid() -> cdk02::Id {
+        const ID_BYTE_LEN: usize = 7;
+        let mut id_bytes = [0u8; ID_BYTE_LEN + 1];
+        id_bytes[0] = cdk02::KeySetVersion::Version00 as u8;
+        rand::thread_rng().fill_bytes(&mut id_bytes[1..]);
+        cdk02::Id::from_bytes(&id_bytes).expect("Keyset ID is valid")
     }
 
     pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
         let path = DerivationPath::master();
         let set = cdk02::MintKeySet::generate_from_seed(
-            &SECPCTX,
+            secp256k1::global::SECP256K1,
             &[],
             10,
             cdk00::CurrencyUnit::Sat,
@@ -223,7 +220,7 @@ pub mod test_utils {
         let mut random_seed = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut random_seed);
         let set = cdk02::MintKeySet::generate_from_seed(
-            &SECPCTX,
+            secp256k1::global::SECP256K1,
             &random_seed,
             10,
             cdk00::CurrencyUnit::Sat,

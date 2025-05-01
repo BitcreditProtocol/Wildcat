@@ -5,7 +5,7 @@ edition = "2021"
 
 
 [features]
-test-utils = ["once_cell", "rand"]
+test-utils = ["rand"]
 persistence = ["serde", "surrealdb"]
 
 
@@ -17,7 +17,6 @@ borsh = {workspace = true}
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
-once_cell = {version = "1.20", optional = true}
 rand = {workspace = true, optional  = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true, optional = true}
