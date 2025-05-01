@@ -6,7 +6,6 @@ edition = "2021"
 
 [features]
 test-utils = ["rand"]
-persistence = ["serde", "surrealdb"]
 
 
 [dependencies]
@@ -20,7 +19,8 @@ chrono.workspace = true
 itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
-serde = {workspace = true, optional = true}
-surrealdb = {workspace = true, optional = true}
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+rand = {workspace = true}

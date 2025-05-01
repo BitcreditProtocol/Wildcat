@@ -3,7 +3,6 @@
 use bitcoin::{
     bip32 as btc32,
     hashes::{sha256::Hash as Sha256, Hash},
-    key::rand,
 };
 use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
@@ -16,55 +15,37 @@ use cdk_common::mint as cdk_mint;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local imports
-use crate::KeysetID;
 
 // ----- end imports
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 
-pub fn generate_path_index_from_keysetid(kid: KeysetID) -> btc32::ChildNumber {
+pub fn extend_path_from_uuid(id: Uuid, parent: &btc32::DerivationPath) -> btc32::DerivationPath {
     const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
-    let ukid = std::cmp::min(u32::from(cdk02::Id::from(kid)), MAX_INDEX);
-    btc32::ChildNumber::from_hardened_idx(ukid).expect("keyset is a valid index")
-}
+    let (half_1, half_2) = id.as_u64_pair();
+    let half_1 = half_1.to_be_bytes();
+    let half_2 = half_2.to_be_bytes();
+    let b_1: [u8; 4] = std::convert::TryFrom::try_from(&half_1[0..4]).expect("half_1/1 is 4 bytes");
+    let b_2: [u8; 4] = std::convert::TryFrom::try_from(&half_1[4..]).expect("half_1/2 is 4 bytes");
+    let b_3: [u8; 4] = std::convert::TryFrom::try_from(&half_2[0..4]).expect("half_2/1 is 4 bytes");
+    let b_4: [u8; 4] = std::convert::TryFrom::try_from(&half_2[4..]).expect("half_2/2 is 4 bytes");
 
-pub fn generate_path_index_from_id(id: Uuid) -> btc32::ChildNumber {
-    const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
-    let sha_qid = Sha256::hash(id.as_bytes());
-    let u_qid = u32::from_be_bytes(sha_qid[0..4].try_into().expect("a u32 is 4 bytes"));
-    let idx_qid = std::cmp::min(u_qid, MAX_INDEX);
-    btc32::ChildNumber::from_hardened_idx(idx_qid).expect("keyset is a valid index")
-}
+    let child_1 = u32::from_be_bytes(b_1);
+    let child_1 = std::cmp::min(MAX_INDEX, child_1);
+    let child_2 = u32::from_be_bytes(b_2);
+    let child_2 = std::cmp::min(MAX_INDEX, child_2);
+    let child_3 = u32::from_be_bytes(b_3);
+    let child_3 = std::cmp::min(MAX_INDEX, child_3);
+    let child_4 = u32::from_be_bytes(b_4);
+    let child_4 = std::cmp::min(MAX_INDEX, child_4);
 
-// inspired by cdk::nut13, we attempt to generate keysets following a deterministic path
-// m/129372'/129534'/<keysetID>'/<quoteID>'/<rotateID>'/<amount_idx>'
-// 129372 is utf-8 for 🥜
-// 129534 is utf-8 for 🧾
-// <keysetID_idx> check generate_path_index_from_keysetid
-// <Uuid> optional: check generate_path_idx_from_id
-pub fn generate_keyset_path(kid: KeysetID, id: Option<uuid::Uuid>) -> btc32::DerivationPath {
-    let keyset_child = generate_path_index_from_keysetid(kid);
-    let mut path = vec![
-        btc32::ChildNumber::from_hardened_idx(129372).expect("129372 is a valid index"),
-        btc32::ChildNumber::from_hardened_idx(129534).expect("129534 is a valid index"),
-        keyset_child,
+    let relative_path = [
+        btc32::ChildNumber::from_normal_idx(child_1).expect("child_1 is a valid index"),
+        btc32::ChildNumber::from_normal_idx(child_2).expect("child_2 is a valid index"),
+        btc32::ChildNumber::from_normal_idx(child_3).expect("child_3 is a valid index"),
+        btc32::ChildNumber::from_normal_idx(child_4).expect("child_4 is a valid index"),
     ];
-    if let Some(id) = id {
-        let quote_child = generate_path_index_from_id(id);
-        path.push(quote_child);
-    }
-    btc32::DerivationPath::from(path.as_slice())
-}
-
-pub fn generate_keyset_id_from_bill(bill: &str, node: &str) -> KeysetID {
-    let input = format!("{}{}", bill, node);
-    let digest = Sha256::hash(input.as_bytes());
-    KeysetID {
-        version: cdk02::KeySetVersion::Version00,
-        id: digest.as_byte_array()[0..KeysetID::BYTELEN]
-            .try_into()
-            .expect("cdk::KeysetID BYTELEN == 7"),
-    }
+    parent.extend(relative_path)
 }
 
 pub type SignWithKeysResult<T> = std::result::Result<T, SignWithKeysError>;
