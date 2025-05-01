@@ -23,7 +23,7 @@ pub enum Error {
     #[error("Serde_json error {0}")]
     SerdeJson(serde_json::Error),
     #[error("schnorr borsh message {0}")]
-    SchnorrBorshMsg(bcr_wdc_keys::SchnorrBorshMsgError),
+    SchnorrBorshMsg(bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("Proof client error {0}")]
     ProofCl(bcr_wdc_swap_client::Error),
     //debit errors

@@ -184,7 +184,7 @@ pub mod test_utils {
                 .keyset(&msg.keyset_id)
                 .expect("InMemoryRepository");
             let keys = res.ok_or(Error::ResourceNotFound(msg.keyset_id))?;
-            bcr_wdc_keys::sign_with_keys(&keys, msg).map_err(|_| Error::InvalidRequest)
+            bcr_wdc_utils::keys::sign_with_keys(&keys, msg).map_err(|_| Error::InvalidRequest)
         }
         pub async fn verify(&self, proof: &cdk00::Proof) -> Result<bool> {
             let res = self
@@ -192,7 +192,8 @@ pub mod test_utils {
                 .keyset(&proof.keyset_id)
                 .expect("InMemoryRepository");
             let keys = res.ok_or(Error::ResourceNotFound(proof.keyset_id))?;
-            bcr_wdc_keys::verify_with_keys(&keys, proof).map_err(|_| Error::InvalidRequest)?;
+            bcr_wdc_utils::keys::verify_with_keys(&keys, proof)
+                .map_err(|_| Error::InvalidRequest)?;
             Ok(true)
         }
         pub async fn pre_sign(

@@ -157,7 +157,7 @@ where
 mod tests {
     use super::*;
     use crate::utils;
-    use bcr_wdc_keys::test_utils as keys_test;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
     use mockall::predicate::*;
 
     #[tokio::test]

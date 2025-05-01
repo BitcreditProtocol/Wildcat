@@ -2,6 +2,7 @@ use chrono::NaiveTime;
 // ----- standard library imports
 use rand::Rng;
 // ----- extra library imports
+use bcr_wdc_utils::keys::{self as keys_utils, test_utils as keys_test_utils};
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
 // ----- local imports
 use bcr_wdc_webapi::quotes::{
@@ -41,7 +42,7 @@ fn main() -> std::io::Result<()> {
         sum: amount.into(),
     };
 
-    let signature = bcr_wdc_keys::schnorr_sign_borsh_msg_with_key(&bill, &signing_key)
+    let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&bill, &signing_key)
         .expect("schnorr_sign_borsh_msg_with_key");
     let request = EnquireRequest {
         content: bill,
@@ -55,7 +56,7 @@ fn main() -> std::io::Result<()> {
 }
 
 fn random_bill_id() -> String {
-    let keypair = bcr_wdc_keys::generate_random_keypair();
+    let keypair = keys_utils::generate_random_keypair();
     bcr_ebill_core::util::sha256_hash(&keypair.public_key().serialize())
 }
 
@@ -75,22 +76,22 @@ fn generate_random_blinds(
     node_id: &str,
     count: usize,
 ) -> Vec<cdk00::BlindedMessage> {
-    let kid = cdk02::Id::from(bcr_wdc_keys::generate_keyset_id_from_bill(bill_id, node_id));
+    let kid = cdk02::Id::from(keys_utils::generate_keyset_id_from_bill(bill_id, node_id));
     let mut rng = rand::thread_rng();
     let mut blinds = Vec::with_capacity(count + 1);
     for _ in 0..count {
         let power = rng.gen_range(0..10);
         let amount = Amount::from(2_u64.pow(power));
-        let (blind, _, _) = bcr_wdc_keys::test_utils::generate_blind(kid, amount);
+        let (blind, _, _) = keys_test_utils::generate_blind(kid, amount);
         blinds.push(blind);
     }
-    let (blind, _, _) = bcr_wdc_keys::test_utils::generate_blind(kid, Amount::ZERO);
+    let (blind, _, _) = keys_test_utils::generate_blind(kid, Amount::ZERO);
     blinds.push(blind);
     blinds
 }
 
 fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, IdentityPublicData) {
-    let keypair = bcr_wdc_keys::generate_random_keypair();
+    let keypair = keys_utils::generate_random_keypair();
     let sample = [
         IdentityPublicData {
             t: ContactType::Person,

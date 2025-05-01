@@ -3,8 +3,8 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeysHandlerError;
-use bcr_wdc_keys::SignWithKeysError;
 use bcr_wdc_treasury_client::Error as WalletError;
+use bcr_wdc_utils::keys::{SchnorrBorshMsgError, SignWithKeysError};
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
@@ -17,7 +17,7 @@ pub enum Error {
     #[error("Secp256k1 {0}")]
     Secp256k1(#[from] bitcoin::secp256k1::Error),
     #[error("schnorr borsh message {0}")]
-    SchnorrBorshMsg(#[from] bcr_wdc_keys::SchnorrBorshMsgError),
+    SchnorrBorshMsg(#[from] SchnorrBorshMsgError),
     #[error("Keys error {0}")]
     SignWithKeys(#[from] SignWithKeysError),
     #[error("Error in parsing datetime: {0}")]

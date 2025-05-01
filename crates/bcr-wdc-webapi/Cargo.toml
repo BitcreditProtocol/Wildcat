@@ -14,7 +14,7 @@ path = "src/bin/devtool.rs"
 
 [dependencies]
 bcr-ebill-core.workspace = true
-bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
+bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["test-utils"] }
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 borsh = {workspace = true, features = ["derive"]}

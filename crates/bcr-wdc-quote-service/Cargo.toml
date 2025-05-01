@@ -10,7 +10,7 @@ async-trait.workspace = true
 axum.workspace = true
 bcr-ebill-core.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
-bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["persistence"] }
+bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["persistence"] }
 bcr-wdc-treasury-client = { path = "../bcr-wdc-treasury-client" }
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
@@ -32,7 +32,7 @@ utoipa-swagger-ui.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-bcr-wdc-keys = { path = "../bcr-wdc-keys", features = ["test-utils"] }
+bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["test-utils"] }
 bip39 = {version = "2"}
 mockall.workspace = true
 rand.workspace = true

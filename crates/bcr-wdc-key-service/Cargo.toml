@@ -11,7 +11,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-wdc-keys = { path = "../bcr-wdc-keys"}
+bcr-wdc-utils = { path = "../bcr-wdc-utils"}
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
 cashu = {workspace = true, features = ["swagger"]}

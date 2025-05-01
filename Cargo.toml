@@ -4,7 +4,7 @@ resolver = "2"
 
 members = [
     "crates/bcr-wdc-webapi",
-    "crates/bcr-wdc-keys",
+    "crates/bcr-wdc-utils",
     "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
     "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",

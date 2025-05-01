@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-utils = ["bcr-wdc-key-service", "bcr-wdc-keys", "bcr-wdc-key-service/test-utils"]
+test-utils = ["bcr-wdc-key-service", "bcr-wdc-utils", "bcr-wdc-key-service/test-utils"]
 
 [dependencies]
 bcr-wdc-key-service = {path = "../bcr-wdc-key-service", optional = true}
-bcr-wdc-keys = {path = "../bcr-wdc-keys", features = ["test-utils"], optional = true}
+bcr-wdc-utils = {path = "../bcr-wdc-utils", features = ["test-utils"], optional = true}
 bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
 cashu.workspace = true
 chrono.workspace = true
@@ -18,5 +18,5 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-wdc-key-service = {features = ["test-utils"], path = "../bcr-wdc-key-service"}
-bcr-wdc-keys = {path = "../bcr-wdc-keys", features = ["test-utils"]}
+bcr-wdc-utils = {path = "../bcr-wdc-utils", features = ["test-utils"]}
 tokio.workspace = true
