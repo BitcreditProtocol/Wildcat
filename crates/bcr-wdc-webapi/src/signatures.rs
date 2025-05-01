@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use borsh::{BorshDeserialize, BorshSerialize};
-use cashu::nut00 as cdk00;
-use cashu::nut02 as cdk02;
+use cashu::{nut00 as cdk00, nut02 as cdk02};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
