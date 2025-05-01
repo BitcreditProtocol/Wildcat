@@ -89,7 +89,7 @@ impl ProofRepository for ProofDB {
 mod tests {
     use super::*;
     use crate::utils;
-    use bcr_wdc_keys::test_utils as keys_test;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
     use cashu::Amount as cdk_Amount;
 
     async fn init_mem_db() -> ProofDB {

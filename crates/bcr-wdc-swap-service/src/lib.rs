@@ -14,6 +14,8 @@ pub mod utils;
 mod web;
 // ----- local imports
 
+// ----- end imports
+
 type ProdProofRepository = persistence::surreal::ProofDB;
 type ProdKeysService = crate::keys::RESTClient;
 type ProdSwapService = service::Service<ProdKeysService, ProdProofRepository>;

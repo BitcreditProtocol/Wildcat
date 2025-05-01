@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_keys::KeysetID;
 use bcr_wdc_treasury_client::TreasuryClient;
+use bcr_wdc_utils::id::KeysetID;
 use cashu::nuts::nut00 as cdk00;
 use cashu::Amount;
 use uuid::Uuid;

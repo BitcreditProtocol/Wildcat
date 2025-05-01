@@ -2,6 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
+use bcr_wdc_utils::keys as keys_utils;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local imports
@@ -13,9 +14,9 @@ pub enum Error {
     #[error("keys repository error {0}")]
     KeysRepository(AnyError),
     #[error("sign with keys {0}")]
-    SignKeys(#[from] bcr_wdc_keys::SignWithKeysError),
+    SignKeys(#[from] keys_utils::SignWithKeysError),
     #[error("verify with keys {0}")]
-    VerifyKeys(#[from] bcr_wdc_keys::VerifyWithKeysError),
+    VerifyKeys(#[from] keys_utils::VerifyWithKeysError),
 
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),

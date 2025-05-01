@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_key_client::{Error, KeyClient};
-use bcr_wdc_keys::test_utils as key_utils;
+use bcr_wdc_utils::keys::test_utils as key_utils;
 // ----- local imports
 
 #[tokio::test]

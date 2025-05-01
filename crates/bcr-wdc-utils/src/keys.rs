@@ -15,10 +15,10 @@ use cashu::Amount as cdk_Amount;
 use cdk_common::mint as cdk_mint;
 use thiserror::Error;
 use uuid::Uuid;
-// ----- local modules
-pub mod id;
 // ----- local imports
-pub use crate::id::KeysetID;
+use crate::KeysetID;
+
+// ----- end imports
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
 

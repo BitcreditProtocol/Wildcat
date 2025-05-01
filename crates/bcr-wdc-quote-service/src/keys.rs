@@ -2,7 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_key_client::KeyClient;
-use bcr_wdc_keys::KeysetID;
+use bcr_wdc_utils::KeysetID;
 use cashu::nuts::nut00 as cdk00;
 use uuid::Uuid;
 // ----- local modules

@@ -308,8 +308,8 @@ impl Repository for DBRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_keys::test_utils as keys_utils;
     use bcr_wdc_swap_service::utils as swap_utils;
+    use bcr_wdc_utils::keys::test_utils as keys_utils;
 
     async fn init_mem_db() -> DBRepository {
         let sdb = Surreal::<Any>::init();

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_wdc_keys::KeysetEntry;
+use bcr_wdc_utils::keys::KeysetEntry;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;

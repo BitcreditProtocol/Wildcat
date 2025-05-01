@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_keys as keys;
+use bcr_wdc_utils::keys;
 use bitcoin::bip32 as btc32;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;

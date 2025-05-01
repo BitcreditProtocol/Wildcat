@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_keys::KeysetEntry;
+use bcr_wdc_utils::keys::KeysetEntry;
 use cashu::nuts::nut02 as cdk02;
 use cdk_common::mint as cdk_mint;
 use cdk_common::mint::MintKeySetInfo;

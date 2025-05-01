@@ -159,8 +159,8 @@ fn unblind_signatures(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_keys::test_utils as key_utils;
     use bcr_wdc_swap_service::utils as swap_utils;
+    use bcr_wdc_utils::keys::test_utils as key_utils;
     use bitcoin::network::Network;
     use itertools::Itertools;
 
@@ -236,7 +236,7 @@ mod tests {
                 .multiunzip();
         let signatures = blinds
             .into_iter()
-            .map(|b| bcr_wdc_keys::sign_with_keys(&keyset, &b).unwrap())
+            .map(|b| bcr_wdc_utils::keys::sign_with_keys(&keyset, &b).unwrap())
             .collect();
         let req_id = Uuid::new_v4();
         let premints = vec![(req_id, signatures)];

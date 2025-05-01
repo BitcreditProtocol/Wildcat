@@ -53,8 +53,9 @@ where
         amount: Amount,
     ) -> Result<cdk::wallet::MintQuote> {
         let request = web::signatures::RequestToMintFromEBillDesc { ebill_id };
-        let signature = bcr_wdc_keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
-            .map_err(Error::SchnorrBorshMsg)?;
+        let signature =
+            bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
+                .map_err(Error::SchnorrBorshMsg)?;
         let signed_request = web::signatures::SignedRequestToMintFromEBillDesc {
             data: request,
             signature,
@@ -126,8 +127,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_keys::test_utils::generate_keyset;
     use bcr_wdc_swap_service::utils::{generate_blinds, generate_proofs};
+    use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_webapi as web;
     use cashu::{nut00 as cdk00, nut04 as cdk04, Amount};
     use mockall::predicate::*;

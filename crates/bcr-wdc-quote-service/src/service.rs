@@ -2,8 +2,8 @@
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_keys as keys;
-use bcr_wdc_keys::KeysetID;
+use bcr_wdc_utils::id::KeysetID;
+use bcr_wdc_utils::keys as keys_utils;
 use cashu::nuts::nut00 as cdk00;
 use cashu::Amount;
 use futures::future::JoinAll;
@@ -278,7 +278,7 @@ where
             .unwrap_or(&quote.bill.payee)
             .node_id;
 
-        let kid = keys::generate_keyset_id_from_bill(&quote.bill.id, holder_id);
+        let kid = keys_utils::generate_keyset_id_from_bill(&quote.bill.id, holder_id);
         let id = kid.into();
         if blinds.iter().any(|blind| blind.keyset_id != id) {
             return Err(Error::InvalidKeysetId(id));
@@ -328,7 +328,7 @@ mod tests {
 
     use super::*;
     use bcr_ebill_core::contact::IdentityPublicData;
-    use bcr_wdc_keys::test_utils as keysutils;
+    use bcr_wdc_utils::keys::test_utils as keys_utils;
     use mockall::predicate::*;
     use rand::{seq::IteratorRandom, Rng};
 
@@ -414,7 +414,7 @@ mod tests {
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
-        let ids = keysutils::publics();
+        let ids = keys_utils::publics();
         BillInfo {
             id: ids.into_iter().choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
