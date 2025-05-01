@@ -3,7 +3,8 @@
 use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
+use bitcoin::bip32 as btc32;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04};
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -14,6 +15,8 @@ mod service;
 mod web;
 
 // ----- end imports
+#[cfg(feature = "test-utils")]
+pub use crate::service::MintCondition;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
@@ -25,6 +28,7 @@ pub type ProdKeysService = service::Service<ProdQuoteKeysRepository, ProdKeysRep
 pub struct AppConfig {
     keys: persistence::surreal::ConnectionConfig,
     quotekeys: persistence::surreal::ConnectionConfig,
+    starting_derivation_path: btc32::DerivationPath,
 }
 
 #[derive(Clone, FromRef)]
@@ -34,7 +38,11 @@ pub struct AppController {
 
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-        let AppConfig { keys, quotekeys } = cfg;
+        let AppConfig {
+            keys,
+            quotekeys,
+            starting_derivation_path,
+        } = cfg;
 
         let keys_repo = ProdKeysRepository::new(keys)
             .await
@@ -42,7 +50,7 @@ impl AppController {
         let quotekeys_repo = ProdQuoteKeysRepository::new(quotekeys)
             .await
             .expect("DB connection to quotekeys failed");
-        let keygen = factory::Factory::new(seed);
+        let keygen = factory::Factory::new(seed, starting_derivation_path);
         let srv = ProdKeysService {
             keys: keys_repo,
             quote_keys: quotekeys_repo,
@@ -66,11 +74,13 @@ where
         .route("/v1/keysets/{kid}", get(web::lookup_keysets))
         .route("/v1/keysets", get(web::list_keysets))
         .route("/v1/keys/{kid}", get(web::lookup_keys))
-        .route("/v1/keys", get(web::list_keys));
+        .route("/v1/keys", get(web::list_keys))
+        .route("/v1/mint/ebill", post(web::mint_ebill));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route("/v1/admin/keys/sign", post(admin::sign_blind))
         .route("/v1/admin/keys/pre_sign", post(admin::pre_sign))
+        .route("/v1/admin/keys/generate", post(admin::generate))
         .route("/v1/admin/keys/verify", post(admin::verify_proof))
         .route("/v1/admin/keys/activate", post(admin::activate));
 
@@ -85,6 +95,8 @@ where
 #[openapi(
     components(schemas(
         bcr_wdc_webapi::keys::ActivateKeysetRequest,
+        bcr_wdc_webapi::keys::GenerateKeysetRequest,
+        bcr_wdc_webapi::keys::KeysetMintCondition,
         bcr_wdc_webapi::keys::PreSignRequest,
         cdk00::BlindSignature,
         cdk00::BlindedMessage,
@@ -94,15 +106,20 @@ where
         cdk02::KeySet,
         cdk02::KeySetInfo,
         cdk02::KeysetResponse,
+        cdk04::MintBolt11Request<String>,
+        cdk04::MintBolt11Response,
     ),),
     paths(
         admin::activate,
+        admin::generate,
+        admin::pre_sign,
         admin::sign_blind,
         admin::verify_proof,
         web::list_keys,
         web::list_keysets,
         web::lookup_keys,
         web::lookup_keysets,
+        web::mint_ebill,
     )
 )]
 struct ApiDoc;
@@ -124,9 +141,10 @@ pub mod test_utils {
     impl std::default::Default for AppController {
         fn default() -> Self {
             let seed = [0u8; 32];
+            let derivation_path = btc32::DerivationPath::default();
             let keys_repo = TestKeysRepository::default();
             let quotekeys_repo = TestQuoteKeysRepository::default();
-            let keygen = factory::Factory::new(&seed);
+            let keygen = factory::Factory::new(&seed, derivation_path);
             let srv = TestKeysService {
                 keys: keys_repo,
                 quote_keys: quotekeys_repo,

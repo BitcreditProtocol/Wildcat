@@ -14,3 +14,6 @@ connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "key"
 table = "quotes"
+
+[appcfg]
+starting_derivation_path = "m/129372'/0/0"

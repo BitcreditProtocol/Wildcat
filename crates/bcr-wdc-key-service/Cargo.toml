@@ -20,7 +20,9 @@ chrono.workspace = true
 config = {version = "0.15"}
 env_logger = {workspace = true}
 futures.workspace = true
+itertools = {workspace = true}
 log = {workspace = true, features = ["serde"]}
+secp256k1 = {workspace = true, features = ["global-context"]}
 serde  = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true
