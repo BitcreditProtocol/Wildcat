@@ -2,10 +2,8 @@
 // ----- extra library imports
 use bcr_ebill_core as EBillCore;
 use bcr_ebill_core::contact as EBillContact;
-use bitcoin::Amount;
 use borsh::{BorshDeserialize, BorshSerialize};
-use cashu::nuts::nut00::{BlindSignature, BlindedMessage};
-use rust_decimal::Decimal;
+use cashu::{nut01 as cdk01, nut02 as cdk02};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 // ----- local imports
@@ -20,7 +18,7 @@ pub struct BillInfo {
     pub drawer: IdentityPublicData,
     pub payee: IdentityPublicData,
     pub endorsees: Vec<IdentityPublicData>,
-    pub sum: u64,
+    pub sum: u64, // in satoshis, converted to bitcoin::Amount in the service
     pub maturity_date: String,
 }
 
@@ -98,7 +96,7 @@ pub struct EnquireRequest {
     #[schema(value_type = String)]
     pub signature: bitcoin::secp256k1::schnorr::Signature,
 
-    pub outputs: Vec<BlindedMessage>, // left out of the signature as BlindedMessage does not implement borsh
+    pub public_key: cdk01::PublicKey, // left out of the signature as BlindedMessage does not implement borsh
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -114,11 +112,11 @@ pub enum StatusReply {
     Pending,
     Denied,
     Offered {
-        signatures: Vec<BlindSignature>,
+        keyset_id: cdk02::Id,
         expiration_date: chrono::DateTime<chrono::Utc>,
     },
     Accepted {
-        signatures: Vec<BlindSignature>,
+        keyset_id: cdk02::Id,
     },
     Rejected {
         tstamp: chrono::DateTime<chrono::Utc>,
@@ -155,7 +153,7 @@ pub struct LightInfo {
     pub id: uuid::Uuid,
     pub status: StatusReplyDiscriminants,
     #[schema(value_type = u64)]
-    pub sum: Amount,
+    pub sum: bitcoin::Amount,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -165,7 +163,7 @@ pub struct ListReplyLight {
 
 /// --------------------------- Quote info request
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase", tag = "status")]
+#[serde(rename_all = "PascalCase", tag = "status")]
 pub enum InfoReply {
     Pending {
         id: uuid::Uuid,
@@ -177,7 +175,7 @@ pub enum InfoReply {
         id: uuid::Uuid,
         bill: BillInfo,
         ttl: chrono::DateTime<chrono::Utc>,
-        signatures: Vec<BlindSignature>,
+        keyset_id: cdk02::Id,
     },
     Denied {
         id: uuid::Uuid,
@@ -186,7 +184,7 @@ pub enum InfoReply {
     Accepted {
         id: uuid::Uuid,
         bill: BillInfo,
-        signatures: Vec<BlindSignature>,
+        keyset_id: cdk02::Id,
     },
     Rejected {
         id: uuid::Uuid,
@@ -197,27 +195,29 @@ pub enum InfoReply {
 
 /// --------------------------- Update quote status request
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase", tag = "action")]
+#[serde(rename_all = "PascalCase", tag = "action")]
 pub enum UpdateQuoteRequest {
     Deny,
     Offer {
-        discount: Decimal,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
         ttl: Option<chrono::DateTime<chrono::Utc>>,
     },
 }
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase", tag = "status")]
+#[serde(rename_all = "PascalCase", tag = "status")]
 pub enum UpdateQuoteResponse {
     Denied,
     Offered {
-        discount: Decimal,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
         ttl: chrono::DateTime<chrono::Utc>,
     },
 }
 
 /// --------------------------- Resolve quote
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase", tag = "action")]
+#[serde(rename_all = "PascalCase", tag = "action")]
 pub enum ResolveOffer {
     Reject,
     Accept,

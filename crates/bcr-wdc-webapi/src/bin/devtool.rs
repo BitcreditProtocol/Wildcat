@@ -1,36 +1,33 @@
-use chrono::NaiveTime;
 // ----- standard library imports
-use rand::Rng;
 // ----- extra library imports
-use bcr_wdc_utils::keys::{self as keys_utils, test_utils as keys_test};
-use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
-// ----- local imports
+use bcr_wdc_utils::keys::test_utils as keys_test;
 use bcr_wdc_webapi::quotes::{
     BillInfo, ContactType, EnquireRequest, IdentityPublicData, PostalAddress,
 };
 use bdk_wallet::serde_json;
+use cashu::Amount;
+use chrono::NaiveTime;
+use rand::Rng;
+// ----- local imports
+
+// ----- end imports
 
 fn main() -> std::io::Result<()> {
     let bill_id = random_bill_id();
     let (_, drawee) = random_identity_public_data();
     let (_, drawer) = random_identity_public_data();
     let (mut signing_key, payee) = random_identity_public_data();
-    let mut holder_id = payee.node_id.clone();
 
     let endorsees_size = rand::thread_rng().gen_range(0..3);
     let mut endorsees: Vec<IdentityPublicData> = Vec::with_capacity(endorsees_size);
     for _ in 0..endorsees_size {
         let (keypair, endorse) = random_identity_public_data();
-        let endorse_id = endorse.node_id.clone();
         endorsees.push(endorse);
         signing_key = keypair;
-        holder_id = endorse_id;
     }
 
-    let outputs = generate_random_blinds(&bill_id, &holder_id, 5);
-    let amount = outputs
-        .iter()
-        .fold(Amount::ZERO, |total, o| (total + o.amount));
+    let public_key = keys_test::publics()[0];
+    let amount = Amount::from(rand::thread_rng().gen_range(1000..100000));
 
     let bill = BillInfo {
         id: bill_id,
@@ -46,8 +43,8 @@ fn main() -> std::io::Result<()> {
         .expect("schnorr_sign_borsh_msg_with_key");
     let request = EnquireRequest {
         content: bill,
+        public_key,
         signature,
-        outputs,
     };
     let jason = serde_json::to_string_pretty(&request).expect("Failed to serialize request");
     println!("random generated bcr_wdc_webapi::quotes::EnquireRequest in JSON format");
@@ -69,25 +66,6 @@ fn random_date() -> String {
     let days = chrono::Duration::days(rng.gen_range(0..365));
     let random_date = start + days;
     random_date.to_rfc3339()
-}
-
-fn generate_random_blinds(
-    bill_id: &str,
-    node_id: &str,
-    count: usize,
-) -> Vec<cdk00::BlindedMessage> {
-    let kid = cdk02::Id::from(keys_utils::generate_keyset_id_from_bill(bill_id, node_id));
-    let mut rng = rand::thread_rng();
-    let mut blinds = Vec::with_capacity(count + 1);
-    for _ in 0..count {
-        let power = rng.gen_range(0..10);
-        let amount = Amount::from(2_u64.pow(power));
-        let (blind, _, _) = keys_test::generate_blind(kid, amount);
-        blinds.push(blind);
-    }
-    let (blind, _, _) = keys_test::generate_blind(kid, Amount::ZERO);
-    blinds.push(blind);
-    blinds
 }
 
 fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, IdentityPublicData) {
