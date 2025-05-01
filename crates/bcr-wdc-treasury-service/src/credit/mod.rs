@@ -159,8 +159,8 @@ fn unblind_signatures(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_swap_service::utils as swap_utils;
     use bcr_wdc_utils::keys::test_utils as key_utils;
+    use bcr_wdc_utils::signatures as signatures_utils;
     use bitcoin::network::Network;
     use itertools::Itertools;
 
@@ -187,7 +187,7 @@ mod tests {
         let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         let (info, keyset) = key_utils::generate_random_keyset();
-        let signatures = swap_utils::generate_signatures(&keyset, &[Amount::from(16)]);
+        let signatures = signatures_utils::generate_signatures(&keyset, &[Amount::from(16)]);
         let req_id = Uuid::new_v4();
         let premints = vec![(req_id, signatures.clone())];
         repo.expect_list_premint_signatures()
@@ -219,7 +219,7 @@ mod tests {
         let (info, keyset) = key_utils::generate_random_keyset();
 
         let (blinds, secrets, _): (Vec<_>, Vec<_>, Vec<_>) =
-            swap_utils::generate_blinds(&keyset, &[Amount::from(16)])
+            signatures_utils::generate_blinds(&keyset, &[Amount::from(16)])
                 .into_iter()
                 .map(|(b, s, k)| {
                     (

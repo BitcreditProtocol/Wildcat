@@ -88,8 +88,8 @@ impl ProofRepository for ProofDB {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils;
     use bcr_wdc_utils::keys::test_utils as keys_test;
+    use bcr_wdc_utils::signatures as signatures_utils;
     use cashu::Amount as cdk_Amount;
 
     async fn init_mem_db() -> ProofDB {
@@ -107,7 +107,7 @@ mod tests {
     async fn test_insert() {
         let db = init_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
-        let proofs = utils::generate_proofs(
+        let proofs = signatures_utils::generate_proofs(
             &keyset,
             &[cdk_Amount::from(16_u64), cdk_Amount::from(8_u64)],
         );
@@ -130,7 +130,7 @@ mod tests {
     async fn test_insert_double_spent_all() {
         let db = init_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
-        let proofs = utils::generate_proofs(
+        let proofs = signatures_utils::generate_proofs(
             &keyset,
             &[cdk_Amount::from(16_u64), cdk_Amount::from(8_u64)],
         );
@@ -146,7 +146,7 @@ mod tests {
     async fn test_insert_double_spent_partial() {
         let db = init_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
-        let proofs = utils::generate_proofs(
+        let proofs = signatures_utils::generate_proofs(
             &keyset,
             &[
                 cdk_Amount::from(16_u64),
@@ -165,7 +165,7 @@ mod tests {
     async fn test_insert_double_spent_partial_still_valid() {
         let db = init_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
-        let proofs = utils::generate_proofs(
+        let proofs = signatures_utils::generate_proofs(
             &keyset,
             &[
                 cdk_Amount::from(16_u64),

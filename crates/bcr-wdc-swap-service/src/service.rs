@@ -156,19 +156,21 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils;
     use bcr_wdc_utils::keys::test_utils as keys_test;
+    use bcr_wdc_utils::signatures as signatures_utils;
     use mockall::predicate::*;
 
     #[tokio::test]
     async fn test_swap_spent_proofs() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
-        let signatures = utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
-            .into_iter()
-            .map(|a| a.0)
-            .collect();
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let signatures =
+            signatures_utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
+        let outputs: Vec<_> =
+            signatures_utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+                .into_iter()
+                .map(|a| a.0)
+                .collect();
 
         let mut keysrvc = MockKeysService::new();
         keysrvc
@@ -197,11 +199,12 @@ mod tests {
     async fn test_swap_unknown_keysetid() {
         let (_, keyset) = keys_test::generate_keyset();
         let kid = keyset.id;
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
-            .into_iter()
-            .map(|a| a.0)
-            .collect();
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let outputs: Vec<_> =
+            signatures_utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+                .into_iter()
+                .map(|a| a.0)
+                .collect();
 
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();
@@ -224,12 +227,14 @@ mod tests {
     #[tokio::test]
     async fn test_swap_wrong_signatures() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
-        let mut inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let mut inputs =
+            signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = keys_test::publics()[0];
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
-            .into_iter()
-            .map(|a| a.0)
-            .collect();
+        let outputs: Vec<_> =
+            signatures_utils::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+                .into_iter()
+                .map(|a| a.0)
+                .collect();
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();
         let kid = keyset.id;
@@ -254,12 +259,14 @@ mod tests {
     #[tokio::test]
     async fn test_swap_unmatched_amounts() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
-        let signatures = utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, vec![Amount::from(16)].as_slice())
-            .into_iter()
-            .map(|a| a.0)
-            .collect();
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let signatures =
+            signatures_utils::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
+        let outputs: Vec<_> =
+            signatures_utils::generate_blinds(&keyset, vec![Amount::from(16)].as_slice())
+                .into_iter()
+                .map(|a| a.0)
+                .collect();
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();
         let kid = keyset.id;
@@ -286,9 +293,9 @@ mod tests {
     async fn test_swap_split_tokens_ok() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
         let amounts = vec![Amount::from(4), Amount::from(4)];
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
-        let signatures = utils::generate_signatures(&keyset, &amounts);
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, &amounts)
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let signatures = signatures_utils::generate_signatures(&keyset, &amounts);
+        let outputs: Vec<_> = signatures_utils::generate_blinds(&keyset, &amounts)
             .into_iter()
             .map(|a| a.0)
             .collect();
@@ -324,7 +331,7 @@ mod tests {
         let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_ok());
         let bs = r.unwrap();
-        assert!(utils::verify_signatures_data(
+        assert!(signatures_utils::verify_signatures_data(
             &keyset,
             outputs.into_iter().zip(bs.into_iter())
         ));
@@ -333,11 +340,13 @@ mod tests {
     #[tokio::test]
     async fn test_swap_merge_tokens_ok() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
-        let inputs =
-            utils::generate_proofs(&keyset, vec![Amount::from(4), Amount::from(4)].as_slice());
+        let inputs = signatures_utils::generate_proofs(
+            &keyset,
+            vec![Amount::from(4), Amount::from(4)].as_slice(),
+        );
         let amounts = vec![Amount::from(8)];
-        let signatures = utils::generate_signatures(&keyset, &amounts);
-        let outputs: Vec<_> = utils::generate_blinds(&keyset, &amounts)
+        let signatures = signatures_utils::generate_signatures(&keyset, &amounts);
+        let outputs: Vec<_> = signatures_utils::generate_blinds(&keyset, &amounts)
             .into_iter()
             .map(|a| a.0)
             .collect();
@@ -368,7 +377,7 @@ mod tests {
         let r = swaps.swap(&inputs, &outputs).await;
         assert!(r.is_ok());
         let bs = r.unwrap();
-        assert!(utils::verify_signatures_data(
+        assert!(signatures_utils::verify_signatures_data(
             &keyset,
             outputs.into_iter().zip(bs.into_iter())
         ));
@@ -377,7 +386,7 @@ mod tests {
     #[tokio::test]
     async fn burn_active_keyset() {
         let (keyinfo, keyset) = keys_test::generate_keyset();
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
 
         let mut keysrvc = MockKeysService::new();
         keysrvc
@@ -402,7 +411,7 @@ mod tests {
     async fn burn_spent_proofs() {
         let (mut keyinfo, keyset) = keys_test::generate_keyset();
         keyinfo.active = false;
-        let inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let inputs = signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
 
         let mut keysrvc = MockKeysService::new();
         keysrvc
@@ -427,7 +436,8 @@ mod tests {
     async fn burn_wrong_signatures() {
         let (mut keyinfo, keyset) = keys_test::generate_keyset();
         keyinfo.active = false;
-        let mut inputs = utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
+        let mut inputs =
+            signatures_utils::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = keys_test::publics()[0];
         let mut keysrvc = MockKeysService::new();
         let proofrepo = MockProofRepository::new();

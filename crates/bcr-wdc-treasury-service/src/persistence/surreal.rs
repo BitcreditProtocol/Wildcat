@@ -308,8 +308,8 @@ impl Repository for DBRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_swap_service::utils as swap_utils;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
+    use bcr_wdc_utils::signatures as signatures_utils;
 
     async fn init_mem_db() -> DBRepository {
         let sdb = Surreal::<Any>::init();
@@ -367,14 +367,16 @@ mod tests {
 
         let (_, keyset) = keys_utils::generate_random_keyset();
         let proofs =
-            swap_utils::generate_proofs(&keyset, &[Amount::from(8_u64), Amount::from(4_u64)]);
+            signatures_utils::generate_proofs(&keyset, &[Amount::from(8_u64), Amount::from(4_u64)]);
         db.store_proofs(proofs).await.unwrap();
 
         let mut expected = vec![(keyset.id, Amount::from(12_u64))];
 
         let (_, keyset) = keys_utils::generate_random_keyset();
-        let proofs =
-            swap_utils::generate_proofs(&keyset, &[Amount::from(16_u64), Amount::from(4_u64)]);
+        let proofs = signatures_utils::generate_proofs(
+            &keyset,
+            &[Amount::from(16_u64), Amount::from(4_u64)],
+        );
         db.store_proofs(proofs).await.unwrap();
 
         expected.push((keyset.id, Amount::from(20_u64)));
