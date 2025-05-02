@@ -108,13 +108,18 @@ impl DB {
     }
 
     async fn list_info(&self) -> SurrealResult<Vec<cdk_mint::MintKeySetInfo>> {
-        let result: Vec<cdk_mint::MintKeySetInfo> = self
+        let response: Vec<KeysDBEntry> = self
             .db
-            .query("SELECT info FROM type::table($table)")
+            .query("SELECT * FROM type::table($table)")
             .bind(("table", self.table.clone()))
             .await?
             .take(0)?;
-        Ok(result)
+        let sets = response
+            .into_iter()
+            .map(KeysetEntry::from)
+            .map(|(info, _)| info)
+            .collect();
+        Ok(sets)
     }
 
     async fn keyset(&self, rid: RecordId) -> SurrealResult<Option<cdk02::MintKeySet>> {
@@ -225,5 +230,34 @@ impl QuoteKeysRepository for DBQuoteKeys {
             .store(rid, entry)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    async fn init_mem_db() -> DB {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DB {
+            db: sdb,
+            table: String::from("test"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_info() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_keyset();
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let entry = KeysDBEntry::from((info.clone(), keyset));
+        let _: KeysDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let infos = db.list_info().await.unwrap();
+        assert_eq!(infos.len(), 1);
     }
 }
