@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::keys as web_keys;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut20 as cdk20};
 use thiserror::Error;
 // ----- local imports
 pub use reqwest::Url;
@@ -20,6 +20,8 @@ pub enum Error {
 
     #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
+    #[error("sign error [{0}")]
+    NUT20(#[from] cdk20::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +131,7 @@ impl KeyClient {
         Ok(sig)
     }
 
-    pub async fn generate(
+    pub async fn generate_keyset(
         &self,
         qid: uuid::Uuid,
         amount: cashu::Amount,
@@ -165,6 +167,30 @@ impl KeyClient {
         }
         res.error_for_status()?;
         Ok(())
+    }
+
+    pub async fn mint(
+        &self,
+        qid: uuid::Uuid,
+        outputs: Vec<cdk00::BlindedMessage>,
+        sk: cdk01::SecretKey,
+    ) -> Result<Vec<cdk00::BlindSignature>> {
+        let url = self
+            .base
+            .join("/v1/admin/keys/activate")
+            .expect("activate relative path");
+        let mut msg = cdk04::MintBolt11Request {
+            quote: qid,
+            outputs,
+            signature: None,
+        };
+        msg.sign(sk)?;
+        let result = self.cl.post(url).json(&msg).send().await?;
+        if result.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceFromIdNotFound(qid));
+        }
+        let response = result.json::<cdk04::MintBolt11Response>().await?;
+        Ok(response.signatures)
     }
 }
 
@@ -220,11 +246,27 @@ pub mod test_utils {
         }
         pub async fn pre_sign(
             &self,
-            _kid: cdk02::Id,
             _qid: uuid::Uuid,
-            _tstamp: chrono::DateTime<chrono::Utc>,
             _msg: &cdk00::BlindedMessage,
         ) -> Result<cdk00::BlindSignature> {
+            todo!()
+        }
+
+        pub async fn generate_keyset(
+            &self,
+            _qid: uuid::Uuid,
+            _target: cashu::Amount,
+            _pub_key: cdk01::PublicKey,
+            _expire: chrono::DateTime<chrono::Utc>,
+        ) -> Result<cdk02::Id> {
+            todo!();
+        }
+
+        pub async fn mint(
+            &self,
+            _outputs: &[cdk00::BlindedMessage],
+            _sk: cdk01::SecretKey,
+        ) -> Result<()> {
             todo!()
         }
     }

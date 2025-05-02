@@ -17,7 +17,7 @@ async fn pre_sign() {
     let public_key = keys_utils::publics()[0];
 
     let kid = client
-        .generate(qid, amount, public_key, expiration)
+        .generate_keyset(qid, amount, public_key, expiration)
         .await
         .expect("generate call");
 
