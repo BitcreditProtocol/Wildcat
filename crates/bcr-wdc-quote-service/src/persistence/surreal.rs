@@ -330,7 +330,7 @@ impl DBQuotes {
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<DBEntryQuote>> {
         let results: Vec<DBEntryQuote> = self.db
-            .query("SELECT * FROM type::table($table) WHERE bill == $bill AND endorser == $endorser ORDER BY submitted DESC")
+            .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND bill.current_holder.node_id == $endorser ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;
@@ -556,5 +556,39 @@ mod tests {
         assert_eq!(res[0].id, qid3);
         assert_eq!(res[1].id, qid1);
         assert_eq!(res[2].id, qid2);
+    }
+
+    #[tokio::test]
+    async fn search_by_bill() {
+        let db = init_mem_db().await;
+
+        let qid1 = Uuid::new_v4();
+        let rid = RecordId::from_table_key(&db.table, qid1);
+        let entry = DBEntryQuote {
+            qid: qid1,
+            status: DBEntryQuoteStatus::Pending,
+            bill: quotes::BillInfo {
+                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
+                current_holder: IdentityPublicData {
+                    node_id: String::from("endorser"),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _: DBEntryQuote = db
+            .db
+            .insert(rid)
+            .content(entry.clone())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let result = db
+            .search_by_bill(&entry.bill.id, &entry.bill.current_holder.node_id)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1);
     }
 }
