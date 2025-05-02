@@ -3,7 +3,7 @@ use std::str::FromStr;
 // ----- extra library imports
 use bcr_ebill_core::contact::IdentityPublicData;
 use bitcoin::Amount;
-use cashu::nuts::nut00 as cdk00;
+use cashu::{nut01 as cdk01, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -18,7 +18,7 @@ pub struct BillInfo {
     pub payee: IdentityPublicData,
     pub endorsees: Vec<IdentityPublicData>,
     pub current_holder: IdentityPublicData,
-    pub sum: u64,
+    pub sum: Amount,
     pub maturity_date: TStamp,
 }
 impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
@@ -33,7 +33,7 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
             payee: bill.payee.into(),
             endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
             current_holder: current_holder.into(),
-            sum: bill.sum,
+            sum: Amount::from_sat(bill.sum),
             maturity_date,
         })
     }
@@ -47,7 +47,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
             drawer: bill.drawer.into(),
             payee: bill.payee.into(),
             endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
-            sum: bill.sum,
+            sum: bill.sum.to_sat(),
             maturity_date,
         }
     }
@@ -56,20 +56,11 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
 #[derive(Debug, Clone, strum::EnumDiscriminants)]
 #[strum_discriminants(derive(serde::Serialize))]
 pub enum QuoteStatus {
-    Pending {
-        blinds: Vec<cdk00::BlindedMessage>,
-    },
+    Pending { public_key: cdk01::PublicKey },
     Denied,
-    Offered {
-        signatures: Vec<cdk00::BlindSignature>,
-        ttl: TStamp,
-    },
-    Rejected {
-        tstamp: TStamp,
-    },
-    Accepted {
-        signatures: Vec<cdk00::BlindSignature>,
-    },
+    Offered { keyset_id: cdk02::Id, ttl: TStamp },
+    Rejected { tstamp: TStamp },
+    Accepted { keyset_id: cdk02::Id },
 }
 
 #[derive(Debug, Clone)]
@@ -87,9 +78,9 @@ pub struct LightQuote {
 }
 
 impl Quote {
-    pub fn new(bill: BillInfo, blinds: Vec<cdk00::BlindedMessage>, submitted: TStamp) -> Self {
+    pub fn new(bill: BillInfo, public_key: cdk01::PublicKey, submitted: TStamp) -> Self {
         Self {
-            status: QuoteStatus::Pending { blinds },
+            status: QuoteStatus::Pending { public_key },
             id: Uuid::new_v4(),
             bill,
             submitted,
@@ -105,12 +96,12 @@ impl Quote {
         }
     }
 
-    pub fn offer(&mut self, signatures: Vec<cdk00::BlindSignature>, ttl: TStamp) -> Result<()> {
+    pub fn offer(&mut self, keyset_id: cdk02::Id, ttl: TStamp) -> Result<()> {
         let QuoteStatus::Pending { .. } = self.status else {
             return Err(Error::QuoteAlreadyResolved(self.id));
         };
 
-        self.status = QuoteStatus::Offered { signatures, ttl };
+        self.status = QuoteStatus::Offered { keyset_id, ttl };
         Ok(())
     }
 
@@ -124,13 +115,12 @@ impl Quote {
     }
 
     pub fn accept(&mut self) -> Result<()> {
-        if let QuoteStatus::Offered { signatures, .. } = &self.status {
-            self.status = QuoteStatus::Accepted {
-                signatures: signatures.clone(),
-            };
-            Ok(())
-        } else {
-            Err(Error::QuoteAlreadyResolved(self.id))
-        }
+        match self.status {
+            QuoteStatus::Offered { keyset_id, .. } => {
+                self.status = QuoteStatus::Accepted { keyset_id }
+            }
+            _ => return Err(Error::QuoteAlreadyResolved(self.id)),
+        };
+        Ok(())
     }
 }

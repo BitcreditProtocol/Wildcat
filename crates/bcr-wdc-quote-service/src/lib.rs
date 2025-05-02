@@ -16,7 +16,6 @@ mod keys;
 mod persistence;
 mod quotes;
 mod service;
-mod utils;
 mod wallet;
 mod web;
 // ----- local imports

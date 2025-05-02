@@ -34,7 +34,7 @@ pub enum Error {
     #[error("unknown quote id {0}")]
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
-    InvalidAmount(rust_decimal::Decimal),
+    InvalidAmount(bitcoin::Amount),
     #[error("Invalid blindedMessages: {0}")]
     InvalidKeysetId(cdk02::Id),
 }

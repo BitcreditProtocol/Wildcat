@@ -2,17 +2,13 @@
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_utils::id::KeysetID;
-use bcr_wdc_utils::keys as keys_utils;
-use cashu::nuts::nut00 as cdk00;
-use cashu::Amount;
+use bitcoin::Amount;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use futures::future::JoinAll;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus, QuoteStatusDiscriminants};
-use crate::utils;
 use crate::TStamp;
 
 // ---------- required traits
@@ -52,13 +48,14 @@ pub trait Repository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysHandler: Send + Sync {
-    async fn sign(
+    async fn generate(
         &self,
-        kid: KeysetID,
         qid: Uuid,
+        amount: Amount,
+        pk: cdk01::PublicKey,
         maturity_date: TStamp,
-        msg: &cdk00::BlindedMessage,
-    ) -> Result<cdk00::BlindSignature>;
+    ) -> Result<cdk02::Id>;
+    async fn sign(&self, qid: Uuid, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -66,7 +63,7 @@ pub trait KeysHandler: Send + Sync {
 pub trait Wallet: Send + Sync {
     async fn get_blinds(
         &self,
-        kid: KeysetID,
+        kid: cdk02::Id,
         amount: Amount,
     ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)>;
 
@@ -95,8 +92,8 @@ where
     pub async fn enquire(
         &self,
         bill: BillInfo,
+        pub_key: cdk01::PublicKey,
         submitted: TStamp,
-        blinds: Vec<cdk00::BlindedMessage>,
     ) -> Result<uuid::Uuid> {
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id;
         let mut quotes = self
@@ -125,7 +122,7 @@ where
                 ..
             }) => {
                 if *ttl < submitted {
-                    let quote = Quote::new(bill, blinds, submitted);
+                    let quote = Quote::new(bill, pub_key, submitted);
                     let id = quote.id;
                     self.quotes
                         .store(quote)
@@ -147,7 +144,7 @@ where
                 ..
             }) => {
                 if (submitted - tstamp) > Self::REJECTION_RETENTION {
-                    let quote = Quote::new(bill, blinds, submitted);
+                    let quote = Quote::new(bill, pub_key, submitted);
                     let id = quote.id;
                     self.quotes
                         .store(quote)
@@ -159,7 +156,7 @@ where
                 }
             }
             None => {
-                let quote = Quote::new(bill, blinds, submitted);
+                let quote = Quote::new(bill, pub_key, submitted);
                 let id = quote.id;
                 self.quotes
                     .store(quote)
@@ -260,60 +257,37 @@ where
     pub async fn offer(
         &self,
         qid: uuid::Uuid,
-        discount: Decimal,
+        discounted: Amount,
         now: TStamp,
         ttl: Option<TStamp>,
-    ) -> Result<(Decimal, TStamp)> {
-        let discounted_amount =
-            Amount::from(discount.to_u64().ok_or(Error::InvalidAmount(discount))?);
-
+    ) -> Result<(Amount, TStamp)> {
         let mut quote = self.lookup(qid).await?;
-        let QuoteStatus::Pending { ref mut blinds } = quote.status else {
+        let QuoteStatus::Pending { public_key } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
-        let holder_id = &quote
-            .bill
-            .endorsees
-            .last()
-            .unwrap_or(&quote.bill.payee)
-            .node_id;
 
-        let kid = keys_utils::generate_keyset_id_from_bill(&quote.bill.id, holder_id);
-        let id = kid.into();
-        if blinds.iter().any(|blind| blind.keyset_id != id) {
-            return Err(Error::InvalidKeysetId(id));
-        }
+        let fees = quote.bill.sum - discounted;
+        let maturity_date = quote.bill.maturity_date;
+        let kid = self
+            .keys_hndlr
+            .generate(qid, quote.bill.sum, public_key, maturity_date)
+            .await?;
 
-        let selected_blinds = utils::select_blinds_to_target(discounted_amount, blinds);
-        let maturity = quote.bill.maturity_date;
-        let joined: JoinAll<_> = selected_blinds
-            .iter()
-            .map(|blind| self.keys_hndlr.sign(kid, qid, maturity, blind))
-            .collect();
-        let signatures: Vec<cdk00::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
-
-        let signed_amount = signatures
-            .iter()
-            .fold(Amount::ZERO, |acc, sig| acc + sig.amount);
-        let bill_amount = Amount::from(quote.bill.sum);
-        let fees_amount = bill_amount - signed_amount;
-        let (request_id, fees_blinds) = self.wallet.get_blinds(kid, fees_amount).await?;
+        let (request_id, fees_blinds) = self.wallet.get_blinds(kid, fees).await?;
         let joined: JoinAll<_> = fees_blinds
             .iter()
-            .map(|blind| self.keys_hndlr.sign(kid, qid, maturity, blind))
+            .map(|blind| self.keys_hndlr.sign(qid, blind))
             .collect();
         let signatures_fees: Vec<cdk00::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
 
-        let discounted = Decimal::from(*signed_amount.as_ref());
-        let expiration = ttl.unwrap_or(utils::calculate_default_expiration_date_for_quote(now));
+        let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(now));
 
         self.wallet
             .store_signatures(request_id, expiration, signatures_fees)
             .await?;
 
-        quote.offer(signatures, expiration)?;
+        quote.offer(kid, expiration)?;
         self.quotes
             .update_if_pending(quote)
             .await
@@ -321,6 +295,10 @@ where
 
         Ok((discounted, expiration))
     }
+}
+
+pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
+    now + chrono::Duration::days(2)
 }
 
 #[cfg(test)]
@@ -423,7 +401,7 @@ mod tests {
             payee: holder.clone(),
             current_holder: holder,
             endorsees: Default::default(),
-            sum: rng.gen_range(1000..100000),
+            sum: Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
         }
     }
@@ -442,7 +420,9 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
+        let test = service
+            .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
+            .await;
         assert!(test.is_ok());
     }
 
@@ -450,13 +430,14 @@ mod tests {
     async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
+        let public_key = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
             .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Pending { blinds: vec![] },
+                    status: QuoteStatus::Pending { public_key },
                     id,
                     bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
@@ -471,7 +452,9 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
+        let test_id = service
+            .enquire(rnd_bill, public_key, chrono::Utc::now())
+            .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
     }
@@ -480,6 +463,7 @@ mod tests {
     async fn test_new_quote_request_quote_denied() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
+        let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
@@ -501,7 +485,9 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
+        let test_id = service
+            .enquire(rnd_bill, public_key, chrono::Utc::now())
+            .await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -513,6 +499,8 @@ mod tests {
     async fn test_new_quote_request_quote_offered() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
+        let keyset_id = keys_utils::generate_random_keysetid();
+        let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
@@ -520,7 +508,7 @@ mod tests {
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
-                        signatures: vec![],
+                        keyset_id,
                         ttl: chrono::Utc::now() + chrono::Duration::days(1),
                     },
                     id,
@@ -537,7 +525,9 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service.enquire(rnd_bill, chrono::Utc::now(), vec![]).await;
+        let test_id = service
+            .enquire(rnd_bill, public_key, chrono::Utc::now())
+            .await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -550,13 +540,15 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
+        let keyset_id = keys_utils::generate_random_keysetid();
+        let public_key = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
             .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
-                        signatures: vec![],
+                        keyset_id,
                         ttl: chrono::Utc::now(),
                     },
                     id,
@@ -576,8 +568,8 @@ mod tests {
         let test_id = service
             .enquire(
                 rnd_bill,
+                public_key,
                 chrono::Utc::now() + chrono::Duration::seconds(1),
-                vec![],
             )
             .await;
         assert!(test_id.is_ok());

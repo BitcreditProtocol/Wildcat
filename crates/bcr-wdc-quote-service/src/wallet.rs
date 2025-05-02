@@ -2,9 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_treasury_client::TreasuryClient;
-use bcr_wdc_utils::id::KeysetID;
-use cashu::nuts::nut00 as cdk00;
-use cashu::Amount;
+use cashu::nuts::{nut00 as cdk00, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -32,11 +30,12 @@ impl Client {
 impl Wallet for Client {
     async fn get_blinds(
         &self,
-        kid: KeysetID,
-        amount: Amount,
+        kid: cdk02::Id,
+        amount: bitcoin::Amount,
     ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
+        let amount = cashu::Amount::from(amount.to_sat());
         self.cl
-            .generate_blinds(kid.into(), amount)
+            .generate_blinds(kid, amount)
             .await
             .map_err(Error::Wallet)
     }
