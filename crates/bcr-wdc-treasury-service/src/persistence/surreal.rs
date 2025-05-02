@@ -329,10 +329,7 @@ mod tests {
     async fn next_counter_newkeyset() {
         let db = init_mem_db().await;
         let kid = keys_utils::generate_random_keysetid();
-        let c = db
-            .next_counter(kid.into())
-            .await
-            .expect("next_counter failed");
+        let c = db.next_counter(kid).await.expect("next_counter failed");
         assert_eq!(c.counter, 0);
     }
 
@@ -347,10 +344,7 @@ mod tests {
             .content(DBEntryCounter { counter: 42 })
             .await
             .expect("insert failed");
-        let c = db
-            .next_counter(kid.into())
-            .await
-            .expect("next_counter failed");
+        let c = db.next_counter(kid).await.expect("next_counter failed");
         assert_eq!(c.counter, 42);
     }
 
