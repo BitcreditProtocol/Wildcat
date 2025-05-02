@@ -2,7 +2,7 @@
 // ----- extra library imports
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
-use cashu::nuts::nut00 as cdk00;
+use cashu::nuts::{nut01 as cdk01, nut02 as cdk02};
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
@@ -61,8 +61,8 @@ struct DBEntryQuote {
     bill: quotes::BillInfo,
     submitted: TStamp,
     status: DBEntryQuoteStatus,
-    blinds: Option<Vec<cdk00::BlindedMessage>>,
-    signatures: Option<Vec<cdk00::BlindSignature>>,
+    public_key: Option<cdk01::PublicKey>,
+    keyset_id: Option<cdk02::Id>,
     ttl: Option<TStamp>,
     rejection: Option<TStamp>,
 }
@@ -70,13 +70,13 @@ struct DBEntryQuote {
 impl From<quotes::Quote> for DBEntryQuote {
     fn from(q: quotes::Quote) -> Self {
         match q.status {
-            quotes::QuoteStatus::Pending { blinds } => Self {
+            quotes::QuoteStatus::Pending { public_key } => Self {
                 qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Pending,
-                blinds: Some(blinds),
-                signatures: Default::default(),
+                public_key: Some(public_key),
+                keyset_id: None,
                 ttl: Default::default(),
                 rejection: Default::default(),
             },
@@ -85,19 +85,19 @@ impl From<quotes::Quote> for DBEntryQuote {
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Denied,
-                blinds: Default::default(),
-                signatures: Default::default(),
+                public_key: None,
+                keyset_id: None,
                 ttl: Default::default(),
                 rejection: Default::default(),
             },
-            quotes::QuoteStatus::Offered { signatures, ttl } => Self {
+            quotes::QuoteStatus::Offered { keyset_id, ttl } => Self {
                 qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Accepted,
-                signatures: Some(signatures),
+                public_key: None,
+                keyset_id: Some(keyset_id),
                 ttl: Some(ttl),
-                blinds: Default::default(),
                 rejection: Default::default(),
             },
             quotes::QuoteStatus::Rejected { tstamp } => Self {
@@ -106,17 +106,17 @@ impl From<quotes::Quote> for DBEntryQuote {
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Rejected,
                 rejection: Some(tstamp),
-                blinds: Default::default(),
-                signatures: Default::default(),
+                public_key: None,
+                keyset_id: None,
                 ttl: Default::default(),
             },
-            quotes::QuoteStatus::Accepted { signatures } => Self {
+            quotes::QuoteStatus::Accepted { keyset_id } => Self {
                 qid: q.id,
                 bill: q.bill,
                 submitted: q.submitted,
                 status: DBEntryQuoteStatus::Accepted,
-                signatures: Some(signatures),
-                blinds: Default::default(),
+                public_key: None,
+                keyset_id: Some(keyset_id),
                 ttl: Default::default(),
                 rejection: Default::default(),
             },
@@ -133,7 +133,9 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Pending {
-                    blinds: dbq.blinds.ok_or_else(|| anyhow!("missing blinds"))?,
+                    public_key: dbq
+                        .public_key
+                        .ok_or_else(|| anyhow!("missing public key"))?,
                 },
             }),
             DBEntryQuoteStatus::Denied => Ok(Self {
@@ -147,9 +149,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Offered {
-                    signatures: dbq
-                        .signatures
-                        .ok_or_else(|| anyhow!("missing signatures"))?,
+                    keyset_id: dbq.keyset_id.ok_or_else(|| anyhow!("missing keyset_id"))?,
                     ttl: dbq.ttl.ok_or_else(|| anyhow!("missing ttl"))?,
                 },
             }),
@@ -166,9 +166,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
                 bill: dbq.bill,
                 submitted: dbq.submitted,
                 status: quotes::QuoteStatus::Accepted {
-                    signatures: dbq
-                        .signatures
-                        .ok_or_else(|| anyhow!("missing signatures"))?,
+                    keyset_id: dbq.keyset_id.ok_or_else(|| anyhow!("missing keyset_id"))?,
                 },
             }),
         }
@@ -353,7 +351,7 @@ impl Repository for DBQuotes {
         }
         let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
         self.db
-            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+            .query("UPDATE $rid CONTENT SET condition.is_minted = true WHERE condition.is_minted == false")
             .bind(("rid", recordid))
             .bind(("new", DBEntryQuote::from(new)))
             .bind(("status", DBEntryQuoteStatus::Pending))

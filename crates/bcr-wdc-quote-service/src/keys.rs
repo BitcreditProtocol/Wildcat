@@ -2,8 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_key_client::KeyClient;
-use bcr_wdc_utils::KeysetID;
-use cashu::nuts::nut00 as cdk00;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -28,16 +27,20 @@ impl KeysRestHandler {
 
 #[async_trait]
 impl KeysHandler for KeysRestHandler {
-    async fn sign(
+    async fn generate(
         &self,
-        kid: KeysetID,
         qid: Uuid,
+        amount: bitcoin::Amount,
+        pk: cdk01::PublicKey,
         maturity_date: TStamp,
-        msg: &cdk00::BlindedMessage,
-    ) -> Result<cdk00::BlindSignature> {
+    ) -> Result<cdk02::Id> {
+        let amount = cashu::Amount::from(amount.to_sat());
         self.0
-            .pre_sign(kid.into(), qid, maturity_date, msg)
+            .generate_keyset(qid, amount, pk, maturity_date)
             .await
             .map_err(Error::KeysHandler)
+    }
+    async fn sign(&self, qid: Uuid, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+        self.0.pre_sign(qid, msg).await.map_err(Error::KeysHandler)
     }
 }

@@ -7,10 +7,10 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
+axum = {workspace = true, features = ["macros"]}
 bcr-ebill-core.workspace = true
 bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
-bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["persistence"] }
+bcr-wdc-utils = { path = "../bcr-wdc-utils"}
 bcr-wdc-treasury-client = { path = "../bcr-wdc-treasury-client" }
 bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
 bitcoin.workspace = true
@@ -20,15 +20,14 @@ chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
 futures.workspace = true
-log.workspace = true
-rust_decimal.workspace = true
+log = {workspace = true, features = ["serde"]}
 serde.workspace = true
 strum = {workspace = true, features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = {workspace = true, features = ["signal"]}
 utoipa = {workspace = true, features = ["axum_extras", "yaml"]}
-utoipa-swagger-ui.workspace = true
+utoipa-swagger-ui = {workspace = true, features = ["axum"]}
 uuid.workspace = true
 
 [dev-dependencies]
@@ -36,3 +35,4 @@ bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["test-utils"] }
 bip39 = {version = "2"}
 mockall.workspace = true
 rand.workspace = true
+surrealdb = {workspace = true, features = ["kv-mem"]}

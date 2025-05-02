@@ -25,8 +25,6 @@ pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo>(
     Json(req): Json<web_quotes::EnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
     QuotesRepo: Repository,
 {
     log::debug!("Received mint quote request for bill: {}", req.content.id,);
@@ -34,10 +32,12 @@ where
     verify_signature(&req)?;
 
     let bcr_wdc_webapi::quotes::EnquireRequest {
-        content, outputs, ..
+        content,
+        public_key,
+        ..
     } = req;
     let bill = quotes::BillInfo::try_from(content)?;
-    let id = ctrl.enquire(bill, chrono::Utc::now(), outputs).await?;
+    let id = ctrl.enquire(bill, public_key, chrono::Utc::now()).await?;
     Ok(Json(web_quotes::EnquireReply { id }))
 }
 
@@ -57,13 +57,13 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     match quote.status {
         quotes::QuoteStatus::Pending { .. } => web_quotes::StatusReply::Pending,
         quotes::QuoteStatus::Denied => web_quotes::StatusReply::Denied,
-        quotes::QuoteStatus::Offered { signatures, ttl } => web_quotes::StatusReply::Offered {
-            signatures,
+        quotes::QuoteStatus::Offered { keyset_id, ttl } => web_quotes::StatusReply::Offered {
+            keyset_id,
             expiration_date: ttl,
         },
         quotes::QuoteStatus::Rejected { tstamp } => web_quotes::StatusReply::Rejected { tstamp },
-        quotes::QuoteStatus::Accepted { signatures } => {
-            web_quotes::StatusReply::Accepted { signatures }
+        quotes::QuoteStatus::Accepted { keyset_id } => {
+            web_quotes::StatusReply::Accepted { keyset_id }
         }
     }
 }

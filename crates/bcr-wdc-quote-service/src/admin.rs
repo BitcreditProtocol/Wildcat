@@ -5,8 +5,8 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
+use crate::service::calculate_default_expiration_date_for_quote;
 use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
-use crate::utils;
 
 /// --------------------------- List quotes
 #[utoipa::path(
@@ -133,24 +133,22 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             id: quote.id,
             bill: quote.bill.into(),
             submitted: quote.submitted,
-            suggested_expiration: utils::calculate_default_expiration_date_for_quote(
-                chrono::Utc::now(),
-            ),
+            suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
         },
-        quotes::QuoteStatus::Offered { signatures, ttl } => web_quotes::InfoReply::Offered {
+        quotes::QuoteStatus::Offered { keyset_id, ttl } => web_quotes::InfoReply::Offered {
             id: quote.id,
             bill: quote.bill.into(),
             ttl,
-            signatures: signatures.clone(),
+            keyset_id,
         },
         quotes::QuoteStatus::Denied => web_quotes::InfoReply::Denied {
             id: quote.id,
             bill: quote.bill.into(),
         },
-        quotes::QuoteStatus::Accepted { signatures } => web_quotes::InfoReply::Accepted {
+        quotes::QuoteStatus::Accepted { keyset_id } => web_quotes::InfoReply::Accepted {
             id: quote.id,
             bill: quote.bill.into(),
-            signatures,
+            keyset_id,
         },
         quotes::QuoteStatus::Rejected { tstamp } => web_quotes::InfoReply::Rejected {
             id: quote.id,
@@ -215,9 +213,9 @@ where
             ctrl.deny(id).await?;
             web_quotes::UpdateQuoteResponse::Denied
         }
-        web_quotes::UpdateQuoteRequest::Offer { discount, ttl } => {
-            let (discount, ttl) = ctrl.offer(id, discount, chrono::Utc::now(), ttl).await?;
-            web_quotes::UpdateQuoteResponse::Offered { discount, ttl }
+        web_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
+            let (discounted, ttl) = ctrl.offer(id, discounted, chrono::Utc::now(), ttl).await?;
+            web_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
         }
     };
     Ok(Json(response))
