@@ -106,9 +106,9 @@ where
             .map_err(Error::QuotesRepository)?;
 
         // pick the more recent quote for this eBill/endorser
-        quotes.sort_by_key(|q| std::cmp::Reverse(q.submitted));
+        quotes.sort_by_key(|q| q.submitted);
         // user rejected the offer recently
-        match quotes.first() {
+        match quotes.last() {
             Some(Quote {
                 id,
                 status: QuoteStatus::Pending { .. },
@@ -415,11 +415,13 @@ mod tests {
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
         let ids = keys_utils::publics();
+        let holder = generate_random_identity();
         BillInfo {
             id: ids.into_iter().choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
-            payee: generate_random_identity(),
+            payee: holder.clone(),
+            current_holder: holder,
             endorsees: Default::default(),
             sum: rng.gen_range(1000..100000),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),

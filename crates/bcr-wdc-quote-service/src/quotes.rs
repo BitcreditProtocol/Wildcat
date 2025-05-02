@@ -17,6 +17,7 @@ pub struct BillInfo {
     pub drawer: IdentityPublicData,
     pub payee: IdentityPublicData,
     pub endorsees: Vec<IdentityPublicData>,
+    pub current_holder: IdentityPublicData,
     pub sum: u64,
     pub maturity_date: TStamp,
 }
@@ -24,12 +25,14 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
     type Error = Error;
     fn try_from(bill: bcr_wdc_webapi::quotes::BillInfo) -> Result<Self> {
         let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
+        let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
         Ok(Self {
             id: bill.id,
             drawee: bill.drawee.into(),
             drawer: bill.drawer.into(),
             payee: bill.payee.into(),
             endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
+            current_holder: current_holder.into(),
             sum: bill.sum,
             maturity_date,
         })
