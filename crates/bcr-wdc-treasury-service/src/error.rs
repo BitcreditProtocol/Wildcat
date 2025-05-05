@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
+use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::{nut02 as cdk02, nut13::Error as CDK13Error};
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
@@ -26,11 +27,11 @@ pub enum Error {
     SchnorrBorshMsg(bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("Proof client error {0}")]
     ProofCl(bcr_wdc_swap_client::Error),
+    #[error("invalid inputs {0}")]
+    InvalidInput(signatures_utils::ChecksError),
+    #[error("invalid outputs {0}")]
+    InvalidOutput(signatures_utils::ChecksError),
     //debit errors
-    #[error("Empty inputs/outputs")]
-    EmptyInputsOrOutputs,
-    #[error("Zero amount is not allowed")]
-    ZeroAmount,
     #[error("inactive keyset {0}")]
     InactiveKeyset(cdk02::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
@@ -64,15 +65,9 @@ impl axum::response::IntoResponse for Error {
                 format!("Unmatching amount: input {} != output {}", input, output),
             ),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
-            Error::ZeroAmount => (
-                StatusCode::BAD_REQUEST,
-                String::from("Zero amount is not allowed"),
-            ),
-            Error::EmptyInputsOrOutputs => (
-                StatusCode::BAD_REQUEST,
-                String::from("Empty inputs/outputs"),
-            ),
 
+            Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
+            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
             Error::ProofCl(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

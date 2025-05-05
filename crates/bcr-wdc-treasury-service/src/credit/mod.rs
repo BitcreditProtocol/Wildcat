@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use bitcoin::bip32 as btc32;
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
+use futures::try_join;
 use uuid::Uuid;
 // ----- local modules
 mod keys;
@@ -99,16 +100,19 @@ where
                 continue;
             };
             if !result.active {
-                self.repo.delete_premint_signatures(*rid).await?;
-                self.repo.delete_secrets(*rid).await?;
+                try_join!(
+                    self.repo.delete_premint_signatures(*rid),
+                    self.repo.delete_secrets(*rid)
+                )?;
                 continue;
             }
-            let secrets = self.repo.load_secrets(*rid).await?;
-            let keys = self.keys.keys(kid).await?;
+            let (secrets, keys) = try_join!(self.repo.load_secrets(*rid), self.keys.keys(kid))?;
             let proofs = unblind_signatures(signatures, &secrets, &keys)?;
             self.repo.store_proofs(proofs).await?;
-            self.repo.delete_premint_signatures(*rid).await?;
-            self.repo.delete_secrets(*rid).await?;
+            try_join!(
+                self.repo.delete_premint_signatures(*rid),
+                self.repo.delete_secrets(*rid)
+            )?;
         }
         let mut total = Amount::ZERO;
         let balances = self.repo.list_balance_by_keyset_id().await?;
@@ -160,7 +164,7 @@ fn unblind_signatures(
 mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
-    use bcr_wdc_utils::signatures as signatures_utils;
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::network::Network;
     use itertools::Itertools;
 
@@ -187,7 +191,7 @@ mod tests {
         let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         let (info, keyset) = keys_utils::generate_random_keyset();
-        let signatures = signatures_utils::generate_signatures(&keyset, &[Amount::from(16)]);
+        let signatures = signatures_test::generate_signatures(&keyset, &[Amount::from(16)]);
         let req_id = Uuid::new_v4();
         let premints = vec![(req_id, signatures.clone())];
         repo.expect_list_premint_signatures()
@@ -219,7 +223,7 @@ mod tests {
         let (info, keyset) = keys_utils::generate_random_keyset();
 
         let (blinds, secrets, _): (Vec<_>, Vec<_>, Vec<_>) =
-            signatures_utils::generate_blinds(&keyset, &[Amount::from(16)])
+            signatures_test::generate_blinds(&keyset, &[Amount::from(16)])
                 .into_iter()
                 .map(|(b, s, k)| {
                     (

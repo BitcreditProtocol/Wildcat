@@ -20,7 +20,7 @@ cdk-redb = { workspace = true }
 chrono.workspace = true
 config.workspace = true
 env_logger.workspace = true
-futures = {version = "0.3"}
+futures = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true, features = ["serde"]}
 serde.workspace = true
