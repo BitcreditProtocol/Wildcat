@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_swap_client::SwapClient;
-use bcr_wdc_utils::{keys::test_utils as keys_test, signatures as signatures_utils};
+use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 use cashu::Amount;
 // ----- local imports
 
@@ -19,11 +19,11 @@ async fn swap() {
         .expect("store");
 
     let amounts = vec![Amount::from(8_u64)];
-    let blinds = signatures_utils::generate_blinds(&keys_entry.1, &amounts)
+    let blinds = signatures_test::generate_blinds(&keys_entry.1, &amounts)
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
-    let proofs = signatures_utils::generate_proofs(&keys_entry.1, &amounts);
+    let proofs = signatures_test::generate_proofs(&keys_entry.1, &amounts);
 
     client.swap(proofs, blinds).await.expect("swap");
 }
