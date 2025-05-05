@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_wdc_utils::signatures as signatures_utils;
 use bcr_wdc_webapi as web;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
@@ -79,16 +80,8 @@ where
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>> {
         // cheap verifications
-        // 1. no empty inputs or outputs
-        if inputs.is_empty() || outputs.is_empty() {
-            return Err(Error::EmptyInputsOrOutputs);
-        }
-        // 2. no zero amounts in inputs or outputs
-        let zero_outputs = outputs.iter().any(|output| output.amount == Amount::ZERO);
-        let zero_inputs = inputs.iter().any(|output| output.amount == Amount::ZERO);
-        if zero_outputs || zero_inputs {
-            return Err(Error::ZeroAmount);
-        }
+        signatures_utils::basic_proofs_checks(inputs).map_err(Error::InvalidInput)?;
+        signatures_utils::basic_blinds_checks(outputs).map_err(Error::InvalidOutput)?;
         // 3. inputs and outputs have equal amounts
         let total_input = inputs
             .iter()
@@ -128,7 +121,7 @@ where
 mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
-    use bcr_wdc_utils::signatures as signatures_utils;
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bcr_wdc_webapi as web;
     use cashu::{nut00 as cdk00, nut04 as cdk04, Amount};
     use mockall::predicate::*;
@@ -186,7 +179,7 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let blinds: Vec<_> = signatures_utils::generate_blinds(&keyset, &vec![Amount::from(8_u64)])
+        let blinds: Vec<_> = signatures_test::generate_blinds(&keyset, &vec![Amount::from(8_u64)])
             .into_iter()
             .map(|b| b.0)
             .collect();
@@ -207,7 +200,7 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let proofs = signatures_utils::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
+        let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
 
         service.redeem(&proofs, &[]).await.unwrap_err();
     }
@@ -225,12 +218,11 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let proofs = signatures_utils::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> =
-            signatures_utils::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
-                .into_iter()
-                .map(|b| b.0)
-                .collect();
+        let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
+        let blinds: Vec<_> = signatures_test::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
@@ -260,12 +252,11 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let proofs = signatures_utils::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> =
-            signatures_utils::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
-                .into_iter()
-                .map(|b| b.0)
-                .collect();
+        let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
+        let blinds: Vec<_> = signatures_test::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
@@ -286,12 +277,11 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let proofs = signatures_utils::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> =
-            signatures_utils::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
-                .into_iter()
-                .map(|b| b.0)
-                .collect();
+        let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
+        let blinds: Vec<_> = signatures_test::generate_blinds(&keyset, &vec![Amount::from(16_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
