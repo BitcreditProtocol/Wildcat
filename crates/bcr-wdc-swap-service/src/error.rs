@@ -2,6 +2,7 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_wdc_key_client::Error as KeyClientError;
+use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
 use cashu::Amount;
@@ -21,6 +22,10 @@ pub enum Error {
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]
     CDKNUT12(#[from] cashu::nuts::nut12::Error),
+    #[error("invalid inputs {0}")]
+    InvalidInput(signatures_utils::ChecksError),
+    #[error("invalid outputs {0}")]
+    InvalidOutput(signatures_utils::ChecksError),
 
     #[error("Invalid proof")]
     InvalidProof(cashu::secret::Secret),
@@ -36,10 +41,6 @@ pub enum Error {
     ActiveKeyset(cdk02::Id),
     #[error("Unknown amount {1} for keyset {0}")]
     UnknownAmountForKeyset(cdk02::Id, Amount),
-    #[error("Empty inputs/outputs")]
-    EmptyInputsOrOutputs,
-    #[error("Zero amount is not allowed")]
-    ZeroAmount,
     #[error("Unmatching amount: input {0} != output {1}")]
     UnmatchingAmount(Amount, Amount),
 }
@@ -51,14 +52,6 @@ impl axum::response::IntoResponse for Error {
             Error::UnmatchingAmount(_, _) => {
                 (StatusCode::BAD_REQUEST, String::from("Unmatching amount"))
             }
-            Error::EmptyInputsOrOutputs => (
-                StatusCode::BAD_REQUEST,
-                String::from("Empty inputs or outputs vectors is not allowed"),
-            ),
-            Error::ZeroAmount => (
-                StatusCode::BAD_REQUEST,
-                String::from("Zero amount is not allowed"),
-            ),
             Error::UnknownAmountForKeyset(_, _) => (
                 StatusCode::NOT_FOUND,
                 String::from("Unknown amount for keyset"),
@@ -71,6 +64,8 @@ impl axum::response::IntoResponse for Error {
                 String::from("Proofs already spent"),
             ),
             Error::InvalidProof(_) => (StatusCode::BAD_REQUEST, String::from("Invalid proof")),
+            Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
+            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
             Error::InvalidBlindedMessage(_) => (
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid blinded message"),
