@@ -3,7 +3,6 @@
 // ----- local modules
 pub mod id;
 pub mod keys;
-#[cfg(any(feature = "test-utils", test))]
 pub mod signatures;
 // ----- local imports
 

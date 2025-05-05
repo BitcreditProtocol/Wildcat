@@ -17,6 +17,7 @@ borsh = {workspace = true}
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
+itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true, optional = true}
