@@ -351,7 +351,7 @@ impl Repository for DBQuotes {
         }
         let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
         self.db
-            .query("UPDATE $rid CONTENT SET condition.is_minted = true WHERE condition.is_minted == false")
+            .query("UPDATE $rid CONTENT $new WHERE status == $status")
             .bind(("rid", recordid))
             .bind(("new", DBEntryQuote::from(new)))
             .bind(("status", DBEntryQuoteStatus::Pending))
