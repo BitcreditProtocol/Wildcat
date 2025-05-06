@@ -284,7 +284,7 @@ impl DBPayments {
     }
 
     async fn list_unpaid(&self) -> SurrealResult<Vec<IncomingPaymentDBEntry>> {
-        let statement = "SELECT * FROM type::table($table) WHERE status = $status";
+        let statement = "SELECT * FROM type::table($table) WHERE status == $status";
         self.db
             .query(statement)
             .bind(("table", self.incoming_table.clone()))
