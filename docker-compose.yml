@@ -124,6 +124,15 @@ services:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
 
+  ebill-service:
+    image: wildcat/ebill-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/ebill-service/config.toml:/ebill-service/config.toml
+
   bff-wallet-service:
     image: nginx:stable-bookworm
     ports:
