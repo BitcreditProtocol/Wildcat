@@ -13,6 +13,7 @@ use crate::TStamp;
 // ----- end imports
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct MintCondition {
     pub target: Amount,
     pub pub_key: cdk01::PublicKey,
