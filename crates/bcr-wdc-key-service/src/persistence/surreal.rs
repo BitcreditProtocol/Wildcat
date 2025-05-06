@@ -104,48 +104,44 @@ impl DB {
     }
 
     async fn condition(&self, rid: RecordId) -> SurrealResult<Option<MintCondition>> {
-        // more efficient than load and then extract info
         let result: Option<MintCondition> = self
             .db
-            .query("SELECT condition FROM $rid")
+            .query("SELECT VALUE condition FROM $rid")
             .bind(("rid", rid))
             .await?
             .take(0)?;
         Ok(result)
     }
 
-    async fn mark_as_minted(&self, rid: RecordId) -> SurrealResult<()> {
-        self.db
-            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+    async fn mark_as_minted(&self, rid: RecordId) -> SurrealResult<Option<MintCondition>> {
+        let result: Option<KeysDBEntry> = self
+            .db
+            .query("UPDATE $rid SET condition.is_minted = true RETURN BEFORE")
             .bind(("rid", rid))
-            .await?;
-        Ok(())
+            .await?
+            .take(0)?;
+        let before_condition = result.map(|KeysDBEntry { condition, .. }| condition);
+        Ok(before_condition)
     }
 
     async fn info(&self, rid: RecordId) -> SurrealResult<Option<cdk_mint::MintKeySetInfo>> {
-        // more efficient than load and then extract info
-        let result: Option<cdk_mint::MintKeySetInfo> = self
+        let info: Option<cdk_mint::MintKeySetInfo> = self
             .db
-            .query("SELECT info FROM $rid")
+            .query("SELECT VALUE info FROM $rid")
             .bind(("rid", rid))
             .await?
             .take(0)?;
-        Ok(result)
+        Ok(info)
     }
 
     async fn list_info(&self) -> SurrealResult<Vec<cdk_mint::MintKeySetInfo>> {
-        let response: Vec<KeysDBEntry> = self
+        let infos: Vec<cdk_mint::MintKeySetInfo> = self
             .db
-            .query("SELECT * FROM type::table($table)")
+            .query("SELECT VALUE info FROM type::table($table)")
             .bind(("table", self.table.clone()))
             .await?
             .take(0)?;
-        let sets = response
-            .into_iter()
-            .map(KeysetEntry::from)
-            .map(|(info, _)| info)
-            .collect();
-        Ok(sets)
+        Ok(infos)
     }
 
     async fn entry(&self, rid: RecordId) -> SurrealResult<Option<KeysetEntry>> {
@@ -166,6 +162,7 @@ impl DB {
         let response: Vec<KeysDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table)")
+            .bind(("table", self.table.clone()))
             .await?
             .take(0)?;
         let sets = response
@@ -197,10 +194,16 @@ impl KeysRepository for DBKeys {
     }
     async fn mark_as_minted(&self, kid: &cdk02::Id) -> Result<()> {
         let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
-        self.0
+        let before = self
+            .0
             .mark_as_minted(rid)
             .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
+            .ok_or(Error::UnknownKeyset(*kid))?;
+        if before.is_minted {
+            return Err(Error::InvalidMintRequest);
+        }
+        Ok(())
     }
 
     async fn info(&self, kid: &cdk02::Id) -> Result<Option<MintKeySetInfo>> {
@@ -299,7 +302,6 @@ impl QuoteKeysRepository for DBQuoteKeys {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_test;
 
@@ -315,13 +317,158 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn condition() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: false,
+        };
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_from((info, keyset), mint_condition.clone());
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        let rcondition = db.condition(rid).await.unwrap().unwrap();
+        assert_eq!(rcondition, mint_condition);
+    }
+
+    #[tokio::test]
+    async fn info() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: false,
+        };
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        let rinfo = db.info(rid).await.unwrap().unwrap();
+        assert_eq!(rinfo, info);
+    }
+
+    #[tokio::test]
     async fn list_info() {
         let db = init_mem_db().await;
-        let (info, keyset) = keys_test::generate_keyset();
+        {
+            let (info, keyset) = keys_test::generate_random_keyset();
+            let pk = keys_test::publics()[1];
+            let mint_condition = MintCondition {
+                target: Amount::from(99),
+                pub_key: pk,
+                is_minted: false,
+            };
+            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+            let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+        {
+            let (info, keyset) = keys_test::generate_random_keyset();
+            let pk = keys_test::publics()[0];
+            let mint_condition = MintCondition {
+                target: Amount::from(199),
+                pub_key: pk,
+                is_minted: false,
+            };
+            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+            let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+
+        let rinfos = db.list_info().await.unwrap();
+        assert_eq!(rinfos.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn keyset() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: false,
+        };
         let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-        let entry = KeysDBEntry::from((info.clone(), keyset));
-        let _: KeysDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
-        let infos = db.list_info().await.unwrap();
-        assert_eq!(infos.len(), 1);
+        let dbkeys = convert_from((info, keyset.clone()), mint_condition);
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        let rkeys = db.keyset(rid).await.unwrap().unwrap();
+        assert_eq!(rkeys, keyset);
+    }
+
+    #[tokio::test]
+    async fn list_keyset() {
+        let db = init_mem_db().await;
+        {
+            let (info, keyset) = keys_test::generate_random_keyset();
+            let pk = keys_test::publics()[1];
+            let mint_condition = MintCondition {
+                target: Amount::from(99),
+                pub_key: pk,
+                is_minted: false,
+            };
+            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+            let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+        {
+            let (info, keyset) = keys_test::generate_random_keyset();
+            let pk = keys_test::publics()[0];
+            let mint_condition = MintCondition {
+                target: Amount::from(199),
+                pub_key: pk,
+                is_minted: false,
+            };
+            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+            let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+
+        let rkeys = db.list_keyset().await.unwrap();
+        assert_eq!(rkeys.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn mark_as_minted_ok() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: false,
+        };
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_from((info, keyset.clone()), mint_condition);
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        let result = db.mark_as_minted(rid).await.unwrap().unwrap();
+        assert!(!result.is_minted);
+    }
+
+    #[tokio::test]
+    async fn mark_as_minted_ko() {
+        let db = init_mem_db().await;
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: true,
+        };
+        let kid = info.id;
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_from((info, keyset), mint_condition);
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        let dbk = DBKeys(db);
+        let result = dbk.mark_as_minted(&kid).await;
+        assert!(result.is_err());
     }
 }
