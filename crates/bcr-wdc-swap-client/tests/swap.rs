@@ -3,7 +3,7 @@
 use bcr_wdc_key_service::MintCondition;
 use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-use cashu::Amount;
+use cashu::{dhke::blind_message, dhke::construct_proofs, dhke::sign_message, Amount};
 // ----- local imports
 
 #[tokio::test]
@@ -34,8 +34,6 @@ async fn swap() {
     client.swap(proofs, blinds).await.expect("swap");
 }
 
-
-
 #[tokio::test]
 async fn swap_p2pk() {
     let (server, keys_service) = bcr_wdc_swap_service::test_utils::build_test_server();
@@ -51,66 +49,84 @@ async fn swap_p2pk() {
         .store(keys_entry.clone())
         .expect("store");
 
-
     let p2pk_secret = cashu::SecretKey::generate();
     let conditions = cashu::SpendingConditions::new_p2pk(p2pk_secret.public_key(), None);
-    
+
     let mint_keyset = keys_entry.1;
-    let mut output = Vec::with_capacity(3);
+    let amounts = [Amount::from(2), Amount::from(2), Amount::from(4)];
 
-    let amounts = [1,2,4].iter().map(|&x| Amount::from(x)).collect::<Vec<_>>();
-    for amount in &amounts {
-        let secret: cashu::nut10::Secret = conditions.clone().into();
+    let output: Vec<_> = amounts
+        .iter()
+        .map(|amount| {
+            let secret: cashu::nut10::Secret = conditions.clone().into();
+            let secret: cashu::secret::Secret = secret.try_into().unwrap();
+            let (blinded, r) = blind_message(&secret.to_bytes(), None).unwrap();
+            let blinded_message = cashu::BlindedMessage::new(*amount, kid, blinded);
+            (blinded_message, secret, r)
+        })
+        .collect();
 
-        let secret: cashu::secret::Secret = secret.try_into().unwrap();
-        let (blinded, r) = cashu::dhke::blind_message(&secret.to_bytes(), None).unwrap();
-
-        let blinded_message = cashu::BlindedMessage::new(*amount, kid, blinded);
-
-        output.push( (blinded_message, secret, r) )
-    }
-
-    let mut signatures = Vec::new();
-    let mut mint_pubkeys = Vec::new();
-    for (i,amount) in amounts.iter().enumerate() {
-
-
-        let (blinded_message, blinded_secret, _) = output.get(i).unwrap();
-        let mint_secret = mint_keyset.keys.get(&blinded_message.amount).unwrap().secret_key.clone();
-        mint_pubkeys.push(mint_keyset.keys.get(&blinded_message.amount).unwrap().public_key);
-        let c = cashu::dhke::sign_message(&mint_secret, &blinded_message.blinded_secret).unwrap();  
-
-        assert_eq!(*amount,blinded_message.amount);
-
-        let blinded_signature = cashu::nuts::BlindSignature {  
-            amount: blinded_message.amount,  
-            keyset_id: mint_keyset.id,  
-            c,  
-            dleq: None // You can add DLEQ proof if needed  
-        };
-        signatures.push(blinded_signature);
-    }
-
+    let signatures: Vec<_> = output
+        .iter()
+        .map(|(blinded_message, _, _)| {
+            let mint_secret = mint_keyset
+                .keys
+                .get(&blinded_message.amount)
+                .unwrap()
+                .secret_key
+                .clone();
+            let c = sign_message(&mint_secret, &blinded_message.blinded_secret).unwrap();
+            cashu::nuts::BlindSignature {
+                amount: blinded_message.amount,
+                keyset_id: mint_keyset.id,
+                c,
+                dleq: None,
+            }
+        })
+        .collect();
 
     let rs = output.iter().map(|(_, _, r)| r.clone()).collect::<Vec<_>>();
-    let secrets = output.iter().map(|(_, secret, _)| secret.clone()).collect::<Vec<_>>();
-    let collected_keys: std::collections::BTreeMap<cashu::Amount, cashu::PublicKey> = mint_keyset.keys.iter().map(|(amount, mint_key_pair)| (*amount, mint_key_pair.public_key)).collect();
-    let cashu_keys = cashu::Keys::new(collected_keys); 
-    let mut proofs = cashu::dhke::construct_proofs(  signatures,  rs,  secrets,   &cashu_keys ).unwrap();  
-    for p in proofs.iter_mut() {
+    let secrets = output
+        .iter()
+        .map(|(_, secret, _)| secret.clone())
+        .collect::<Vec<_>>();
+    let collected_keys: std::collections::BTreeMap<cashu::Amount, cashu::PublicKey> = mint_keyset
+        .keys
+        .iter()
+        .map(|(amount, mint_key_pair)| (*amount, mint_key_pair.public_key))
+        .collect();
+    let cashu_keys = cashu::Keys::new(collected_keys);
+    let mut correct_proofs =
+        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &cashu_keys).unwrap();
+    for p in correct_proofs.iter_mut() {
         let _ = p.sign_p2pk(p2pk_secret.clone());
     }
 
-    println!("proofs: {:?}", proofs);
-    println!("working proofs: {:?}", signatures_test::generate_proofs(&mint_keyset, &amounts));
-
-    let blinds = signatures_test::generate_blinds(&mint_keyset, &amounts).into_iter()
-        .map(|bbb| bbb.0)
-        .collect();
-
-    for p in proofs.iter() {
-        bcr_wdc_utils::keys::verify_with_keys(&mint_keyset, p).unwrap();
+    let mut incorrect_proofs: Vec<cashu::Proof> =
+        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &cashu_keys).unwrap();
+    for p in incorrect_proofs.iter_mut() {
+        let _ = p.sign_p2pk(cashu::SecretKey::generate());
     }
 
-    client.swap(proofs, blinds).await.expect("swap");
+    let missing_proofs: Vec<cashu::Proof> =
+        cashu::dhke::construct_proofs(signatures, rs, secrets, &cashu_keys).unwrap();
+
+    // Swap 2,2,4 proofs into a single 8 blinded message
+    let single_amount = [Amount::from(8)];
+    let blinds: Vec<cashu::BlindedMessage> =
+        signatures_test::generate_blinds(&mint_keyset, &single_amount)
+            .into_iter()
+            .map(|bbb| bbb.0)
+            .collect();
+
+    let res = client
+        .swap(correct_proofs, blinds.clone())
+        .await
+        .expect("swap");
+    assert_eq!(res[0].amount, Amount::from(8));
+    client
+        .swap(incorrect_proofs, blinds.clone())
+        .await
+        .expect_err("swap");
+    client.swap(missing_proofs, blinds).await.expect_err("swap");
 }
