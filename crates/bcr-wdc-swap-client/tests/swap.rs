@@ -102,7 +102,7 @@ async fn swap_p2pk() {
         let _ = p.sign_p2pk(cashu::SecretKey::generate());
     }
 
-    let missing_proofs: Vec<cashu::Proof> =
+    let missing_p2pk_sig_proofs: Vec<cashu::Proof> =
         cashu::dhke::construct_proofs(signatures, rs, secrets, &cashu_keys).unwrap();
 
     // Swap 2,2,4 proofs into a single 8 blinded message
@@ -116,11 +116,11 @@ async fn swap_p2pk() {
     let res = client
         .swap(correct_proofs, blinds.clone())
         .await
-        .expect("swap");
+        .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));
     client
         .swap(incorrect_proofs, blinds.clone())
         .await
-        .expect_err("swap");
-    client.swap(missing_proofs, blinds).await.expect_err("swap");
+        .expect_err("Swap with incorrect P2PK signatures should fail");
+    client.swap(missing_p2pk_sig_proofs, blinds).await.expect_err("Swap with missing P2PK signatures should fail");
 }
