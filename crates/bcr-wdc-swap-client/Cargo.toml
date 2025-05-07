@@ -2,9 +2,10 @@
 name = "bcr-wdc-swap-client"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
-bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
+bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true}
@@ -12,7 +13,7 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-bcr-wdc-key-service = {path = "../bcr-wdc-key-service", features = ["test-utils"]}
-bcr-wdc-utils = {path = "../bcr-wdc-utils", features = ["test-utils"]}
-bcr-wdc-swap-service = {path = "../bcr-wdc-swap-service", features = ["test-utils"]}
+bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-swap-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 tokio.workspace = true

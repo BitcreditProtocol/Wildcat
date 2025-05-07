@@ -2,13 +2,14 @@
 name = "bcr-wdc-ebpp"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 anyhow = {workspace = true}
 async-stream = {version = "0.3"}
 async-trait = { workspace = true}
 axum = { workspace = true, features = ["macros"]}
-bcr-wdc-webapi = {path = "../bcr-wdc-webapi"}
+bcr-wdc-webapi = {workspace = true}
 bdk_core = {version = "0.4"}
 bdk_electrum = {version = "0.21"}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
