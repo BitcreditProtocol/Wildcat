@@ -2,7 +2,10 @@
 // ----- extra library imports
 use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-use cashu::{dhke::blind_message, dhke::construct_proofs, dhke::sign_message, Amount};
+use cashu::{
+    dhke::{blind_message, construct_proofs, sign_message},
+    Amount,
+};
 // ----- local imports
 
 #[tokio::test]
@@ -84,26 +87,23 @@ async fn swap_p2pk() {
         .iter()
         .map(|(_, secret, _)| secret.clone())
         .collect::<Vec<_>>();
-    let collected_keys: std::collections::BTreeMap<cashu::Amount, cashu::PublicKey> = mint_keyset
-        .keys
-        .iter()
-        .map(|(amount, mint_key_pair)| (*amount, mint_key_pair.public_key))
-        .collect();
-    let cashu_keys = cashu::Keys::new(collected_keys);
+
+    let mint_keys = cashu::KeySet::from(mint_keyset.clone()).keys;
+
     let mut correct_proofs =
-        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &cashu_keys).unwrap();
+        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &mint_keys).unwrap();
     for p in correct_proofs.iter_mut() {
         let _ = p.sign_p2pk(p2pk_secret.clone());
     }
 
     let mut incorrect_proofs: Vec<cashu::Proof> =
-        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &cashu_keys).unwrap();
+        construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &mint_keys).unwrap();
     for p in incorrect_proofs.iter_mut() {
         let _ = p.sign_p2pk(cashu::SecretKey::generate());
     }
 
     let missing_p2pk_sig_proofs: Vec<cashu::Proof> =
-        cashu::dhke::construct_proofs(signatures, rs, secrets, &cashu_keys).unwrap();
+        cashu::dhke::construct_proofs(signatures, rs, secrets, &mint_keys).unwrap();
 
     // Swap 2,2,4 proofs into a single 8 blinded message
     let single_amount = [Amount::from(8)];
@@ -122,5 +122,8 @@ async fn swap_p2pk() {
         .swap(incorrect_proofs, blinds.clone())
         .await
         .expect_err("Swap with incorrect P2PK signatures should fail");
-    client.swap(missing_p2pk_sig_proofs, blinds).await.expect_err("Swap with missing P2PK signatures should fail");
+    client
+        .swap(missing_p2pk_sig_proofs, blinds)
+        .await
+        .expect_err("Swap with missing P2PK signatures should fail");
 }
