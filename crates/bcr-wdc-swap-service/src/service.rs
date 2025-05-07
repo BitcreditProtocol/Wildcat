@@ -75,11 +75,6 @@ where
         inputs: &[cdk00::Proof],
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>> {
-        log::debug!(
-            "Received swap request: {} inputs, {} outputs",
-            inputs.len(),
-            outputs.len(),
-        );
         // cheap verifications
         signatures_utils::basic_proofs_checks(inputs).map_err(Error::InvalidInput)?;
         signatures_utils::basic_blinds_checks(outputs).map_err(Error::InvalidOutput)?;
@@ -115,7 +110,6 @@ where
     }
 
     pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<()> {
-        log::debug!("Received burn request: {} proofs", proofs.len(),);
         // cheap verifications
         signatures_utils::basic_proofs_checks(proofs).map_err(Error::InvalidInput)?;
 
@@ -136,8 +130,6 @@ where
     }
 
     pub async fn recover(&self, proofs: &[cdk00::Proof]) -> Result<()> {
-        log::debug!("Received recover request: {} proofs", proofs.len(),);
-
         self.proofs.remove(proofs).await?;
         Ok(())
     }

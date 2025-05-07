@@ -27,7 +27,7 @@ pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo>(
 where
     QuotesRepo: Repository,
 {
-    log::debug!("Received mint quote request for bill: {}", req.content.id,);
+    tracing::debug!("Received mint quote request for bill: {}", req.content.id,);
 
     verify_signature(&req)?;
 
@@ -88,7 +88,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received mint quote lookup request for id: {}", id);
+    tracing::debug!("Received mint quote lookup request for id: {}", id);
 
     let quote = ctrl.lookup(id).await?;
     Ok(Json(convert_to_enquire_reply(quote)))
@@ -117,7 +117,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received mint quote resolve request for id: {}", id);
+    tracing::debug!("Received mint quote resolve request for id: {}", id);
 
     match req {
         web_quotes::ResolveOffer::Reject => ctrl.reject(id, chrono::Utc::now()).await?,

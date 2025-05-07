@@ -20,9 +20,7 @@ cdk-payment-processor = {workspace = true, features = ["fake"]}
 chrono = {workspace = true}
 config = {workspace = true}
 electrum-client = {version = "0.23"}
-env_logger = {workspace = true}
 futures = {workspace = true}
-log = {workspace = true, features = ["serde"]}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = { workspace = true}
@@ -31,6 +29,9 @@ surrealdb = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
+tracing = {workspace = true }
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true, features = ["serde"]}
 utoipa = { workspace = true}
 utoipa-swagger-ui = {workspace = true, features = ["axum"]}
 uuid = {workspace = true}

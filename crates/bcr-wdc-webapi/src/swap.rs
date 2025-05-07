@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 // ----- end imports
 
 ///--------------------------- Burn tokens
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct BurnRequest {
     pub proofs: Vec<cdk00::Proof>,
 }
@@ -17,7 +17,7 @@ pub struct BurnRequest {
 pub struct BurnResponse {}
 
 ///--------------------------- Recover tokens
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct RecoverRequest {
     pub proofs: Vec<cdk00::Proof>,
 }

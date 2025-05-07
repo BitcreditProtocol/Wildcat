@@ -18,15 +18,16 @@ bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 config.workspace = true
-env_logger.workspace = true
 futures.workspace = true
 itertools = {workspace = true}
-log = {workspace = true, features = ["serde"]}
 rand = {workspace = true, optional = true}
 serde.workspace = true
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}
+tracing = {workspace = true }
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true}
 
 [dev-dependencies]
 bcr-wdc-utils = { workspace = true, features = ["test-utils"] }

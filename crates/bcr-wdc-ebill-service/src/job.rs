@@ -3,8 +3,8 @@ use std::time::Duration;
 // ----- extra library imports
 use bcr_ebill_api::util::date::now;
 use bcr_wdc_ebill_service::AppController;
-use log::{error, info};
 use tokio::time::{interval, sleep};
+use tracing::{error, info};
 // ----- end imports
 
 pub async fn run(

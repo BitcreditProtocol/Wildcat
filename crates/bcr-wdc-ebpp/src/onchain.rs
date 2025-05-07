@@ -422,7 +422,7 @@ fn wallet_full_scan<ElectrumApi>(
         };
         let result = electrum_client.full_scan(request, stop_gap, 1, false);
         if result.is_err() {
-            log::error!("full scan error: {}", result.unwrap_err());
+            tracing::error!("full scan error: {}", result.unwrap_err());
         }
     }
 }

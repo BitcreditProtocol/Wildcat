@@ -108,7 +108,7 @@ where
         let mut retries = 1_usize;
         let mut response = self.wallet.swap_to_messages(outputs).await;
         while response.is_err() && retries <= 3 {
-            log::warn!("swap failed, attempt {}, retry in 1 second", retries);
+            tracing::warn!("swap failed, attempt {}, retry in 1 second", retries);
             tokio::time::sleep(core::time::Duration::from_secs(1)).await;
             response = self.wallet.swap_to_messages(outputs).await;
             retries += 1;

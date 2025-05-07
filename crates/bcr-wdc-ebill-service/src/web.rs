@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::{extract::State, Json};
-use log::{error, info};
+use tracing::{error, info};
 // ----- local imports
 use crate::{error::Result, AppController};
 // ----- end imports

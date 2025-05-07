@@ -124,7 +124,7 @@ pub enum StatusReply {
 }
 
 /// --------------------------- List quotes
-#[derive(Default, Serialize, Deserialize, IntoParams)]
+#[derive(Default, Serialize, Deserialize, IntoParams, Debug)]
 pub struct ListParam {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
@@ -136,7 +136,7 @@ pub struct ListParam {
     pub sort: Option<ListSort>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ListSort {
     BillMaturityDateDesc,
@@ -194,7 +194,7 @@ pub enum InfoReply {
 }
 
 /// --------------------------- Update quote status request
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 #[serde(rename_all = "PascalCase", tag = "action")]
 pub enum UpdateQuoteRequest {
     Deny,

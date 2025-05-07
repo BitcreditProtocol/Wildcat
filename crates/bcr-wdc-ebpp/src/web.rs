@@ -19,13 +19,14 @@ use crate::service::{OnChainWallet, Service};
         (status = 200, description = "Successful response", body = Balance, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn balance<OnChainWlt, PayRepo, EBillCl>(
     State(ctrl): State<Arc<Service<OnChainWlt, PayRepo, EBillCl>>>,
 ) -> Result<Json<Balance>>
 where
     OnChainWlt: OnChainWallet,
 {
-    log::debug!("Received balance");
+    tracing::debug!("Received balance");
 
     let info = ctrl.balance().await?;
     Ok(Json(info.into()))
