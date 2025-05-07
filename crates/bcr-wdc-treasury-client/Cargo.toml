@@ -2,9 +2,10 @@
 name = "bcr-wdc-treasury-client"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
-bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
+bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}

@@ -2,14 +2,15 @@
 name = "bcr-wdc-key-client"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [features]
 test-utils = ["bcr-wdc-key-service", "bcr-wdc-utils", "bcr-wdc-key-service/test-utils"]
 
 [dependencies]
-bcr-wdc-key-service = {path = "../bcr-wdc-key-service", optional = true}
-bcr-wdc-utils = {path = "../bcr-wdc-utils", features = ["test-utils"], optional = true}
-bcr-wdc-webapi = { path = "../bcr-wdc-webapi" }
+bcr-wdc-key-service = {workspace = true, optional = true}
+bcr-wdc-utils = {workspace = true, features = ["test-utils"], optional = true}
+bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
@@ -17,6 +18,6 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-bcr-wdc-key-service = {features = ["test-utils"], path = "../bcr-wdc-key-service"}
-bcr-wdc-utils = {path = "../bcr-wdc-utils", features = ["test-utils"]}
+bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 tokio.workspace = true

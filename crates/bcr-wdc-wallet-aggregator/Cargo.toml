@@ -2,6 +2,7 @@
 name = "bcr-wdc-wallet-aggregator"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [features]
 test-utils = ["axum-test"]
@@ -10,9 +11,9 @@ test-utils = ["axum-test"]
 async-trait.workspace = true
 axum-test = {workspace = true, optional = true}
 axum.workspace = true
-bcr-wdc-key-client = { path = "../bcr-wdc-key-client" }
-bcr-wdc-swap-client = {path = "../bcr-wdc-swap-client"}
-bcr-wdc-treasury-client = {path = "../bcr-wdc-treasury-client"}
+bcr-wdc-key-client = {workspace = true}
+bcr-wdc-swap-client = {workspace = true}
+bcr-wdc-treasury-client = {workspace = true}
 cashu.workspace = true
 cdk = {workspace = true, features = ["wallet"]}
 config = {workspace = true}

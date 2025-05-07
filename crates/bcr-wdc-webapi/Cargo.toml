@@ -2,6 +2,7 @@
 name = "bcr-wdc-webapi"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 
 [lib]
@@ -14,7 +15,7 @@ path = "src/bin/devtool.rs"
 
 [dependencies]
 bcr-ebill-core.workspace = true
-bcr-wdc-utils = { path = "../bcr-wdc-utils", features = ["test-utils"] }
+bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 borsh = {workspace = true, features = ["derive"]}

@@ -2,6 +2,7 @@
 name = "bcr-wdc-key-service"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [features]
 test-utils = ["axum-test"]
@@ -11,13 +12,13 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-wdc-utils = { path = "../bcr-wdc-utils"}
-bcr-wdc-webapi = { path = "../bcr-wdc-webapi"}
+bcr-wdc-utils = {workspace = true}
+bcr-wdc-webapi = {workspace = true}
 bitcoin.workspace = true
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
-config = {version = "0.15"}
+config = {workspace = true}
 env_logger = {workspace = true}
 futures.workspace = true
 itertools = {workspace = true}
@@ -33,6 +34,6 @@ uuid.workspace = true
 
 
 [dev-dependencies]
-bip39 = {version = "2"}
+bip39 = {workspace = true}
 mockall.workspace = true
 surrealdb = {workspace = true, features = ["kv-mem"]}
