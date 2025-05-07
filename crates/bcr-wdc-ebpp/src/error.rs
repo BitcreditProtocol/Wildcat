@@ -68,7 +68,7 @@ pub enum Error {
 
 impl std::convert::From<Error> for cdk_common::payment::Error {
     fn from(e: Error) -> Self {
-        log::error!("Error --> PaymentError: {:?}", e);
+        tracing::error!("Error --> PaymentError: {:?}", e);
         match e {
             Error::TxNotFound(_) => CDKPaymentError::UnknownPaymentState,
             Error::UnknownAmount => CDKPaymentError::Amount(CDKAmountError::InvalidAmount(
@@ -118,7 +118,7 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        log::error!("Error --> axum::Response: {:?}", self);
+        tracing::error!("Error --> axum::Response: {:?}", self);
         let resp = match self {
             Error::PaymentRequestNotFound(reqid) => (
                 StatusCode::NOT_FOUND,

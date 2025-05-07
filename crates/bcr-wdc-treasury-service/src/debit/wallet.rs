@@ -103,7 +103,7 @@ impl Wallet for CDKWallet {
                     .receive_proofs(inputs, ReceiveOptions::default(), None)
                     .await
                     .map_err(Error::CDKWallet)?;
-                log::warn!(
+                tracing::warn!(
                     "swap_to_messages failed with {}, restoring proofs, expected {}, received {}",
                     e,
                     total,

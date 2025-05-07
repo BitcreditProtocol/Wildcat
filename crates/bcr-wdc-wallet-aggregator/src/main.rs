@@ -1,13 +1,12 @@
-use tokio::signal::{
-    ctrl_c,
-    unix::{signal, SignalKind},
-};
+use std::str::FromStr;
+use tokio::signal;
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
     appcfg: bcr_wdc_wallet_aggregator::AppConfig,
-    log_level: log::LevelFilter,
+    log_level: String,
 }
 
 #[tokio::main]
@@ -22,7 +21,12 @@ async fn main() {
         .try_deserialize()
         .expect("Failed to parse wildcat config");
 
-    env_logger::builder().filter_level(maincfg.log_level).init();
+    tracing_log::LogTracer::init().expect("LogTracer init");
+    let level_filter = LevelFilter::from_str(&maincfg.log_level).expect("log level");
+    let stdout_log = tracing_subscriber::fmt::layer().with_filter(level_filter);
+    let subscriber = tracing_subscriber::registry().with(stdout_log);
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("tracing::subscriber::set_global_default");
 
     let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg);
     let router = bcr_wdc_wallet_aggregator::routes(app);

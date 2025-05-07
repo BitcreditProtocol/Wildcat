@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 // ----- local imports
 
 ///--------------------------- generate blinded messages
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct GenerateBlindedMessagesRequest {
     pub kid: cdk02::Id,
     pub total: cashu::Amount,
@@ -20,7 +20,7 @@ pub struct GenerateBlindedMessagesResponse {
 }
 
 ///--------------------------- store blinded signatures
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct StoreBlindSignaturesRequest {
     pub rid: uuid::Uuid,
     pub signatures: Vec<cdk00::BlindSignature>,
@@ -40,7 +40,7 @@ pub struct SignedRequestToMintFromEBillDesc {
 }
 
 /// --------------------------- request to pay ebill
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct RequestToMintFromEBillRequest {
     pub ebill_id: String,
     pub amount: cashu::Amount,

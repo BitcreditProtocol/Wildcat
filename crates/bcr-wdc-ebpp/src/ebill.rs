@@ -13,7 +13,7 @@ pub struct DummyEbillNode;
 #[async_trait]
 impl EBillNode for DummyEbillNode {
     async fn request_to_pay(&self, bill: &str, amount: Amount) -> Result<String> {
-        log::info!(
+        tracing::info!(
             "DummyEbillNode: request_to_pay called with bill: {}, amount: {}",
             bill,
             amount

@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::service::Service;
 use crate::service::{KeysService, ProofRepository};
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn recover_tokens<KeysSrvc, ProofRepo>(
     State(ctrl): State<Service<KeysSrvc, ProofRepo>>,
     Json(request): Json<web_swap::RecoverRequest>,

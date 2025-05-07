@@ -115,7 +115,7 @@ where
     type Err = cdk_common::payment::Error;
 
     async fn get_settings(&self) -> PaymentResult<serde_json::Value> {
-        log::info!("get_settings");
+        let _span = tracing::debug_span!("get_settings");
 
         let settings = Bolt11Settings {
             mpp: false,
@@ -133,10 +133,12 @@ where
         description: String,
         unix_expiry: Option<u64>,
     ) -> PaymentResult<CreateIncomingPaymentResponse> {
-        log::debug!(
-            "create_incoming_payment_request: amount {} in {}, description: {}",
-            amount,
-            unit,
+        let unit_str = unit.to_string();
+        let amount_u: u64 = amount.into();
+        let _span = tracing::debug_span!(
+            "create_incoming_payment_request",
+            amount_u,
+            unit_str,
             description
         );
 
@@ -204,7 +206,7 @@ where
         unit: &CurrencyUnit,
         options: Option<MeltOptions>,
     ) -> PaymentResult<PaymentQuoteResponse> {
-        log::debug!("get_payment_quote, {}", request);
+        let _span = tracing::debug_span!("get_payment_quote", request);
 
         if options.is_some() {
             return Err(PaymentError::UnsupportedPaymentOption);
@@ -233,7 +235,7 @@ where
         partial_amount: Option<Amount>,
         max_fee_amount: Option<Amount>,
     ) -> PaymentResult<MakePaymentResponse> {
-        log::debug!("make_payment, {}", melt_quote.request_lookup_id);
+        let _span = tracing::debug_span!("make_payment", melt_quote.request_lookup_id);
 
         if partial_amount.is_some() {
             return Err(PaymentError::UnsupportedPaymentOption);
@@ -299,7 +301,7 @@ where
         request.total_spent = Some(total_spent);
         let store_result = self.payrepo.update_outgoing(request.clone()).await;
         if let Err(e) = store_result {
-            log::error!(
+            tracing::error!(
                 "Error in storing proof for reqid {}, tx_id {tx_id}, e: {e}",
                 request.reqid
             );
@@ -320,7 +322,7 @@ where
     async fn wait_any_incoming_payment(
         &self,
     ) -> PaymentResult<Pin<Box<dyn Stream<Item = String> + Send>>> {
-        log::info!("wait_any_incoming_payment");
+        let _span = tracing::debug_span!("wait_any_incoming_payment");
 
         let (sender, mut receiver) = mpsc::channel(5);
         let stream = async_stream::stream! {
@@ -335,7 +337,7 @@ where
     }
 
     fn is_wait_invoice_active(&self) -> bool {
-        log::info!("is_wait_invoice_active");
+        let _span = tracing::debug_span!("is_wait_invoice_active");
         let locked_sender = self.payment_notifier.lock().unwrap();
         if let Some(sender) = &*locked_sender {
             !sender.is_closed()
@@ -345,7 +347,7 @@ where
     }
 
     fn cancel_wait_invoice(&self) {
-        log::info!("cancel_wait_invoice");
+        let _span = tracing::debug_span!("cancel_wait_invoice");
         *self.payment_notifier.lock().unwrap() = None;
         let mut locked = self.notif_cancel_token.lock().unwrap();
         locked.cancel();
@@ -356,7 +358,7 @@ where
         &self,
         request_lookup_id: &str,
     ) -> PaymentResult<MintQuoteState> {
-        log::info!("check_incoming_payment_status");
+        let _span = tracing::debug_span!("check_incoming_payment_status");
 
         let reqid =
             Uuid::parse_str(request_lookup_id).map_err(|_| PaymentError::UnknownPaymentState)?;
@@ -379,7 +381,7 @@ where
         &self,
         request_lookup_id: &str,
     ) -> PaymentResult<MakePaymentResponse> {
-        log::warn!("check_outgoing_payment {}", request_lookup_id);
+        let _span = tracing::debug_span!("check_outgoing_payment", request_lookup_id);
 
         let reqid =
             Uuid::parse_str(request_lookup_id).map_err(|_| PaymentError::UnknownPaymentState)?;
@@ -424,21 +426,21 @@ async fn notify_payment<OnChain>(
     loop {
         tokio::select! {
             _ = token.cancelled() => {
-                log::info!("wallet update loop stopping");
+                tracing::info!("wallet update loop stopping");
                 break;
             }
             _ = tokio::time::sleep(pause) => {
-                log::debug!("wallet update loop waking up");
+                tracing::debug!("wallet update loop waking up");
             }
         }
 
         if sender.is_closed() {
-            log::warn!("validate_ebill_request_signature for recipient {recipient}, channel closed, exiting");
+            tracing::warn!("validate_ebill_request_signature for recipient {recipient}, channel closed, exiting");
             return;
         }
         let state_res = check_incoming_payment(&recipient, expected, &onchain).await;
         if let Err(e) = state_res {
-            log::error!("error in checking payment for recipient {recipient}, error: {e}");
+            tracing::error!("error in checking payment for recipient {recipient}, error: {e}");
             continue;
         }
     }

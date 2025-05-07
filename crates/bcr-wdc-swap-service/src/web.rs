@@ -8,6 +8,7 @@ use crate::error::Result;
 use crate::service::Service;
 use crate::service::{KeysService, ProofRepository};
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn swap_tokens<KeysSrvc, ProofRepo>(
     State(ctrl): State<Service<KeysSrvc, ProofRepo>>,
     Json(request): Json<cdk03::SwapRequest>,
@@ -21,6 +22,7 @@ where
     Ok(Json(response))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn burn_tokens<KeysSrvc, ProofRepo>(
     State(ctrl): State<Service<KeysSrvc, ProofRepo>>,
     Json(request): Json<web_swap::BurnRequest>,

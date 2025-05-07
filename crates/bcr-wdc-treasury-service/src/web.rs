@@ -9,6 +9,7 @@ use crate::debit;
 use crate::error::Result;
 
 // ----- crsat APIs
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn generate_blind_messages<Repo, KeySrvc>(
     State(ctrl): State<credit::Service<Repo, KeySrvc>>,
     Json(request): Json<web_signatures::GenerateBlindedMessagesRequest>,
@@ -16,11 +17,7 @@ pub async fn generate_blind_messages<Repo, KeySrvc>(
 where
     Repo: credit::Repository,
 {
-    log::debug!(
-        "Received request to generate blinds for {} id: {}",
-        request.total,
-        request.kid
-    );
+    tracing::debug!("Received request to generate blinds",);
 
     let (rid, blinds) = ctrl.generate_blinds(request.kid, request.total).await?;
     Ok(Json(web_signatures::GenerateBlindedMessagesResponse {
@@ -29,6 +26,7 @@ where
     }))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn store_signatures<Repo, KeySrvc>(
     State(ctrl): State<credit::Service<Repo, KeySrvc>>,
     Json(request): Json<web_signatures::StoreBlindSignaturesRequest>,
@@ -36,17 +34,14 @@ pub async fn store_signatures<Repo, KeySrvc>(
 where
     Repo: credit::Repository,
 {
-    log::debug!(
-        "Received request to store {} signatures rid: {}",
-        request.signatures.len(),
-        request.rid,
-    );
+    tracing::debug!("Received request to store signatures",);
 
     ctrl.store_signatures(request.rid, request.signatures, request.expiration)
         .await?;
     Ok(())
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn crsat_balance<Repo, KeySrvc>(
     State(ctrl): State<credit::Service<Repo, KeySrvc>>,
 ) -> Result<Json<web_wallet::ECashBalance>>
@@ -54,7 +49,7 @@ where
     Repo: credit::Repository,
     KeySrvc: credit::KeyService,
 {
-    log::debug!("Received request to crsat_balance");
+    tracing::debug!("Received request to crsat_balance");
 
     let amount = ctrl.balance().await?;
     let response = web_wallet::ECashBalance {
@@ -65,6 +60,7 @@ where
 }
 
 // ----- sat APIs
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_mint_from_ebill<Wlt, ProofCl>(
     State(ctrl): State<debit::Service<Wlt, ProofCl>>,
     Json(request): Json<web_signatures::RequestToMintFromEBillRequest>,
@@ -72,7 +68,7 @@ pub async fn request_mint_from_ebill<Wlt, ProofCl>(
 where
     Wlt: debit::Wallet,
 {
-    log::debug!("Received request to mint from ebill {}", request.ebill_id);
+    tracing::debug!("Received request to mint from ebill");
 
     let quote = ctrl
         .mint_from_ebill(request.ebill_id, request.amount)
@@ -84,6 +80,7 @@ where
     Ok(Json(response))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn redeem<Wlt, ProofCl>(
     State(ctrl): State<debit::Service<Wlt, ProofCl>>,
     Json(request): Json<cdk03::SwapRequest>,
@@ -92,10 +89,7 @@ where
     Wlt: debit::Wallet,
     ProofCl: debit::ProofClient,
 {
-    log::debug!(
-        "Received request to redeem {} inputs",
-        request.inputs().len()
-    );
+    tracing::debug!("Received request to redeem");
 
     let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
     let response = cdk03::SwapResponse { signatures };
@@ -108,7 +102,7 @@ pub async fn sat_balance<Wlt, ProofCl>(
 where
     Wlt: debit::Wallet,
 {
-    log::debug!("Received request to sat_balance");
+    tracing::debug!("Received request to sat_balance");
 
     let amount = ctrl.balance().await?;
     let response = web_wallet::ECashBalance {

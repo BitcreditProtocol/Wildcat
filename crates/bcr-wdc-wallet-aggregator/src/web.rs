@@ -30,7 +30,7 @@ pub async fn health() -> Result<&'static str> {
     )
 )]
 pub async fn get_mint_info(State(ctrl): State<CDKClient>) -> Result<Json<cdk06::MintInfo>> {
-    log::debug!("Requested /v1/info");
+    tracing::debug!("Requested /v1/info");
 
     let info = ctrl.get_mint_info().await?;
     let info = info
@@ -48,7 +48,7 @@ pub async fn get_mint_info(State(ctrl): State<CDKClient>) -> Result<Json<cdk06::
     )
 )]
 pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cdk01::KeysResponse>> {
-    log::debug!("Requested /v1/keys");
+    tracing::debug!("Requested /v1/keys");
 
     let mut keys = ctrl.cdk_client.get_mint_keys().await?;
     let mut bcr_keys = ctrl.keys_client.list_keys().await.unwrap_or_default();
@@ -67,7 +67,7 @@ pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cdk
 pub async fn get_mint_keysets(
     State(ctrl): State<AppController>,
 ) -> Result<Json<cdk02::KeysetResponse>> {
-    log::debug!("Requested /v1/keysets");
+    tracing::debug!("Requested /v1/keysets");
 
     let mut infos = ctrl.cdk_client.get_mint_keysets().await?;
     let mut bcr_infos = ctrl
@@ -94,7 +94,7 @@ pub async fn get_mint_keyset(
     State(ctrl): State<AppController>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk01::KeysResponse>> {
-    log::debug!("Requested /v1/keys/{}", kid);
+    tracing::debug!("Requested /v1/keys/{}", kid);
 
     let bcr_response = ctrl.keys_client.keys(kid).await;
     if let Ok(keys) = bcr_response {
@@ -121,7 +121,7 @@ pub async fn post_mint_quote(
     State(ctrl): State<CDKClient>,
     Json(request): Json<cdk04::MintQuoteBolt11Request>,
 ) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
-    log::debug!("Requested /v1/mint/quote/bolt11");
+    tracing::debug!("Requested /v1/mint/quote/bolt11");
 
     let response = ctrl.post_mint_quote(request).await?;
     Ok(Json(response))
@@ -142,7 +142,7 @@ pub async fn get_mint_quote_status(
     State(ctrl): State<CDKClient>,
     Path(quote_id): Path<String>,
 ) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
-    log::debug!("Requested /v1/mint/quote/bolt11/{}", quote_id);
+    tracing::debug!("Requested /v1/mint/quote/bolt11/{}", quote_id);
 
     let response = ctrl.get_mint_quote_status(quote_id.as_str()).await?;
     Ok(Json(response))
@@ -159,7 +159,7 @@ pub async fn post_mint(
     State(ctrl): State<CDKClient>,
     Json(request): Json<cdk04::MintBolt11Request<String>>,
 ) -> Result<Json<cdk04::MintBolt11Response>> {
-    log::debug!("Requested /v1/mint/bolt11");
+    tracing::debug!("Requested /v1/mint/bolt11");
 
     let response = ctrl.post_mint(request).await?;
     Ok(Json(response))
@@ -176,7 +176,7 @@ pub async fn post_melt_quote(
     State(ctrl): State<CDKClient>,
     Json(request): Json<cdk05::MeltQuoteBolt11Request>,
 ) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    log::debug!("Requested /v1/melt/quote/bolt11");
+    tracing::debug!("Requested /v1/melt/quote/bolt11");
 
     let response = ctrl.post_melt_quote(request).await?;
     Ok(Json(response))
@@ -197,7 +197,7 @@ pub async fn get_melt_quote_status(
     State(ctrl): State<CDKClient>,
     Path(quote_id): Path<String>,
 ) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    log::debug!("Requested /v1/melt/quote/bolt11/{}", quote_id);
+    tracing::debug!("Requested /v1/melt/quote/bolt11/{}", quote_id);
 
     let response = ctrl.get_melt_quote_status(quote_id.as_str()).await?;
     Ok(Json(response))
@@ -214,7 +214,7 @@ pub async fn post_melt(
     State(ctrl): State<CDKClient>,
     Json(request): Json<cdk05::MeltBolt11Request<String>>,
 ) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    log::debug!("Requested /v1/melt/bolt11");
+    tracing::debug!("Requested /v1/melt/bolt11");
 
     let response = ctrl.post_melt(request).await?;
     Ok(Json(response))
@@ -231,7 +231,7 @@ pub async fn post_swap(
     State(ctrl): State<AppController>,
     Json(request): Json<cdk03::SwapRequest>,
 ) -> Result<Json<cdk03::SwapResponse>> {
-    log::debug!("Requested /v1/swap");
+    tracing::debug!("Requested /v1/swap");
 
     // TODO: potential improvement
     // in a separate, testable function
@@ -276,7 +276,7 @@ pub async fn post_check_state(
     State(ctrl): State<CDKClient>,
     Json(request): Json<cdk07::CheckStateRequest>,
 ) -> Result<Json<cdk07::CheckStateResponse>> {
-    log::debug!("Requested /v1/checkstate");
+    tracing::debug!("Requested /v1/checkstate");
 
     let response = ctrl.post_check_state(request).await?;
     Ok(Json(response))
@@ -293,7 +293,7 @@ pub async fn post_restore(
     State(_ctrl): State<AppController>,
     Json(_request): Json<cdk09::RestoreRequest>,
 ) -> Result<Json<cdk09::RestoreResponse>> {
-    log::debug!("Requested /v1/restore");
+    tracing::debug!("Requested /v1/restore");
 
     Err(Error::NotYet(String::from("post_restore")))
 }

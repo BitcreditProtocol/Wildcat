@@ -19,6 +19,7 @@ use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, W
         (status = 200, description = "Successful response", body = web_quotes::ListReply, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Query(since): Query<Option<chrono::DateTime<chrono::Utc>>>,
@@ -28,7 +29,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received request to list pending quotes");
+    tracing::debug!("Received request to list pending quotes");
 
     let quotes = ctrl.list_pendings(since).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
@@ -107,6 +108,7 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
         (status = 200, description = "Successful response", body = web_quotes::ListReplyLight, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     params: Query<web_quotes::ListParam>,
@@ -116,7 +118,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received request to list quotes");
+    tracing::debug!("Received request to list quotes");
 
     let (filters, sort) = convert_into_list_params(params.0);
     let quotes = ctrl.list_light(filters, sort).await?;
@@ -169,6 +171,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn admin_lookup_quote<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Path(id): Path<uuid::Uuid>,
@@ -178,7 +181,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received mint quote lookup request for id: {}", id);
+    tracing::debug!("Received mint quote lookup request");
 
     let quote = ctrl.lookup(id).await?;
     let response = convert_to_info_reply(quote);
@@ -196,6 +199,7 @@ where
         (status = 200, description = "Successful response", body = web_quotes::UpdateQuoteResponse, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
     Path(id): Path<uuid::Uuid>,
@@ -206,7 +210,7 @@ where
     Wlt: Wallet,
     QuotesRepo: Repository,
 {
-    log::debug!("Received mint quote update request for id: {}", id);
+    tracing::debug!("Received mint quote update request");
 
     let response = match req {
         web_quotes::UpdateQuoteRequest::Deny => {

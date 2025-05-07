@@ -20,15 +20,16 @@ cdk-common = {workspace = true}
 cdk-redb = { workspace = true }
 chrono.workspace = true
 config.workspace = true
-env_logger.workspace = true
 futures = {workspace = true}
 itertools = {workspace = true}
-log = {workspace = true, features = ["serde"]}
 serde.workspace = true
 serde_json = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}
+tracing = {workspace = true }
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true}
 uuid.workspace = true
 
 [dev-dependencies]

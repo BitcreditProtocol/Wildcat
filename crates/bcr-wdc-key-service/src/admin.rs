@@ -16,6 +16,7 @@ use crate::service::{KeysRepository, QuoteKeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sign_blind<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(blind): Json<cdk00::BlindedMessage>,
@@ -23,7 +24,7 @@ pub async fn sign_blind<QuotesKeysRepo, KeysRepo>(
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received sign blind request");
+    tracing::debug!("Received sign blind request");
     ctrl.sign_blind(&blind).await.map(Json)
 }
 
@@ -36,6 +37,7 @@ where
         (status = 400, description = "proof verification failed"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn verify_proof<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(proof): Json<cdk00::Proof>,
@@ -43,7 +45,7 @@ pub async fn verify_proof<QuotesKeysRepo, KeysRepo>(
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received verify proof request");
+    tracing::debug!("Received verify proof request");
     ctrl.verify_proof(proof).await
 }
 
@@ -56,6 +58,7 @@ where
         (status = 404, description = "keyset id not found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn generate<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(request): Json<web_keys::GenerateKeysetRequest>,
@@ -63,7 +66,7 @@ pub async fn generate<QuotesKeysRepo, KeysRepo>(
 where
     QuotesKeysRepo: QuoteKeysRepository,
 {
-    log::debug!("Received generate request for qid {}", request.qid);
+    tracing::debug!("Received generate request");
     let kid = ctrl
         .generate_keyset(
             request.qid,
@@ -84,6 +87,7 @@ where
         (status = 404, description = "keyset id not  found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn pre_sign<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(request): Json<web_keys::PreSignRequest>,
@@ -91,7 +95,7 @@ pub async fn pre_sign<QuotesKeysRepo, KeysRepo>(
 where
     QuotesKeysRepo: QuoteKeysRepository,
 {
-    log::debug!("Received pre_sign request");
+    tracing::debug!("Received pre_sign request");
     let sig = ctrl.pre_sign(request.qid, &request.msg).await?;
     Ok(Json(sig))
 }
@@ -105,6 +109,7 @@ where
         (status = 404, description = "keyset id not found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn activate<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Json(request): Json<web_keys::ActivateKeysetRequest>,
@@ -113,6 +118,6 @@ where
     QuotesKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received activate request for qid {}", request.qid);
+    tracing::debug!("Received activate request");
     ctrl.activate(&request.qid).await
 }

@@ -1,7 +1,9 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
-use log::info;
 use tokio::signal;
+use tracing::info;
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 // ----- local modules
 mod job;
 // ----- end imports
@@ -10,7 +12,7 @@ mod job;
 struct MainConfig {
     bind_address: std::net::SocketAddr,
     appcfg: bcr_wdc_ebill_service::AppConfig,
-    log_level: log::LevelFilter,
+    log_level: String,
 }
 
 #[tokio::main]
@@ -29,7 +31,12 @@ async fn main() {
         .try_deserialize()
         .expect("Failed to parse ebill config");
 
-    env_logger::builder().filter_level(maincfg.log_level).init();
+    tracing_log::LogTracer::init().expect("LogTracer init");
+    let level_filter = LevelFilter::from_str(&maincfg.log_level).expect("log level");
+    let stdout_log = tracing_subscriber::fmt::layer().with_filter(level_filter);
+    let subscriber = tracing_subscriber::registry().with(stdout_log);
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("tracing::subscriber::set_global_default");
 
     // create bcr_ebill_api config
     let api_config = bcr_ebill_api::Config {

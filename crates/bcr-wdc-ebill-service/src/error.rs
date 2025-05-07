@@ -30,7 +30,7 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        log::error!("Error: {self}");
+        tracing::error!("Error: {self}");
         let response = match self {
             Error::Service(e) => ServiceError(e).into_response(),
             Error::BillService(e) => BillServiceError(e).into_response(),

@@ -21,6 +21,7 @@ use crate::service::{KeysRepository, Service};
         (status = 404, description = "keyset id not  found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_keysets<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Path(kid): Path<cdk02::Id>,
@@ -28,7 +29,7 @@ pub async fn lookup_keysets<QuotesKeysRepo, KeysRepo>(
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received keyset lookup request for id: {}", kid);
+    tracing::debug!("Received keyset lookup request");
 
     let info = ctrl.info(kid).await?;
     Ok(Json(info.into()))
@@ -43,13 +44,14 @@ where
         (status = 200, description = "Successful response", body = cdk02::KeysetResponse, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keysets<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
 ) -> Result<Json<cdk02::KeysetResponse>>
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received keyset list request");
+    tracing::debug!("Received keysets list request");
 
     let infos = ctrl
         .list_info()
@@ -73,6 +75,7 @@ where
         (status = 404, description = "keyset id not  found"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_keys<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
     Path(kid): Path<cdk02::Id>,
@@ -80,7 +83,7 @@ pub async fn lookup_keys<QuotesKeysRepo, KeysRepo>(
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received keyset lookup request for id: {}", kid);
+    tracing::debug!("Received keyset lookup request");
 
     let keyset = ctrl.keys(kid).await?;
     Ok(Json(keyset.into()))
@@ -95,13 +98,14 @@ where
         (status = 200, description = "Successful response", body = cdk01::KeysResponse, content_type = "application/json"),
     )
 )]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keys<QuotesKeysRepo, KeysRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
 ) -> Result<Json<cdk01::KeysResponse>>
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received keyset list request ");
+    tracing::debug!("Received keys list request");
 
     let keysets = ctrl
         .list_keyset()
@@ -129,7 +133,7 @@ pub async fn mint_ebill<QuotesKeysRepo, KeysRepo>(
 where
     KeysRepo: KeysRepository,
 {
-    log::debug!("Received mint request for qid {}", req.quote);
+    tracing::debug!("Received mint request for");
 
     let kid = req
         .outputs
