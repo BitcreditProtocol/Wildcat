@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "bcr-wdc-webapi-devtool"
 path = "src/bin/devtool.rs"
+required-features = ["test-utils"]
 
 [dependencies]
 bcr-ebill-core.workspace = true
@@ -27,3 +28,7 @@ serde.workspace = true
 strum = {workspace = true, features = ["derive"]}
 utoipa = {workspace = true, features = ["chrono", "uuid", "decimal"]}
 uuid = {workspace = true, features = ["serde"]}
+
+[features]
+default = []
+test-utils = []
