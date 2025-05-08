@@ -6,7 +6,6 @@ use bcr_wdc_webapi::quotes::{
 };
 use bdk_wallet::serde_json;
 use cashu::Amount;
-use chrono::NaiveTime;
 use rand::Rng;
 // ----- local imports
 use bcr_wdc_webapi::test_utils::{random_bill_id, random_date, random_identity_public_data};
