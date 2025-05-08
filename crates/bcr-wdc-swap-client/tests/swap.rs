@@ -46,10 +46,16 @@ async fn swap_p2pk() {
     let keys_entry = keys_test::generate_keyset();
     let kid = keys_entry.0.id;
 
+    let condition = MintCondition {
+        target: Amount::ZERO,
+        pub_key: keys_test::publics()[0],
+        is_minted: true,
+    };
+
     keys_service
         .keys
         .keys
-        .store(keys_entry.clone())
+        .store(keys_entry.clone(), condition)
         .expect("store");
 
     let p2pk_secret = cashu::SecretKey::generate();
