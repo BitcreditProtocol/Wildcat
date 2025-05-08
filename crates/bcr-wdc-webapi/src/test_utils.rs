@@ -163,4 +163,3 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, IdentityPu
     let random_identity = sample[random_index].clone();
     (keypair, random_identity)
 }
-
