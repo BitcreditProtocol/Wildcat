@@ -57,14 +57,9 @@ fn random_ebill() -> (Keypair, BillInfo, bitcoin::secp256k1::schnorr::Signature)
 
 
 fn random_date() -> String {
-    let start = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
-        .expect("naivedate")
-        .and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("NaiveTime"))
-        .and_utc();
-    let mut rng = rand::thread_rng();
-    let days = chrono::Duration::days(rng.gen_range(0..365));
-    let random_date = start + days;
-    random_date.to_rfc3339()
+    let start = chrono::Utc::now() + chrono::Duration::days(365);
+    let days = rand::thread_rng().gen_range(0..365);
+    (start + chrono::Duration::days(days) ).to_rfc3339()
 }
 
 fn get_amounts(mut targ: u64) -> Vec<u64> { // TODO see if there is an existing cashu implementation
@@ -94,8 +89,8 @@ pub fn generate_blinds(
 
 
 #[tokio::test]
-async fn should_mint_ebill(){
-    
+async fn can_mint_ebill(){
+
     setup_tracing();
 
     let (owner_key,bill, signature) = random_ebill();
@@ -194,19 +189,31 @@ async fn should_mint_ebill(){
         activate_response.status()
     );
 
-    let keyset_info_url = format!("http://localhost:4001/v1/keysets/{}", keyset_id);
-    info!("Getting keyset info from: {}", keyset_info_url);
-    let keyset_info_response = client
-        .get(&keyset_info_url)
-        .send()
-        .await
-        .unwrap();
+    // let keyset_info_url = format!("http://localhost:4001/v1/keysets/{}", keyset_id);
+    // info!("Getting keyset info from: {}", keyset_info_url);
+    // let keyset_info_response = client
+    //     .get(&keyset_info_url)
+    //     .send()
+    //     .await
+    //     .unwrap();
 
-    let keyset_info = keyset_info_response
-        .json::<cdk02::KeySetInfo>()
-        .await
-        .unwrap();
+    // let keyset_info = keyset_info_response
+    //     .json::<cdk02::KeySetInfo>()
+    //     .await
+    //     .unwrap();
     
+    // assert!(keyset_info.active);
+
+    // Json<cdk02::KeysetResponse>
+    //     url = f"http://localhost:4343/v1/keysets"
+    // response = requests.get(url)
+    // print(response.text)
+    // get all keysets from mint and see if our keyset is in the list and active
+    let keysets_response = client.get("http://localhost:4343/v1/keysets").send().await.unwrap();
+    let keysets = keysets_response.json::<cdk02::KeysetResponse>().await.unwrap();
+    assert!(keysets.keysets.iter().any(|ks| ks.id == keyset_id));
+    assert!(keysets.keysets.iter().any(|ks| ks.active));
+    let keyset_info = keysets.keysets.iter().find(|ks| ks.id == keyset_id).unwrap();
     assert!(keyset_info.active);
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
