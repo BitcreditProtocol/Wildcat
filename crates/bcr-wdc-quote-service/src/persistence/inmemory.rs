@@ -45,7 +45,11 @@ impl Repository for QuotesIDMap {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
 
-    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+    async fn update_status_if_pending(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::QuoteStatus,
+    ) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
@@ -56,7 +60,11 @@ impl Repository for QuotesIDMap {
         Ok(())
     }
 
-    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+    async fn update_status_if_offered(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::QuoteStatus,
+    ) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {

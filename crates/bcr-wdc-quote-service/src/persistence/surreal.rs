@@ -211,7 +211,11 @@ impl Repository for DBQuotes {
         Ok(res)
     }
 
-    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+    async fn update_status_if_pending(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::QuoteStatus,
+    ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<DBEntryQuote> = self
             .db
@@ -228,7 +232,11 @@ impl Repository for DBQuotes {
         Ok(())
     }
 
-    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+    async fn update_status_if_offered(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::QuoteStatus,
+    ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<DBEntryQuote> = self
             .db
@@ -301,6 +309,125 @@ mod tests {
             db: sdb,
             table: String::from("test"),
         }
+    }
+
+    #[tokio::test]
+    async fn update_status_if_pending_ok() {
+        let db = init_mem_db().await;
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::default(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
+        };
+        let dbquote = DBEntryQuote::from(quote.clone());
+        let rid = RecordId::from_table_key(&db.table, quote.id);
+        let _inserted: DBEntryQuote = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
+
+        quote.status = quotes::QuoteStatus::Offered {
+            keyset_id: keys_test::generate_random_keysetid(),
+            ttl: TStamp::default(),
+        };
+        let res = db.update_status_if_pending(quote.id, quote.status).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn update_status_if_pending_ko() {
+        let db = init_mem_db().await;
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::default(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::QuoteStatus::Rejected {
+                tstamp: TStamp::default(),
+            },
+        };
+        let dbquote = DBEntryQuote::from(quote.clone());
+        let rid = RecordId::from_table_key(&db.table, quote.id);
+        let _inserted: DBEntryQuote = db
+            .db
+            .insert(rid.clone())
+            .content(dbquote)
+            .await
+            .unwrap()
+            .unwrap();
+
+        quote.status = quotes::QuoteStatus::Offered {
+            keyset_id: keys_test::generate_random_keysetid(),
+            ttl: TStamp::default(),
+        };
+        let res = db.update_status_if_pending(quote.id, quote.status).await;
+        assert!(res.is_err());
+
+        let content: Option<DBEntryQuote> = db.db.select(rid).await.unwrap();
+        assert!(content.is_some());
+        let content = content.unwrap();
+        assert!(matches!(
+            content.status,
+            quotes::QuoteStatus::Rejected { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn update_status_if_offered_ok() {
+        let db = init_mem_db().await;
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::default(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::QuoteStatus::Offered {
+                keyset_id: keys_test::generate_random_keysetid(),
+                ttl: TStamp::default(),
+            },
+        };
+        let dbquote = DBEntryQuote::from(quote.clone());
+        let rid = RecordId::from_table_key(&db.table, quote.id);
+        let _inserted: DBEntryQuote = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
+
+        quote.status = quotes::QuoteStatus::Accepted {
+            keyset_id: keys_test::generate_random_keysetid(),
+        };
+        let res = db.update_status_if_offered(quote.id, quote.status).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn update_status_if_offered_ko() {
+        let db = init_mem_db().await;
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::default(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::QuoteStatus::Denied,
+        };
+        let dbquote = DBEntryQuote::from(quote.clone());
+        let rid = RecordId::from_table_key(&db.table, quote.id);
+        let _inserted: DBEntryQuote = db
+            .db
+            .insert(rid.clone())
+            .content(dbquote)
+            .await
+            .unwrap()
+            .unwrap();
+
+        quote.status = quotes::QuoteStatus::Offered {
+            keyset_id: keys_test::generate_random_keysetid(),
+            ttl: TStamp::default(),
+        };
+        let res = db.update_status_if_offered(quote.id, quote.status).await;
+        assert!(res.is_err());
+
+        let content: Option<DBEntryQuote> = db.db.select(rid).await.unwrap();
+        assert!(content.is_some());
+        let content = content.unwrap();
+        assert!(matches!(content.status, quotes::QuoteStatus::Denied));
     }
 
     #[tokio::test]
