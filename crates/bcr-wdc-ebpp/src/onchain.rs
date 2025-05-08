@@ -596,8 +596,6 @@ mod tests {
             "03e416ffcdde3d5b83a1940fda7aec1179ed3382d080da9c2672c02115a37ad45e";
         let (descr, keymap) =
             Descriptor::parse_descriptor(secp256k1::global::SECP256K1, descriptor).unwrap();
-        dbg!(&descr);
-        dbg!(&keymap);
 
         let tmp_dir = tempfile::tempdir().unwrap();
         let network = btc::Network::Testnet;

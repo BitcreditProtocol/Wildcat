@@ -86,9 +86,7 @@ impl ProofRepository for ProofDB {
 
 fn proof_to_record_id(main_table: &str, proof: &cdk00::Proof) -> RecordId {
     let table = main_table.to_string() + &proof.keyset_id.to_string();
-    let rid = RecordId::from_table_key(table, proof.secret.to_string());
-    dbg!(&rid);
-    rid
+    RecordId::from_table_key(table, proof.secret.to_string())
 }
 
 #[cfg(test)]
@@ -142,7 +140,6 @@ mod tests {
 
         let res = db.insert(&proofs).await;
         assert!(res.is_err());
-        dbg!(&res);
         assert!(matches!(res.unwrap_err(), Error::ProofsAlreadySpent));
     }
 

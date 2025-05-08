@@ -208,7 +208,6 @@ mod tests {
         };
 
         let r = swaps.swap(&inputs, &outputs).await;
-        dbg!(&r);
         assert!(r.is_err());
         let e = r.unwrap_err();
         assert!(matches!(e, Error::UnknownKeyset(_)));

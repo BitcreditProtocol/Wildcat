@@ -214,7 +214,6 @@ impl DBRepository {
             .bind(("table", self.proofs.clone()))
             .await?
             .take(0)?;
-        dbg!(&balances);
         let mut ret_val = Vec::with_capacity(balances.len());
         for balance in balances {
             let DBEntryBalance { keyset_id, amount } = balance;
