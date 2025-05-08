@@ -40,6 +40,9 @@ build-docker-ebpp: build-docker-base-image
 build-docker-ebill-service: build-docker-base-image
     docker build -t wildcat/ebill-service -f docker/ebill-service/Dockerfile .
 
+build-docker-e2e-tests: build-docker-base-image
+    docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
+
 build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-ebpp build-docker-ebill-service
 
 openapi-generate-docs:
