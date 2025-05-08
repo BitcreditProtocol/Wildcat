@@ -11,8 +11,8 @@ members = [
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
     "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-ebpp",
+    "crates/bcr-wdc-ebill-service",
 ]
-
 
 [workspace.dependencies]
 anyhow = {version = "1"}
