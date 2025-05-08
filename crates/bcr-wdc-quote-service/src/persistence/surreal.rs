@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use cashu::nuts::{nut01 as cdk01, nut02 as cdk02};
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
@@ -12,163 +11,32 @@ use crate::quotes;
 use crate::service::{ListFilters, Repository, SortOrder};
 use crate::TStamp;
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, strum::Display)]
-enum DBEntryQuoteStatus {
-    #[default]
-    Pending,
-    Denied,
-    Offered,
-    Rejected,
-    Accepted,
-}
-impl From<&quotes::QuoteStatus> for DBEntryQuoteStatus {
-    fn from(value: &quotes::QuoteStatus) -> Self {
-        match value {
-            quotes::QuoteStatus::Pending { .. } => Self::Pending,
-            quotes::QuoteStatus::Denied => Self::Denied,
-            quotes::QuoteStatus::Offered { .. } => Self::Offered,
-            quotes::QuoteStatus::Rejected { .. } => Self::Rejected,
-            quotes::QuoteStatus::Accepted { .. } => Self::Accepted,
-        }
-    }
-}
-impl From<DBEntryQuoteStatus> for quotes::QuoteStatusDiscriminants {
-    fn from(value: DBEntryQuoteStatus) -> Self {
-        match value {
-            DBEntryQuoteStatus::Pending => Self::Pending,
-            DBEntryQuoteStatus::Denied => Self::Denied,
-            DBEntryQuoteStatus::Offered => Self::Offered,
-            DBEntryQuoteStatus::Rejected => Self::Rejected,
-            DBEntryQuoteStatus::Accepted => Self::Accepted,
-        }
-    }
-}
-impl From<quotes::QuoteStatusDiscriminants> for DBEntryQuoteStatus {
-    fn from(value: quotes::QuoteStatusDiscriminants) -> Self {
-        match value {
-            quotes::QuoteStatusDiscriminants::Pending => Self::Pending,
-            quotes::QuoteStatusDiscriminants::Denied => Self::Denied,
-            quotes::QuoteStatusDiscriminants::Offered => Self::Offered,
-            quotes::QuoteStatusDiscriminants::Rejected => Self::Rejected,
-            quotes::QuoteStatusDiscriminants::Accepted => Self::Accepted,
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryQuote {
-    qid: surrealdb::Uuid, // can't be `id`, reserved world in surreal
+    qid: surrealdb::Uuid, // can't be `id`, reserved word in surreal
     bill: quotes::BillInfo,
     submitted: TStamp,
-    status: DBEntryQuoteStatus,
-    public_key: Option<cdk01::PublicKey>,
-    keyset_id: Option<cdk02::Id>,
-    ttl: Option<TStamp>,
-    rejection: Option<TStamp>,
+    status: quotes::QuoteStatus,
+}
+
+impl From<DBEntryQuote> for quotes::Quote {
+    fn from(dbq: DBEntryQuote) -> Self {
+        Self {
+            id: dbq.qid,
+            bill: dbq.bill,
+            submitted: dbq.submitted,
+            status: dbq.status,
+        }
+    }
 }
 
 impl From<quotes::Quote> for DBEntryQuote {
-    fn from(q: quotes::Quote) -> Self {
-        match q.status {
-            quotes::QuoteStatus::Pending { public_key } => Self {
-                qid: q.id,
-                bill: q.bill,
-                submitted: q.submitted,
-                status: DBEntryQuoteStatus::Pending,
-                public_key: Some(public_key),
-                keyset_id: None,
-                ttl: Default::default(),
-                rejection: Default::default(),
-            },
-            quotes::QuoteStatus::Denied => Self {
-                qid: q.id,
-                bill: q.bill,
-                submitted: q.submitted,
-                status: DBEntryQuoteStatus::Denied,
-                public_key: None,
-                keyset_id: None,
-                ttl: Default::default(),
-                rejection: Default::default(),
-            },
-            quotes::QuoteStatus::Offered { keyset_id, ttl } => Self {
-                qid: q.id,
-                bill: q.bill,
-                submitted: q.submitted,
-                status: DBEntryQuoteStatus::Accepted,
-                public_key: None,
-                keyset_id: Some(keyset_id),
-                ttl: Some(ttl),
-                rejection: Default::default(),
-            },
-            quotes::QuoteStatus::Rejected { tstamp } => Self {
-                qid: q.id,
-                bill: q.bill,
-                submitted: q.submitted,
-                status: DBEntryQuoteStatus::Rejected,
-                rejection: Some(tstamp),
-                public_key: None,
-                keyset_id: None,
-                ttl: Default::default(),
-            },
-            quotes::QuoteStatus::Accepted { keyset_id } => Self {
-                qid: q.id,
-                bill: q.bill,
-                submitted: q.submitted,
-                status: DBEntryQuoteStatus::Accepted,
-                public_key: None,
-                keyset_id: Some(keyset_id),
-                ttl: Default::default(),
-                rejection: Default::default(),
-            },
-        }
-    }
-}
-
-impl TryFrom<DBEntryQuote> for quotes::Quote {
-    type Error = AnyError;
-    fn try_from(dbq: DBEntryQuote) -> Result<Self, Self::Error> {
-        match dbq.status {
-            DBEntryQuoteStatus::Pending => Ok(Self {
-                id: dbq.qid,
-                bill: dbq.bill,
-                submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Pending {
-                    public_key: dbq
-                        .public_key
-                        .ok_or_else(|| anyhow!("missing public key"))?,
-                },
-            }),
-            DBEntryQuoteStatus::Denied => Ok(Self {
-                id: dbq.qid,
-                bill: dbq.bill,
-                submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Denied,
-            }),
-            DBEntryQuoteStatus::Offered => Ok(Self {
-                id: dbq.qid,
-                bill: dbq.bill,
-                submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Offered {
-                    keyset_id: dbq.keyset_id.ok_or_else(|| anyhow!("missing keyset_id"))?,
-                    ttl: dbq.ttl.ok_or_else(|| anyhow!("missing ttl"))?,
-                },
-            }),
-            DBEntryQuoteStatus::Rejected => Ok(Self {
-                id: dbq.qid,
-                bill: dbq.bill,
-                submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Rejected {
-                    tstamp: dbq.rejection.ok_or_else(|| anyhow!("missing rejection"))?,
-                },
-            }),
-            DBEntryQuoteStatus::Accepted => Ok(Self {
-                id: dbq.qid,
-                bill: dbq.bill,
-                submitted: dbq.submitted,
-                status: quotes::QuoteStatus::Accepted {
-                    keyset_id: dbq.keyset_id.ok_or_else(|| anyhow!("missing keyset_id"))?,
-                },
-            }),
+    fn from(quote: quotes::Quote) -> Self {
+        Self {
+            qid: quote.id,
+            bill: quote.bill,
+            submitted: quote.submitted,
+            status: quote.status,
         }
     }
 }
@@ -176,7 +44,7 @@ impl TryFrom<DBEntryQuote> for quotes::Quote {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct DBEntryLightQuote {
     qid: uuid::Uuid,
-    status: DBEntryQuoteStatus,
+    status: quotes::QuoteStatus,
     sum: bitcoin::Amount,
 }
 impl From<DBEntryLightQuote> for quotes::LightQuote {
@@ -262,8 +130,8 @@ impl DBQuotes {
             filters.bill_maturity_date_to,
             "bill.maturity_date <= $bill_maturity_date_to"
         );
-        let status = filters.status.map(DBEntryQuoteStatus::from);
-        add_filter_statement!(statement, first, status, "status == $status");
+        let status = filters.status;
+        add_filter_statement!(statement, first, status, "status.status == $status");
         add_filter_statement!(
             statement,
             first,
@@ -308,7 +176,7 @@ impl DBQuotes {
 
     async fn list_by_status(
         &self,
-        status: DBEntryQuoteStatus,
+        status: quotes::QuoteStatusDiscriminants,
         since: Option<TStamp>,
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = self
@@ -339,42 +207,49 @@ impl DBQuotes {
 #[async_trait]
 impl Repository for DBQuotes {
     async fn load(&self, qid: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
-        self.load(qid)
-            .await?
-            .map(std::convert::TryInto::try_into)
-            .transpose()
+        let res = self.load(qid).await?.map(quotes::Quote::from);
+        Ok(res)
     }
 
-    async fn update_if_pending(&self, new: quotes::Quote) -> AnyResult<()> {
-        if matches!(new.status, quotes::QuoteStatus::Pending { .. }) {
-            return Err(anyhow!("cannot update to pending"));
-        }
-        let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
-        self.db
-            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+        let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
+        let before: Option<DBEntryQuote> = self
+            .db
+            .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE ")
             .bind(("rid", recordid))
-            .bind(("new", DBEntryQuote::from(new)))
-            .bind(("status", DBEntryQuoteStatus::Pending))
-            .await?;
+            .bind(("new", new))
+            .bind(("status", quotes::QuoteStatusDiscriminants::Pending))
+            .await?
+            .take(0)?;
+        let before = before.ok_or(anyhow::anyhow!("Quote not found or not pending"))?;
+        if !matches!(before.status, quotes::QuoteStatus::Pending { .. }) {
+            return Err(anyhow::anyhow!("Quote not pending"));
+        }
         Ok(())
     }
 
-    async fn update_if_offered(&self, new: quotes::Quote) -> AnyResult<()> {
-        if matches!(new.status, quotes::QuoteStatus::Pending { .. }) {
-            return Err(anyhow!("cannot update to pending"));
-        }
-        let recordid = surrealdb::RecordId::from_table_key(&self.table, new.id);
-        self.db
-            .query("UPDATE $rid CONTENT $new WHERE status == $status")
+    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
+        let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
+        let before: Option<DBEntryQuote> = self
+            .db
+            .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
             .bind(("rid", recordid))
-            .bind(("new", DBEntryQuote::from(new)))
-            .bind(("status", DBEntryQuoteStatus::Offered))
-            .await?;
+            .bind(("new", new))
+            .bind(("status", quotes::QuoteStatusDiscriminants::Offered))
+            .await?
+            .take(0)?;
+        if before.is_none() {
+            return Err(anyhow::anyhow!("Quote not found or not pending"));
+        }
+        let before = before.unwrap();
+        if !matches!(before.status, quotes::QuoteStatus::Offered { .. }) {
+            return Err(anyhow::anyhow!("Quote not offered"));
+        }
         Ok(())
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
-        self.list_by_status(DBEntryQuoteStatus::Pending, since)
+        self.list_by_status(quotes::QuoteStatusDiscriminants::Pending, since)
             .await
             .map_err(Into::into)
     }
@@ -393,11 +268,13 @@ impl Repository for DBQuotes {
     }
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
-        self.search_by_bill(bill, endorser)
+        let res = self
+            .search_by_bill(bill, endorser)
             .await?
             .into_iter()
-            .map(std::convert::TryInto::try_into)
-            .collect()
+            .map(quotes::Quote::from)
+            .collect();
+        Ok(res)
     }
 
     async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
@@ -411,6 +288,7 @@ mod tests {
     use super::*;
     use crate::service;
     use bcr_ebill_core::contact::IdentityPublicData;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
     use std::str::FromStr;
     use surrealdb::RecordId;
 
@@ -433,7 +311,9 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid);
         let entry = DBEntryQuote {
             qid,
-            status: DBEntryQuoteStatus::Pending,
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
             bill: quotes::BillInfo {
                 drawee: IdentityPublicData {
                     node_id: String::from("drawee"),
@@ -451,7 +331,7 @@ mod tests {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
-            ..Default::default()
+            submitted: TStamp::default(),
         };
         let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
@@ -500,12 +380,14 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid1);
         let entry = DBEntryQuote {
             qid: qid1,
-            status: DBEntryQuoteStatus::Pending,
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
-            ..Default::default()
+            submitted: TStamp::default(),
         };
         let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
@@ -513,12 +395,14 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid2);
         let entry = DBEntryQuote {
             qid: qid2,
-            status: DBEntryQuoteStatus::Pending,
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2020-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
-            ..Default::default()
+            submitted: TStamp::default(),
         };
         let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
@@ -526,12 +410,14 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid3);
         let entry = DBEntryQuote {
             qid: qid3,
-            status: DBEntryQuoteStatus::Pending,
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2022-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
-            ..Default::default()
+            submitted: TStamp::default(),
         };
         let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
@@ -564,7 +450,9 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid1);
         let entry = DBEntryQuote {
             qid: qid1,
-            status: DBEntryQuoteStatus::Pending,
+            status: quotes::QuoteStatus::Pending {
+                public_key: keys_test::publics()[0],
+            },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 current_holder: IdentityPublicData {
@@ -573,7 +461,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            ..Default::default()
+            submitted: TStamp::default(),
         };
         let _: DBEntryQuote = db
             .db

@@ -45,29 +45,23 @@ impl Repository for QuotesIDMap {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
 
-    async fn update_if_pending(&self, new: quotes::Quote) -> AnyResult<()> {
-        let id = new.id;
+    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
-        let result = m.remove(&id);
+        let result = m.get_mut(&qid);
         if let Some(old) = result {
             if matches!(old.status, quotes::QuoteStatus::Pending { .. }) {
-                m.insert(id, new);
-            } else {
-                m.insert(id, old);
+                old.status = new;
             }
         }
         Ok(())
     }
 
-    async fn update_if_offered(&self, new: quotes::Quote) -> AnyResult<()> {
-        let id = new.id;
+    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::QuoteStatus) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
-        let result = m.remove(&id);
+        let result = m.get_mut(&qid);
         if let Some(old) = result {
             if matches!(old.status, quotes::QuoteStatus::Offered { .. }) {
-                m.insert(id, new);
-            } else {
-                m.insert(id, old);
+                old.status = new;
             }
         }
         Ok(())

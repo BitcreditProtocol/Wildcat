@@ -53,8 +53,9 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
     }
 }
 
-#[derive(Debug, Clone, strum::EnumDiscriminants)]
-#[strum_discriminants(derive(serde::Serialize))]
+#[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize))]
+#[serde(tag = "status")]
 pub enum QuoteStatus {
     Pending { public_key: cdk01::PublicKey },
     Denied,
