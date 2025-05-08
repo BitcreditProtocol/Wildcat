@@ -84,7 +84,6 @@ impl Service<UserService> {
         self.client.post(url, &req).await.unwrap()
     }
     pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> StatusReply {
-        // GET Uuid, StatusReply
         let url = self.url(&format!("v1/mint/credit/quote/{quote_id}"));
         self.client.get(url).await.unwrap()
     }
