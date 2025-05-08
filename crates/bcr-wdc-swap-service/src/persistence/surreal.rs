@@ -2,7 +2,6 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use cashu::dhke as cdk_dhke;
 use cashu::nuts::nut00 as cdk00;
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
@@ -23,7 +22,8 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DBProof {
     id: RecordId,
-    proof: cdk00::Proof,
+    secret: cashu::secret::Secret,
+    c: cashu::nut01::PublicKey,
 }
 
 #[derive(Debug, Clone)]
@@ -50,16 +50,16 @@ impl ProofRepository for ProofDB {
     async fn insert(&self, tokens: &[cdk00::Proof]) -> Result<()> {
         let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
         for tk in tokens {
-            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes()).map_err(Error::CdkDhke)?;
-            let rid = RecordId::from_table_key(&self.table, y.to_string());
+            let rid = proof_to_record_id(&self.table, tk);
             entries.push(DBProof {
                 id: rid,
-                proof: tk.clone(),
+                secret: tk.secret.clone(),
+                c: tk.c,
             });
         }
         let _: Vec<DBProof> = self
             .db
-            .insert(&self.table)
+            .insert(())
             .content(entries)
             .await
             .map_err(|e| match e {
@@ -73,8 +73,7 @@ impl ProofRepository for ProofDB {
 
     async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()> {
         for tk in tokens {
-            let y = cdk_dhke::hash_to_curve(&tk.secret.to_bytes()).map_err(Error::CdkDhke)?;
-            let rid = RecordId::from_table_key(&self.table, y.to_string());
+            let rid = proof_to_record_id(&self.table, tk);
             let _p: Option<cdk00::Proof> = self
                 .db
                 .delete(rid)
@@ -83,6 +82,13 @@ impl ProofRepository for ProofDB {
         }
         Ok(())
     }
+}
+
+fn proof_to_record_id(main_table: &str, proof: &cdk00::Proof) -> RecordId {
+    let table = main_table.to_string() + &proof.keyset_id.to_string();
+    let rid = RecordId::from_table_key(table, proof.secret.to_string());
+    dbg!(&rid);
+    rid
 }
 
 #[cfg(test)]
@@ -113,17 +119,15 @@ mod tests {
         );
         db.insert(&proofs).await.unwrap();
 
-        let y = cdk_dhke::hash_to_curve(&proofs[0].secret.to_bytes()).unwrap();
-        let rid = RecordId::from_table_key(&db.table, y.to_string());
+        let rid = proof_to_record_id(&db.table, &proofs[0]);
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
-        assert_eq!(res.unwrap().proof.secret, proofs[0].secret);
+        assert_eq!(res.unwrap().secret, proofs[0].secret);
 
-        let y = cdk_dhke::hash_to_curve(&proofs[1].secret.to_bytes()).unwrap();
-        let rid = RecordId::from_table_key(&db.table, y.to_string());
+        let rid = proof_to_record_id(&db.table, &proofs[1]);
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
-        assert_eq!(res.unwrap().proof.secret, proofs[1].secret);
+        assert_eq!(res.unwrap().secret, proofs[1].secret);
     }
 
     #[tokio::test]
