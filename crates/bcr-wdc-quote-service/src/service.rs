@@ -33,8 +33,8 @@ pub enum SortOrder {
 #[async_trait]
 pub trait Repository: Send + Sync {
     async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
-    async fn update_if_pending(&self, quote: Quote) -> AnyResult<()>;
-    async fn update_if_offered(&self, quote: Quote) -> AnyResult<()>;
+    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
+    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
     async fn list_light(
         &self,
@@ -179,7 +179,7 @@ where
         let mut quote = old.unwrap();
         quote.deny()?;
         self.quotes
-            .update_if_pending(quote)
+            .update_status_if_pending(quote.id, quote.status)
             .await
             .map_err(Error::QuotesRepository)?;
         Ok(())
@@ -197,7 +197,7 @@ where
         let mut quote = old.unwrap();
         quote.reject(tstamp)?;
         self.quotes
-            .update_if_offered(quote)
+            .update_status_if_offered(quote.id, quote.status)
             .await
             .map_err(Error::QuotesRepository)?;
         Ok(())
@@ -215,7 +215,7 @@ where
         let mut quote = old.unwrap();
         quote.accept()?;
         self.quotes
-            .update_if_offered(quote)
+            .update_status_if_offered(quote.id, quote.status)
             .await
             .map_err(Error::QuotesRepository)?;
         Ok(())
@@ -289,7 +289,7 @@ where
 
         quote.offer(kid, expiration)?;
         self.quotes
-            .update_if_pending(quote)
+            .update_status_if_pending(quote.id, quote.status)
             .await
             .map_err(Error::QuotesRepository)?;
 
