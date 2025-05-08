@@ -12,6 +12,7 @@ members = [
     "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-ebpp",
     "crates/bcr-wdc-ebill-service",
+    "crates/bcr-wdc-e2e-tests"
 ]
 
 [workspace.dependencies]
