@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 // ----- standard library imports
 // ----- extra library imports
 use axum::{
@@ -41,9 +43,12 @@ impl SuccessResponse {
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_seed_phrase(State(ctrl): State<AppController>) -> Result<Json<SeedPhrase>> {
-    tracing::debug!("Received get seed phrase request");
+    tracing::debug!("Received backup seed phrase request");
     let seed_phrase = ctrl.identity_service.get_seedphrase().await?;
-    Ok(Json(SeedPhrase { seed_phrase }))
+    Ok(Json(SeedPhrase {
+        seed_phrase: bip39::Mnemonic::from_str(&seed_phrase)
+            .map_err(|_| crate::error::Error::InvalidMnemonic)?,
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, payload))]
@@ -53,7 +58,7 @@ pub async fn recover_from_seed_phrase(
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received restore from seed phrase request");
     ctrl.identity_service
-        .recover_from_seedphrase(&payload.seed_phrase)
+        .recover_from_seedphrase(&payload.seed_phrase.to_string())
         .await?;
     Ok(Json(SuccessResponse::new()))
 }
@@ -65,7 +70,7 @@ pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<Iden
         return Err(bcr_ebill_api::service::Error::NotFound.into());
     } else {
         let full_identity = ctrl.identity_service.get_full_identity().await?;
-        IdentityWeb::from(full_identity.identity, full_identity.key_pair)
+        IdentityWeb::try_from((full_identity.identity, full_identity.key_pair))?
     };
     Ok(Json(my_identity))
 }
@@ -76,6 +81,10 @@ pub async fn create_identity(
     Json(payload): Json<NewIdentityPayload>,
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received create identity request");
+    if ctrl.identity_service.identity_exists().await {
+        return Err(crate::error::Error::IdentityAlreadyExists);
+    }
+
     let current_timestamp = util::date::now().timestamp() as u64;
     ctrl.identity_service
         .create_identity(

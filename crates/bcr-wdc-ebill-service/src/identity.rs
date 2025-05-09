@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 // ----- standard library imports
 // ----- extra library imports
 use bcr_ebill_api::{
@@ -8,6 +10,8 @@ use bcr_ebill_api::{
     util::BcrKeys,
 };
 use serde::{Deserialize, Serialize};
+// ----- local imports
+use crate::error::{Error, Result};
 // ----- end imports
 
 #[repr(u8)]
@@ -49,15 +53,15 @@ impl From<IdentityTypeWeb> for IdentityType {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct SeedPhrase {
-    pub seed_phrase: String,
+    pub seed_phrase: bip39::Mnemonic,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct IdentityWeb {
     pub node_id: String,
     pub name: String,
     pub email: Option<String>,
-    pub bitcoin_public_key: String,
+    pub bitcoin_public_key: bitcoin::PublicKey,
     pub npub: String,
     pub postal_address: OptionalPostalAddressWeb,
     pub date_of_birth: Option<String>,
@@ -66,16 +70,24 @@ pub struct IdentityWeb {
     pub identification_number: Option<String>,
     pub profile_picture_file: Option<FileWeb>,
     pub identity_document_file: Option<FileWeb>,
-    pub nostr_relays: Vec<String>,
+    pub nostr_relays: Vec<url::Url>,
 }
 
-impl IdentityWeb {
-    pub fn from(identity: Identity, keys: BcrKeys) -> Self {
-        Self {
+impl TryFrom<(Identity, BcrKeys)> for IdentityWeb {
+    type Error = Error;
+    fn try_from((identity, keys): (Identity, BcrKeys)) -> Result<Self> {
+        let nostr_relays: Vec<url::Url> = identity
+            .nostr_relays
+            .iter()
+            .map(|r| url::Url::parse(r).map_err(|_| Error::InvalidUrl))
+            .collect::<Result<_>>()?;
+
+        Ok(Self {
             node_id: identity.node_id.clone(),
             name: identity.name,
             email: identity.email,
-            bitcoin_public_key: identity.node_id.clone(),
+            bitcoin_public_key: bitcoin::PublicKey::from_str(&identity.node_id)
+                .map_err(|_| Error::InvalidBitcoinKey)?,
             npub: keys.get_nostr_npub(),
             postal_address: identity.postal_address.into(),
             date_of_birth: identity.date_of_birth,
@@ -84,8 +96,8 @@ impl IdentityWeb {
             identification_number: identity.identification_number,
             profile_picture_file: identity.profile_picture_file.map(|f| f.into()),
             identity_document_file: identity.identity_document_file.map(|f| f.into()),
-            nostr_relays: identity.nostr_relays,
-        }
+            nostr_relays,
+        })
     }
 }
 

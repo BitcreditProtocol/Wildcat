@@ -125,7 +125,7 @@ pub fn routes(ctrl: AppController) -> Router {
         .route("/identity/detail", get(web::get_identity))
         .route("/identity/create", post(web::create_identity))
         .route("/identity/seed/backup", get(web::get_seed_phrase))
-        .route("/identity/seed/restore", put(web::recover_from_seed_phrase))
+        .route("/identity/seed/recover", put(web::recover_from_seed_phrase))
         .route("/contact/create", post(web::create_contact))
         .route("/bill/list", get(web::get_bills))
         .route("/bill/detail/{bill_id}", get(web::get_bill_detail))
