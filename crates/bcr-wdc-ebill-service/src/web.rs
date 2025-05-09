@@ -9,25 +9,19 @@ use axum::{
     Json,
 };
 use bcr_ebill_api::{
-    data::{
-        bill::BillAction,
-        contact::{BillIdentParticipant, BillParticipant, ContactType},
-        identity::{IdentityType, IdentityWithAll},
-        OptionalPostalAddress, PostalAddress,
-    },
+    data::{self, bill, contact, identity},
     util::{self, file::detect_content_type_for_bytes, ValidationError},
 };
-// ----- local imports
-use crate::{
+use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKeyWeb, BillsResponse, BitcreditBillWeb,
-        RequestToPayBitcreditBillPayload,
+        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
     },
-    contact::{ContactTypeWeb, ContactWeb, NewContactPayload},
-    error::Result,
-    identity::{IdentityTypeWeb, IdentityWeb, NewIdentityPayload, SeedPhrase},
-    AppController,
+    contact::{Contact, ContactType, NewContactPayload},
+    identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
 };
+// ----- local imports
+
+use crate::{error::Result, AppController};
 // ----- end imports
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -64,13 +58,14 @@ pub async fn recover_from_seed_phrase(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<IdentityWeb>> {
+pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<Identity>> {
     tracing::debug!("Received get identity request");
     let my_identity = if !ctrl.identity_service.identity_exists().await {
         return Err(bcr_ebill_api::service::Error::NotFound.into());
     } else {
         let full_identity = ctrl.identity_service.get_full_identity().await?;
-        IdentityWeb::try_from((full_identity.identity, full_identity.key_pair))?
+        Identity::try_from((full_identity.identity, full_identity.key_pair))
+            .map_err(|_| crate::error::Error::IdentityConversion)?
     };
     Ok(Json(my_identity))
 }
@@ -88,10 +83,10 @@ pub async fn create_identity(
     let current_timestamp = util::date::now().timestamp() as u64;
     ctrl.identity_service
         .create_identity(
-            IdentityType::from(IdentityTypeWeb::try_from(payload.t)?),
+            identity::IdentityType::from(IdentityType::try_from(payload.t)?),
             payload.name,
             payload.email,
-            OptionalPostalAddress::from(payload.postal_address),
+            data::OptionalPostalAddress::from(payload.postal_address),
             payload.date_of_birth,
             payload.country_of_birth,
             payload.city_of_birth,
@@ -107,7 +102,7 @@ pub async fn create_identity(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bills(
     State(ctrl): State<AppController>,
-) -> Result<Json<BillsResponse<BitcreditBillWeb>>> {
+) -> Result<Json<BillsResponse<BitcreditBill>>> {
     tracing::debug!("Received get bills request");
     let identity = ctrl.identity_service.get_identity().await?;
     let bills = ctrl.bill_service.get_bills(&identity.node_id).await?;
@@ -120,7 +115,7 @@ pub async fn get_bills(
 pub async fn get_bill_detail(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<String>,
-) -> Result<Json<BitcreditBillWeb>> {
+) -> Result<Json<BitcreditBill>> {
     tracing::debug!("Received get bill detail request");
     let current_timestamp = util::date::now().timestamp() as u64;
     let identity = ctrl.identity_service.get_identity().await?;
@@ -164,13 +159,14 @@ pub async fn request_to_pay_bill(
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received request to pay bill request");
     let current_timestamp = util::date::now().timestamp() as u64;
-    let IdentityWithAll { identity, key_pair } = ctrl.identity_service.get_full_identity().await?;
+    let identity::IdentityWithAll { identity, key_pair } =
+        ctrl.identity_service.get_full_identity().await?;
 
     ctrl.bill_service
         .execute_bill_action(
             &request_to_pay_bill_payload.bill_id,
-            BillAction::RequestToPay(request_to_pay_bill_payload.currency.clone()),
-            &BillParticipant::Ident(BillIdentParticipant::new(identity)?),
+            bill::BillAction::RequestToPay(request_to_pay_bill_payload.currency.clone()),
+            &contact::BillParticipant::Ident(contact::BillIdentParticipant::new(identity)?),
             &key_pair,
             current_timestamp,
         )
@@ -183,14 +179,15 @@ pub async fn request_to_pay_bill(
 pub async fn bill_bitcoin_key(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<String>,
-) -> Result<Json<BillCombinedBitcoinKeyWeb>> {
+) -> Result<Json<BillCombinedBitcoinKey>> {
     tracing::debug!("Received get bill bitcoin private key request");
-    let IdentityWithAll { identity, key_pair } = ctrl.identity_service.get_full_identity().await?;
+    let identity::IdentityWithAll { identity, key_pair } =
+        ctrl.identity_service.get_full_identity().await?;
     let combined_key = ctrl
         .bill_service
         .get_combined_bitcoin_key_for_bill(
             &bill_id,
-            &BillParticipant::Ident(BillIdentParticipant::new(identity)?),
+            &contact::BillParticipant::Ident(contact::BillIdentParticipant::new(identity)?),
             &key_pair,
         )
         .await?;
@@ -202,16 +199,16 @@ pub async fn bill_bitcoin_key(
 pub async fn create_contact(
     State(ctrl): State<AppController>,
     Json(payload): Json<NewContactPayload>,
-) -> Result<Json<ContactWeb>> {
+) -> Result<Json<Contact>> {
     tracing::debug!("Received create contact request");
     let contact = ctrl
         .contact_service
         .add_contact(
             &payload.node_id,
-            ContactType::from(ContactTypeWeb::try_from(payload.t)?),
+            contact::ContactType::from(ContactType::try_from(payload.t)?),
             payload.name,
             payload.email,
-            payload.postal_address.map(PostalAddress::from),
+            payload.postal_address.map(data::PostalAddress::from),
             payload.date_of_birth_or_registration,
             payload.country_of_birth_or_registration,
             payload.city_of_birth_or_registration,

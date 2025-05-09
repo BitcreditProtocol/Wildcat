@@ -1,52 +1,57 @@
 use std::str::FromStr;
+use thiserror::Error;
 
 // ----- standard library imports
 // ----- extra library imports
 use bcr_ebill_api::{
-    data::{
-        identity::{Identity, IdentityType},
-        File, OptionalPostalAddress, PostalAddress,
-    },
+    data::{self, identity},
     util::BcrKeys,
 };
 use serde::{Deserialize, Serialize};
 // ----- local imports
-use crate::error::{Error, Result};
 // ----- end imports
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Invalid bitcoin key")]
+    InvalidBitcoinKey,
+    #[error("Invalid URL")]
+    InvalidUrl,
+}
 
 #[repr(u8)]
 #[derive(
     Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr, PartialEq, Eq,
 )]
-pub enum IdentityTypeWeb {
+pub enum IdentityType {
     Ident = 0,
     Anon = 1,
 }
 
-impl TryFrom<u64> for IdentityTypeWeb {
+impl TryFrom<u64> for IdentityType {
     type Error = bcr_ebill_api::service::Error;
 
-    fn try_from(value: u64) -> std::result::Result<Self, Self::Error> {
-        Ok(IdentityType::try_from(value)
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        Ok(identity::IdentityType::try_from(value)
             .map_err(Self::Error::Validation)?
             .into())
     }
 }
 
-impl From<IdentityType> for IdentityTypeWeb {
-    fn from(val: IdentityType) -> Self {
+impl From<identity::IdentityType> for IdentityType {
+    fn from(val: identity::IdentityType) -> Self {
         match val {
-            IdentityType::Ident => IdentityTypeWeb::Ident,
-            IdentityType::Anon => IdentityTypeWeb::Anon,
+            identity::IdentityType::Ident => IdentityType::Ident,
+            identity::IdentityType::Anon => IdentityType::Anon,
         }
     }
 }
 
-impl From<IdentityTypeWeb> for IdentityType {
-    fn from(value: IdentityTypeWeb) -> Self {
+impl From<IdentityType> for identity::IdentityType {
+    fn from(value: IdentityType) -> Self {
         match value {
-            IdentityTypeWeb::Ident => IdentityType::Ident,
-            IdentityTypeWeb::Anon => IdentityType::Anon,
+            IdentityType::Ident => identity::IdentityType::Ident,
+            IdentityType::Anon => identity::IdentityType::Anon,
         }
     }
 }
@@ -56,31 +61,31 @@ pub struct SeedPhrase {
     pub seed_phrase: bip39::Mnemonic,
 }
 
-#[derive(Debug, Serialize)]
-pub struct IdentityWeb {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Identity {
     pub node_id: String,
     pub name: String,
     pub email: Option<String>,
     pub bitcoin_public_key: bitcoin::PublicKey,
     pub npub: String,
-    pub postal_address: OptionalPostalAddressWeb,
+    pub postal_address: OptionalPostalAddress,
     pub date_of_birth: Option<String>,
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
     pub identification_number: Option<String>,
-    pub profile_picture_file: Option<FileWeb>,
-    pub identity_document_file: Option<FileWeb>,
+    pub profile_picture_file: Option<File>,
+    pub identity_document_file: Option<File>,
     pub nostr_relays: Vec<url::Url>,
 }
 
-impl TryFrom<(Identity, BcrKeys)> for IdentityWeb {
+impl TryFrom<(identity::Identity, BcrKeys)> for Identity {
     type Error = Error;
-    fn try_from((identity, keys): (Identity, BcrKeys)) -> Result<Self> {
+    fn try_from((identity, keys): (identity::Identity, BcrKeys)) -> Result<Self, Self::Error> {
         let nostr_relays: Vec<url::Url> = identity
             .nostr_relays
             .iter()
-            .map(|r| url::Url::parse(r).map_err(|_| Error::InvalidUrl))
-            .collect::<Result<_>>()?;
+            .map(|r| url::Url::parse(r).map_err(|_| Self::Error::InvalidUrl))
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             node_id: identity.node_id.clone(),
@@ -101,12 +106,12 @@ impl TryFrom<(Identity, BcrKeys)> for IdentityWeb {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NewIdentityPayload {
     pub t: u64,
     pub name: String,
     pub email: Option<String>,
-    pub postal_address: OptionalPostalAddressWeb,
+    pub postal_address: OptionalPostalAddress,
     pub date_of_birth: Option<String>,
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
@@ -116,16 +121,16 @@ pub struct NewIdentityPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostalAddressWeb {
+pub struct PostalAddress {
     pub country: String,
     pub city: String,
     pub zip: Option<String>,
     pub address: String,
 }
 
-impl From<PostalAddress> for PostalAddressWeb {
-    fn from(val: PostalAddress) -> Self {
-        PostalAddressWeb {
+impl From<data::PostalAddress> for PostalAddress {
+    fn from(val: data::PostalAddress) -> Self {
+        PostalAddress {
             country: val.country,
             city: val.city,
             zip: val.zip,
@@ -134,8 +139,8 @@ impl From<PostalAddress> for PostalAddressWeb {
     }
 }
 
-impl From<PostalAddressWeb> for PostalAddress {
-    fn from(value: PostalAddressWeb) -> Self {
+impl From<PostalAddress> for data::PostalAddress {
+    fn from(value: PostalAddress) -> Self {
         Self {
             country: value.country,
             city: value.city,
@@ -146,14 +151,14 @@ impl From<PostalAddressWeb> for PostalAddress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OptionalPostalAddressWeb {
+pub struct OptionalPostalAddress {
     pub country: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
     pub address: Option<String>,
 }
 
-impl OptionalPostalAddressWeb {
+impl OptionalPostalAddress {
     pub fn is_none(&self) -> bool {
         self.country.is_none()
             && self.city.is_none()
@@ -162,7 +167,18 @@ impl OptionalPostalAddressWeb {
     }
 }
 
-impl From<OptionalPostalAddress> for OptionalPostalAddressWeb {
+impl From<data::OptionalPostalAddress> for OptionalPostalAddress {
+    fn from(value: data::OptionalPostalAddress) -> Self {
+        Self {
+            country: value.country,
+            city: value.city,
+            zip: value.zip,
+            address: value.address,
+        }
+    }
+}
+
+impl From<OptionalPostalAddress> for data::OptionalPostalAddress {
     fn from(value: OptionalPostalAddress) -> Self {
         Self {
             country: value.country,
@@ -173,26 +189,15 @@ impl From<OptionalPostalAddress> for OptionalPostalAddressWeb {
     }
 }
 
-impl From<OptionalPostalAddressWeb> for OptionalPostalAddress {
-    fn from(value: OptionalPostalAddressWeb) -> Self {
-        Self {
-            country: value.country,
-            city: value.city,
-            zip: value.zip,
-            address: value.address,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileWeb {
+pub struct File {
     pub name: String,
     pub hash: String,
 }
 
-impl From<File> for FileWeb {
-    fn from(val: File) -> Self {
-        FileWeb {
+impl From<data::File> for File {
+    fn from(val: data::File) -> Self {
+        File {
             name: val.name,
             hash: val.hash,
         }

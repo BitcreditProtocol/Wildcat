@@ -1,0 +1,10 @@
+[package]
+name = "bcr-wdc-ebill-client"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+reqwest = {workspace = true, features = ["json"]}
+thiserror.workspace = true
+bcr-wdc-webapi.workspace = true

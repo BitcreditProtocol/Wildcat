@@ -1,0 +1,191 @@
+// ----- standard library imports
+// ----- extra library imports
+use bcr_wdc_webapi::{
+    bill::{
+        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
+    },
+    contact::NewContactPayload,
+    identity::{Identity, NewIdentityPayload, SeedPhrase},
+};
+use reqwest::header;
+pub use reqwest::Url;
+use thiserror::Error;
+// ----- local imports
+// ----- end imports
+
+pub type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("resource not found {0}")]
+    ResourceNotFound(String),
+    #[error("invalid request")]
+    InvalidRequest,
+    #[error("invalid content type")]
+    InvalidContentType,
+    #[error("internal error {0}")]
+    Reqwest(#[from] reqwest::Error),
+}
+
+#[derive(Debug, Clone)]
+pub struct EbillClient {
+    cl: reqwest::Client,
+    base: reqwest::Url,
+}
+
+impl EbillClient {
+    pub fn new(base: reqwest::Url) -> Self {
+        Self {
+            cl: reqwest::Client::new(),
+            base,
+        }
+    }
+
+    pub async fn backup_seed_phrase(&self) -> Result<SeedPhrase> {
+        let url = self
+            .base
+            .join("/identity/seed/backup")
+            .expect("seed phrase relative path");
+        let res = self.cl.get(url).send().await?;
+        let seed_phrase = res.json::<SeedPhrase>().await?;
+        Ok(seed_phrase)
+    }
+
+    pub async fn restore_from_seed_phrase(&self, seed_phrase: &SeedPhrase) -> Result<()> {
+        let url = self
+            .base
+            .join("/identity/seed/recover")
+            .expect("seed phrase backup relative path");
+        let res = self.cl.put(url).json(seed_phrase).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        res.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn get_identity(&self) -> Result<Identity> {
+        let url = self
+            .base
+            .join("/identity/detail")
+            .expect("seed phrase restoration relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound("identity".into()));
+        }
+        let identity = res.json::<Identity>().await?;
+        Ok(identity)
+    }
+
+    pub async fn create_identity(&self, payload: &NewIdentityPayload) -> Result<()> {
+        let url = self
+            .base
+            .join("/identity/create")
+            .expect("create identity relative path");
+        let res = self.cl.post(url).json(payload).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        res.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn create_contact(&self, payload: &NewContactPayload) -> Result<()> {
+        let url = self
+            .base
+            .join("/contact/create")
+            .expect("create contact relative path");
+        let res = self.cl.post(url).json(payload).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        res.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn get_bills(&self) -> Result<Vec<BitcreditBill>> {
+        let url = self
+            .base
+            .join("/bill/list")
+            .expect("bill list relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound("identity".into()));
+        }
+        let bills = res.json::<BillsResponse<BitcreditBill>>().await?;
+        Ok(bills.bills)
+    }
+
+    pub async fn get_bill(&self, bill_id: &str) -> Result<BitcreditBill> {
+        let url = self
+            .base
+            .join(&format!("/bill/detail/{}", bill_id))
+            .expect("bill detail relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(bill_id.into()));
+        }
+        let bill = res.json::<BitcreditBill>().await?;
+        Ok(bill)
+    }
+
+    /// Returns the content type and the bytes of the file
+    pub async fn get_bill_attachment(
+        &self,
+        bill_id: &str,
+        file_name: &str,
+    ) -> Result<(String, Vec<u8>)> {
+        let url = self
+            .base
+            .join(&format!("/bill/attachment/{}/{}", bill_id, file_name))
+            .expect("bill attachment relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(format!(
+                "{} - {}",
+                bill_id, file_name
+            )));
+        }
+        let content_type: String = match res.headers().get(header::CONTENT_TYPE).map(|h| h.to_str())
+        {
+            Some(Ok(content_type)) => content_type.to_owned(),
+            _ => return Err(Error::InvalidContentType),
+        };
+        let bytes = res.bytes().await?;
+        Ok((content_type, bytes.to_vec()))
+    }
+
+    pub async fn get_bitcoin_private_key_for_bill(
+        &self,
+        bill_id: &str,
+    ) -> Result<BillCombinedBitcoinKey> {
+        let url = self
+            .base
+            .join(&format!("/bill/bitcoin_key/{}", bill_id))
+            .expect("bill bitcoin key relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(bill_id.into()));
+        }
+        let btc_key = res.json::<BillCombinedBitcoinKey>().await?;
+        Ok(btc_key)
+    }
+
+    pub async fn request_to_pay_bill(
+        &self,
+        payload: &RequestToPayBitcreditBillPayload,
+    ) -> Result<()> {
+        let url = self
+            .base
+            .join("/bill/request_to_pay")
+            .expect("req to pay bill relative path");
+        let res = self.cl.put(url).json(payload).send().await?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(payload.bill_id.to_owned()));
+        }
+        res.error_for_status()?;
+        Ok(())
+    }
+}

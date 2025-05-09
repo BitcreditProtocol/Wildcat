@@ -17,6 +17,7 @@ required-features = ["test-utils"]
 [dependencies]
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
+bcr-ebill-api.workspace = true
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 borsh = {workspace = true, features = ["derive"]}
@@ -28,6 +29,11 @@ serde.workspace = true
 strum = {workspace = true, features = ["derive"]}
 utoipa = {workspace = true, features = ["chrono", "uuid", "decimal"]}
 uuid = {workspace = true, features = ["serde"]}
+bip39 = {workspace = true, features = ["serde"]}
+serde_json.workspace = true
+serde_repr.workspace = true 
+url = {workspace = true, features = ["serde"]}
+thiserror.workspace = true
 
 [features]
 default = []
