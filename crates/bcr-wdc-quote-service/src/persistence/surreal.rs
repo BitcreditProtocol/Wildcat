@@ -12,15 +12,15 @@ use crate::service::{ListFilters, Repository, SortOrder};
 use crate::TStamp;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct DBEntryQuote {
+struct QuoteDBEntry {
     qid: surrealdb::Uuid, // can't be `id`, reserved word in surreal
     bill: quotes::BillInfo,
     submitted: TStamp,
     status: quotes::QuoteStatus,
 }
 
-impl From<DBEntryQuote> for quotes::Quote {
-    fn from(dbq: DBEntryQuote) -> Self {
+impl From<QuoteDBEntry> for quotes::Quote {
+    fn from(dbq: QuoteDBEntry) -> Self {
         Self {
             id: dbq.qid,
             bill: dbq.bill,
@@ -30,7 +30,7 @@ impl From<DBEntryQuote> for quotes::Quote {
     }
 }
 
-impl From<quotes::Quote> for DBEntryQuote {
+impl From<quotes::Quote> for QuoteDBEntry {
     fn from(quote: quotes::Quote) -> Self {
         Self {
             qid: quote.id,
@@ -42,16 +42,17 @@ impl From<quotes::Quote> for DBEntryQuote {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-struct DBEntryLightQuote {
+struct LightQuoteDBEntry {
     qid: uuid::Uuid,
-    status: quotes::QuoteStatus,
+    status: quotes::QuoteStatusDiscriminants,
     sum: bitcoin::Amount,
+    maturity_date: TStamp,
 }
-impl From<DBEntryLightQuote> for quotes::LightQuote {
-    fn from(dbq: DBEntryLightQuote) -> Self {
+impl From<LightQuoteDBEntry> for quotes::LightQuote {
+    fn from(dbq: LightQuoteDBEntry) -> Self {
         Self {
             id: dbq.qid,
-            status: dbq.status.into(),
+            status: dbq.status,
             sum: dbq.sum,
         }
     }
@@ -97,12 +98,12 @@ impl DBQuotes {
         })
     }
 
-    async fn load(&self, qid: Uuid) -> SurrealResult<Option<DBEntryQuote>> {
+    async fn load(&self, qid: Uuid) -> SurrealResult<Option<QuoteDBEntry>> {
         let rid = surrealdb::RecordId::from_table_key(&self.table, qid);
         self.db.select(rid).await
     }
 
-    async fn store(&self, quote: DBEntryQuote) -> SurrealResult<Option<DBEntryQuote>> {
+    async fn store(&self, quote: QuoteDBEntry) -> SurrealResult<Option<QuoteDBEntry>> {
         let rid = surrealdb::RecordId::from_table_key(&self.table, quote.qid);
         self.db.insert(rid).content(quote).await
     }
@@ -111,9 +112,9 @@ impl DBQuotes {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> SurrealResult<Vec<DBEntryLightQuote>> {
+    ) -> SurrealResult<Vec<LightQuoteDBEntry>> {
         let mut statement = String::from(
-            "SELECT qid, status, bill.sum AS sum, bill.maturity_date FROM type::table($table)",
+            "SELECT qid, status.status as status, bill.sum AS sum, bill.maturity_date as maturity_date FROM type::table($table)",
         );
 
         let mut first = true;
@@ -194,8 +195,8 @@ impl DBQuotes {
         query.await?.take("quote_id")
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<DBEntryQuote>> {
-        let results: Vec<DBEntryQuote> = self.db
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<QuoteDBEntry>> {
+        let results: Vec<QuoteDBEntry> = self.db
             .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND bill.current_holder.node_id == $endorser ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
@@ -217,7 +218,7 @@ impl Repository for DBQuotes {
         new: quotes::QuoteStatus,
     ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
-        let before: Option<DBEntryQuote> = self
+        let before: Option<QuoteDBEntry> = self
             .db
             .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE ")
             .bind(("rid", recordid))
@@ -238,7 +239,7 @@ impl Repository for DBQuotes {
         new: quotes::QuoteStatus,
     ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
-        let before: Option<DBEntryQuote> = self
+        let before: Option<QuoteDBEntry> = self
             .db
             .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
             .bind(("rid", recordid))
@@ -323,9 +324,9 @@ mod tests {
                 public_key: keys_test::publics()[0],
             },
         };
-        let dbquote = DBEntryQuote::from(quote.clone());
+        let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
-        let _inserted: DBEntryQuote = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
+        let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
         quote.status = quotes::QuoteStatus::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
@@ -347,9 +348,9 @@ mod tests {
                 tstamp: TStamp::default(),
             },
         };
-        let dbquote = DBEntryQuote::from(quote.clone());
+        let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
-        let _inserted: DBEntryQuote = db
+        let _inserted: QuoteDBEntry = db
             .db
             .insert(rid.clone())
             .content(dbquote)
@@ -364,7 +365,7 @@ mod tests {
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_err());
 
-        let content: Option<DBEntryQuote> = db.db.select(rid).await.unwrap();
+        let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
         assert!(content.is_some());
         let content = content.unwrap();
         assert!(matches!(
@@ -386,9 +387,9 @@ mod tests {
                 ttl: TStamp::default(),
             },
         };
-        let dbquote = DBEntryQuote::from(quote.clone());
+        let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
-        let _inserted: DBEntryQuote = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
+        let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
         quote.status = quotes::QuoteStatus::Accepted {
             keyset_id: keys_test::generate_random_keysetid(),
@@ -407,9 +408,9 @@ mod tests {
             submitted: TStamp::default(),
             status: quotes::QuoteStatus::Denied,
         };
-        let dbquote = DBEntryQuote::from(quote.clone());
+        let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
-        let _inserted: DBEntryQuote = db
+        let _inserted: QuoteDBEntry = db
             .db
             .insert(rid.clone())
             .content(dbquote)
@@ -424,7 +425,7 @@ mod tests {
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_err());
 
-        let content: Option<DBEntryQuote> = db.db.select(rid).await.unwrap();
+        let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
         assert!(content.is_some());
         let content = content.unwrap();
         assert!(matches!(content.status, quotes::QuoteStatus::Denied));
@@ -436,7 +437,7 @@ mod tests {
 
         let qid = Uuid::new_v4();
         let rid = RecordId::from_table_key(&db.table, qid);
-        let entry = DBEntryQuote {
+        let entry = QuoteDBEntry {
             qid,
             status: quotes::QuoteStatus::Pending {
                 public_key: keys_test::publics()[0],
@@ -460,7 +461,7 @@ mod tests {
             },
             submitted: TStamp::default(),
         };
-        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let filters = service::ListFilters::default();
         let res = db.list_light(filters, None).await.unwrap();
@@ -505,7 +506,7 @@ mod tests {
 
         let qid1 = Uuid::new_v4();
         let rid = RecordId::from_table_key(&db.table, qid1);
-        let entry = DBEntryQuote {
+        let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::QuoteStatus::Pending {
                 public_key: keys_test::publics()[0],
@@ -516,11 +517,11 @@ mod tests {
             },
             submitted: TStamp::default(),
         };
-        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let qid2 = Uuid::new_v4();
         let rid = RecordId::from_table_key(&db.table, qid2);
-        let entry = DBEntryQuote {
+        let entry = QuoteDBEntry {
             qid: qid2,
             status: quotes::QuoteStatus::Pending {
                 public_key: keys_test::publics()[0],
@@ -531,11 +532,11 @@ mod tests {
             },
             submitted: TStamp::default(),
         };
-        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let qid3 = Uuid::new_v4();
         let rid = RecordId::from_table_key(&db.table, qid3);
-        let entry = DBEntryQuote {
+        let entry = QuoteDBEntry {
             qid: qid3,
             status: quotes::QuoteStatus::Pending {
                 public_key: keys_test::publics()[0],
@@ -546,7 +547,7 @@ mod tests {
             },
             submitted: TStamp::default(),
         };
-        let _: DBEntryQuote = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let filters = service::ListFilters::default();
         let res = db
@@ -575,7 +576,7 @@ mod tests {
 
         let qid1 = Uuid::new_v4();
         let rid = RecordId::from_table_key(&db.table, qid1);
-        let entry = DBEntryQuote {
+        let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::QuoteStatus::Pending {
                 public_key: keys_test::publics()[0],
@@ -590,7 +591,7 @@ mod tests {
             },
             submitted: TStamp::default(),
         };
-        let _: DBEntryQuote = db
+        let _: QuoteDBEntry = db
             .db
             .insert(rid)
             .content(entry.clone())
