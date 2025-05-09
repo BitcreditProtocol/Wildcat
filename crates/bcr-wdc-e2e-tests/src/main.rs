@@ -185,8 +185,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     // Activate keyset
     let activate_request_payload = ActivateKeysetRequest { qid: quote_id };
     info!("Activating keyset for quote_id: {}", quote_id);
-    api
-        .post_(admin_service.keys_activate(), &activate_request_payload)
+    api.post_(admin_service.keys_activate(), &activate_request_payload)
         .await
         .unwrap();
 
@@ -227,7 +226,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .map(|s| u64::from(s.amount))
         .sum::<u64>();
     assert_eq!(total_amount, bill_amount);
-    info!(amount=total_amount,"Mint Successful obtained signatures");
+    info!(amount = total_amount, "Mint Successful obtained signatures");
 }
 
 #[tokio::main]
