@@ -31,7 +31,7 @@ impl Endpoints<WalletService> {
         self.url("v1/mint/credit/quote")
     }
     pub fn lookup_credit_quote(&self, quote_id: &str) -> Url {
-        self.url(&format!("v1/mint/credit/quote/{}", quote_id))
+        self.url(&format!("v1/mint/credit/quote/{quote_id}"))
     }
     pub fn list_keysets(&self) -> Url {
         self.url("v1/keysets")
@@ -43,7 +43,7 @@ impl Endpoints<AdminService> {
         self.url("v1/admin/keys/activate")
     }
     pub fn admin_credit_quote(&self, quote_id: &str) -> Url {
-        self.url(&format!("v1/admin/credit/quote/{}", quote_id))
+        self.url(&format!("v1/admin/credit/quote/{quote_id}"))
     }
 }
 
