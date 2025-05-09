@@ -48,4 +48,3 @@ impl Endpoints<AdminService> {
         self.url(&format!("v1/admin/credit/quote/{quote_id}"))
     }
 }
-
