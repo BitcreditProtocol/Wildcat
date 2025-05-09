@@ -188,7 +188,7 @@ where
     pub async fn mint(
         &self,
         _qid: uuid::Uuid,
-        mut outputs: Vec<cdk00::BlindedMessage>,
+        outputs: Vec<cdk00::BlindedMessage>,
     ) -> Result<Vec<cdk00::BlindSignature>> {
         //  check if the ids of the outputs are all the same
         let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
@@ -214,208 +214,17 @@ where
         if is_minted {
             return Err(Error::InvalidMintRequest);
         }
+        let blind_sum = outputs.iter().map(|o| u64::from(o.amount)).sum::<u64>();
+        if blind_sum != u64::from(target) {
+            return Err(Error::InvalidMintRequest);
+        }
 
-        let blinds = select_blinds_to_target(target, &mut outputs);
-        let mut signatures = Vec::with_capacity(blinds.len());
-        for blind in blinds {
+        let mut signatures = Vec::with_capacity(outputs.len());
+        for blind in &outputs {
             let signature = self.sign_blind(blind).await?;
             signatures.push(signature);
         }
         self.keys.mark_as_minted(&kid).await?;
         Ok(signatures)
-    }
-}
-
-fn select_blinds_to_target(
-    mut target: Amount,
-    blinds: &mut [cdk00::BlindedMessage],
-) -> &[cdk00::BlindedMessage] {
-    for (idx, blind) in blinds.iter_mut().enumerate() {
-        if target == Amount::ZERO {
-            return &blinds[0..idx];
-        }
-        if blind.amount == Amount::ZERO {
-            blind.amount = *target.split().first().expect("target > 0"); // split() returns from
-                                                                         // highest to lowest
-            target -= blind.amount;
-        } else if blind.amount <= target {
-            target -= blind.amount;
-        } else {
-            return &blinds[0..idx];
-        }
-    }
-    blinds
-}
-
-#[cfg(test)]
-pub mod tests {
-
-    use super::*;
-    use bcr_wdc_utils::keys::test_utils as keys_test;
-
-    #[test]
-    fn test_select_blind_signatures_no_valid_blinds() {
-        let publics = keys_test::publics();
-        let mut blinds = vec![
-            cdk00::BlindedMessage {
-                amount: Amount::from(16_u64),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(8_u64),
-                blinded_secret: publics[1],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(32_u64),
-                blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-        ];
-        let target = Amount::from(6_u64);
-        let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 0);
-    }
-
-    #[test]
-    fn test_select_blind_signatures_all_blanks() {
-        let publics = keys_test::publics();
-        let mut blinds = vec![
-            cdk00::BlindedMessage {
-                amount: Amount::from(0_u64),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(0_u64),
-                blinded_secret: publics[1],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(0_u64),
-                blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-        ];
-        let target = Amount::from(6_u64);
-        let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 2);
-        assert_eq!(selected[0].amount, Amount::from(4_u64));
-        assert_eq!(selected[0].blinded_secret.to_hex(), keys_test::RANDOMS[0]);
-        assert_eq!(selected[1].amount, Amount::from(2_u64));
-        assert_eq!(selected[1].blinded_secret.to_hex(), keys_test::RANDOMS[1]);
-    }
-
-    #[test]
-    fn test_select_blind_signatures_all_marked_blinds() {
-        let publics = keys_test::publics();
-        let mut blinds = vec![
-            cdk00::BlindedMessage {
-                amount: Amount::from(16_u64),
-                blinded_secret: publics[1],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(4_u64),
-                blinded_secret: publics[3],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(2_u64),
-                blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(1),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-        ];
-        let target = Amount::from(6_u64);
-        let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 0);
-    }
-
-    #[test]
-    fn test_select_blind_signatures_marked_and_blanks() {
-        let publics = keys_test::publics();
-        let mut blinds = vec![
-            cdk00::BlindedMessage {
-                amount: Amount::from(4_u64),
-                blinded_secret: publics[3],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(2_u64),
-                blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(0),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-        ];
-        let target = Amount::from(6_u64);
-        let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 2);
-        assert_eq!(selected[0].amount, Amount::from(4_u64));
-        assert_eq!(selected[0].blinded_secret.to_hex(), keys_test::RANDOMS[3]);
-        assert_eq!(selected[1].amount, Amount::from(2_u64));
-        assert_eq!(selected[1].blinded_secret.to_hex(), keys_test::RANDOMS[2]);
-    }
-
-    #[test]
-    fn test_select_blind_signatures_unconventional_split() {
-        let publics = keys_test::publics();
-        let mut blinds = vec![
-            cdk00::BlindedMessage {
-                amount: Amount::from(4_u64),
-                blinded_secret: publics[3],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(1),
-                blinded_secret: publics[0],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(1_u64),
-                blinded_secret: publics[1],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-            cdk00::BlindedMessage {
-                amount: Amount::from(0_u64),
-                blinded_secret: publics[2],
-                keyset_id: cdk02::Id::from_bytes(&[0u8; 8]).unwrap(),
-                witness: None,
-            },
-        ];
-        let target = Amount::from(6_u64);
-        let selected = select_blinds_to_target(target, &mut blinds);
-        assert_eq!(selected.len(), 3);
-        assert_eq!(selected[0].amount, Amount::from(4_u64));
-        assert_eq!(selected[0].blinded_secret.to_hex(), keys_test::RANDOMS[3]);
-        assert_eq!(selected[1].amount, Amount::from(1_u64));
-        assert_eq!(selected[1].blinded_secret.to_hex(), keys_test::RANDOMS[0]);
-        assert_eq!(selected[2].amount, Amount::from(1_u64));
-        assert_eq!(selected[2].blinded_secret.to_hex(), keys_test::RANDOMS[1]);
     }
 }
