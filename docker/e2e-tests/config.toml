@@ -1,5 +1,4 @@
 
 wallet_service = "http://bff-wallet-service:4242"
 admin_service = "http://bff-dashboard-service:4242"
-quote_service = "http://quote-service:3338"
 key_service = "http://key-service:3338"
