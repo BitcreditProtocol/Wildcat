@@ -119,7 +119,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
 
-    let amounts = get_amounts(bill_amount)
+    let amounts = get_amounts(discounted_offer)
         .iter()
         .map(|a| cashu::Amount::from(*a))
         .collect::<Vec<_>>();
