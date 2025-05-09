@@ -2,8 +2,6 @@ services:
 
   key-service:
     image: wildcat/key-service
-    ports:
-      - "4001:3338"
     pull_policy: never
     depends_on:
       surrealdb:
@@ -41,8 +39,6 @@ services:
 
   quote-service:
     image: wildcat/quote-service
-    ports:
-      - "4002:3338"
     pull_policy: never
     depends_on:
       surrealdb:
