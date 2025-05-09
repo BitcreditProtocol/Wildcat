@@ -5,17 +5,15 @@ use bcr_wdc_webapi::quotes::EnquireReply;
 use bcr_wdc_webapi::quotes::{
     EnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
 };
+use cashu::MintBolt11Request;
 
 use cashu::nuts::nut02 as cdk02;
-use cashu::{MintBolt11Request, MintBolt11Response};
 use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
 // ----- local modules
-mod endpoints;
-mod rest_client;
+mod clients;
 mod test_utils;
-use endpoints::*;
-use rest_client::RestClient;
+use clients::*;
 use test_utils::{generate_blinds, get_amounts, random_ebill};
 // ----- end imports
 
@@ -36,10 +34,8 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!("START EBILL MINTING TEST");
 
-    let api = RestClient::new();
-
-    let user_service = Endpoints::<UserService>::new(cfg.user_service.clone());
-    let admin_service = Endpoints::<AdminService>::new(cfg.admin_service.clone());
+    let user_service = Service::<UserService>::new(cfg.user_service.clone());
+    let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
 
     // Create Ebill
     let (owner_key, bill, signature) = random_ebill();
@@ -60,8 +56,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     // Mint Ebill
     info!("Requesting to mint the bill");
-    let mint_credit_quote_url = user_service.mint_credit_quote_url();
-    let enquire_reply: EnquireReply = api.post(mint_credit_quote_url, &request).await.unwrap();
+    let enquire_reply: EnquireReply = user_service.mint_credit_quote(request).await;
     let quote_id = enquire_reply.id;
 
     info!(quote_id = ?quote_id, "Mint Request Accepted, waiting for admin to process");
@@ -78,13 +73,9 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         "Admin sending discounted offer"
     );
 
-    let update_quote_response: UpdateQuoteResponse = api
-        .post(
-            admin_service.admin_credit_quote(&quote_id.to_string()),
-            &update_quote_request_payload,
-        )
-        .await
-        .unwrap();
+    let update_quote_response: UpdateQuoteResponse = admin_service
+        .admin_credit_quote(quote_id, update_quote_request_payload)
+        .await;
 
     match update_quote_response {
         UpdateQuoteResponse::Denied => {
@@ -95,9 +86,8 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         }
     }
 
-    let mint_quote_status_url = user_service.lookup_credit_quote(&quote_id.to_string());
-    info!("Getting mint quote status from: {}", mint_quote_status_url);
-    let mint_quote_status_reply: StatusReply = api.get(mint_quote_status_url).await.unwrap();
+    let mint_quote_status_reply = user_service.lookup_credit_quote(quote_id).await;
+    info!("Getting mint quote status from");
 
     if let StatusReply::Accepted { keyset_id } = mint_quote_status_reply {
         info!(keyset_id=%keyset_id, "Quote is accepted");
@@ -115,11 +105,9 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     // Activate keyset
     let activate_request_payload = ActivateKeysetRequest { qid: quote_id };
     info!("Activating keyset for quote_id: {}", quote_id);
-    api.post_(admin_service.keys_activate(), &activate_request_payload)
-        .await
-        .unwrap();
+    admin_service.keys_activate(activate_request_payload).await;
 
-    let keysets: cdk02::KeysetResponse = api.get(user_service.list_keysets()).await.unwrap();
+    let keysets: cdk02::KeysetResponse = user_service.list_keysets().await;
     assert!(keysets.keysets.iter().any(|ks| ks.id == keyset_id));
     assert!(keysets.keysets.iter().any(|ks| ks.active));
     let keyset_info = keysets
@@ -147,8 +135,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     req.sign(owner_key.secret_key().into()).unwrap();
 
     info!("Sending NUT20 mint request");
-    let mint_response: MintBolt11Response =
-        api.post(user_service.mint_ebill(), &req).await.unwrap();
+    let mint_response = user_service.mint_ebill(req).await;
     let blinded_signatures = mint_response.signatures;
 
     let total_amount = blinded_signatures
