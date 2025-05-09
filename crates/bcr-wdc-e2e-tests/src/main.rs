@@ -34,7 +34,7 @@ fn setup_tracing() {
 async fn can_mint_ebill(cfg: &MainConfig) {
     setup_tracing();
 
-    info!("Starting ebill minting test");
+    info!("START EBILL MINTING TEST");
 
     let api = RestClient::new();
 
@@ -157,6 +157,9 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .sum::<u64>();
     assert_eq!(total_amount, bill_amount);
     info!(amount = total_amount, "Mint Successful obtained signatures");
+    for signature in blinded_signatures {
+        info!(c_= ?signature.c, amount = ?signature.amount, keyset_id = ?signature.keyset_id, "Signature");
+    }
 }
 
 #[tokio::main]
