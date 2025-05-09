@@ -378,4 +378,28 @@ mod tests {
         balances.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(balances, expected);
     }
+
+    #[tokio::test]
+    async fn list_premint_signatures() {
+        let db = init_mem_db().await;
+        let (_, keyset) = keys_utils::generate_random_keyset();
+        let amounts = [Amount::from(8_u64), Amount::from(4_u64)];
+        let signatures = signatures_test::generate_signatures(&keyset, &amounts);
+        let entry = DBEntrySignatures {
+            request_id: Uuid::new_v4(),
+            signatures,
+        };
+        let rid = RecordId::from_table_key(&db.signatures, entry.request_id);
+        let _: Option<DBEntrySignatures> = db
+            .db
+            .insert(rid)
+            .content(entry.clone())
+            .await
+            .expect("insert failed");
+
+        let entries = db.list_premint_signatures().await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].request_id, entry.request_id);
+        assert_eq!(entries[0].signatures.len(), entry.signatures.len());
+    }
 }
