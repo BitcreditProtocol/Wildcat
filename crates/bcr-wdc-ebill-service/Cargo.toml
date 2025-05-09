@@ -2,16 +2,22 @@
 name = "bcr-wdc-ebill-service"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
 bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/E-Bill.git", branch = "406-anonymous-mode"} #temp until it's merged and released
 bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/E-Bill.git", branch = "406-anonymous-mode"} #temp until it's merged and released
 config.workspace = true
-rustls = "0.23"
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal", "time"]}
 tracing = {workspace = true, features = ["log"]}
 tracing-log = {workspace = true}
+bitcoin = {workspace = true, features = ["serde"]}
 tracing-subscriber = {workspace = true, features = ["serde"]}
+url = {workspace = true, features = ["serde"]}
+bip39 = {workspace = true, features = ["serde"]}
+rustls = "0.23"
+serde_repr = "0.1"

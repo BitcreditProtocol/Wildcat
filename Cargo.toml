@@ -59,3 +59,4 @@ tracing-subscriber = {version = "0.3"}
 utoipa = {version = "5"}
 utoipa-swagger-ui = {version = "9"}
 uuid = {version = "1"}
+url = {version = "2.5.4"}

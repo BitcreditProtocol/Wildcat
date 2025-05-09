@@ -1,7 +1,11 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::{extract::FromRef, routing::get, Router};
+use axum::{
+    extract::FromRef,
+    routing::{get, post, put},
+    Router,
+};
 use bcr_ebill_api::{
     external::bitcoin::BitcoinClient,
     service::{
@@ -15,7 +19,10 @@ use bcr_ebill_api::{
 };
 use bcr_ebill_transport::{NotificationServiceApi, PushApi, PushService};
 // ----- local modules
+mod bill;
+mod contact;
 mod error;
+mod identity;
 mod web;
 // ----- end imports
 
@@ -115,6 +122,18 @@ impl AppController {
 
 pub fn routes(ctrl: AppController) -> Router {
     Router::new()
-        .route("/test", get(web::test))
+        .route("/identity/detail", get(web::get_identity))
+        .route("/identity/create", post(web::create_identity))
+        .route("/identity/seed/backup", get(web::get_seed_phrase))
+        .route("/identity/seed/recover", put(web::recover_from_seed_phrase))
+        .route("/contact/create", post(web::create_contact))
+        .route("/bill/list", get(web::get_bills))
+        .route("/bill/detail/{bill_id}", get(web::get_bill_detail))
+        .route(
+            "/bill/attachment/{bill_id}/{file_name}",
+            get(web::get_bill_attachment),
+        )
+        .route("/bill/request_to_pay", put(web::request_to_pay_bill))
+        .route("/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
         .with_state(ctrl)
 }
