@@ -389,6 +389,7 @@ mod tests {
     async fn list_unpaid() {
         let db = init_mem_db().await;
 
+        let mut unpaids: [uuid::Uuid; 2] = Default::default();
         let address = btc::Address::from_str("1thMirt546nngXqyPEz532S8fLwbozud8").unwrap();
         let unpaid1 = IncomingPaymentDBEntry {
             reqid: Uuid::new_v4(),
@@ -397,9 +398,9 @@ mod tests {
             payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
             status: MintQuoteState::Unpaid,
         };
+        unpaids[0] = unpaid1.reqid;
         let rid = RecordId::from_table_key(&db.incoming_table, unpaid1.reqid);
-        let _: Option<IncomingPaymentDBEntry> =
-            db.db.insert(rid).content(unpaid1.clone()).await.unwrap();
+        let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(unpaid1).await.unwrap();
 
         let paid1 = IncomingPaymentDBEntry {
             reqid: Uuid::new_v4(),
@@ -418,13 +419,15 @@ mod tests {
             payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
             status: MintQuoteState::Unpaid,
         };
+        unpaids[1] = unpaid2.reqid;
         let rid = RecordId::from_table_key(&db.incoming_table, unpaid2.reqid);
-        let _: Option<IncomingPaymentDBEntry> =
-            db.db.insert(rid).content(unpaid2.clone()).await.unwrap();
+        let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(unpaid2).await.unwrap();
 
-        let list = db.list_unpaid().await.unwrap();
+        let mut list = db.list_unpaid().await.unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].reqid, unpaid1.reqid);
-        assert_eq!(list[1].reqid, unpaid2.reqid);
+        list.sort_by(|a, b| a.reqid.cmp(&b.reqid));
+        unpaids.sort();
+        assert_eq!(list[0].reqid, unpaids[0]);
+        assert_eq!(list[1].reqid, unpaids[1]);
     }
 }
