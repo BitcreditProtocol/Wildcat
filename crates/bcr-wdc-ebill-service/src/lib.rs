@@ -19,10 +19,7 @@ use bcr_ebill_api::{
 };
 use bcr_ebill_transport::{NotificationServiceApi, PushApi, PushService};
 // ----- local modules
-mod bill;
-mod contact;
 mod error;
-mod identity;
 mod web;
 // ----- end imports
 

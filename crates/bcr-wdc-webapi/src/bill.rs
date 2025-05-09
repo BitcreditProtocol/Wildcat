@@ -1,23 +1,14 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_ebill_api::{
-    data::{
-        bill::{
-            BillAcceptanceStatus, BillCombinedBitcoinKey, BillCurrentWaitingState, BillData,
-            BillParticipants, BillPaymentStatus, BillRecourseStatus, BillSellStatus, BillStatus,
-            BillWaitingForPaymentState, BillWaitingForRecourseState, BillWaitingForSellState,
-            BitcreditBillResult,
-        },
-        contact::{BillAnonParticipant, BillIdentParticipant, BillParticipant},
-        notification::{Notification, NotificationType},
-    },
+    data::{bill, contact, notification},
     util::date::DateTimeUtc,
 };
 use serde::{Deserialize, Serialize};
 // ----- local imports
 use crate::{
-    contact::ContactTypeWeb,
-    identity::{FileWeb, PostalAddressWeb},
+    contact::ContactType,
+    identity::{File, PostalAddress},
 };
 // ----- end imports
 
@@ -27,17 +18,17 @@ pub struct BillsResponse<T: Serialize> {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BitcreditBillWeb {
+pub struct BitcreditBill {
     pub id: String,
-    pub participants: BillParticipantsWeb,
-    pub data: BillDataWeb,
-    pub status: BillStatusWeb,
-    pub current_waiting_state: Option<BillCurrentWaitingStateWeb>,
+    pub participants: BillParticipants,
+    pub data: BillData,
+    pub status: BillStatus,
+    pub current_waiting_state: Option<BillCurrentWaitingState>,
 }
 
-impl From<BitcreditBillResult> for BitcreditBillWeb {
-    fn from(val: BitcreditBillResult) -> Self {
-        BitcreditBillWeb {
+impl From<bill::BitcreditBillResult> for BitcreditBill {
+    fn from(val: bill::BitcreditBillResult) -> Self {
+        BitcreditBill {
             id: val.id,
             participants: val.participants.into(),
             data: val.data.into(),
@@ -48,31 +39,33 @@ impl From<BitcreditBillResult> for BitcreditBillWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub enum BillCurrentWaitingStateWeb {
-    Sell(BillWaitingForSellStateWeb),
-    Payment(BillWaitingForPaymentStateWeb),
-    Recourse(BillWaitingForRecourseStateWeb),
+pub enum BillCurrentWaitingState {
+    Sell(BillWaitingForSellState),
+    Payment(BillWaitingForPaymentState),
+    Recourse(BillWaitingForRecourseState),
 }
 
-impl From<BillCurrentWaitingState> for BillCurrentWaitingStateWeb {
-    fn from(val: BillCurrentWaitingState) -> Self {
+impl From<bill::BillCurrentWaitingState> for BillCurrentWaitingState {
+    fn from(val: bill::BillCurrentWaitingState) -> Self {
         match val {
-            BillCurrentWaitingState::Sell(state) => BillCurrentWaitingStateWeb::Sell(state.into()),
-            BillCurrentWaitingState::Payment(state) => {
-                BillCurrentWaitingStateWeb::Payment(state.into())
+            bill::BillCurrentWaitingState::Sell(state) => {
+                BillCurrentWaitingState::Sell(state.into())
             }
-            BillCurrentWaitingState::Recourse(state) => {
-                BillCurrentWaitingStateWeb::Recourse(state.into())
+            bill::BillCurrentWaitingState::Payment(state) => {
+                BillCurrentWaitingState::Payment(state.into())
+            }
+            bill::BillCurrentWaitingState::Recourse(state) => {
+                BillCurrentWaitingState::Recourse(state.into())
             }
         }
     }
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillWaitingForSellStateWeb {
+pub struct BillWaitingForSellState {
     pub time_of_request: u64,
-    pub buyer: BillParticipantWeb,
-    pub seller: BillParticipantWeb,
+    pub buyer: BillParticipant,
+    pub seller: BillParticipant,
     pub currency: String,
     pub sum: String,
     pub link_to_pay: String,
@@ -80,9 +73,9 @@ pub struct BillWaitingForSellStateWeb {
     pub mempool_link_for_address_to_pay: String,
 }
 
-impl From<BillWaitingForSellState> for BillWaitingForSellStateWeb {
-    fn from(val: BillWaitingForSellState) -> Self {
-        BillWaitingForSellStateWeb {
+impl From<bill::BillWaitingForSellState> for BillWaitingForSellState {
+    fn from(val: bill::BillWaitingForSellState) -> Self {
+        BillWaitingForSellState {
             time_of_request: val.time_of_request,
             buyer: val.buyer.into(),
             seller: val.seller.into(),
@@ -96,10 +89,10 @@ impl From<BillWaitingForSellState> for BillWaitingForSellStateWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillWaitingForPaymentStateWeb {
+pub struct BillWaitingForPaymentState {
     pub time_of_request: u64,
-    pub payer: BillIdentParticipantWeb,
-    pub payee: BillParticipantWeb,
+    pub payer: BillIdentParticipant,
+    pub payee: BillParticipant,
     pub currency: String,
     pub sum: String,
     pub link_to_pay: String,
@@ -107,9 +100,9 @@ pub struct BillWaitingForPaymentStateWeb {
     pub mempool_link_for_address_to_pay: String,
 }
 
-impl From<BillWaitingForPaymentState> for BillWaitingForPaymentStateWeb {
-    fn from(val: BillWaitingForPaymentState) -> Self {
-        BillWaitingForPaymentStateWeb {
+impl From<bill::BillWaitingForPaymentState> for BillWaitingForPaymentState {
+    fn from(val: bill::BillWaitingForPaymentState) -> Self {
+        BillWaitingForPaymentState {
             time_of_request: val.time_of_request,
             payer: val.payer.into(),
             payee: val.payee.into(),
@@ -123,10 +116,10 @@ impl From<BillWaitingForPaymentState> for BillWaitingForPaymentStateWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillWaitingForRecourseStateWeb {
+pub struct BillWaitingForRecourseState {
     pub time_of_request: u64,
-    pub recourser: BillIdentParticipantWeb,
-    pub recoursee: BillIdentParticipantWeb,
+    pub recourser: BillIdentParticipant,
+    pub recoursee: BillIdentParticipant,
     pub currency: String,
     pub sum: String,
     pub link_to_pay: String,
@@ -134,9 +127,9 @@ pub struct BillWaitingForRecourseStateWeb {
     pub mempool_link_for_address_to_pay: String,
 }
 
-impl From<BillWaitingForRecourseState> for BillWaitingForRecourseStateWeb {
-    fn from(val: BillWaitingForRecourseState) -> Self {
-        BillWaitingForRecourseStateWeb {
+impl From<bill::BillWaitingForRecourseState> for BillWaitingForRecourseState {
+    fn from(val: bill::BillWaitingForRecourseState) -> Self {
+        BillWaitingForRecourseState {
             time_of_request: val.time_of_request,
             recourser: val.recourser.into(),
             recoursee: val.recoursee.into(),
@@ -150,18 +143,18 @@ impl From<BillWaitingForRecourseState> for BillWaitingForRecourseStateWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillStatusWeb {
-    pub acceptance: BillAcceptanceStatusWeb,
-    pub payment: BillPaymentStatusWeb,
-    pub sell: BillSellStatusWeb,
-    pub recourse: BillRecourseStatusWeb,
+pub struct BillStatus {
+    pub acceptance: BillAcceptanceStatus,
+    pub payment: BillPaymentStatus,
+    pub sell: BillSellStatus,
+    pub recourse: BillRecourseStatus,
     pub redeemed_funds_available: bool,
     pub has_requested_funds: bool,
 }
 
-impl From<BillStatus> for BillStatusWeb {
-    fn from(val: BillStatus) -> Self {
-        BillStatusWeb {
+impl From<bill::BillStatus> for BillStatus {
+    fn from(val: bill::BillStatus) -> Self {
+        BillStatus {
             acceptance: val.acceptance.into(),
             payment: val.payment.into(),
             sell: val.sell.into(),
@@ -173,7 +166,7 @@ impl From<BillStatus> for BillStatusWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillAcceptanceStatusWeb {
+pub struct BillAcceptanceStatus {
     pub time_of_request_to_accept: Option<u64>,
     pub requested_to_accept: bool,
     pub accepted: bool,
@@ -181,9 +174,9 @@ pub struct BillAcceptanceStatusWeb {
     pub rejected_to_accept: bool,
 }
 
-impl From<BillAcceptanceStatus> for BillAcceptanceStatusWeb {
-    fn from(val: BillAcceptanceStatus) -> Self {
-        BillAcceptanceStatusWeb {
+impl From<bill::BillAcceptanceStatus> for BillAcceptanceStatus {
+    fn from(val: bill::BillAcceptanceStatus) -> Self {
+        BillAcceptanceStatus {
             time_of_request_to_accept: val.time_of_request_to_accept,
             requested_to_accept: val.requested_to_accept,
             accepted: val.accepted,
@@ -194,7 +187,7 @@ impl From<BillAcceptanceStatus> for BillAcceptanceStatusWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillPaymentStatusWeb {
+pub struct BillPaymentStatus {
     pub time_of_request_to_pay: Option<u64>,
     pub requested_to_pay: bool,
     pub paid: bool,
@@ -202,9 +195,9 @@ pub struct BillPaymentStatusWeb {
     pub rejected_to_pay: bool,
 }
 
-impl From<BillPaymentStatus> for BillPaymentStatusWeb {
-    fn from(val: BillPaymentStatus) -> Self {
-        BillPaymentStatusWeb {
+impl From<bill::BillPaymentStatus> for BillPaymentStatus {
+    fn from(val: bill::BillPaymentStatus) -> Self {
+        BillPaymentStatus {
             time_of_request_to_pay: val.time_of_request_to_pay,
             requested_to_pay: val.requested_to_pay,
             paid: val.paid,
@@ -215,7 +208,7 @@ impl From<BillPaymentStatus> for BillPaymentStatusWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillSellStatusWeb {
+pub struct BillSellStatus {
     pub time_of_last_offer_to_sell: Option<u64>,
     pub sold: bool,
     pub offered_to_sell: bool,
@@ -223,9 +216,9 @@ pub struct BillSellStatusWeb {
     pub rejected_offer_to_sell: bool,
 }
 
-impl From<BillSellStatus> for BillSellStatusWeb {
-    fn from(val: BillSellStatus) -> Self {
-        BillSellStatusWeb {
+impl From<bill::BillSellStatus> for BillSellStatus {
+    fn from(val: bill::BillSellStatus) -> Self {
+        BillSellStatus {
             time_of_last_offer_to_sell: val.time_of_last_offer_to_sell,
             sold: val.sold,
             offered_to_sell: val.offered_to_sell,
@@ -236,7 +229,7 @@ impl From<BillSellStatus> for BillSellStatusWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillRecourseStatusWeb {
+pub struct BillRecourseStatus {
     pub time_of_last_request_to_recourse: Option<u64>,
     pub recoursed: bool,
     pub requested_to_recourse: bool,
@@ -244,9 +237,9 @@ pub struct BillRecourseStatusWeb {
     pub rejected_request_to_recourse: bool,
 }
 
-impl From<BillRecourseStatus> for BillRecourseStatusWeb {
-    fn from(val: BillRecourseStatus) -> Self {
-        BillRecourseStatusWeb {
+impl From<bill::BillRecourseStatus> for BillRecourseStatus {
+    fn from(val: bill::BillRecourseStatus) -> Self {
+        BillRecourseStatus {
             time_of_last_request_to_recourse: val.time_of_last_request_to_recourse,
             recoursed: val.recoursed,
             requested_to_recourse: val.requested_to_recourse,
@@ -257,7 +250,7 @@ impl From<BillRecourseStatus> for BillRecourseStatusWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillDataWeb {
+pub struct BillData {
     pub language: String,
     pub time_of_drawing: u64,
     pub issue_date: String,
@@ -269,13 +262,13 @@ pub struct BillDataWeb {
     pub city_of_payment: String,
     pub currency: String,
     pub sum: String,
-    pub files: Vec<FileWeb>,
-    pub active_notification: Option<NotificationWeb>,
+    pub files: Vec<File>,
+    pub active_notification: Option<Notification>,
 }
 
-impl From<BillData> for BillDataWeb {
-    fn from(val: BillData) -> Self {
-        BillDataWeb {
+impl From<bill::BillData> for BillData {
+    fn from(val: bill::BillData) -> Self {
+        BillData {
             language: val.language,
             time_of_drawing: val.time_of_drawing,
             issue_date: val.issue_date,
@@ -294,18 +287,18 @@ impl From<BillData> for BillDataWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillParticipantsWeb {
-    pub drawee: BillIdentParticipantWeb,
-    pub drawer: BillIdentParticipantWeb,
-    pub payee: BillParticipantWeb,
-    pub endorsee: Option<BillParticipantWeb>,
+pub struct BillParticipants {
+    pub drawee: BillIdentParticipant,
+    pub drawer: BillIdentParticipant,
+    pub payee: BillParticipant,
+    pub endorsee: Option<BillParticipant>,
     pub endorsements_count: u64,
     pub all_participant_node_ids: Vec<String>,
 }
 
-impl From<BillParticipants> for BillParticipantsWeb {
-    fn from(val: BillParticipants) -> Self {
-        BillParticipantsWeb {
+impl From<bill::BillParticipants> for BillParticipants {
+    fn from(val: bill::BillParticipants) -> Self {
+        BillParticipants {
             drawee: val.drawee.into(),
             drawer: val.drawer.into(),
             payee: val.payee.into(),
@@ -317,30 +310,30 @@ impl From<BillParticipants> for BillParticipantsWeb {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub enum BillParticipantWeb {
-    Anon(BillAnonParticipantWeb),
-    Ident(BillIdentParticipantWeb),
+pub enum BillParticipant {
+    Anon(BillAnonParticipant),
+    Ident(BillIdentParticipant),
 }
 
-impl From<BillParticipant> for BillParticipantWeb {
-    fn from(val: BillParticipant) -> Self {
+impl From<contact::BillParticipant> for BillParticipant {
+    fn from(val: contact::BillParticipant) -> Self {
         match val {
-            BillParticipant::Ident(data) => BillParticipantWeb::Ident(data.into()),
-            BillParticipant::Anon(data) => BillParticipantWeb::Anon(data.into()),
+            contact::BillParticipant::Ident(data) => BillParticipant::Ident(data.into()),
+            contact::BillParticipant::Anon(data) => BillParticipant::Anon(data.into()),
         }
     }
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BillAnonParticipantWeb {
+pub struct BillAnonParticipant {
     pub node_id: String,
     pub email: Option<String>,
     pub nostr_relays: Vec<String>,
 }
 
-impl From<BillAnonParticipant> for BillAnonParticipantWeb {
-    fn from(val: BillAnonParticipant) -> Self {
-        BillAnonParticipantWeb {
+impl From<contact::BillAnonParticipant> for BillAnonParticipant {
+    fn from(val: contact::BillAnonParticipant) -> Self {
+        BillAnonParticipant {
             node_id: val.node_id,
             email: val.email,
             nostr_relays: val.nostr_relays,
@@ -349,20 +342,20 @@ impl From<BillAnonParticipant> for BillAnonParticipantWeb {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BillIdentParticipantWeb {
+pub struct BillIdentParticipant {
     #[serde(rename = "type")]
-    pub t: ContactTypeWeb,
+    pub t: ContactType,
     pub node_id: String,
     pub name: String,
     #[serde(flatten)]
-    pub postal_address: PostalAddressWeb,
+    pub postal_address: PostalAddress,
     pub email: Option<String>,
     pub nostr_relays: Vec<String>,
 }
 
-impl From<BillIdentParticipant> for BillIdentParticipantWeb {
-    fn from(val: BillIdentParticipant) -> Self {
-        BillIdentParticipantWeb {
+impl From<contact::BillIdentParticipant> for BillIdentParticipant {
+    fn from(val: contact::BillIdentParticipant) -> Self {
+        BillIdentParticipant {
             t: val.t.into(),
             name: val.name,
             node_id: val.node_id,
@@ -374,10 +367,10 @@ impl From<BillIdentParticipant> for BillIdentParticipantWeb {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationWeb {
+pub struct Notification {
     pub id: String,
     pub node_id: Option<String>,
-    pub notification_type: NotificationTypeWeb,
+    pub notification_type: NotificationType,
     pub reference_id: Option<String>,
     pub description: String,
     pub datetime: DateTimeUtc,
@@ -385,9 +378,9 @@ pub struct NotificationWeb {
     pub payload: Option<serde_json::Value>,
 }
 
-impl From<Notification> for NotificationWeb {
-    fn from(val: Notification) -> Self {
-        NotificationWeb {
+impl From<notification::Notification> for Notification {
+    fn from(val: notification::Notification) -> Self {
+        Notification {
             id: val.id,
             node_id: val.node_id,
             notification_type: val.notification_type.into(),
@@ -401,16 +394,16 @@ impl From<Notification> for NotificationWeb {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NotificationTypeWeb {
+pub enum NotificationType {
     General,
     Bill,
 }
 
-impl From<NotificationType> for NotificationTypeWeb {
-    fn from(val: NotificationType) -> Self {
+impl From<notification::NotificationType> for NotificationType {
+    fn from(val: notification::NotificationType) -> Self {
         match val {
-            NotificationType::Bill => NotificationTypeWeb::Bill,
-            NotificationType::General => NotificationTypeWeb::General,
+            notification::NotificationType::Bill => NotificationType::Bill,
+            notification::NotificationType::General => NotificationType::General,
         }
     }
 }
@@ -422,13 +415,13 @@ pub struct RequestToPayBitcreditBillPayload {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BillCombinedBitcoinKeyWeb {
+pub struct BillCombinedBitcoinKey {
     pub private_key: String,
 }
 
-impl From<BillCombinedBitcoinKey> for BillCombinedBitcoinKeyWeb {
-    fn from(val: BillCombinedBitcoinKey) -> Self {
-        BillCombinedBitcoinKeyWeb {
+impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
+    fn from(val: bill::BillCombinedBitcoinKey) -> Self {
+        BillCombinedBitcoinKey {
             private_key: val.private_key,
         }
     }

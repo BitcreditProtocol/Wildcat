@@ -27,14 +27,6 @@ pub enum Error {
     #[error("Validation error: {0}")]
     Validation(#[from] bcr_ebill_api::util::ValidationError),
 
-    /// all errors originating from invalid URLs
-    #[error("Invalid URL")]
-    InvalidUrl,
-
-    /// all errors originating from invalid bitcoin keys
-    #[error("Invalid bitcoin key")]
-    InvalidBitcoinKey,
-
     /// all errors originating from creating an identity, if an identity already exists
     #[error("Identity already exists")]
     IdentityAlreadyExists,
@@ -42,6 +34,10 @@ pub enum Error {
     /// all errors originating from invalid mnemonics
     #[error("Invalid Mnemonic")]
     InvalidMnemonic,
+
+    /// all errors originating from identity conversion
+    #[error("Invalid identity")]
+    IdentityConversion,
 }
 
 impl axum::response::IntoResponse for Error {
@@ -52,12 +48,11 @@ impl axum::response::IntoResponse for Error {
             Error::BillService(e) => BillServiceError(e).into_response(),
             Error::NotificationService(e) => ServiceError(e.into()).into_response(),
             Error::Validation(e) => ValidationError(e).into_response(),
-            Error::InvalidUrl => {
-                (StatusCode::BAD_REQUEST, String::from("invalid URL")).into_response()
-            }
-            Error::InvalidBitcoinKey => {
-                (StatusCode::BAD_REQUEST, String::from("invalid Bitcoin Key")).into_response()
-            }
+            Error::IdentityConversion => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("invalid identity"),
+            )
+                .into_response(),
             Error::InvalidMnemonic => (
                 StatusCode::BAD_REQUEST,
                 String::from("invalid bip39 mnemonic"),

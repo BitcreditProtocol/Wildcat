@@ -7,3 +7,5 @@ license = "MIT"
 [dependencies]
 reqwest = {workspace = true, features = ["json"]}
 thiserror.workspace = true
+bcr-wdc-ebill-service.workspace = true
+bcr-wdc-webapi.workspace = true
