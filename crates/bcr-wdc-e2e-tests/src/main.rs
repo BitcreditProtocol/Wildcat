@@ -23,7 +23,6 @@ use test_utils::{generate_blinds, get_amounts, random_ebill};
 struct MainConfig {
     wallet_service: String,
     admin_service: String,
-    key_service: String,
 }
 
 fn setup_tracing() {
@@ -39,9 +38,8 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     let api = RestClient::new();
 
-    let wallet_service = Endpoints::<WalletService>::new(cfg.wallet_service.clone());
+    let user_service = Endpoints::<UserService>::new(cfg.wallet_service.clone());
     let admin_service = Endpoints::<AdminService>::new(cfg.admin_service.clone());
-    let keys_service = Endpoints::<KeyService>::new(cfg.key_service.clone());
 
     // Create Ebill
     let (owner_key, bill, signature) = random_ebill();
@@ -62,7 +60,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     // Mint Ebill
     info!("Requesting to mint the bill");
-    let mint_credit_quote_url = wallet_service.mint_credit_quote_url();
+    let mint_credit_quote_url = user_service.mint_credit_quote_url();
     let enquire_reply: EnquireReply = api.post(mint_credit_quote_url, &request).await.unwrap();
     let quote_id = enquire_reply.id;
 
@@ -97,7 +95,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         }
     }
 
-    let mint_quote_status_url = wallet_service.lookup_credit_quote(&quote_id.to_string());
+    let mint_quote_status_url = user_service.lookup_credit_quote(&quote_id.to_string());
     info!("Getting mint quote status from: {}", mint_quote_status_url);
     let mint_quote_status_reply: StatusReply = api.get(mint_quote_status_url).await.unwrap();
 
@@ -121,7 +119,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .await
         .unwrap();
 
-    let keysets: cdk02::KeysetResponse = api.get(wallet_service.list_keysets()).await.unwrap();
+    let keysets: cdk02::KeysetResponse = api.get(user_service.list_keysets()).await.unwrap();
     assert!(keysets.keysets.iter().any(|ks| ks.id == keyset_id));
     assert!(keysets.keysets.iter().any(|ks| ks.active));
     let keyset_info = keysets
@@ -150,7 +148,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!("Sending NUT20 mint request");
     let mint_response: MintBolt11Response =
-        api.post(keys_service.mint_ebill(), &req).await.unwrap();
+        api.post(user_service.mint_ebill(), &req).await.unwrap();
     let blinded_signatures = mint_response.signatures;
 
     let total_amount = blinded_signatures
