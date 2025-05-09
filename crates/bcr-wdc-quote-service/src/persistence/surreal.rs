@@ -54,6 +54,7 @@ impl From<LightQuoteDBEntry> for quotes::LightQuote {
             id: dbq.qid,
             status: dbq.status,
             sum: dbq.sum,
+            maturity_date: dbq.maturity_date,
         }
     }
 }
@@ -162,8 +163,8 @@ impl DBQuotes {
         }
         if let Some(sort) = sort {
             statement += match sort {
-                SortOrder::BillMaturityDateAsc => " ORDER BY bill.maturity_date ASC",
-                SortOrder::BillMaturityDateDesc => " ORDER BY bill.maturity_date DESC",
+                SortOrder::BillMaturityDateAsc => " ORDER BY maturity_date ASC",
+                SortOrder::BillMaturityDateDesc => " ORDER BY maturity_date DESC",
             };
         }
         let query = self

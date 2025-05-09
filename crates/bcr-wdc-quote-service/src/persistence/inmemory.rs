@@ -166,6 +166,7 @@ impl Repository for QuotesIDMap {
                 id: quote.id,
                 status: quote.status.discriminant(),
                 sum: quote.bill.sum,
+                maturity_date: quote.bill.maturity_date,
             })
             .collect();
         Ok(b)

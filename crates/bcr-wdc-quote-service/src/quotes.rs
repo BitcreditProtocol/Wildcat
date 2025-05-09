@@ -76,6 +76,7 @@ pub struct LightQuote {
     pub id: Uuid,
     pub status: QuoteStatusDiscriminants,
     pub sum: Amount,
+    pub maturity_date: TStamp,
 }
 
 impl Quote {
