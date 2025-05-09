@@ -21,7 +21,7 @@ use test_utils::{generate_blinds, get_amounts, random_ebill};
 
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
-    wallet_service: String,
+    user_service: String,
     admin_service: String,
 }
 
@@ -38,7 +38,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     let api = RestClient::new();
 
-    let user_service = Endpoints::<UserService>::new(cfg.wallet_service.clone());
+    let user_service = Endpoints::<UserService>::new(cfg.user_service.clone());
     let admin_service = Endpoints::<AdminService>::new(cfg.admin_service.clone());
 
     // Create Ebill
