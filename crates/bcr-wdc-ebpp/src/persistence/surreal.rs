@@ -365,3 +365,66 @@ impl PaymentRepository for DBPayments {
         Ok(requests)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use surrealdb::RecordId;
+
+    use super::*;
+
+    async fn init_mem_db() -> DBPayments {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBPayments {
+            db: sdb,
+            network: btc::Network::Bitcoin,
+            incoming_table: String::from("incoming"),
+            outgoing_table: String::from("outgoing"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_unpaid() {
+        let db = init_mem_db().await;
+
+        let address = btc::Address::from_str("1thMirt546nngXqyPEz532S8fLwbozud8").unwrap();
+        let unpaid1 = IncomingPaymentDBEntry {
+            reqid: Uuid::new_v4(),
+            amount: btc::Amount::ZERO,
+            expiration: None,
+            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            status: MintQuoteState::Unpaid,
+        };
+        let rid = RecordId::from_table_key(&db.incoming_table, unpaid1.reqid);
+        let _: Option<IncomingPaymentDBEntry> =
+            db.db.insert(rid).content(unpaid1.clone()).await.unwrap();
+
+        let paid1 = IncomingPaymentDBEntry {
+            reqid: Uuid::new_v4(),
+            amount: btc::Amount::ZERO,
+            expiration: None,
+            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            status: MintQuoteState::Paid,
+        };
+        let rid = RecordId::from_table_key(&db.incoming_table, paid1.reqid);
+        let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(paid1).await.unwrap();
+
+        let unpaid2 = IncomingPaymentDBEntry {
+            reqid: Uuid::new_v4(),
+            amount: btc::Amount::ZERO,
+            expiration: None,
+            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            status: MintQuoteState::Unpaid,
+        };
+        let rid = RecordId::from_table_key(&db.incoming_table, unpaid2.reqid);
+        let _: Option<IncomingPaymentDBEntry> =
+            db.db.insert(rid).content(unpaid2.clone()).await.unwrap();
+
+        let list = db.list_unpaid().await.unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].reqid, unpaid1.reqid);
+        assert_eq!(list[1].reqid, unpaid2.reqid);
+    }
+}
