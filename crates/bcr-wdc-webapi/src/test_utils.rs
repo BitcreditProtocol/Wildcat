@@ -3,8 +3,8 @@ use chrono::NaiveTime;
 // ----- extra library imports
 use rand::Rng;
 // ----- local imports
-use bcr_wdc_utils::keys::test_utils as keys_test;
 use crate::quotes::{ContactType, IdentityPublicData, PostalAddress};
+use bcr_wdc_utils::keys::test_utils as keys_test;
 // ----- end imports
 
 pub fn random_bill_id() -> String {

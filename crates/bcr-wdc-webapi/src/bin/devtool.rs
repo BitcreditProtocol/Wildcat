@@ -1,9 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_utils::keys::test_utils as keys_test;
-use bcr_wdc_webapi::quotes::{
-    BillInfo, EnquireRequest, IdentityPublicData
-};
+use bcr_wdc_webapi::quotes::{BillInfo, EnquireRequest, IdentityPublicData};
 use bdk_wallet::serde_json;
 use cashu::Amount;
 use rand::Rng;
@@ -50,5 +48,3 @@ fn main() -> std::io::Result<()> {
     println!("{}", jason);
     Ok(())
 }
-
-
