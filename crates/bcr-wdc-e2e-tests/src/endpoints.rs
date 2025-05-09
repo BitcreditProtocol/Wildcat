@@ -22,11 +22,10 @@ impl<T> Endpoints<T> {
     }
 }
 
-pub struct WalletService {}
+pub struct UserService {}
 pub struct AdminService {}
-pub struct KeyService {}
 
-impl Endpoints<WalletService> {
+impl Endpoints<UserService> {
     pub fn mint_credit_quote_url(&self) -> Url {
         self.url("v1/mint/credit/quote")
     }
@@ -35,6 +34,9 @@ impl Endpoints<WalletService> {
     }
     pub fn list_keysets(&self) -> Url {
         self.url("v1/keysets")
+    }
+    pub fn mint_ebill(&self) -> Url {
+        self.url("v1/mint/ebill")
     }
 }
 
@@ -47,8 +49,3 @@ impl Endpoints<AdminService> {
     }
 }
 
-impl Endpoints<KeyService> {
-    pub fn mint_ebill(&self) -> Url {
-        self.url("v1/mint/ebill")
-    }
-}
