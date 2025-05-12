@@ -56,6 +56,12 @@ impl RestClient {
     }
 }
 
+impl Default for RestClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Service<T> {
     base_url: String,
     client: RestClient,

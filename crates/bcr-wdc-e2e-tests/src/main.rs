@@ -89,7 +89,11 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let mint_quote_status_reply = user_service.lookup_credit_quote(quote_id).await;
     info!(quote_id=?quote_id, "Getting mint quote status for quote");
 
-    if let StatusReply::Offered { keyset_id , expiration_date} = mint_quote_status_reply {
+    if let StatusReply::Offered {
+        keyset_id,
+        expiration_date,
+    } = mint_quote_status_reply
+    {
         info!(keyset_id=?keyset_id, expiration_date=?expiration_date, "Quote is accepted");
     } else {
         panic!("Quote is not accepted");
