@@ -123,6 +123,7 @@ services:
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
+      - ./.docker_data/ebpp/regtest/:/data/regtest/
 
   ebill-service:
     image: wildcat/ebill-service
@@ -188,6 +189,14 @@ services:
       quote-service:
         condition: service_started
       wallet-aggregator:
+        condition: service_healthy
+      bff-wallet-service:
         condition: service_started
+      bff-dashboard-service:
+        condition: service_started
+      key-service:
+        condition: service_healthy
+      surrealdb:
+        condition: service_healthy
     volumes:
       - ./docker/e2e-tests/config.toml:/e2e-tests/config.toml
