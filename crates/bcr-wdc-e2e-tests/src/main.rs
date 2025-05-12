@@ -94,7 +94,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         expiration_date,
     } = mint_quote_status_reply
     {
-        info!(keyset_id=?keyset_id, expiration_date=?expiration_date, "Quote is accepted");
+        info!(keyset_id=?keyset_id, expiration_date=?expiration_date, "Quote is offered");
     } else {
         panic!("Quote is not accepted");
     }
