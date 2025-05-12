@@ -1,0 +1,45 @@
+name: End to end integration test
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: extractions/setup-just@v2
+      with:
+        just-version: 1.5.0
+    - name: Install Docker Compose
+      run: |
+        echo $(uname -s)-$(uname -m)
+        sudo curl -L "https://github.com/docker/compose/releases/download/v2.36.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && \
+        sudo chmod +x /usr/local/bin/docker-compose && \
+        docker-compose --version
+    - name: Build Docker Base Image
+      run: docker build -t wildcat/base-image -f docker/base-image/Dockerfile .
+    - name: Build Docker Key Service
+      run: docker build -t wildcat/key-service -f docker/key-service/Dockerfile .
+    - name: Build Docker Treasury Service
+      run: docker build -t wildcat/treasury-service -f docker/treasury-service/Dockerfile .
+    - name: Build Docker Swap Service
+      run: docker build -t wildcat/swap-service -f docker/swap-service/Dockerfile .
+    - name: Build Docker Quote Service
+      run: docker build -t wildcat/quote-service -f docker/quote-service/Dockerfile .
+    - name: Build Docker Wallet Aggregator
+      run: docker build -t wildcat/wallet-aggregator -f docker/wallet-aggregator/Dockerfile .
+    - name: Build Docker EBPP
+      run: docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
+    - name: Build Docker Ebill Service
+      run: docker build -t wildcat/ebill-service -f docker/ebill-service/Dockerfile .
+    - name: Build Docker E2E Tests
+      run: docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
+    - name: Run E2E Tests
+      run: docker-compose -f docker-compose-e2e.yml --verbose up --exit-code-from\;/./ e2e-tests --abort-on-container-exit e2e-tests
+    - name: Tear Down E2E Environment
+      if: always()
+      run: docker-compose -f docker-compose-e2e.yml --verbose down
