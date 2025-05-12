@@ -46,6 +46,7 @@ impl InMemoryMap {
                 return Err(Error::InvalidMintRequest);
             }
             condition.is_minted = true;
+            return Ok(());
         }
         Err(Error::UnknownKeyset(*kid))
     }
