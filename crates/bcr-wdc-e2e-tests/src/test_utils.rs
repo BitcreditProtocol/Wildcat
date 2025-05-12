@@ -75,3 +75,16 @@ pub fn generate_blinds(
     }
     blinds
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_utils::get_amounts;
+    #[test]
+    fn test_get_amounts() {
+        let amounts = get_amounts(1000);
+        let sum = amounts.iter().sum::<u64>();
+
+        assert_eq!(amounts, vec![8, 32, 64, 128, 256, 512]);
+        assert_eq!(sum, 1000);
+    }
+}
