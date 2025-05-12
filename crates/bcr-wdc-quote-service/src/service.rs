@@ -270,7 +270,7 @@ where
         let maturity_date = quote.bill.maturity_date;
         let kid = self
             .keys_hndlr
-            .generate(qid, quote.bill.sum, public_key, maturity_date)
+            .generate(qid, discounted, public_key, maturity_date)
             .await?;
 
         let (request_id, fees_blinds) = self.wallet.get_blinds(kid, fees).await?;
