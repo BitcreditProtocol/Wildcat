@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysService: Send + Sync {
+pub trait KeysService {
     async fn info(&self, id: &cdk02::Id) -> Result<cdk02::KeySetInfo>;
     async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature>;
     async fn verify_proof(&self, proof: &cdk00::Proof) -> Result<()>;
@@ -20,7 +20,7 @@ pub trait KeysService: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait ProofRepository: Send + Sync {
+pub trait ProofRepository {
     /// WARNING: this method should do strict insert.
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call

@@ -32,7 +32,7 @@ pub enum SortOrder {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Repository: Send + Sync {
+pub trait Repository {
     async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
     async fn update_status_if_pending(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
     async fn update_status_if_offered(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
@@ -48,7 +48,7 @@ pub trait Repository: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysHandler: Send + Sync {
+pub trait KeysHandler {
     async fn generate(
         &self,
         qid: Uuid,
@@ -61,7 +61,7 @@ pub trait KeysHandler: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Wallet: Send + Sync {
+pub trait Wallet {
     async fn get_blinds(
         &self,
         kid: cdk02::Id,
