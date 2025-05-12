@@ -48,6 +48,7 @@ pub trait OnChainWallet: Sync {
     async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool>;
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait PaymentRepository: Sync {
     async fn load_incoming(&self, reqid: Uuid) -> Result<payment::IncomingRequest>;
@@ -60,6 +61,7 @@ pub trait PaymentRepository: Sync {
     async fn update_outgoing(&self, req: payment::OutgoingRequest) -> Result<()>;
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EBillNode: Sync {
     /// Returns a string representing the bitcoin descriptor where payment is expected
@@ -485,4 +487,206 @@ fn parse_to_bip21_uri(input: &str, network: btc::Network) -> Result<bip21::Uri> 
         .map_err(|e| Error::Bip21Parse(anyhow!(e)))?
         .require_network(network)
         .map_err(|e| Error::Bip21Parse(anyhow!(e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockall::predicate::*;
+
+    fn generate_random_address() -> btc::Address {
+        let sk = btc::PrivateKey::generate(btc::Network::Testnet);
+        let pk =
+            btc::CompressedPublicKey::from_private_key(secp256k1::global::SECP256K1, &sk).unwrap();
+        let addr = btc::Address::p2wpkh(&pk, btc::Network::Testnet);
+        addr
+    }
+
+    mockall::mock! {
+        OnChainWallet{}
+        #[async_trait]
+        impl OnChainWallet for OnChainWallet {
+            fn generate_new_recipient(&self) -> Result<btc::Address>;
+            fn network(&self) -> btc::Network;
+            async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
+            async fn balance(&self) -> Result<bdk_wallet::Balance>;
+            async fn get_address_balance(&self, recipient: &btc::Address) -> Result<btc::Amount>;
+            async fn estimate_fees(&self) -> Result<btc::Amount>;
+            async fn send_to(
+                &self,
+                recipient: btc::Address,
+                amount: btc::Amount,
+                max_fee: btc::Amount,
+            ) -> Result<(btc::Txid, btc::Amount)>;
+            async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool>;
+        }
+
+        impl std::clone::Clone for OnChainWallet {
+            fn clone(&self) -> Self;
+        }
+
+    }
+
+    #[tokio::test]
+    async fn create_incoming_payment_request_wrongunit() {
+        let onchain = MockOnChainWallet::new();
+        let payrepo = MockPaymentRepository::new();
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval).await;
+        let result = srvc
+            .create_incoming_payment_request(
+                Amount::from(100),
+                &CurrencyUnit::Usd,
+                String::new(),
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_incoming_payment_request_getnewaddress() {
+        let address = generate_random_address();
+        let cloned_address = address.clone();
+        let mut onchain = MockOnChainWallet::new();
+        onchain
+            .expect_generate_new_recipient()
+            .returning(move || Ok(address.clone()));
+        let mut payrepo = MockPaymentRepository::new();
+        payrepo.expect_store_incoming().returning(|_| Ok(()));
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval).await;
+        let result = srvc
+            .create_incoming_payment_request(
+                Amount::from(100),
+                &CurrencyUnit::Sat,
+                String::new(),
+                None,
+            )
+            .await
+            .unwrap();
+        let uri: bip21::Uri = bip21::Uri::from_str(&result.request)
+            .unwrap()
+            .require_network(btc::Network::Testnet)
+            .unwrap();
+        assert_eq!(uri.address, cloned_address);
+    }
+
+    #[tokio::test]
+    async fn make_payment_wrongunit() {
+        let onchain = MockOnChainWallet::new();
+        let payrepo = MockPaymentRepository::new();
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval).await;
+        let result = srvc
+            .make_payment(
+                MeltQuote {
+                    id: uuid::Uuid::new_v4(),
+                    unit: CurrencyUnit::Usd,
+                    amount: Amount::ZERO,
+                    request: String::default(),
+                    fee_reserve: Amount::ZERO,
+                    state: MeltQuoteState::Unpaid,
+                    expiry: 0,
+                    payment_preimage: None,
+                    request_lookup_id: String::default(),
+                    msat_to_pay: None,
+                    created_time: 0,
+                    paid_time: None,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn make_payment_alreadypaid() {
+        let reqid = Uuid::new_v4();
+        let onchain = MockOnChainWallet::new();
+        let mut payrepo = MockPaymentRepository::new();
+        payrepo
+            .expect_load_incoming()
+            .with(eq(reqid))
+            .returning(move |_| {
+                Ok(payment::IncomingRequest {
+                    reqid,
+                    payment_type: payment::PaymentType::OnChain(generate_random_address()),
+                    amount: btc::Amount::from_sat(100),
+                    expiration: None,
+                    status: MintQuoteState::Paid,
+                })
+            });
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval).await;
+        let result = srvc
+            .make_payment(
+                MeltQuote {
+                    id: uuid::Uuid::new_v4(),
+                    unit: CurrencyUnit::Sat,
+                    amount: Amount::ZERO,
+                    request: String::default(),
+                    fee_reserve: Amount::ZERO,
+                    state: MeltQuoteState::Unpaid,
+                    expiry: 0,
+                    payment_preimage: None,
+                    request_lookup_id: String::default(),
+                    msat_to_pay: None,
+                    created_time: 0,
+                    paid_time: None,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn make_payment_pending() {
+        let reqid = Uuid::new_v4();
+        let onchain = MockOnChainWallet::new();
+        let mut payrepo = MockPaymentRepository::new();
+        payrepo
+            .expect_load_incoming()
+            .with(eq(reqid))
+            .returning(move |_| {
+                Ok(payment::IncomingRequest {
+                    reqid,
+                    payment_type: payment::PaymentType::OnChain(generate_random_address()),
+                    amount: btc::Amount::from_sat(100),
+                    expiration: None,
+                    status: MintQuoteState::Paid,
+                })
+            });
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval).await;
+        let result = srvc
+            .make_payment(
+                MeltQuote {
+                    id: uuid::Uuid::new_v4(),
+                    unit: CurrencyUnit::Sat,
+                    amount: Amount::ZERO,
+                    request: String::default(),
+                    fee_reserve: Amount::ZERO,
+                    state: MeltQuoteState::Pending,
+                    expiry: 0,
+                    payment_preimage: None,
+                    request_lookup_id: String::default(),
+                    msat_to_pay: None,
+                    created_time: 0,
+                    paid_time: None,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+    }
 }
