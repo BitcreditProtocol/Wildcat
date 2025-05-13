@@ -274,35 +274,20 @@ where
         };
 
         let quote_amount = btc::Amount::from_sat(melt_quote.amount.into());
+        if request.amount != quote_amount {
+            return Err(PaymentError::Amount(
+                cdk_common::amount::Error::InvalidAmount(format!(
+                    "melt_quote.amount {quote_amount} != request.amount {}",
+                    request.amount
+                )),
+            ));
+        }
         let reserved_fee_amount = btc::Amount::from_sat(melt_quote.fee_reserve.into());
-        let uri_parse_result = parse_to_bip21_uri(&melt_quote.request, self.onchain.network());
-        let recipient = match uri_parse_result {
-            Ok(bip21::Uri {
-                address, amount, ..
-            }) => {
-                if let Some(uri_amount) = amount {
-                    if quote_amount != uri_amount {
-                        let err_mesg = format!(
-                            "bip21::Uri.amount {quote_amount} != melt_quote.amount {uri_amount}"
-                        );
-                        return Err(PaymentError::Amount(
-                            cdk_common::amount::Error::InvalidAmount(err_mesg),
-                        ));
-                    }
-                }
-                address
-            }
-            Err(_) => btc::Address::from_str(&melt_quote.request)
-                .map_err(|e| PaymentError::Anyhow(anyhow!(e)))?
-                .require_network(self.onchain.network())
-                .map_err(|e| PaymentError::Anyhow(anyhow!(e)))?,
-        };
-
         request.status = MeltQuoteState::Pending;
         self.payrepo.update_outgoing(request.clone()).await?;
         let (tx_id, total_fee) = self
             .onchain
-            .send_to(recipient, quote_amount, reserved_fee_amount)
+            .send_to(request.recipient.clone(), quote_amount, reserved_fee_amount)
             .await?;
         request.proof = Some(tx_id);
         let total_spent = quote_amount + total_fee;
@@ -615,6 +600,7 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), PaymentError::UnsupportedUnit));
     }
 
     #[tokio::test]
@@ -623,15 +609,16 @@ mod tests {
         let onchain = MockOnChainWallet::new();
         let mut payrepo = MockPaymentRepository::new();
         payrepo
-            .expect_load_incoming()
+            .expect_load_outgoing()
             .with(eq(reqid))
             .returning(move |_| {
-                Ok(payment::IncomingRequest {
+                Ok(payment::OutgoingRequest {
                     reqid,
-                    payment_type: payment::PaymentType::OnChain(generate_random_address()),
-                    amount: btc::Amount::from_sat(100),
-                    expiration: None,
-                    status: MintQuoteState::Paid,
+                    amount: btc::Amount::ZERO,
+                    recipient: generate_random_address(),
+                    status: MeltQuoteState::Paid,
+                    proof: None,
+                    total_spent: None,
                 })
             });
         let ebill = MockEBillNode::new();
@@ -648,7 +635,7 @@ mod tests {
                     state: MeltQuoteState::Unpaid,
                     expiry: 0,
                     payment_preimage: None,
-                    request_lookup_id: String::default(),
+                    request_lookup_id: reqid.to_string(),
                     msat_to_pay: None,
                     created_time: 0,
                     paid_time: None,
@@ -658,6 +645,10 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            PaymentError::InvoiceAlreadyPaid
+        ));
     }
 
     #[tokio::test]
@@ -666,15 +657,16 @@ mod tests {
         let onchain = MockOnChainWallet::new();
         let mut payrepo = MockPaymentRepository::new();
         payrepo
-            .expect_load_incoming()
+            .expect_load_outgoing()
             .with(eq(reqid))
             .returning(move |_| {
-                Ok(payment::IncomingRequest {
+                Ok(payment::OutgoingRequest {
                     reqid,
-                    payment_type: payment::PaymentType::OnChain(generate_random_address()),
-                    amount: btc::Amount::from_sat(100),
-                    expiration: None,
-                    status: MintQuoteState::Paid,
+                    amount: btc::Amount::ZERO,
+                    recipient: generate_random_address(),
+                    status: MeltQuoteState::Pending,
+                    proof: None,
+                    total_spent: None,
                 })
             });
         let ebill = MockEBillNode::new();
@@ -691,7 +683,7 @@ mod tests {
                     state: MeltQuoteState::Pending,
                     expiry: 0,
                     payment_preimage: None,
-                    request_lookup_id: String::default(),
+                    request_lookup_id: reqid.to_string(),
                     msat_to_pay: None,
                     created_time: 0,
                     paid_time: None,
@@ -701,5 +693,92 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            PaymentError::InvoicePaymentPending
+        ));
+    }
+
+    #[tokio::test]
+    async fn make_payment_bip21parseerror() {
+        let reqid = Uuid::new_v4();
+        let mut onchain = MockOnChainWallet::new();
+        onchain.expect_network().returning(|| btc::Network::Testnet);
+        let mut payrepo = MockPaymentRepository::new();
+        payrepo
+            .expect_load_outgoing()
+            .with(eq(reqid))
+            .returning(move |_| Err(Error::PaymentRequestNotFound(reqid)));
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
+        let result = srvc
+            .make_payment(
+                MeltQuote {
+                    id: uuid::Uuid::new_v4(),
+                    unit: CurrencyUnit::Sat,
+                    amount: Amount::ZERO,
+                    request: String::default(),
+                    fee_reserve: Amount::ZERO,
+                    state: MeltQuoteState::Pending,
+                    expiry: 0,
+                    payment_preimage: None,
+                    request_lookup_id: reqid.to_string(),
+                    msat_to_pay: None,
+                    created_time: 0,
+                    paid_time: None,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), PaymentError::Anyhow(_)));
+    }
+
+    #[tokio::test]
+    async fn make_payment_quoteandrequestamountsdonotmatch() {
+        let reqid = Uuid::new_v4();
+        let mut onchain = MockOnChainWallet::new();
+        onchain.expect_network().returning(|| btc::Network::Testnet);
+        let mut payrepo = MockPaymentRepository::new();
+        payrepo
+            .expect_load_outgoing()
+            .with(eq(reqid))
+            .returning(move |_| {
+                Ok(payment::OutgoingRequest {
+                    reqid,
+                    amount: btc::Amount::from_sat(10),
+                    recipient: generate_random_address(),
+                    status: MeltQuoteState::Unpaid,
+                    proof: None,
+                    total_spent: None,
+                })
+            });
+        let ebill = MockEBillNode::new();
+        let interval = core::time::Duration::from_secs(1);
+        let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
+        let result = srvc
+            .make_payment(
+                MeltQuote {
+                    id: uuid::Uuid::new_v4(),
+                    unit: CurrencyUnit::Sat,
+                    amount: Amount::from(11),
+                    request: String::default(),
+                    fee_reserve: Amount::ZERO,
+                    state: MeltQuoteState::Pending,
+                    expiry: 0,
+                    payment_preimage: None,
+                    request_lookup_id: reqid.to_string(),
+                    msat_to_pay: None,
+                    created_time: 0,
+                    paid_time: None,
+                },
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), PaymentError::Amount(_)));
     }
 }
