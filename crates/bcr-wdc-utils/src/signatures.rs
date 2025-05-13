@@ -57,7 +57,7 @@ pub fn basic_proofs_checks(proofs: &[cdk00::Proof]) -> ChecksResult<()> {
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
-    use cashu::{dhke, secret};
+    use cashu::{dhke, secret, Id};
 
     pub fn generate_proofs(keyset: &cdk02::MintKeySet, amounts: &[Amount]) -> Vec<cdk00::Proof> {
         let mut proofs: Vec<cdk00::Proof> = Vec::new();
@@ -74,12 +74,12 @@ pub mod test_utils {
     }
 
     pub fn generate_blinds(
-        keyset: &cdk02::MintKeySet,
+        id : Id,
         amounts: &[Amount],
     ) -> Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> {
         let mut blinds: Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> = Vec::new();
         for amount in amounts {
-            blinds.push(generate_blind(keyset.id, *amount));
+            blinds.push(generate_blind(id, *amount));
         }
         blinds
     }
@@ -147,7 +147,7 @@ mod tests {
         let (_, keyset) = generate_keyset();
         let amounts = vec![Amount::from(64), Amount::from(2)];
 
-        let mut blinds: Vec<_> = generate_blinds(&keyset, &amounts)
+        let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
@@ -170,7 +170,7 @@ mod tests {
         let (_, keyset) = generate_keyset();
         let amounts = vec![Amount::from(64), Amount::from(8)];
 
-        let mut blinds: Vec<_> = generate_blinds(&keyset, &amounts)
+        let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();

@@ -223,7 +223,7 @@ mod tests {
         let (info, keyset) = keys_utils::generate_random_keyset();
 
         let (blinds, secrets, _): (Vec<_>, Vec<_>, Vec<_>) =
-            signatures_test::generate_blinds(&keyset, &[Amount::from(16)])
+            signatures_test::generate_blinds(keyset.id, &[Amount::from(16)])
                 .into_iter()
                 .map(|(b, s, k)| {
                     (
