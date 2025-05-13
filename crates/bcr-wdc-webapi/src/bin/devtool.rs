@@ -1,7 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_utils::keys::test_utils as keys_test;
-use bcr_wdc_webapi::quotes::{BillInfo, EnquireRequest, IdentityPublicData};
+use bcr_wdc_webapi::{
+    bill::BillParticipant,
+    quotes::{BillInfo, EnquireRequest},
+};
 use bdk_wallet::serde_json;
 use cashu::Amount;
 use rand::Rng;
@@ -16,10 +19,10 @@ fn main() -> std::io::Result<()> {
     let (mut signing_key, payee) = random_identity_public_data();
 
     let endorsees_size = rand::thread_rng().gen_range(0..3);
-    let mut endorsees: Vec<IdentityPublicData> = Vec::with_capacity(endorsees_size);
+    let mut endorsees: Vec<BillParticipant> = Vec::with_capacity(endorsees_size);
     for _ in 0..endorsees_size {
         let (keypair, endorse) = random_identity_public_data();
-        endorsees.push(endorse);
+        endorsees.push(BillParticipant::Ident(endorse));
         signing_key = keypair;
     }
 
@@ -31,7 +34,7 @@ fn main() -> std::io::Result<()> {
         maturity_date: random_date(),
         drawee,
         drawer,
-        payee,
+        payee: BillParticipant::Ident(payee),
         endorsees,
         sum: amount.into(),
     };

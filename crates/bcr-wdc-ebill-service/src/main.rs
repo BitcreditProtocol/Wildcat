@@ -1,4 +1,5 @@
 // ----- standard library imports
+use bcr_ebill_api::service::notification_service::{create_nostr_clients, create_nostr_consumer};
 use std::str::FromStr;
 // ----- extra library imports
 use tokio::signal;
@@ -69,8 +70,18 @@ async fn main() {
     info!("Local npriv: {:?}", keys.get_nostr_npriv());
     info!("Local npub as hex: {:?}", keys.get_nostr_npub_as_hex());
 
+    // set up nostr clients for existing identities
+    let nostr_clients = create_nostr_clients(
+        &api_config,
+        db.identity_store.clone(),
+        db.company_store.clone(),
+    )
+    .await
+    .expect("Failed to create nostr clients");
+    let db_clone = db.clone();
     // set up application context
-    let app = bcr_wdc_ebill_service::AppController::new(api_config, db).await;
+    let app =
+        bcr_wdc_ebill_service::AppController::new(api_config, nostr_clients.clone(), db).await;
     let router = bcr_wdc_ebill_service::routes(app.clone());
 
     // run jobs in background
@@ -84,14 +95,24 @@ async fn main() {
         .await
     });
 
+    // set up nostr event consumer
+    let nostr_consumer = create_nostr_consumer(
+        nostr_clients,
+        app.contact_service.clone(),
+        db_clone.nostr_event_offset_store.clone(),
+        db_clone.notification_store.clone(),
+        app.push_service.clone(),
+        db_clone.bill_blockchain_store.clone(),
+        db_clone.bill_store.clone(),
+    )
+    .await
+    .expect("Failed to create Nostr consumer");
     // run nostr consumer in background
     let nostr_handle = tokio::spawn(async move {
-        app.nostr_consumer
-            .start()
-            .await
-            .expect("nostr consumer failed");
+        nostr_consumer.start().await.expect("nostr consumer failed");
     });
 
+    // run web server
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await
         .expect("Failed to bind to address");
@@ -100,7 +121,6 @@ async fn main() {
         "E-Bill Service running at http://{} with config: {:?}",
         &maincfg.bind_address, &maincfg
     );
-    // run web server
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await

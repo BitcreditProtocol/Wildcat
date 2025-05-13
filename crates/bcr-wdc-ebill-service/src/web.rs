@@ -14,7 +14,8 @@ use bcr_ebill_api::{
 };
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
+        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
+        RequestToPayBitcreditBillPayload,
     },
     contact::{Contact, ContactType, NewContactPayload},
     identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
@@ -127,10 +128,23 @@ pub async fn get_bill_detail(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_bill_attachment(
+pub async fn get_bill_endorsements(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<String>,
-    Path(file_name): Path<String>,
+) -> Result<Json<Vec<Endorsement>>> {
+    tracing::debug!("Received get bill detail request");
+    let identity = ctrl.identity_service.get_identity().await?;
+    let endorsements = ctrl
+        .bill_service
+        .get_endorsements(&bill_id, &identity.node_id)
+        .await?;
+    Ok(Json(endorsements.into_iter().map(|e| e.into()).collect()))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_bill_attachment(
+    State(ctrl): State<AppController>,
+    Path((bill_id, file_name)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     tracing::debug!("Received get bill attachment request");
     let keys = ctrl.bill_service.get_bill_keys(&bill_id).await?;

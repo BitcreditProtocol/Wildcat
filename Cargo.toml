@@ -21,8 +21,8 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.0"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/E-Bill.git", branch = "406-anonymous-mode"} #temp until it's merged and released
+bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.11"}
+bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.11"}
 bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
 bcr-wdc-swap-client = {path = "./crates/bcr-wdc-swap-client"}

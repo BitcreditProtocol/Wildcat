@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use bcr_wdc_webapi::bill::NodeId;
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
@@ -30,7 +31,7 @@ impl Repository for QuotesIDMap {
                     .endorsees
                     .last()
                     .unwrap_or(&quote.bill.payee)
-                    .node_id;
+                    .node_id();
                 quote.bill.id == bill && holder == endorser
             })
             .map(|x| x.1.clone())
@@ -133,7 +134,7 @@ impl Repository for QuotesIDMap {
                     }
                 }
                 if let Some(bill_payer_id) = bill_payer_id {
-                    if quote.bill.payee.node_id != *bill_payer_id {
+                    if quote.bill.payee.node_id() != *bill_payer_id {
                         return false;
                     }
                 }
@@ -143,7 +144,7 @@ impl Repository for QuotesIDMap {
                         .endorsees
                         .last()
                         .unwrap_or(&quote.bill.payee)
-                        .node_id;
+                        .node_id();
                     if *holder_id != *bill_holder_id {
                         return false;
                     }

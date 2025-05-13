@@ -1,11 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_ebill_core as EBillCore;
-use bcr_ebill_core::contact as EBillContact;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::{nut01 as cdk01, nut02 as cdk02};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
+
+use crate::bill::{BillIdentParticipant, BillParticipant};
 // ----- local imports
 
 // ----- end imports
@@ -14,81 +14,14 @@ use utoipa::{IntoParams, ToSchema};
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillInfo {
     pub id: String,
-    pub drawee: IdentityPublicData,
-    pub drawer: IdentityPublicData,
-    pub payee: IdentityPublicData,
-    pub endorsees: Vec<IdentityPublicData>,
+    pub drawee: BillIdentParticipant,
+    pub drawer: BillIdentParticipant,
+    pub payee: BillParticipant,
+    pub endorsees: Vec<BillParticipant>,
     pub sum: u64, // in satoshis, converted to bitcoin::Amount in the service
     pub maturity_date: String,
 }
 
-#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
-pub struct IdentityPublicData {
-    #[serde(rename = "type")]
-    pub t: ContactType,
-    pub node_id: String,
-    pub name: String,
-    #[serde(flatten)]
-    pub postal_address: PostalAddress,
-    pub email: Option<String>,
-    pub nostr_relay: Option<String>,
-}
-
-#[repr(u8)]
-#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
-#[borsh(use_discriminant = true)]
-pub enum ContactType {
-    Person = 0,
-    Company = 1,
-}
-
-#[derive(Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
-pub struct PostalAddress {
-    pub country: String,
-    pub city: String,
-    pub zip: Option<String>,
-    pub address: String,
-}
-impl std::convert::From<EBillContact::IdentityPublicData> for IdentityPublicData {
-    fn from(data: EBillContact::IdentityPublicData) -> Self {
-        IdentityPublicData {
-            t: match data.t {
-                bcr_ebill_core::contact::ContactType::Person => ContactType::Person,
-                bcr_ebill_core::contact::ContactType::Company => ContactType::Company,
-            },
-            node_id: data.node_id,
-            name: data.name,
-            postal_address: PostalAddress {
-                country: data.postal_address.country,
-                city: data.postal_address.city,
-                zip: data.postal_address.zip,
-                address: data.postal_address.address,
-            },
-            email: data.email,
-            nostr_relay: data.nostr_relay,
-        }
-    }
-}
-impl std::convert::From<IdentityPublicData> for EBillContact::IdentityPublicData {
-    fn from(data: IdentityPublicData) -> Self {
-        EBillContact::IdentityPublicData {
-            t: match data.t {
-                ContactType::Person => bcr_ebill_core::contact::ContactType::Person,
-                ContactType::Company => bcr_ebill_core::contact::ContactType::Company,
-            },
-            node_id: data.node_id,
-            name: data.name,
-            postal_address: EBillCore::PostalAddress {
-                country: data.postal_address.country,
-                city: data.postal_address.city,
-                zip: data.postal_address.zip,
-                address: data.postal_address.address,
-            },
-            email: data.email,
-            nostr_relay: data.nostr_relay,
-        }
-    }
-}
 ///--------------------------- Enquire mint quote
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct EnquireRequest {

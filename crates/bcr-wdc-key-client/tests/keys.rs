@@ -10,7 +10,7 @@ async fn keys_not_found() {
     let server_url = server.server_address().expect("address");
     let client = KeyClient::new(server_url);
 
-    let kid = keys_utils::generate_random_keysetid().into();
+    let kid = keys_utils::generate_random_keysetid();
     let response = client.keys(kid).await;
     assert!(response.is_err());
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));

@@ -198,7 +198,7 @@ impl DBQuotes {
 
     async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<QuoteDBEntry>> {
         let results: Vec<QuoteDBEntry> = self.db
-            .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND bill.current_holder.node_id == $endorser ORDER BY submitted DESC")
+            .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND (bill.current_holder.Anon.node_id == $endorser OR bill.current_holder.Ident.node_id == $endorser) ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
             .bind(("bill", bill.to_owned()))
             .bind(("endorser", endorser.to_owned())).await?.take(0)?;
@@ -296,9 +296,10 @@ impl Repository for DBQuotes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service;
-    use bcr_ebill_core::contact::IdentityPublicData;
+    use crate::{quotes::BillInfo, service};
+    use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
     use bcr_wdc_utils::keys::test_utils as keys_test;
+    use bcr_wdc_webapi::bill::NodeId;
     use std::str::FromStr;
     use surrealdb::RecordId;
 
@@ -310,6 +311,21 @@ mod tests {
         DBQuotes {
             db: sdb,
             table: String::from("test"),
+        }
+    }
+
+    impl Default for BillInfo {
+        fn default() -> Self {
+            Self {
+                id: String::default(),
+                drawee: BillIdentParticipant::default(),
+                drawer: BillIdentParticipant::default(),
+                payee: BillParticipant::Ident(BillIdentParticipant::default()),
+                endorsees: Vec::default(),
+                current_holder: BillParticipant::Ident(BillIdentParticipant::default()),
+                sum: bitcoin::Amount::default(),
+                maturity_date: TStamp::default(),
+            }
         }
     }
 
@@ -444,18 +460,18 @@ mod tests {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                drawee: IdentityPublicData {
+                drawee: BillIdentParticipant {
                     node_id: String::from("drawee"),
                     ..Default::default()
                 },
-                drawer: IdentityPublicData {
+                drawer: BillIdentParticipant {
                     node_id: String::from("drawer"),
                     ..Default::default()
                 },
-                payee: IdentityPublicData {
+                payee: BillParticipant::Ident(BillIdentParticipant {
                     node_id: String::from("payer"),
                     ..Default::default()
-                },
+                }),
                 endorsees: Default::default(),
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
@@ -584,10 +600,10 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
-                current_holder: IdentityPublicData {
+                current_holder: BillParticipant::Ident(BillIdentParticipant {
                     node_id: String::from("endorser"),
                     ..Default::default()
-                },
+                }),
                 ..Default::default()
             },
             submitted: TStamp::default(),
@@ -601,7 +617,7 @@ mod tests {
             .unwrap();
 
         let result = db
-            .search_by_bill(&entry.bill.id, &entry.bill.current_holder.node_id)
+            .search_by_bill(&entry.bill.id, &entry.bill.current_holder.node_id())
             .await
             .unwrap();
         assert_eq!(result.len(), 1);

@@ -2,7 +2,8 @@
 // ----- extra library imports
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
+        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
+        RequestToPayBitcreditBillPayload,
     },
     contact::NewContactPayload,
     identity::{Identity, NewIdentityPayload, SeedPhrase},
@@ -126,6 +127,19 @@ impl EbillClient {
         }
         let bill = res.json::<BitcreditBill>().await?;
         Ok(bill)
+    }
+
+    pub async fn get_bill_endorsements(&self, bill_id: &str) -> Result<Vec<Endorsement>> {
+        let url = self
+            .base
+            .join(&format!("/bill/endorsements/{bill_id}"))
+            .expect("bill detail relative path");
+        let res = self.cl.get(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(bill_id.into()));
+        }
+        let endorsements = res.json::<Vec<Endorsement>>().await?;
+        Ok(endorsements)
     }
 
     /// Returns the content type and the bytes of the file

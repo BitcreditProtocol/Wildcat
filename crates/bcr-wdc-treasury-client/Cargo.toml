@@ -10,5 +10,5 @@ cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
 thiserror.workspace = true
-url = {version = "2.4"}
+url.workspace = true
 uuid.workspace = true
