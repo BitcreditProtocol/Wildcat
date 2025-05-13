@@ -118,7 +118,7 @@ impl EbillClient {
     pub async fn get_bill(&self, bill_id: &str) -> Result<BitcreditBill> {
         let url = self
             .base
-            .join(&format!("/bill/detail/{}", bill_id))
+            .join(&format!("/bill/detail/{bill_id}"))
             .expect("bill detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -136,14 +136,11 @@ impl EbillClient {
     ) -> Result<(String, Vec<u8>)> {
         let url = self
             .base
-            .join(&format!("/bill/attachment/{}/{}", bill_id, file_name))
+            .join(&format!("/bill/attachment/{bill_id}/{file_name}"))
             .expect("bill attachment relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(format!(
-                "{} - {}",
-                bill_id, file_name
-            )));
+            return Err(Error::ResourceNotFound(format!("{bill_id} - {file_name}",)));
         }
         let content_type: String = match res.headers().get(header::CONTENT_TYPE).map(|h| h.to_str())
         {
@@ -160,7 +157,7 @@ impl EbillClient {
     ) -> Result<BillCombinedBitcoinKey> {
         let url = self
             .base
-            .join(&format!("/bill/bitcoin_key/{}", bill_id))
+            .join(&format!("/bill/bitcoin_key/{bill_id}"))
             .expect("bill bitcoin key relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
