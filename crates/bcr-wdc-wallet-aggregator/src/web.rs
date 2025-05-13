@@ -1,10 +1,12 @@
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
+use bcr_wdc_key_client::KeyClient;
 use cashu::{
-    nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut04 as cdk04, nut05 as cdk05, nut06 as cdk06,
-    nut07 as cdk07, nut09 as cdk09,
+    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut04 as cdk04, nut05 as cdk05,
+    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09,
 };
 use cdk::wallet::{HttpClient as CDKClient, MintConnector};
+use futures::future::JoinAll;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::AppController;
@@ -233,35 +235,31 @@ pub async fn post_swap(
 ) -> Result<Json<cdk03::SwapResponse>> {
     tracing::debug!("Requested /v1/swap");
 
-    // TODO: potential improvement
-    // in a separate, testable function
-    // - collect keyset IDs from inputs and check if they are from sat vs crsat
-    //      if they are mixed, reject the request
-    // - collect keyset IDs from outputs and check if they are from sat vs crsat
-    //      if they are mixed, reject the request
-    // - inputs: crsat -- output: crsat ---> forward to swap_client
-    // - inputs: sat -- output: sat ---> forward to cdk_client
-    // - inputs: crsat -- output: sat ---> forward to treasury_client
-    // - inputs: sat -- output: crsat ---> reject the request
-    let bcr_response = ctrl
-        .swap_client
-        .swap(request.inputs().clone(), request.outputs().clone())
-        .await;
-    if let Ok(signatures) = bcr_response {
-        let response = cdk03::SwapResponse { signatures };
-        return Ok(Json(response));
-    }
+    let swap_type = determine_swap_type(
+        &ctrl.keys_client,
+        request.inputs().as_slice(),
+        request.outputs().as_slice(),
+    )
+    .await?;
+    let signatures = match swap_type {
+        SwapType::CrSat2CrSat => {
+            ctrl.swap_client
+                .swap(request.inputs().to_vec(), request.outputs().to_vec())
+                .await?
+        }
+        SwapType::CrSat2Sat => {
+            ctrl.treasury_client
+                .redeem(request.inputs().to_vec(), request.outputs().to_vec())
+                .await?
+        }
+        SwapType::Sat2Sat => ctrl
+            .cdk_client
+            .post_swap(request)
+            .await
+            .map(|resp| resp.signatures)?,
+    };
 
-    let redeem_response = ctrl
-        .treasury_client
-        .redeem(request.inputs().clone(), request.outputs().clone())
-        .await;
-    if let Ok(signatures) = redeem_response {
-        let response = cdk03::SwapResponse { signatures };
-        return Ok(Json(response));
-    }
-
-    let response = ctrl.cdk_client.post_swap(request).await?;
+    let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }
 
@@ -296,4 +294,49 @@ pub async fn post_restore(
     tracing::debug!("Requested /v1/restore");
 
     Err(Error::NotYet(String::from("post_restore")))
+}
+
+enum SwapType {
+    CrSat2CrSat,
+    Sat2Sat,
+    CrSat2Sat,
+}
+
+/// if any keyset ID among the inputs is not found in crsat-key-service, then the swap can only be
+/// a sat2sat
+/// once proved that all inputs are found in crsat-key-service,
+/// if any keyset ID among the outputs is not found in crsat-key-service, then the swap can only be
+/// a crsat2sat
+/// once proved that all outputs are found in crsat-key-service,
+/// then it's definitely a crsat2crsat swap
+/// it's not a responsibility of this service to deal with the case of mixed inputs/outputs
+async fn determine_swap_type(
+    key_cl: &KeyClient,
+    inputs: &[cdk00::Proof],
+    outputs: &[cdk00::BlindedMessage],
+) -> Result<SwapType> {
+    let inputs_requests: JoinAll<_> = inputs
+        .iter()
+        .map(|proof| key_cl.keyset_info(proof.keyset_id))
+        .collect();
+    for response in inputs_requests.await.into_iter() {
+        match response {
+            Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
+            Err(e) => return Err(Error::Keys(e)),
+            Ok(_) => {}
+        }
+    }
+
+    let outputs_requests: JoinAll<_> = outputs
+        .iter()
+        .map(|blind| key_cl.keyset_info(blind.keyset_id))
+        .collect();
+    for response in outputs_requests.await.into_iter() {
+        match response {
+            Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
+            Err(e) => return Err(Error::Keys(e)),
+            Ok(_) => {}
+        }
+    }
+    Ok(SwapType::CrSat2CrSat)
 }
