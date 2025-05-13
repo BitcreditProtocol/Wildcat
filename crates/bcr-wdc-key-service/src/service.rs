@@ -294,9 +294,9 @@ mod tests {
 
         let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-        
+
         let signatures = service.mint(qid, blinds).await.unwrap();
-        
+
         assert_eq!(signatures.len(), 2, "Should have 2 signatures");
         assert_eq!(
             signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>(),
@@ -310,8 +310,11 @@ mod tests {
         let (service, kid, qid) = setup_test_service().await;
         let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64), Amount::from(1)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-        
-        assert!(service.mint(qid, blinds).await.is_err(), "Mint should fail with invalid amount");
+
+        assert!(
+            service.mint(qid, blinds).await.is_err(),
+            "Mint should fail with invalid amount"
+        );
     }
 
     #[tokio::test]
@@ -319,7 +322,10 @@ mod tests {
         let (service, kid, qid) = setup_test_service().await;
         let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-        
-        assert!(service.mint(qid, blinds).await.is_err(), "Mint should fail with invalid amount");
+
+        assert!(
+            service.mint(qid, blinds).await.is_err(),
+            "Mint should fail with invalid amount"
+        );
     }
 }
