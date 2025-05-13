@@ -238,7 +238,8 @@ mod tests {
     use std::str::FromStr;
     use uuid::Uuid;
 
-    pub fn generate_blinds(
+    // Helper function to generate blinded messages
+    fn generate_blinds(
         keyset_id: cdk02::Id,
         amounts: &[Amount],
     ) -> Vec<(
@@ -246,93 +247,79 @@ mod tests {
         cashu::secret::Secret,
         cashu::SecretKey,
     )> {
-        let mut blinds = Vec::new();
-        for amount in amounts {
-            let blind = bcr_wdc_utils::keys::test_utils::generate_blind(keyset_id, *amount);
-            blinds.push(blind);
-        }
-        blinds
+        amounts
+            .iter()
+            .map(|amount| bcr_wdc_utils::keys::test_utils::generate_blind(keyset_id, *amount))
+            .collect()
     }
+
+    // Helper function to setup test service
+    async fn setup_test_service() -> (TestKeysService, cdk02::Id, Uuid) {
+        let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+            .unwrap()
+            .to_seed("");
+        let maturity = chrono::DateTime::parse_from_rfc3339("2029-01-01T00:00:00Z")
+            .unwrap()
+            .to_utc();
+        let factory = Factory::new(&seed, DerivationPath::default());
+
+        let service = TestKeysService {
+            quote_keys: TestQuoteKeysRepository::default(),
+            keys: TestKeysRepository::default(),
+            keygen: factory,
+        };
+
+        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
+        let pub_key = kp.public_key();
+        let target = Amount::from(192);
+
+        let qid = Uuid::new_v4();
+        let kid = service
+            .generate_keyset(qid, target, pub_key.into(), maturity)
+            .await
+            .unwrap();
+
+        service.activate(&qid).await.unwrap();
+
+        (service, kid, qid)
+    }
+
+    type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
+    type TestKeysRepository = persistence::inmemory::InMemoryMap;
+    type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
 
     #[tokio::test]
     async fn test_mint_success() {
-        // Setup
-        let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap().to_seed("");
-        let maturity = chrono::DateTime::parse_from_rfc3339("2029-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc();
-        let factory = Factory::new(&seed, DerivationPath::default());
-
-        pub type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
-        pub type TestKeysRepository = persistence::inmemory::InMemoryMap;
-        pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
-
-        let service = TestKeysService {
-            quote_keys: TestQuoteKeysRepository::default(),
-            keys: TestKeysRepository::default(),
-            keygen: factory,
-        };
-
-        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-        let pub_key = kp.public_key();
-        let target = Amount::from(192);
-
-        let qid = Uuid::new_v4();
-        let kid = service
-            .generate_keyset(qid, target, pub_key.into(), maturity)
-            .await
-            .unwrap();
-
-        service.activate(&qid).await.unwrap();
-        let _ = service.authorized_public_key_to_mint(kid).await.unwrap();
+        let (service, kid, qid) = setup_test_service().await;
 
         let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-        let result = service.mint(qid, blinds).await;
-        assert!(result.is_ok(), "Mint should succeed");
-        let signatures = result.unwrap();
-
-        let total = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
-        assert_eq!(total, 192, "Total amount should match target");
-
+        
+        let signatures = service.mint(qid, blinds).await.unwrap();
+        
         assert_eq!(signatures.len(), 2, "Should have 2 signatures");
+        assert_eq!(
+            signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>(),
+            192,
+            "Total amount should match target"
+        );
     }
 
     #[tokio::test]
-    async fn test_mint_different() {
-        // Setup
-        let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap().to_seed("");
-        let maturity = chrono::DateTime::parse_from_rfc3339("2029-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc();
-        let factory = Factory::new(&seed, DerivationPath::default());
-
-        pub type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
-        pub type TestKeysRepository = persistence::inmemory::InMemoryMap;
-        pub type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
-
-        let service = TestKeysService {
-            quote_keys: TestQuoteKeysRepository::default(),
-            keys: TestKeysRepository::default(),
-            keygen: factory,
-        };
-
-        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-        let pub_key = kp.public_key();
-        let target = Amount::from(192);
-
-        let qid = Uuid::new_v4();
-        let kid = service
-            .generate_keyset(qid, target, pub_key.into(), maturity)
-            .await
-            .unwrap();
-        service.activate(&qid).await.unwrap();
-
-        let _ = service.authorized_public_key_to_mint(kid).await.unwrap();
-
+    async fn test_mint_more() {
+        let (service, kid, qid) = setup_test_service().await;
         let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64), Amount::from(1)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-        let result = service.mint(qid, blinds).await;
-        assert!(result.is_err(), "Mint should fail");
+        
+        assert!(service.mint(qid, blinds).await.is_err(), "Mint should fail with invalid amount");
+    }
+
+    #[tokio::test]
+    async fn test_mint_less() {
+        let (service, kid, qid) = setup_test_service().await;
+        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
+        let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
+        
+        assert!(service.mint(qid, blinds).await.is_err(), "Mint should fail with invalid amount");
     }
 }
