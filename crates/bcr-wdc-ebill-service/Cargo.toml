@@ -4,8 +4,14 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[features]
+test-utils = ["axum-test", "mockall", "async-broadcast", "bcr-ebill-core"]
+
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
+axum-test = {workspace = true, optional = true}
+mockall = {workspace = true, optional = true}
+bcr-ebill-core = {workspace = true, optional = true}
 bcr-ebill-api = {workspace = true} 
 bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.11"}
 bcr-wdc-webapi.workspace = true
@@ -22,3 +28,5 @@ url = {workspace = true, features = ["serde"]}
 bip39 = {workspace = true, features = ["serde"]}
 serde_repr.workspace = true 
 rustls = "0.23"
+async-broadcast = { version = "0.7.2", optional = true }
+async-trait.workspace = true

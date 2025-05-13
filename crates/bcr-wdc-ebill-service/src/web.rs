@@ -144,8 +144,7 @@ pub async fn get_bill_endorsements(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bill_attachment(
     State(ctrl): State<AppController>,
-    Path(bill_id): Path<String>,
-    Path(file_name): Path<String>,
+    Path((bill_id, file_name)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     tracing::debug!("Received get bill attachment request");
     let keys = ctrl.bill_service.get_bill_keys(&bill_id).await?;
