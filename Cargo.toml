@@ -12,7 +12,8 @@ members = [
     "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-ebpp",
     "crates/bcr-wdc-ebill-service",
-    "crates/bcr-wdc-e2e-tests"
+    "crates/bcr-wdc-ebill-client",
+    "crates/bcr-wdc-e2e-tests",
 ]
 
 [workspace.dependencies]
@@ -21,13 +22,16 @@ async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.0"}
-bcr-wdc-key-client = { path = "./crates/bcr-wdc-key-client"}
-bcr-wdc-key-service = { path = "./crates/bcr-wdc-key-service"}
-bcr-wdc-swap-client = { path = "./crates/bcr-wdc-swap-client"}
-bcr-wdc-swap-service = { path = "./crates/bcr-wdc-swap-service"}
-bcr-wdc-treasury-client = { path = "./crates/bcr-wdc-treasury-client"}
+bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/E-Bill.git", branch = "406-anonymous-mode"} #temp until it's merged and released
+bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
+bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
+bcr-wdc-swap-client = {path = "./crates/bcr-wdc-swap-client"}
+bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
+bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
+bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
+bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
 bdk_wallet = {version = "1.1"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
@@ -43,11 +47,12 @@ futures = {version = "0.3"}
 itertools = {version = "0.14"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
-reqwest = { version = "0.12"}
+reqwest = {version = "0.12"}
 rust_decimal = {version = "1"}
 secp256k1 = {version = "0.29"}
 serde = {version = "1"}
 serde_json = {version = "1"}
+serde_repr = {version= "0.1"}
 strum = {version = "0"}
 surrealdb = {version = "2.2"}
 thiserror = {version = "2"}
