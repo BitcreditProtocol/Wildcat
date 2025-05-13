@@ -214,8 +214,8 @@ where
         if is_minted {
             return Err(Error::InvalidMintRequest);
         }
-        let blind_sum = outputs.iter().map(|o| u64::from(o.amount)).sum::<u64>();
-        if blind_sum != u64::from(target) {
+        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| {acc + b.amount});
+        if blinds_sum != target {
             return Err(Error::InvalidMintRequest);
         }
 
