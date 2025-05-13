@@ -7,7 +7,9 @@ use bcr_ebill_api::{
     data::{self, identity},
     util::BcrKeys,
 };
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 // ----- local imports
 // ----- end imports
 
@@ -21,7 +23,14 @@ pub enum Error {
 
 #[repr(u8)]
 #[derive(
-    Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr, PartialEq, Eq,
+    Debug,
+    Copy,
+    Clone,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    PartialEq,
+    Eq,
+    ToSchema,
 )]
 pub enum IdentityType {
     Ident = 0,
@@ -120,7 +129,7 @@ pub struct NewIdentityPayload {
     pub identity_document_file_upload_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct PostalAddress {
     pub country: String,
     pub city: String,
@@ -150,7 +159,7 @@ impl From<PostalAddress> for data::PostalAddress {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct OptionalPostalAddress {
     pub country: Option<String>,
     pub city: Option<String>,
@@ -189,7 +198,7 @@ impl From<OptionalPostalAddress> for data::OptionalPostalAddress {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct File {
     pub name: String,
     pub hash: String,

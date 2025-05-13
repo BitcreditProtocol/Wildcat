@@ -127,6 +127,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route("/bill/list", get(web::get_bills))
         .route("/bill/detail/{bill_id}", get(web::get_bill_detail))
         .route(
+            "/bill/endorsements/{bill_id}",
+            get(web::get_bill_endorsements),
+        )
+        .route(
             "/bill/attachment/{bill_id}/{file_name}",
             get(web::get_bill_attachment),
         )

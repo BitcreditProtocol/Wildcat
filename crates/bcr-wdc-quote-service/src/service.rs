@@ -2,6 +2,7 @@
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
+use bcr_wdc_webapi::bill::NodeId;
 use bitcoin::Amount;
 use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use futures::future::JoinAll;
@@ -95,7 +96,7 @@ where
         pub_key: cdk01::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
-        let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id;
+        let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
         let mut quotes = self
             .quotes
             .search_by_bill(&bill.id, holder_id)
@@ -305,14 +306,14 @@ pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super:
 mod tests {
 
     use super::*;
-    use bcr_ebill_core::contact::IdentityPublicData;
+    use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
     use bcr_wdc_utils::keys::test_utils as keys_utils;
     use mockall::predicate::*;
     use rand::{seq::IteratorRandom, Rng};
 
-    fn generate_random_identity() -> bcr_ebill_core::contact::IdentityPublicData {
+    fn generate_random_identity() -> bcr_ebill_core::contact::BillIdentParticipant {
         let identities = vec![
-            IdentityPublicData {
+            BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
                 node_id: String::from(
                     "02a5b1c2d3e4f56789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -325,9 +326,9 @@ mod tests {
                     address: String::from("123 Main St"),
                 },
                 email: None,
-                nostr_relay: None,
+                nostr_relays: vec![],
             },
-            IdentityPublicData {
+            BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Company,
                 node_id: String::from(
                     "03b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -340,9 +341,9 @@ mod tests {
                     address: String::from("456 High St"),
                 },
                 email: None,
-                nostr_relay: None,
+                nostr_relays: vec![],
             },
-            IdentityPublicData {
+            BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
                 node_id: String::from(
                     "02c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -355,9 +356,9 @@ mod tests {
                     address: String::from("789 Rue de Paris"),
                 },
                 email: None,
-                nostr_relay: None,
+                nostr_relays: vec![],
             },
-            IdentityPublicData {
+            BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Company,
                 node_id: String::from(
                     "03d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -370,9 +371,9 @@ mod tests {
                     address: String::from("101 Shibuya St"),
                 },
                 email: None,
-                nostr_relay: None,
+                nostr_relays: vec![],
             },
-            IdentityPublicData {
+            BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
                 node_id: String::from("02e5f6789abcdef0123456789abcdef0123456789abcdef0123456789"),
                 name: String::from("Eve"),
@@ -383,7 +384,7 @@ mod tests {
                     address: String::from("555 Alexanderplatz"),
                 },
                 email: None,
-                nostr_relay: None,
+                nostr_relays: vec![],
             },
         ];
         let mut rng = rand::thread_rng();
@@ -398,8 +399,8 @@ mod tests {
             id: ids.into_iter().choose(&mut rng).unwrap().to_string(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
-            payee: holder.clone(),
-            current_holder: holder,
+            payee: BillParticipant::Ident(holder.clone()),
+            current_holder: BillParticipant::Ident(holder),
             endorsees: Default::default(),
             sum: Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
@@ -434,7 +435,10 @@ mod tests {
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
+            .with(
+                eq(rnd_bill.id.clone()),
+                eq(rnd_bill.payee.node_id().clone()),
+            )
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Pending { public_key },
@@ -467,7 +471,10 @@ mod tests {
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
+            .with(
+                eq(rnd_bill.id.clone()),
+                eq(rnd_bill.payee.node_id().clone()),
+            )
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Denied,
@@ -504,7 +511,10 @@ mod tests {
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
+            .with(
+                eq(rnd_bill.id.clone()),
+                eq(rnd_bill.payee.node_id().clone()),
+            )
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
@@ -544,7 +554,10 @@ mod tests {
         let public_key = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
-            .with(eq(rnd_bill.id.clone()), eq(rnd_bill.payee.node_id.clone()))
+            .with(
+                eq(rnd_bill.id.clone()),
+                eq(rnd_bill.payee.node_id().clone()),
+            )
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {

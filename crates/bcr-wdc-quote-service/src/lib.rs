@@ -98,17 +98,18 @@ pub fn credit_routes(ctrl: AppController) -> Router {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
+        bcr_wdc_webapi::contact::ContactType,
+        bcr_wdc_webapi::bill::BillIdentParticipant,
+        bcr_wdc_webapi::bill::BillParticipant,
+        bcr_wdc_webapi::identity::PostalAddress,
         bcr_wdc_webapi::quotes::BillInfo,
-        bcr_wdc_webapi::quotes::ContactType,
         bcr_wdc_webapi::quotes::EnquireReply,
         bcr_wdc_webapi::quotes::EnquireRequest,
-        bcr_wdc_webapi::quotes::IdentityPublicData,
         bcr_wdc_webapi::quotes::InfoReply,
         bcr_wdc_webapi::quotes::LightInfo,
         bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::ListReplyLight,
         bcr_wdc_webapi::quotes::ListSort,
-        bcr_wdc_webapi::quotes::PostalAddress,
         bcr_wdc_webapi::quotes::ResolveOffer,
         bcr_wdc_webapi::quotes::StatusReply,
         bcr_wdc_webapi::quotes::StatusReplyDiscriminants,

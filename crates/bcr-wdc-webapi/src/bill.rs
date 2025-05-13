@@ -4,7 +4,10 @@ use bcr_ebill_api::{
     data::{bill, contact, notification},
     util::date::DateTimeUtc,
 };
+pub use bcr_ebill_core::blockchain::bill::block::NodeId;
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 // ----- local imports
 use crate::{
     contact::ContactType,
@@ -17,7 +20,7 @@ pub struct BillsResponse<T: Serialize> {
     pub bills: Vec<T>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BitcreditBill {
     pub id: String,
     pub participants: BillParticipants,
@@ -38,7 +41,7 @@ impl From<bill::BitcreditBillResult> for BitcreditBill {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub enum BillCurrentWaitingState {
     Sell(BillWaitingForSellState),
     Payment(BillWaitingForPaymentState),
@@ -61,7 +64,7 @@ impl From<bill::BillCurrentWaitingState> for BillCurrentWaitingState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillWaitingForSellState {
     pub time_of_request: u64,
     pub buyer: BillParticipant,
@@ -88,7 +91,7 @@ impl From<bill::BillWaitingForSellState> for BillWaitingForSellState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillWaitingForPaymentState {
     pub time_of_request: u64,
     pub payer: BillIdentParticipant,
@@ -115,7 +118,7 @@ impl From<bill::BillWaitingForPaymentState> for BillWaitingForPaymentState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillWaitingForRecourseState {
     pub time_of_request: u64,
     pub recourser: BillIdentParticipant,
@@ -142,7 +145,7 @@ impl From<bill::BillWaitingForRecourseState> for BillWaitingForRecourseState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillStatus {
     pub acceptance: BillAcceptanceStatus,
     pub payment: BillPaymentStatus,
@@ -165,7 +168,7 @@ impl From<bill::BillStatus> for BillStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillAcceptanceStatus {
     pub time_of_request_to_accept: Option<u64>,
     pub requested_to_accept: bool,
@@ -186,7 +189,7 @@ impl From<bill::BillAcceptanceStatus> for BillAcceptanceStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillPaymentStatus {
     pub time_of_request_to_pay: Option<u64>,
     pub requested_to_pay: bool,
@@ -207,7 +210,7 @@ impl From<bill::BillPaymentStatus> for BillPaymentStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillSellStatus {
     pub time_of_last_offer_to_sell: Option<u64>,
     pub sold: bool,
@@ -228,7 +231,7 @@ impl From<bill::BillSellStatus> for BillSellStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillRecourseStatus {
     pub time_of_last_request_to_recourse: Option<u64>,
     pub recoursed: bool,
@@ -249,7 +252,7 @@ impl From<bill::BillRecourseStatus> for BillRecourseStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillData {
     pub language: String,
     pub time_of_drawing: u64,
@@ -286,7 +289,7 @@ impl From<bill::BillData> for BillData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillParticipants {
     pub drawee: BillIdentParticipant,
     pub drawer: BillIdentParticipant,
@@ -309,7 +312,7 @@ impl From<bill::BillParticipants> for BillParticipants {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub enum BillParticipant {
     Anon(BillAnonParticipant),
     Ident(BillIdentParticipant),
@@ -324,7 +327,25 @@ impl From<contact::BillParticipant> for BillParticipant {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+impl From<BillParticipant> for contact::BillParticipant {
+    fn from(val: BillParticipant) -> Self {
+        match val {
+            BillParticipant::Ident(data) => contact::BillParticipant::Ident(data.into()),
+            BillParticipant::Anon(data) => contact::BillParticipant::Anon(data.into()),
+        }
+    }
+}
+
+impl NodeId for BillParticipant {
+    fn node_id(&self) -> String {
+        match self {
+            BillParticipant::Ident(data) => data.node_id.clone(),
+            BillParticipant::Anon(data) => data.node_id.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillAnonParticipant {
     pub node_id: String,
     pub email: Option<String>,
@@ -341,7 +362,17 @@ impl From<contact::BillAnonParticipant> for BillAnonParticipant {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+impl From<BillAnonParticipant> for contact::BillAnonParticipant {
+    fn from(val: BillAnonParticipant) -> Self {
+        contact::BillAnonParticipant {
+            node_id: val.node_id,
+            email: val.email,
+            nostr_relays: val.nostr_relays,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillIdentParticipant {
     #[serde(rename = "type")]
     pub t: ContactType,
@@ -366,13 +397,27 @@ impl From<contact::BillIdentParticipant> for BillIdentParticipant {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl From<BillIdentParticipant> for contact::BillIdentParticipant {
+    fn from(val: BillIdentParticipant) -> Self {
+        contact::BillIdentParticipant {
+            t: val.t.into(),
+            name: val.name,
+            node_id: val.node_id,
+            postal_address: val.postal_address.into(),
+            email: val.email,
+            nostr_relays: val.nostr_relays,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Notification {
     pub id: String,
     pub node_id: Option<String>,
     pub notification_type: NotificationType,
     pub reference_id: Option<String>,
     pub description: String,
+    #[schema(value_type = chrono::DateTime<chrono::Utc>)]
     pub datetime: DateTimeUtc,
     pub active: bool,
     pub payload: Option<serde_json::Value>,
@@ -393,7 +438,7 @@ impl From<notification::Notification> for Notification {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum NotificationType {
     General,
     Bill,
@@ -423,6 +468,106 @@ impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
     fn from(val: bill::BillCombinedBitcoinKey) -> Self {
         BillCombinedBitcoinKey {
             private_key: val.private_key,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Endorsement {
+    pub pay_to_the_order_of: LightBillIdentParticipantWithAddress,
+    pub signed: LightSignedBy,
+    pub signing_timestamp: u64,
+    pub signing_address: Option<PostalAddress>,
+}
+
+impl From<bill::Endorsement> for Endorsement {
+    fn from(val: bill::Endorsement) -> Self {
+        Endorsement {
+            pay_to_the_order_of: val.pay_to_the_order_of.into(),
+            signed: val.signed.into(),
+            signing_timestamp: val.signing_timestamp,
+            signing_address: val.signing_address.map(|s| s.into()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LightSignedBy {
+    pub data: LightBillParticipant,
+    pub signatory: Option<LightBillIdentParticipant>,
+}
+
+impl From<bill::LightSignedBy> for LightSignedBy {
+    fn from(val: bill::LightSignedBy) -> Self {
+        LightSignedBy {
+            data: val.data.into(),
+            signatory: val.signatory.map(|s| s.into()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum LightBillParticipant {
+    Anon(LightBillAnonParticipant),
+    Ident(LightBillIdentParticipant),
+}
+
+impl From<contact::LightBillParticipant> for LightBillParticipant {
+    fn from(val: contact::LightBillParticipant) -> Self {
+        match val {
+            contact::LightBillParticipant::Ident(data) => LightBillParticipant::Ident(data.into()),
+            contact::LightBillParticipant::Anon(data) => LightBillParticipant::Anon(data.into()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LightBillAnonParticipant {
+    pub node_id: String,
+}
+
+impl From<contact::LightBillAnonParticipant> for LightBillAnonParticipant {
+    fn from(val: contact::LightBillAnonParticipant) -> Self {
+        LightBillAnonParticipant {
+            node_id: val.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LightBillIdentParticipant {
+    #[serde(rename = "type")]
+    pub t: ContactType,
+    pub name: String,
+    pub node_id: String,
+}
+impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
+    fn from(val: contact::LightBillIdentParticipant) -> Self {
+        LightBillIdentParticipant {
+            t: val.t.into(),
+            name: val.name,
+            node_id: val.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LightBillIdentParticipantWithAddress {
+    #[serde(rename = "type")]
+    pub t: ContactType,
+    pub name: String,
+    pub node_id: String,
+    #[serde(flatten)]
+    pub postal_address: PostalAddress,
+}
+
+impl From<contact::LightBillIdentParticipantWithAddress> for LightBillIdentParticipantWithAddress {
+    fn from(val: contact::LightBillIdentParticipantWithAddress) -> Self {
+        LightBillIdentParticipantWithAddress {
+            t: val.t.into(),
+            name: val.name,
+            node_id: val.node_id,
+            postal_address: val.postal_address.into(),
         }
     }
 }

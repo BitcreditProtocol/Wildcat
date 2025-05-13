@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_ebill_core::contact::IdentityPublicData;
+use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
 use bitcoin::Amount;
 use cashu::{nut01 as cdk01, nut02 as cdk02};
 use uuid::Uuid;
@@ -10,14 +10,14 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::TStamp;
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BillInfo {
     pub id: String,
-    pub drawee: IdentityPublicData,
-    pub drawer: IdentityPublicData,
-    pub payee: IdentityPublicData,
-    pub endorsees: Vec<IdentityPublicData>,
-    pub current_holder: IdentityPublicData,
+    pub drawee: BillIdentParticipant,
+    pub drawer: BillIdentParticipant,
+    pub payee: BillParticipant,
+    pub endorsees: Vec<BillParticipant>,
+    pub current_holder: BillParticipant,
     pub sum: Amount,
     pub maturity_date: TStamp,
 }

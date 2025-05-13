@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::quotes::{BillInfo, IdentityPublicData};
+use bcr_wdc_webapi::{bill::BillParticipant, quotes::BillInfo};
 use rand::Rng;
 // ----- local modules
 use bitcoin::secp256k1::Keypair;
@@ -15,10 +15,10 @@ pub fn random_ebill() -> (Keypair, BillInfo, bitcoin::secp256k1::schnorr::Signat
     let (_, payee) = bcr_wdc_webapi::test_utils::random_identity_public_data();
 
     let endorsees_size = rand::thread_rng().gen_range(0..3);
-    let mut endorsees: Vec<IdentityPublicData> = Vec::with_capacity(endorsees_size);
+    let mut endorsees: Vec<BillParticipant> = Vec::with_capacity(endorsees_size);
 
     let (endorser_kp, endorser) = bcr_wdc_webapi::test_utils::random_identity_public_data();
-    endorsees.push(endorser);
+    endorsees.push(BillParticipant::Ident(endorser));
 
     let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
 
@@ -29,7 +29,7 @@ pub fn random_ebill() -> (Keypair, BillInfo, bitcoin::secp256k1::schnorr::Signat
         maturity_date: random_date(),
         drawee,
         drawer,
-        payee,
+        payee: BillParticipant::Ident(payee),
         endorsees,
         sum: amount.into(),
     };

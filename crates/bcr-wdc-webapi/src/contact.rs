@@ -1,15 +1,27 @@
 use bcr_ebill_api::data::contact;
 // ----- standard library imports
 // ----- extra library imports
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 // ----- local modules
 use crate::identity::{File, PostalAddress};
 // ----- end imports
 
 #[repr(u8)]
 #[derive(
-    Debug, Copy, Clone, serde_repr::Serialize_repr, serde_repr::Deserialize_repr, PartialEq, Eq,
+    Debug,
+    Copy,
+    Clone,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    ToSchema,
 )]
+#[borsh(use_discriminant = true)]
 pub enum ContactType {
     Person = 0,
     Company = 1,
