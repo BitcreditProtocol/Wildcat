@@ -237,21 +237,7 @@ mod tests {
     use crate::service;
     use std::str::FromStr;
     use uuid::Uuid;
-
-    // Helper function to generate blinded messages
-    fn generate_blinds(
-        keyset_id: cdk02::Id,
-        amounts: &[Amount],
-    ) -> Vec<(
-        cashu::BlindedMessage,
-        cashu::secret::Secret,
-        cashu::SecretKey,
-    )> {
-        amounts
-            .iter()
-            .map(|amount| bcr_wdc_utils::keys::test_utils::generate_blind(keyset_id, *amount))
-            .collect()
-    }
+    use bcr_wdc_utils::signatures::test_utils::generate_blinds;
 
     // Helper function to setup test service
     async fn setup_test_service() -> (TestKeysService, cdk02::Id, Uuid) {

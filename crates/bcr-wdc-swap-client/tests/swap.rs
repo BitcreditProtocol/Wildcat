@@ -28,7 +28,7 @@ async fn swap() {
         .expect("store");
 
     let amounts = vec![Amount::from(8_u64)];
-    let blinds = signatures_test::generate_blinds(&keys_entry.1, &amounts)
+    let blinds = signatures_test::generate_blinds(keys_entry.1.id, &amounts)
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
@@ -120,7 +120,7 @@ async fn swap_p2pk() {
     // Swap 2,2,4 proofs into a single 8 blinded message
     let single_amount = [Amount::from(8)];
     let blinds: Vec<cashu::BlindedMessage> =
-        signatures_test::generate_blinds(&mint_keyset, &single_amount)
+        signatures_test::generate_blinds(mint_keyset.id, &single_amount)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();

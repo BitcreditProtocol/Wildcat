@@ -149,7 +149,7 @@ mod tests {
         let signatures =
             signatures_test::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> =
-            signatures_test::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+            signatures_test::generate_blinds(keyset.id, vec![Amount::from(8)].as_slice())
                 .into_iter()
                 .map(|a| a.0)
                 .collect();
@@ -183,7 +183,7 @@ mod tests {
         let kid = keyset.id;
         let inputs = signatures_test::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> =
-            signatures_test::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+            signatures_test::generate_blinds(keyset.id, vec![Amount::from(8)].as_slice())
                 .into_iter()
                 .map(|a| a.0)
                 .collect();
@@ -212,7 +212,7 @@ mod tests {
             signatures_test::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         inputs.get_mut(0).unwrap().c = keys_test::publics()[0];
         let outputs: Vec<_> =
-            signatures_test::generate_blinds(&keyset, vec![Amount::from(8)].as_slice())
+            signatures_test::generate_blinds(keyset.id, vec![Amount::from(8)].as_slice())
                 .into_iter()
                 .map(|a| a.0)
                 .collect();
@@ -244,7 +244,7 @@ mod tests {
         let signatures =
             signatures_test::generate_signatures(&keyset, vec![Amount::from(8)].as_slice());
         let outputs: Vec<_> =
-            signatures_test::generate_blinds(&keyset, vec![Amount::from(16)].as_slice())
+            signatures_test::generate_blinds(keyset.id, vec![Amount::from(16)].as_slice())
                 .into_iter()
                 .map(|a| a.0)
                 .collect();
@@ -276,7 +276,7 @@ mod tests {
         let amounts = vec![Amount::from(4), Amount::from(4)];
         let inputs = signatures_test::generate_proofs(&keyset, vec![Amount::from(8)].as_slice());
         let signatures = signatures_test::generate_signatures(&keyset, &amounts);
-        let outputs: Vec<_> = signatures_test::generate_blinds(&keyset, &amounts)
+        let outputs: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|a| a.0)
             .collect();
@@ -327,7 +327,7 @@ mod tests {
         );
         let amounts = vec![Amount::from(8)];
         let signatures = signatures_test::generate_signatures(&keyset, &amounts);
-        let outputs: Vec<_> = signatures_test::generate_blinds(&keyset, &amounts)
+        let outputs: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|a| a.0)
             .collect();
