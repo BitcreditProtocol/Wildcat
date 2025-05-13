@@ -179,10 +179,11 @@ mod tests {
         };
 
         let (_, keyset) = generate_keyset();
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &vec![Amount::from(8_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id, &vec![Amount::from(8_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
 
         service.redeem(&[], &blinds).await.unwrap_err();
     }
@@ -219,10 +220,11 @@ mod tests {
 
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
@@ -253,10 +255,11 @@ mod tests {
 
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
@@ -278,10 +281,11 @@ mod tests {
 
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &vec![Amount::from(8_u64)]);
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id, &vec![Amount::from(16_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }

@@ -214,7 +214,7 @@ where
         if is_minted {
             return Err(Error::InvalidMintRequest);
         }
-        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| {acc + b.amount});
+        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| acc + b.amount);
         if blinds_sum != target {
             return Err(Error::InvalidMintRequest);
         }
@@ -235,9 +235,9 @@ mod tests {
     use crate::btc32::DerivationPath;
     use crate::persistence;
     use crate::service;
+    use bcr_wdc_utils::signatures::test_utils::generate_blinds;
     use std::str::FromStr;
     use uuid::Uuid;
-    use bcr_wdc_utils::signatures::test_utils::generate_blinds;
 
     // Helper function to setup test service
     async fn setup_test_service() -> (TestKeysService, cdk02::Id, Uuid) {
