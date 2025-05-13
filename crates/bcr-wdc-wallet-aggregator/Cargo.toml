@@ -17,6 +17,7 @@ bcr-wdc-treasury-client = {workspace = true}
 cashu.workspace = true
 cdk = {workspace = true, features = ["wallet"]}
 config = {workspace = true}
+futures = {workspace = true}
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
