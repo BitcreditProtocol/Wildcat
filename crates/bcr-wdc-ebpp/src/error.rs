@@ -64,12 +64,15 @@ pub enum Error {
     UnknownAmount,
     #[error("tx_id not found {0}")]
     TxNotFound(bdk_wallet::bitcoin::Txid),
+    #[error("treasury signature verification failed {0}")]
+    SchnorrBorsh(bcr_wdc_utils::keys::SchnorrBorshMsgError),
 }
 
 impl std::convert::From<Error> for cdk_common::payment::Error {
     fn from(e: Error) -> Self {
         tracing::error!("Error --> PaymentError: {:?}", e);
         match e {
+            Error::SchnorrBorsh(_) => CDKPaymentError::UnsupportedPaymentOption,
             Error::TxNotFound(_) => CDKPaymentError::UnknownPaymentState,
             Error::UnknownAmount => CDKPaymentError::Amount(CDKAmountError::InvalidAmount(
                 String::from("unknown amount"),

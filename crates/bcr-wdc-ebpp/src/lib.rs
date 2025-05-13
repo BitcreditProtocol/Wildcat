@@ -7,6 +7,7 @@ use axum::{
     routing::{get, Router},
 };
 use bcr_wdc_webapi::wallet::Balance;
+use bdk_wallet::{bitcoin as btc, miniscript::ToPublicKey};
 use cdk_payment_processor::PaymentProcessorServer;
 use serde_with::serde_as;
 use utoipa::OpenApi;
@@ -38,6 +39,7 @@ pub struct AppConfig {
     electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     refresh_interval_secs: chrono::Duration,
+    treasury_service_public_key: btc::PublicKey,
 }
 
 #[derive(Clone, FromRef)]
@@ -55,6 +57,7 @@ impl AppController {
             payments,
             electrum_url,
             refresh_interval_secs: refresh_interval,
+            treasury_service_public_key,
         } = cfg;
 
         let key_repo = ProdPrivateKeysRepository::new(private_keys)
@@ -76,8 +79,14 @@ impl AppController {
             .to_std()
             .expect("refresh_interval conversion");
 
-        let processor =
-            ProdService::new(onchain_wallet, payrepo, ebillnode, refresh_interval).await;
+        let processor = ProdService::new(
+            onchain_wallet,
+            payrepo,
+            ebillnode,
+            refresh_interval,
+            treasury_service_public_key.to_x_only_pubkey(),
+        )
+        .await;
 
         Self {
             srvc: Arc::new(processor),
