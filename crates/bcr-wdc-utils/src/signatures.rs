@@ -74,7 +74,7 @@ pub mod test_utils {
     }
 
     pub fn generate_blinds(
-        id : Id,
+        id: Id,
         amounts: &[Amount],
     ) -> Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> {
         let mut blinds: Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> = Vec::new();
