@@ -129,7 +129,6 @@ pub enum InfoReply {
     },
 }
 
-
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct ListPendingQueryRequest {
     pub since: Option<DateTime<Utc>>,

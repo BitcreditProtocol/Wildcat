@@ -181,16 +181,20 @@ impl DBQuotes {
         status: quotes::QuoteStatusDiscriminants,
         since: Option<TStamp>,
     ) -> SurrealResult<Vec<Uuid>> {
-        let mut query = String::from("SELECT qid, submitted FROM type::table($table) WHERE status.status == $status");
+        let mut query = String::from(
+            "SELECT qid, submitted FROM type::table($table) WHERE status.status == $status",
+        );
         if since.is_some() {
             query += " AND submitted >= $since";
         }
         query += " ORDER BY submitted DESC";
 
-        let mut db_query = self.db.query(query)
+        let mut db_query = self
+            .db
+            .query(query)
             .bind(("table", self.table.clone()))
             .bind(("status", status));
-        
+
         if let Some(since) = since {
             db_query = db_query.bind(("since", since));
         }
