@@ -1,0 +1,93 @@
+name: build and push docker images
+
+on:
+  push:
+    branches: [ "**" ] # only for testing
+    tags:
+      - "v*.*.*"
+  schedule:
+      - cron: "0 10 * * *"
+
+
+permissions:
+  contents: read
+
+env:
+  KEY_SERVICE_IMAGE: "bcr-wdc-key-service"
+  SWAP_SERVICE_IMAGE: "bcr-wdc-swap-service"
+  TREASURY_SERVICE_IMAGE: "bcr-wdc-treasury-service"
+  QUOTE_SERVICE_IMAGE: "bcr-wdc-quote-service"
+  WALLET_AGGREGATOR_IMAGE: "bcr-wdc-wallet-aggregator"
+  PROJECT_ID: "bitcr-shared"
+  GAR_LOCATION: "europe-west1"
+  REPOSITORY: "bitcr-wildcat-dev"
+  GCR_INSTANCE: ""
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193
+      with:
+        credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804
+      with:
+        tags: |
+          type=ref,event=branch
+          type=schedule,pattern=nightly
+          type=semver,pattern={{version}}
+
+    - name: Docker auth
+      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+    - name: Build Docker Base Image
+      run: docker build -t wildcat/base-image -f docker/base-image/Dockerfile .
+    - name: Build Docker Key Service
+      run: docker build -t "wildcat/key-service" -f docker/key-service/Dockerfile .
+    - name: Build Docker Swap Service
+      run: docker build -t "wildcat/swap-service" -f docker/swap-service/Dockerfile .
+    - name: Build Docker Treasury Service
+      run: docker build -t "wildcat/treasury-service" -f docker/treasury-service/Dockerfile .
+    - name: Build Docker Quote Service
+      run: docker build -t "wildcat/quote-service" -f docker/quote-service/Dockerfile .
+    - name: Build Docker Wallet Aggregator
+      run: docker build -t "wildcat/wallet-aggregator" -f docker/wallet-aggregator/Dockerfile .
+
+    - name: Tag & Push Key Service image
+      run: |
+        KEY_SERVICE_TAG="${{env.GAR_LOCATION}}-docker.pkg.dev/${{env.PROJECT_ID}}/${{env.REPOSITORY}}/${{env.KEY_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}"
+        docker tag "wildcat/key-service" "${KEY_SERVICE_TAG}"
+        docker push "${KEY_SERVICE_TAG}"
+
+    - name: Tag & Push Swap Service image
+      run: |
+        SWAP_SERVICE_TAG="${{env.GAR_LOCATION}}-docker.pkg.dev/${{env.PROJECT_ID}}/${{env.REPOSITORY}}/${{env.SWAP_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}"
+        docker tag "wildcat/swap-service" "${SWAP_SERVICE_TAG}"
+        docker push "${SWAP_SERVICE_TAG}"
+
+    - name: Tag & Push Treasury Service image
+      run: |
+        TREASURY_SERVICE_TAG="${{env.GAR_LOCATION}}-docker.pkg.dev/${{env.PROJECT_ID}}/${{env.REPOSITORY}}/${{env.TREASURY_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}"
+        docker tag "wildcat/treasury-service" "${TREASURY_SERVICE_IMAGE}"
+        docker push "${TREASURY_SERVICE_IMAGE}"
+
+    - name: Tag & Push Quote Service image
+      run: |
+        QUOTE_SERVICE_TAG="${{env.GAR_LOCATION}}-docker.pkg.dev/${{env.PROJECT_ID}}/${{env.REPOSITORY}}/${{env.QUOTE_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}"
+        docker tag "wildcat/quote-service" "${QUOTE_SERVICE_TAG}"
+        docker push "${QUOTE_SERVICE_TAG}"
+
+    - name: Tag & Push Wallet Aggregator image
+      run: |
+        WALLET_AGGREGATOR_TAG="${{env.GAR_LOCATION}}-docker.pkg.dev/${{env.PROJECT_ID}}/${{env.REPOSITORY}}/${{env.WALLET_AGGREGATOR_IMAGE}}:${{steps.meta.outputs.tags}}"
+        docker tag "wildcat/wallet-aggregator" "${WALLET_AGGREGATOR_TAG}"
+        docker push "${WALLET_AGGREGATOR_TAG}"
