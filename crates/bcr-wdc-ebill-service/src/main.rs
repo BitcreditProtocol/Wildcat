@@ -1,5 +1,8 @@
 // ----- standard library imports
-use bcr_ebill_api::service::notification_service::{create_nostr_clients, create_nostr_consumer};
+use bcr_ebill_api::{
+    service::notification_service::{create_nostr_clients, create_nostr_consumer},
+    NostrConfig,
+};
 use std::str::FromStr;
 // ----- extra library imports
 use tokio::signal;
@@ -43,7 +46,10 @@ async fn main() {
     let api_config = bcr_ebill_api::Config {
         bitcoin_network: maincfg.appcfg.bitcoin_network.clone(),
         esplora_base_url: maincfg.appcfg.esplora_base_url.clone(),
-        nostr_relays: maincfg.appcfg.nostr_relays.clone(),
+        nostr_config: NostrConfig {
+            relays: maincfg.appcfg.nostr_cfg.relays.clone(),
+            only_known_contacts: maincfg.appcfg.nostr_cfg.only_known_contacts,
+        },
         db_config: bcr_ebill_api::SurrealDbConfig {
             connection_string: maincfg.appcfg.ebill_db.connection.clone(),
             namespace: maincfg.appcfg.ebill_db.namespace.clone(),
@@ -104,6 +110,7 @@ async fn main() {
         app.push_service.clone(),
         db_clone.bill_blockchain_store.clone(),
         db_clone.bill_store.clone(),
+        db_clone.nostr_contact_store.clone(),
     )
     .await
     .expect("Failed to create Nostr consumer");

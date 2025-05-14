@@ -26,10 +26,16 @@ pub struct AppConfig {
     pub ebill_db: ConnectionConfig,
     pub bitcoin_network: String,
     pub esplora_base_url: String,
-    pub nostr_relays: Vec<String>,
+    pub nostr_cfg: NostrConfig,
     pub data_dir: String,
     pub job_runner_initial_delay_seconds: u64,
     pub job_runner_check_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct NostrConfig {
+    pub only_known_contacts: bool,
+    pub relays: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -58,6 +64,8 @@ impl AppController {
             db.contact_store.clone(),
             db.file_upload_store.clone(),
             db.identity_store.clone(),
+            db.nostr_contact_store.clone(),
+            &cfg.clone(),
         ));
 
         let notification_service = create_notification_service(
@@ -65,7 +73,7 @@ impl AppController {
             db.notification_store.clone(),
             contact_service.clone(),
             db.queued_message_store.clone(),
-            cfg.nostr_relays.clone(),
+            cfg.nostr_config.relays.to_owned(),
         )
         .await
         .expect("Failed to create notification service");
@@ -257,6 +265,8 @@ pub mod test_utils {
     mockall::mock! {
         pub ContactServiceApi {}
 
+        impl ServiceTraitBounds for ContactServiceApi {}
+
         #[async_trait]
         impl ContactServiceApi for ContactServiceApi {
             async fn search(&self, search_term: &str) -> Result<Vec<Contact>>;
@@ -305,7 +315,7 @@ pub mod test_utils {
                 avatar_file_upload_id: Option<String>,
                 proof_document_file_upload_id: Option<String>,
             ) -> Result<Contact>;
-            async fn is_known_npub(&self, npub: &str) -> Result<bool>;
+            async fn is_known_npub(&self, npub: &bcr_ebill_api::service::contact_service::PublicKey) -> Result<bool>;
             async fn open_and_decrypt_file(
                 &self,
                 id: &str,
