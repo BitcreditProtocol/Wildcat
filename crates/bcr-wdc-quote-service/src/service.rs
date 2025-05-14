@@ -288,7 +288,9 @@ where
             .store_signatures(request_id, expiration, signatures_fees)
             .await?;
 
-        quote.offer(kid, expiration)?;
+        let discounted_amount = cashu::Amount::from(discounted.to_sat());
+
+        quote.offer(kid, expiration, discounted_amount)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
             .await
@@ -510,6 +512,7 @@ mod tests {
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
+        let discounted_amount = cashu::Amount::from(rnd_bill.sum.to_sat());
         repo.expect_search_by_bill()
             .with(
                 eq(rnd_bill.id.clone()),
@@ -520,6 +523,7 @@ mod tests {
                     status: QuoteStatus::Offered {
                         keyset_id,
                         ttl: chrono::Utc::now() + chrono::Duration::days(1),
+                        discounted: discounted_amount,
                     },
                     id,
                     bill: cloned.clone(),
@@ -553,6 +557,7 @@ mod tests {
         let keyset_id = keys_utils::generate_random_keysetid();
         let public_key = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
+        let discounted_amount = cashu::Amount::from(rnd_bill.sum.to_sat());
         repo.expect_search_by_bill()
             .with(
                 eq(rnd_bill.id.clone()),
@@ -563,6 +568,7 @@ mod tests {
                     status: QuoteStatus::Offered {
                         keyset_id,
                         ttl: chrono::Utc::now(),
+                        discounted: discounted_amount,
                     },
                     id,
                     bill: cloned.clone(),

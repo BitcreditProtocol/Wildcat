@@ -59,7 +59,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
 pub enum QuoteStatus {
     Pending { public_key: cdk01::PublicKey },
     Denied,
-    Offered { keyset_id: cdk02::Id, ttl: TStamp },
+    Offered { keyset_id: cdk02::Id, ttl: TStamp, discounted: cashu::Amount },
     Rejected { tstamp: TStamp },
     Accepted { keyset_id: cdk02::Id },
 }
@@ -98,12 +98,12 @@ impl Quote {
         }
     }
 
-    pub fn offer(&mut self, keyset_id: cdk02::Id, ttl: TStamp) -> Result<()> {
+    pub fn offer(&mut self, keyset_id: cdk02::Id, ttl: TStamp, discounted: cashu::Amount) -> Result<()> {
         let QuoteStatus::Pending { .. } = self.status else {
             return Err(Error::QuoteAlreadyResolved(self.id));
         };
 
-        self.status = QuoteStatus::Offered { keyset_id, ttl };
+        self.status = QuoteStatus::Offered { keyset_id, ttl, discounted };
         Ok(())
     }
 
