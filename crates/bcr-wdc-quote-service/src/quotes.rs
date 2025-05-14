@@ -64,7 +64,7 @@ pub enum QuoteStatus {
     Offered {
         keyset_id: cdk02::Id,
         ttl: TStamp,
-        discounted: cashu::Amount,
+        discounted: bitcoin::Amount,
     },
     Rejected {
         tstamp: TStamp,
@@ -112,7 +112,7 @@ impl Quote {
         &mut self,
         keyset_id: cdk02::Id,
         ttl: TStamp,
-        discounted: cashu::Amount,
+        discounted: bitcoin::Amount,
     ) -> Result<()> {
         let QuoteStatus::Pending { .. } = self.status else {
             return Err(Error::QuoteAlreadyResolved(self.id));
