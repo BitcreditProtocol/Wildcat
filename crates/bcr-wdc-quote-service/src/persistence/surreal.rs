@@ -348,6 +348,7 @@ mod tests {
         quote.status = quotes::QuoteStatus::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
+            discounted: cashu::Amount::from(quote.bill.sum.to_sat()),
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_ok());
@@ -378,6 +379,7 @@ mod tests {
         quote.status = quotes::QuoteStatus::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
+            discounted: cashu::Amount::from(quote.bill.sum.to_sat()),
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_err());
@@ -402,6 +404,7 @@ mod tests {
             status: quotes::QuoteStatus::Offered {
                 keyset_id: keys_test::generate_random_keysetid(),
                 ttl: TStamp::default(),
+                discounted: cashu::Amount::default(),
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -438,6 +441,7 @@ mod tests {
         quote.status = quotes::QuoteStatus::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
+            discounted: cashu::Amount::from(quote.bill.sum.to_sat()),
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_err());
