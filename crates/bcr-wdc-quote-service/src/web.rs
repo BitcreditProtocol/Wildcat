@@ -57,10 +57,14 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     match quote.status {
         quotes::QuoteStatus::Pending { .. } => web_quotes::StatusReply::Pending,
         quotes::QuoteStatus::Denied => web_quotes::StatusReply::Denied,
-        quotes::QuoteStatus::Offered { keyset_id, ttl, discounted } => web_quotes::StatusReply::Offered {
+        quotes::QuoteStatus::Offered {
+            keyset_id,
+            ttl,
+            discounted,
+        } => web_quotes::StatusReply::Offered {
             keyset_id,
             expiration_date: ttl,
-            discounted
+            discounted,
         },
         quotes::QuoteStatus::Rejected { tstamp } => web_quotes::StatusReply::Rejected { tstamp },
         quotes::QuoteStatus::Accepted { keyset_id } => {
