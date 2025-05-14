@@ -137,7 +137,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             submitted: quote.submitted,
             suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
         },
-        quotes::QuoteStatus::Offered { keyset_id, ttl } => web_quotes::InfoReply::Offered {
+        quotes::QuoteStatus::Offered { keyset_id, ttl, discounted : _ } => web_quotes::InfoReply::Offered {
             id: quote.id,
             bill: quote.bill.into(),
             ttl,
