@@ -22,7 +22,7 @@ use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, W
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    Query(since): Query<Option<chrono::DateTime<chrono::Utc>>>,
+    Query(req): Query<web_quotes::ListPendingQueryRequest>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KeysHndlr: KeysHandler,
@@ -31,7 +31,7 @@ where
 {
     tracing::debug!("Received request to list pending quotes");
 
-    let quotes = ctrl.list_pendings(since).await?;
+    let quotes = ctrl.list_pendings(req.since).await?;
     Ok(Json(web_quotes::ListReply { quotes }))
 }
 
