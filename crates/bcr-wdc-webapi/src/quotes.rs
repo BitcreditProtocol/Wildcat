@@ -47,7 +47,8 @@ pub enum StatusReply {
     Offered {
         keyset_id: cdk02::Id,
         expiration_date: chrono::DateTime<chrono::Utc>,
-        discounted: cashu::Amount,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     Accepted {
         keyset_id: cdk02::Id,

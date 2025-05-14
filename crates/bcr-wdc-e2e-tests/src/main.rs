@@ -126,7 +126,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
 
-    let amounts = get_amounts(offered_discount.into())
+    let amounts = get_amounts(offered_discount.to_sat())
         .iter()
         .map(|a| cashu::Amount::from(*a))
         .collect::<Vec<_>>();
@@ -149,7 +149,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .iter()
         .map(|s| u64::from(s.amount))
         .sum::<u64>();
-    assert_eq!(cashu::Amount::from(total_amount), offered_discount);
+    assert_eq!(total_amount, offered_discount.to_sat());
     info!(amount = total_amount, "Mint Successful obtained signatures");
     for signature in blinded_signatures {
         info!(c_= ?signature.c, amount = ?signature.amount, keyset_id = ?signature.keyset_id, "Signature");
