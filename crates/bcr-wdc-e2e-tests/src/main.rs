@@ -62,14 +62,14 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     info!(quote_id = ?quote_id, "Mint Request Accepted, waiting for admin to process");
 
     let one_year_from_now = chrono::Utc::now() + chrono::Duration::days(365);
-    let discounted_offer = bill_amount * 99 / 100;
+    let admin_discounted_offer = bill_amount * 99 / 100;
     let update_quote_request_payload = UpdateQuoteRequest::Offer {
-        discounted: bitcoin::Amount::from_sat(discounted_offer),
+        discounted: bitcoin::Amount::from_sat(admin_discounted_offer),
         ttl: Some(one_year_from_now),
     };
 
     info!(
-        discounted = discounted_offer,
+        discounted = admin_discounted_offer,
         "Admin sending discounted offer"
     );
 
@@ -89,12 +89,15 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let mint_quote_status_reply = user_service.lookup_credit_quote(quote_id).await;
     info!(quote_id=?quote_id, "Getting mint quote status for quote");
 
+    let offered_discount;
     if let StatusReply::Offered {
         keyset_id,
         expiration_date,
+        discounted,
     } = mint_quote_status_reply
     {
         info!(keyset_id=?keyset_id, expiration_date=?expiration_date, "Quote is offered");
+        offered_discount = discounted;
     } else {
         panic!("Quote is not accepted");
     }
@@ -123,7 +126,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
 
-    let amounts = get_amounts(discounted_offer)
+    let amounts = get_amounts(offered_discount.into())
         .iter()
         .map(|a| cashu::Amount::from(*a))
         .collect::<Vec<_>>();
@@ -146,7 +149,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .iter()
         .map(|s| u64::from(s.amount))
         .sum::<u64>();
-    assert_eq!(total_amount, discounted_offer);
+    assert_eq!(cashu::Amount::from(total_amount), offered_discount);
     info!(amount = total_amount, "Mint Successful obtained signatures");
     for signature in blinded_signatures {
         info!(c_= ?signature.c, amount = ?signature.amount, keyset_id = ?signature.keyset_id, "Signature");
