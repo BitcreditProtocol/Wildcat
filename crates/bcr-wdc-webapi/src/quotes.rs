@@ -1,4 +1,5 @@
 // ----- standard library imports
+use chrono::{DateTime, Utc};
 // ----- extra library imports
 use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::{nut01 as cdk01, nut02 as cdk02};
@@ -46,7 +47,7 @@ pub enum StatusReply {
     Denied,
     Offered {
         keyset_id: cdk02::Id,
-        expiration_date: chrono::DateTime<chrono::Utc>,
+        expiration_date: DateTime<Utc>,
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
     },
@@ -54,7 +55,7 @@ pub enum StatusReply {
         keyset_id: cdk02::Id,
     },
     Rejected {
-        tstamp: chrono::DateTime<chrono::Utc>,
+        tstamp: DateTime<Utc>,
     },
 }
 
@@ -103,13 +104,13 @@ pub enum InfoReply {
     Pending {
         id: uuid::Uuid,
         bill: BillInfo,
-        submitted: chrono::DateTime<chrono::Utc>,
-        suggested_expiration: chrono::DateTime<chrono::Utc>,
+        submitted: DateTime<Utc>,
+        suggested_expiration: DateTime<Utc>,
     },
     Offered {
         id: uuid::Uuid,
         bill: BillInfo,
-        ttl: chrono::DateTime<chrono::Utc>,
+        ttl: DateTime<Utc>,
         keyset_id: cdk02::Id,
     },
     Denied {
@@ -124,8 +125,14 @@ pub enum InfoReply {
     Rejected {
         id: uuid::Uuid,
         bill: BillInfo,
-        tstamp: chrono::DateTime<chrono::Utc>,
+        tstamp: DateTime<Utc>,
     },
+}
+
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct ListPendingQueryRequest {
+    pub since: Option<DateTime<Utc>>,
 }
 
 /// --------------------------- Update quote status request
@@ -136,7 +143,7 @@ pub enum UpdateQuoteRequest {
     Offer {
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
-        ttl: Option<chrono::DateTime<chrono::Utc>>,
+        ttl: Option<DateTime<Utc>>,
     },
 }
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -146,7 +153,7 @@ pub enum UpdateQuoteResponse {
     Offered {
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
-        ttl: chrono::DateTime<chrono::Utc>,
+        ttl: DateTime<Utc>,
     },
 }
 
