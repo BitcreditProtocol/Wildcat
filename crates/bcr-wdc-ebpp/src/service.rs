@@ -496,8 +496,7 @@ mod tests {
         let sk = btc::PrivateKey::generate(btc::Network::Testnet);
         let pk =
             btc::CompressedPublicKey::from_private_key(secp256k1::global::SECP256K1, &sk).unwrap();
-        let addr = btc::Address::p2wpkh(&pk, btc::Network::Testnet);
-        addr
+        btc::Address::p2wpkh(&pk, btc::Network::Testnet)
     }
 
     mockall::mock! {
