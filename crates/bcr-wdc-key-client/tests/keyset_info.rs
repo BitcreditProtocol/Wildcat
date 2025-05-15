@@ -6,7 +6,7 @@ use bcr_wdc_utils::keys::test_utils as keys_utils;
 
 #[tokio::test]
 async fn keyset_info_not_found() {
-    let server = bcr_wdc_key_service::test_utils::build_test_server();
+    let server = bcr_wdc_key_service::test_utils::build_test_server(None);
     let server_url = server.server_address().expect("address");
     let client = KeyClient::new(server_url);
 
