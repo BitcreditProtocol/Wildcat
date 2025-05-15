@@ -4,16 +4,13 @@ use std::collections::{BTreeMap, HashMap};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_wdc_utils::keys::KeysetEntry;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut01 as cdk01;
-use cashu::nuts::nut02 as cdk02;
-use cashu::Amount;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, Amount};
 use cdk_common::mint as cdk_mint;
 use cdk_common::mint::MintKeySetInfo;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository};
+use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository, SignaturesRepository};
 
 // ----- end imports
 
@@ -201,7 +198,9 @@ impl KeysRepository for DBKeys {
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .ok_or(Error::UnknownKeyset(*kid))?;
         if before.is_minted {
-            return Err(Error::InvalidMintRequest);
+            return Err(Error::InvalidMintRequest(format!(
+                "Keyset {kid} already minted"
+            )));
         }
         Ok(())
     }
@@ -297,6 +296,52 @@ impl QuoteKeysRepository for DBQuoteKeys {
             .store(rid, entry, condition)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DBSignatures {
+    db: Surreal<surrealdb::engine::any::Any>,
+    table: String,
+}
+
+impl DBSignatures {
+    pub async fn new(cfg: ConnectionConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
+        Ok(Self {
+            db: db_connection,
+            table: cfg.table,
+        })
+    }
+}
+
+#[async_trait]
+impl SignaturesRepository for DBSignatures {
+    async fn store(
+        &self,
+        blind: &cdk00::BlindedMessage,
+        signature: &cdk00::BlindSignature,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
+        let _r: Option<cdk00::BlindSignature> = self
+            .db
+            .insert(rid)
+            .content(signature.clone())
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        Ok(())
+    }
+    async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>> {
+        let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
+        let result: Option<cdk00::BlindSignature> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        Ok(result)
     }
 }
 

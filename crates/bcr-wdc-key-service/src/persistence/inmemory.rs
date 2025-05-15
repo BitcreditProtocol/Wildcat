@@ -4,19 +4,19 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::keys::KeysetEntry;
-use cashu::nuts::nut02 as cdk02;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use cdk_common::mint as cdk_mint;
 use cdk_common::mint::MintKeySetInfo;
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository};
+use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository, SignaturesRepository};
 
 #[derive(Default, Debug, Clone)]
-pub struct InMemoryMap {
+pub struct InMemoryKeyMap {
     keys: Arc<RwLock<HashMap<cdk02::Id, (KeysetEntry, MintCondition)>>>,
 }
 
-impl InMemoryMap {
+impl InMemoryKeyMap {
     pub fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
         let a = self
             .keys
@@ -43,7 +43,9 @@ impl InMemoryMap {
         let mut locked = self.keys.write().unwrap();
         if let Some((_, condition)) = locked.get_mut(kid) {
             if condition.is_minted {
-                return Err(Error::InvalidMintRequest);
+                return Err(Error::InvalidMintRequest(format!(
+                    "Keyset {kid} already minted"
+                )));
             }
             condition.is_minted = true;
             return Ok(());
@@ -96,7 +98,7 @@ impl InMemoryMap {
 }
 
 #[async_trait]
-impl KeysRepository for InMemoryMap {
+impl KeysRepository for InMemoryKeyMap {
     async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
         self.info(kid)
     }
@@ -171,5 +173,34 @@ impl QuoteKeysRepository for InMemoryQuoteKeyMap {
     ) -> Result<()> {
         self.keys.write().unwrap().insert(*qid, (entry, condition));
         Ok(())
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct InMemorySignatureMap {
+    signs: Arc<RwLock<HashMap<cdk01::PublicKey, cdk00::BlindSignature>>>,
+}
+
+#[async_trait]
+impl SignaturesRepository for InMemorySignatureMap {
+    async fn store(
+        &self,
+        blind: &cdk00::BlindedMessage,
+        signature: &cdk00::BlindSignature,
+    ) -> Result<()> {
+        self.signs
+            .write()
+            .unwrap()
+            .insert(blind.blinded_secret, signature.clone());
+        Ok(())
+    }
+    async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>> {
+        let a = self
+            .signs
+            .read()
+            .unwrap()
+            .get(&blind.blinded_secret)
+            .cloned();
+        Ok(a)
     }
 }

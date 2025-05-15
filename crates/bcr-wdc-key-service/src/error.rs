@@ -17,13 +17,15 @@ pub enum Error {
     SignKeys(#[from] keys_utils::SignWithKeysError),
     #[error("verify with keys {0}")]
     VerifyKeys(#[from] keys_utils::VerifyWithKeysError),
+    #[error("signatures repository error {0}")]
+    SignaturesRepository(AnyError),
 
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),
     #[error("Unknown keyset from id {0}")]
     UnknownKeysetFromId(uuid::Uuid),
-    #[error("invalid mint request")]
-    InvalidMintRequest,
+    #[error("invalid mint request: {0}")]
+    InvalidMintRequest(String),
     #[error("invalid generate request {0}")]
     InvalidGenerateRequest(uuid::Uuid),
 }
@@ -36,9 +38,9 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid generate request"),
             ),
-            Error::InvalidMintRequest => (
+            Error::InvalidMintRequest(msg) => (
                 StatusCode::BAD_REQUEST,
-                String::from("Invalid mint request"),
+                format!("Invalid mint request: {msg}"),
             ),
             Error::UnknownKeysetFromId(_) => (
                 StatusCode::NOT_FOUND,
@@ -46,6 +48,7 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
 
+            Error::SignaturesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::VerifyKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::SignKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
