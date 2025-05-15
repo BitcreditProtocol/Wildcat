@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 use anyhow::Result;
 use bcr_wdc_webapi::keys::ActivateKeysetRequest;
 use bcr_wdc_webapi::quotes::{
-    EnquireReply, EnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
+    EnquireReply, EnquireRequest, ListReplyLight, StatusReply, UpdateQuoteRequest,
+    UpdateQuoteResponse,
 };
 use cashu::nuts::nut02 as cdk02;
 use cashu::{MintBolt11Request, MintBolt11Response};
@@ -64,7 +65,6 @@ impl RestClient {
             .json()
             .await?;
 
-        println!("Token: {}", resp.access_token);
         self.token = Some(resp.access_token);
         Ok(())
     }
@@ -163,7 +163,7 @@ impl Service<AdminService> {
         let url = self.url(&format!("v1/admin/credit/quote/{quote_id}"));
         self.client.post(url, &quote_req).await.unwrap()
     }
-    pub async fn admin_credit_quote_list(&self) -> Result<Vec<Uuid>> {
+    pub async fn admin_credit_quote_list(&self) -> Result<ListReplyLight> {
         let url = self.url("v1/admin/credit/quote");
         self.client.get(url).await
     }
