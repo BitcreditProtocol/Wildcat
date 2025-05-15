@@ -46,7 +46,6 @@ impl RestClient {
         #[derive(serde::Deserialize)]
         struct TokenResponse {
             access_token: String,
-            // you can add expires_in, refresh_token, etc. here too
         }
 
         let resp: TokenResponse = self
@@ -70,7 +69,6 @@ impl RestClient {
         Ok(())
     }
 
-    /// Internal helper to add `Authorization: Bearer <token>` if we have one.
     fn authorize(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(ref tok) = self.token {
             req.bearer_auth(tok)
@@ -79,7 +77,6 @@ impl RestClient {
         }
     }
 
-    /// GET a typed JSON endpoint, automatically adding the Bearer header if present.
     pub async fn get<T: DeserializeOwned>(&self, url: Url) -> Result<T> {
         let req = self.http.get(url);
         let req = self.authorize(req);
@@ -87,7 +84,6 @@ impl RestClient {
         Ok(resp.json().await?)
     }
 
-    /// POST a JSON‐body, JSON‐response endpoint (typed), with Bearer header if present.
     pub async fn post<Req: Serialize, Res: DeserializeOwned>(
         &self,
         url: Url,
@@ -99,7 +95,6 @@ impl RestClient {
         Ok(resp.json().await?)
     }
 
-    /// POST a JSON‐body with no response body (204 or similar).
     pub async fn post_<Req: Serialize>(&self, url: Url, body: &Req) -> Result<()> {
         let req = self.http.post(url).json(body);
         let req = self.authorize(req);
@@ -168,9 +163,9 @@ impl Service<AdminService> {
         let url = self.url(&format!("v1/admin/credit/quote/{quote_id}"));
         self.client.post(url, &quote_req).await.unwrap()
     }
-    pub async fn admin_credit_quote_list(&self) -> Vec<Uuid> {
+    pub async fn admin_credit_quote_list(&self) -> Result<Vec<Uuid>> {
         let url = self.url("v1/admin/credit/quote");
-        self.client.get(url).await.unwrap()
+        self.client.get(url).await
     }
     pub async fn authenticate(
         &mut self,
