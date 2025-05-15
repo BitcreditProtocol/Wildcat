@@ -15,43 +15,95 @@ use uuid::Uuid;
 // ----- local modules
 // ----- end imports
 
+#[derive(Clone)]
 pub struct RestClient {
     http: HttpClient,
+    token: Option<String>,
 }
 
 impl RestClient {
+    /// Create a new client with no token yet.
     pub fn new() -> Self {
         let http = HttpClient::builder().build().unwrap();
-        RestClient { http }
+        RestClient { http, token: None }
     }
 
+    /// Authenticate against an OAuth2 token endpoint using ROPC
+    /// and store the access_token for future requests.
+    ///
+    /// # Parameters
+    /// - `token_url`: e.g. `http://localhost:8080/realms/dev/protocol/openid-connect/token`
+    /// - `client_id` / `client_secret`: your OAuth2 client credentials
+    /// - `username` / `password`: the resource owner credentials
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        #[derive(serde::Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+            // you can add expires_in, refresh_token, etc. here too
+        }
+
+        let resp: TokenResponse = self
+            .http
+            .post(token_url)
+            .form(&[
+                ("grant_type", "password"),
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+                ("username", username),
+                ("password", password),
+            ])
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        println!("Token: {}", resp.access_token);
+        self.token = Some(resp.access_token);
+        Ok(())
+    }
+
+    /// Internal helper to add `Authorization: Bearer <token>` if we have one.
+    fn authorize(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(ref tok) = self.token {
+            req.bearer_auth(tok)
+        } else {
+            req
+        }
+    }
+
+    /// GET a typed JSON endpoint, automatically adding the Bearer header if present.
     pub async fn get<T: DeserializeOwned>(&self, url: Url) -> Result<T> {
-        let resp = self.http.get(url).send().await?.error_for_status()?;
+        let req = self.http.get(url);
+        let req = self.authorize(req);
+        let resp = req.send().await?.error_for_status()?;
         Ok(resp.json().await?)
     }
 
+    /// POST a JSON‐body, JSON‐response endpoint (typed), with Bearer header if present.
     pub async fn post<Req: Serialize, Res: DeserializeOwned>(
         &self,
         url: Url,
         body: &Req,
     ) -> Result<Res> {
-        let resp = self
-            .http
-            .post(url)
-            .json(body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let req = self.http.post(url).json(body);
+        let req = self.authorize(req);
+        let resp = req.send().await?.error_for_status()?;
         Ok(resp.json().await?)
     }
 
+    /// POST a JSON‐body with no response body (204 or similar).
     pub async fn post_<Req: Serialize>(&self, url: Url, body: &Req) -> Result<()> {
-        self.http
-            .post(url)
-            .json(body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let req = self.http.post(url).json(body);
+        let req = self.authorize(req);
+        req.send().await?.error_for_status()?;
         Ok(())
     }
 }
@@ -115,5 +167,12 @@ impl Service<AdminService> {
     ) -> UpdateQuoteResponse {
         let url = self.url(&format!("v1/admin/credit/quote/{quote_id}"));
         self.client.post(url, &quote_req).await.unwrap()
+    }
+    pub async fn admin_credit_quote_list(&self) -> Vec<Uuid> {
+        let url = self.url("v1/admin/credit/quote");
+        self.client.get(url).await.unwrap()
+    }
+    pub async fn authenticate(&mut self, token_url: Url, client_id: &str, client_secret: &str, username: &str, password: &str) -> Result<()> {
+        self.client.authenticate(token_url, client_id, client_secret, username, password).await
     }
 }

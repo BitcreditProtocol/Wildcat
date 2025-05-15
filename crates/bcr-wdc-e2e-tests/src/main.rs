@@ -8,6 +8,7 @@ use bcr_wdc_webapi::quotes::{
 use cashu::MintBolt11Request;
 
 use cashu::nuts::nut02 as cdk02;
+use reqwest::Url;
 use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
 // ----- local modules
@@ -21,6 +22,16 @@ use test_utils::{generate_blinds, get_amounts, random_ebill};
 struct MainConfig {
     user_service: String,
     admin_service: String,
+    keycloak: KeycloakConfig,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct KeycloakConfig {
+    url: Url,
+    client_id: String,
+    client_secret: String,
+    username: String,
+    password: String,
 }
 
 fn setup_tracing() {
@@ -33,9 +44,14 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     setup_tracing();
 
     info!("START EBILL MINTING TEST");
+    info!(keycloak_url = %cfg.keycloak.url, "Using Keycloak configuration");
 
     let user_service = Service::<UserService>::new(cfg.user_service.clone());
-    let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
+    let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
+    info!("Authenticating admin service");
+    admin_service.authenticate(cfg.keycloak.url.clone(), &cfg.keycloak.client_id, &cfg.keycloak.client_secret,
+         &cfg.keycloak.username, &cfg.keycloak.password).await.unwrap();
+    info!("Admin service authenticated");
 
     // Create Ebill
     let (owner_key, bill, signature) = random_ebill();
