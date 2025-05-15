@@ -172,7 +172,16 @@ impl Service<AdminService> {
         let url = self.url("v1/admin/credit/quote");
         self.client.get(url).await.unwrap()
     }
-    pub async fn authenticate(&mut self, token_url: Url, client_id: &str, client_secret: &str, username: &str, password: &str) -> Result<()> {
-        self.client.authenticate(token_url, client_id, client_secret, username, password).await
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.client
+            .authenticate(token_url, client_id, client_secret, username, password)
+            .await
     }
 }
