@@ -1,7 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::keys as web_keys;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut20 as cdk20};
+use cashu::{
+    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut09 as cdk09, nut20 as cdk20,
+};
 use thiserror::Error;
 // ----- local imports
 pub use reqwest::Url;
@@ -192,6 +194,26 @@ impl KeyClient {
         let response = result.json::<cdk04::MintBolt11Response>().await?;
         Ok(response.signatures)
     }
+
+    pub async fn restore(
+        &self,
+        outputs: Vec<cdk00::BlindedMessage>,
+    ) -> Result<Vec<(cdk00::BlindedMessage, cdk00::BlindSignature)>> {
+        let url = self.base.join("v1/restore").expect("restore relative path");
+        let msg = cdk09::RestoreRequest { outputs };
+        let response = self.cl.post(url).json(&msg).send().await?;
+        let msg: cdk09::RestoreResponse = response.json().await?;
+        let cdk09::RestoreResponse {
+            outputs,
+            signatures,
+            ..
+        } = msg;
+        let ret_val = outputs
+            .into_iter()
+            .zip(signatures.into_iter())
+            .collect::<Vec<_>>();
+        Ok(ret_val)
+    }
 }
 
 #[cfg(feature = "test-utils")]
@@ -267,6 +289,13 @@ pub mod test_utils {
             _outputs: &[cdk00::BlindedMessage],
             _sk: cdk01::SecretKey,
         ) -> Result<()> {
+            todo!()
+        }
+
+        pub async fn restore(
+            &self,
+            _outputs: Vec<cdk00::BlindedMessage>,
+        ) -> Result<Vec<(cdk00::BlindedMessage, cdk00::BlindSignature)>> {
             todo!()
         }
     }
