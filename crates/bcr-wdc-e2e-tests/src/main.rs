@@ -49,8 +49,16 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let user_service = Service::<UserService>::new(cfg.user_service.clone());
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
     info!("Authenticating admin service");
-    admin_service.authenticate(cfg.keycloak.url.clone(), &cfg.keycloak.client_id, &cfg.keycloak.client_secret,
-         &cfg.keycloak.username, &cfg.keycloak.password).await.unwrap();
+    admin_service
+        .authenticate(
+            cfg.keycloak.url.clone(),
+            &cfg.keycloak.client_id,
+            &cfg.keycloak.client_secret,
+            &cfg.keycloak.username,
+            &cfg.keycloak.password,
+        )
+        .await
+        .unwrap();
     info!("Admin service authenticated");
 
     // Create Ebill
