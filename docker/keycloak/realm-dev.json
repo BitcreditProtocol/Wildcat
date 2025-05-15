@@ -1,9 +1,6 @@
 {
     "realm": "dev",
     "enabled": true,
-    "attributes": {
-        "frontendUrl": "http://keycloak:8080/realms/dev"
-    },
     "clients": [
       {
         "clientId": "bff-dashboard",
@@ -12,11 +9,22 @@
         "secret": "cute-kitties",
         "directAccessGrantsEnabled": true,
         "redirectUris": ["*"]
+      },
+      {
+        "clientId": "bff-local-dev",
+        "enabled": true,
+        "publicClient": false,
+        "secret": "cute-kitties",
+        "directAccessGrantsEnabled": true,
+        "redirectUris": ["http://localhost:*", "http://127.0.0.1:*"]
       }
     ],
     "users": [
       {
         "username": "democat",
+        "email": "democat@example.com",
+        "firstName": "Democat",
+        "lastName": "Democat",
         "enabled": true,
         "credentials": [
           { "type": "password", "value": "bitcredit", "temporary": false }
