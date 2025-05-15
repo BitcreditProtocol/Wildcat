@@ -2,10 +2,10 @@
 use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use cashu::{nut01 as cdk01, nut02 as cdk02, nut04 as cdk04};
+use cashu::{nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut09 as cdk09};
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::service::{KeysRepository, Service};
+use crate::service::{KeysRepository, Service, SignaturesRepository};
 
 // ----- end imports
 
@@ -22,8 +22,8 @@ use crate::service::{KeysRepository, Service};
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn lookup_keysets<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn lookup_keyset<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySetInfo>>
 where
@@ -45,8 +45,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_keysets<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn list_keysets<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
 ) -> Result<Json<cdk02::KeysetResponse>>
 where
     KeysRepo: KeysRepository,
@@ -76,8 +76,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn lookup_keys<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn lookup_keys<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Path(kid): Path<cdk02::Id>,
 ) -> Result<Json<cdk02::KeySet>>
 where
@@ -99,8 +99,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_keys<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn list_keys<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
 ) -> Result<Json<cdk01::KeysResponse>>
 where
     KeysRepo: KeysRepository,
@@ -126,26 +126,64 @@ where
         (status = 200, description = "Successful response", body = cdk04::MintBolt11Response, content_type = "application/json"),
     )
 )]
-pub async fn mint_ebill<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn mint_ebill<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(req): Json<cdk04::MintBolt11Request<String>>,
 ) -> Result<Json<cdk04::MintBolt11Response>>
 where
     KeysRepo: KeysRepository,
+    SignsRepo: SignaturesRepository,
 {
     tracing::debug!("Received mint request for");
 
     let kid = req
         .outputs
         .first()
-        .ok_or(Error::InvalidMintRequest)?
+        .ok_or(Error::InvalidMintRequest(String::from(
+            "output vector is empty",
+        )))?
         .keyset_id;
     let pk = ctrl.authorized_public_key_to_mint(kid).await?;
     req.verify_signature(pk)
-        .map_err(|_| Error::InvalidMintRequest)?;
+        .map_err(|_| Error::InvalidMintRequest(String::from("Invalid signature")))?;
 
-    let qid = uuid::Uuid::from_str(&req.quote).map_err(|_| Error::InvalidMintRequest)?;
+    let qid =
+        uuid::Uuid::from_str(&req.quote).map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
     let signatures = ctrl.mint(qid, req.outputs).await?;
     let response = cdk04::MintBolt11Response { signatures };
+    Ok(Json(response))
+}
+
+/// --------------------------- Restore signatures
+#[utoipa::path(
+    post,
+    path = "/v1/restore",
+    request_body(content = cdk09::RestoreRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = cdk09::RestoreResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn restore<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
+    Json(req): Json<cdk09::RestoreRequest>,
+) -> Result<Json<cdk09::RestoreResponse>>
+where
+    SignsRepo: SignaturesRepository,
+{
+    tracing::debug!("Received wallet restore request");
+    let mut response = cdk09::RestoreResponse {
+        outputs: Vec::new(),
+        signatures: Vec::new(),
+        promises: None,
+    };
+    for blind in req.outputs.into_iter() {
+        let sign_opt = ctrl.search_signature(&blind).await?;
+        if let Some(signature) = sign_opt {
+            response.signatures.push(signature);
+            response.outputs.push(blind);
+        }
+    }
+
     Ok(Json(response))
 }

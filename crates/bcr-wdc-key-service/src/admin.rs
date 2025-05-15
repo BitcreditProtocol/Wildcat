@@ -5,7 +5,7 @@ use bcr_wdc_webapi::keys as web_keys;
 use cashu::{nut00 as cdk00, nut02 as cdk02};
 // ----- local imports
 use crate::error::Result;
-use crate::service::{KeysRepository, QuoteKeysRepository, Service};
+use crate::service::{KeysRepository, QuoteKeysRepository, Service, SignaturesRepository};
 
 #[utoipa::path(
     post,
@@ -17,12 +17,13 @@ use crate::service::{KeysRepository, QuoteKeysRepository, Service};
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn sign_blind<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn sign_blind<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(blind): Json<cdk00::BlindedMessage>,
 ) -> Result<Json<cdk00::BlindSignature>>
 where
     KeysRepo: KeysRepository,
+    SignsRepo: SignaturesRepository,
 {
     tracing::debug!("Received sign blind request");
     ctrl.sign_blind(&blind).await.map(Json)
@@ -38,8 +39,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn verify_proof<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn verify_proof<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(proof): Json<cdk00::Proof>,
 ) -> Result<()>
 where
@@ -59,8 +60,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn generate<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn generate<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(request): Json<web_keys::GenerateKeysetRequest>,
 ) -> Result<Json<cdk02::Id>>
 where
@@ -88,8 +89,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn pre_sign<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn pre_sign<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(request): Json<web_keys::PreSignRequest>,
 ) -> Result<Json<cdk00::BlindSignature>>
 where
@@ -110,8 +111,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn activate<QuotesKeysRepo, KeysRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo>>,
+pub async fn activate<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(request): Json<web_keys::ActivateKeysetRequest>,
 ) -> Result<()>
 where

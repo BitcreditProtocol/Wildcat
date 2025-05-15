@@ -48,14 +48,26 @@ pub trait QuoteKeysRepository {
     ) -> Result<()>;
 }
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait SignaturesRepository {
+    async fn store(
+        &self,
+        blind: &cdk00::BlindedMessage,
+        signature: &cdk00::BlindSignature,
+    ) -> Result<()>;
+    async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>>;
+}
+
 #[derive(Clone)]
-pub struct Service<QuoteKeysRepo, KeysRepo> {
+pub struct Service<QuoteKeysRepo, KeysRepo, SignsRepo> {
     pub quote_keys: QuoteKeysRepo,
     pub keys: KeysRepo,
+    pub signatures: SignsRepo,
     pub keygen: Factory,
 }
 
-impl<QuoteKeysRepo, KeysRepo> Service<QuoteKeysRepo, KeysRepo>
+impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
 where
     KeysRepo: KeysRepository,
 {
@@ -68,12 +80,6 @@ where
             .keyset(&kid)
             .await?
             .ok_or(Error::UnknownKeyset(kid))
-    }
-
-    pub async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
-        let keyset = self.keys(blind.keyset_id).await?;
-        let signature = keys_utils::sign_with_keys(&keyset, blind)?;
-        Ok(signature)
     }
 
     pub async fn verify_proof(&self, proof: cdk00::Proof) -> Result<()> {
@@ -89,9 +95,18 @@ where
     pub async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
         self.keys.list_keyset().await
     }
+
+    pub async fn authorized_public_key_to_mint(&self, kid: cdk02::Id) -> Result<cdk01::PublicKey> {
+        let condition = self
+            .keys
+            .condition(&kid)
+            .await?
+            .ok_or(Error::UnknownKeyset(kid))?;
+        Ok(condition.pub_key)
+    }
 }
 
-impl<QuoteKeysRepo, KeysRepo> Service<QuoteKeysRepo, KeysRepo>
+impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
 where
     QuoteKeysRepo: QuoteKeysRepository,
 {
@@ -149,7 +164,77 @@ where
     }
 }
 
-impl<QuoteKeysRepo, KeysRepo> Service<QuoteKeysRepo, KeysRepo>
+impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
+where
+    SignsRepo: SignaturesRepository,
+{
+    pub async fn search_signature(
+        &self,
+        blind: &cdk00::BlindedMessage,
+    ) -> Result<Option<cdk00::BlindSignature>> {
+        self.signatures.load(blind).await
+    }
+}
+
+impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
+where
+    KeysRepo: KeysRepository,
+    SignsRepo: SignaturesRepository,
+{
+    pub async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+        let keyset = self.keys(blind.keyset_id).await?;
+        let signature = keys_utils::sign_with_keys(&keyset, blind)?;
+        self.signatures.store(blind, &signature).await?;
+        Ok(signature)
+    }
+
+    pub async fn mint(
+        &self,
+        _qid: uuid::Uuid,
+        outputs: Vec<cdk00::BlindedMessage>,
+    ) -> Result<Vec<cdk00::BlindSignature>> {
+        // basic checks
+        bcr_wdc_utils::signatures::basic_blinds_checks(&outputs)
+            .map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
+        //  check if the ids of the outputs are all the same
+        let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
+        if unique_ids.len() != 1 {
+            return Err(Error::InvalidMintRequest(String::from(
+                "multiple keyset IDs",
+            )));
+        }
+        let kid = unique_ids[0];
+
+        let MintCondition {
+            target, is_minted, ..
+        } = self
+            .keys
+            .condition(&kid)
+            .await?
+            .ok_or(Error::UnknownKeyset(kid))?;
+        //  check if the keyset id has been minted already
+        if is_minted {
+            return Err(Error::InvalidMintRequest(String::from(
+                "keyset already minted",
+            )));
+        }
+        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| acc + b.amount);
+        if blinds_sum != target {
+            return Err(Error::InvalidMintRequest(String::from("invalid amount")));
+        }
+
+        let mut signatures = Vec::with_capacity(outputs.len());
+        for blind in &outputs {
+            let signature = self.sign_blind(blind).await?;
+            self.signatures.store(blind, &signature).await?;
+            signatures.push(signature);
+        }
+        self.keys.mark_as_minted(&kid).await?;
+        Ok(signatures)
+    }
+}
+
+impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
 where
     QuoteKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
@@ -172,74 +257,18 @@ where
     }
 }
 
-impl<QuoteKeysRepo, KeysRepo> Service<QuoteKeysRepo, KeysRepo>
-where
-    KeysRepo: KeysRepository,
-{
-    pub async fn authorized_public_key_to_mint(&self, kid: cdk02::Id) -> Result<cdk01::PublicKey> {
-        let condition = self
-            .keys
-            .condition(&kid)
-            .await?
-            .ok_or(Error::UnknownKeyset(kid))?;
-        Ok(condition.pub_key)
-    }
-
-    pub async fn mint(
-        &self,
-        _qid: uuid::Uuid,
-        outputs: Vec<cdk00::BlindedMessage>,
-    ) -> Result<Vec<cdk00::BlindSignature>> {
-        //  check if the ids of the outputs are all the same
-        let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
-        if unique_ids.len() != 1 {
-            return Err(Error::InvalidMintRequest);
-        }
-        let kid = unique_ids[0];
-
-        //  check if the blinded secrets are unique
-        let unique_secrets: Vec<_> = outputs.iter().map(|o| o.blinded_secret).unique().collect();
-        if unique_secrets.len() != outputs.len() {
-            return Err(Error::InvalidMintRequest);
-        }
-
-        let MintCondition {
-            target, is_minted, ..
-        } = self
-            .keys
-            .condition(&kid)
-            .await?
-            .ok_or(Error::UnknownKeyset(kid))?;
-        //  check if the keyset id has been minted already
-        if is_minted {
-            return Err(Error::InvalidMintRequest);
-        }
-        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| acc + b.amount);
-        if blinds_sum != target {
-            return Err(Error::InvalidMintRequest);
-        }
-
-        let mut signatures = Vec::with_capacity(outputs.len());
-        for blind in &outputs {
-            let signature = self.sign_blind(blind).await?;
-            signatures.push(signature);
-        }
-        self.keys.mark_as_minted(&kid).await?;
-        Ok(signatures)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::btc32::DerivationPath;
-    use crate::persistence;
-    use crate::service;
+    use crate::test_utils::{
+        TestKeysRepository, TestKeysService, TestQuoteKeysRepository, TestSignaturesRepository,
+    };
     use bcr_wdc_utils::signatures::test_utils::generate_blinds;
     use std::str::FromStr;
     use uuid::Uuid;
 
-    // Helper function to setup test service
+    // Helper function to set up test service
     async fn setup_test_service() -> (TestKeysService, cdk02::Id, Uuid) {
         let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
             .unwrap()
@@ -252,6 +281,7 @@ mod tests {
         let service = TestKeysService {
             quote_keys: TestQuoteKeysRepository::default(),
             keys: TestKeysRepository::default(),
+            signatures: TestSignaturesRepository::default(),
             keygen: factory,
         };
 
@@ -269,10 +299,6 @@ mod tests {
 
         (service, kid, qid)
     }
-
-    type TestQuoteKeysRepository = persistence::inmemory::InMemoryQuoteKeyMap;
-    type TestKeysRepository = persistence::inmemory::InMemoryMap;
-    type TestKeysService = service::Service<TestQuoteKeysRepository, TestKeysRepository>;
 
     #[tokio::test]
     async fn test_mint_success() {
