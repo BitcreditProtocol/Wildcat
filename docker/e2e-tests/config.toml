@@ -1,3 +1,10 @@
 
 user_service = "http://bff-wallet-service:4242"
 admin_service = "http://bff-dashboard-service:4242"
+
+[keycloak]
+url = "http://keycloak:8080/realms/dev/protocol/openid-connect/token"
+client_id = "bff-dashboard"
+client_secret = "cute-kitties"
+username = "democat"
+password = "bitcredit"

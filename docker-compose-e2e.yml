@@ -146,7 +146,7 @@ services:
     restart: unless-stopped
 
   bff-dashboard-service:
-    image: envoyproxy/envoy:v1.27.0
+    image: envoyproxy/envoy:v1.33.0
     depends_on:
       - keycloak
       - quote-service
@@ -156,8 +156,7 @@ services:
     volumes:
       - ./docker/bff-dashboard-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
-      - "4242:4242"    # external ingress port
-      - "9901:9901"    # Envoy admin interface
+      - "4242:4242"
     command: >
       /usr/local/bin/envoy
       -c /etc/envoy/envoy.yaml
@@ -189,11 +188,12 @@ services:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
 
   keycloak:
-    image: quay.io/keycloak/keycloak:21.1.1
+    image: quay.io/keycloak/keycloak:26.2.0
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: dev-file
+      KC_HEALTH_ENABLED: true
     command:
       - start-dev
       - --import-realm
@@ -203,8 +203,8 @@ services:
     volumes:
       - ./docker/keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health/ready"]
-      interval: 10s
+      test: ['CMD-SHELL', '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { java.net.URI uri = java.net.URI.create(args[0]); System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)uri.toURL().openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:9000/health/live']
+      interval: 5s
       timeout: 5s
       retries: 5
 
@@ -224,6 +224,8 @@ services:
       key-service:
         condition: service_healthy
       surrealdb:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     volumes:
       - ./docker/e2e-tests/config.toml:/e2e-tests/config.toml

@@ -26,6 +26,37 @@ static_resources:
                         - match: { prefix: "/v1/admin/onchain" }
                           route: { cluster: ebpp_service }
                 http_filters:
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        keycloak_provider_service:
+                          issuer: http://keycloak:8080/realms/dev
+                          remote_jwks:
+                            http_uri:
+                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
+                              cluster: keycloak_service
+                              timeout: 5s
+                            cache_duration:
+                              seconds: 600
+                          forward_payload_header: x-jwt-payload
+                        keycloak_provider_localhost:
+                          issuer: http://localhost:8080/realms/dev
+                          remote_jwks:
+                            http_uri:
+                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
+                              cluster: keycloak_service
+                              timeout: 5s
+                            cache_duration:
+                              seconds: 600
+                          forward_payload_header: x-jwt-payload
+                      rules:
+                        - match: { prefix: "/v1/admin" }
+                          requires:
+                            requires_any:
+                              requirements:
+                                - provider_name: keycloak_provider_service
+                                - provider_name: keycloak_provider_localhost
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -82,6 +113,19 @@ static_resources:
                     socket_address:
                       address: ebpp
                       port_value: 9090
+
+    - name: keycloak_service
+      connect_timeout: 5s
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: keycloak_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: keycloak
+                      port_value: 8080
 
 admin:
   access_log_path: /tmp/admin_access.log
