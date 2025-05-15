@@ -41,13 +41,9 @@ fn setup_tracing() {
 }
 
 async fn test_auth(cfg: &MainConfig) {
-    setup_tracing();
-
     info!("Auth Test");
-    info!(keycloak_url = %cfg.keycloak.url, "Using Keycloak configuration");
 
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    info!("Authenticating admin service");
     admin_service
         .authenticate(
             cfg.keycloak.url.clone(),
@@ -60,15 +56,14 @@ async fn test_auth(cfg: &MainConfig) {
         .unwrap();
     let _ = admin_service.admin_credit_quote_list().await.unwrap();
 
+    info!("Testing admin service without authorization");
     let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    // expect error this time
     if admin_service.admin_credit_quote_list().await.is_ok() {
         panic!("Got ids from admin without authorization");
     }
 
-    // test authentication failure
+    info!("Testing admin service with wrong credentials");
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    info!("Authenticating admin service");
     if admin_service
         .authenticate(
             cfg.keycloak.url.clone(),
@@ -85,9 +80,7 @@ async fn test_auth(cfg: &MainConfig) {
 }
 
 async fn can_mint_ebill(cfg: &MainConfig) {
-    setup_tracing();
-
-    info!("START EBILL MINTING TEST");
+    info!("Ebill minting test");
 
     let user_service = Service::<UserService>::new(cfg.user_service.clone());
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
@@ -234,6 +227,8 @@ async fn main() {
     let cfg: MainConfig = settings
         .try_deserialize()
         .expect("Failed to parse configuration");
+
+    setup_tracing();
 
     can_mint_ebill(&cfg).await;
     test_auth(&cfg).await;
