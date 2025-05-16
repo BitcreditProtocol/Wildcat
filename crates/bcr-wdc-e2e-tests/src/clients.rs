@@ -7,13 +7,13 @@ use bcr_wdc_webapi::quotes::{
     EnquireReply, EnquireRequest, ListReplyLight, StatusReply, UpdateQuoteRequest,
     UpdateQuoteResponse,
 };
+use bcr_wdc_webapi::wallet::ECashBalance;
 use cashu::nuts::nut02 as cdk02;
 use cashu::{MintBolt11Request, MintBolt11Response};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
-use bcr_wdc_webapi::wallet::ECashBalance;
 // ----- local modules
 // ----- end imports
 

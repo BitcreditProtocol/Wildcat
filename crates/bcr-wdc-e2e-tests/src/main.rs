@@ -98,6 +98,27 @@ async fn test_auth(cfg: &MainConfig) {
     let balance = admin_service.admin_balance_credit().await.unwrap();
     info!(balance = ?balance.amount, unit = ?balance.unit, "Admin balance");
 
+    // Test protected endpoints
+    let urls = vec![
+        // generic
+        "v1/admin/credit",
+        "v1/admin/balance/",
+        "v1/admin/keys",
+        "v1/admin/onchain",
+        // specific
+        "v1/admin/keys/activate/",
+        "v1/admin/credit/quote/0000",
+    ];
+    let http = reqwest::Client::builder().build().unwrap();
+    for url in urls {
+        let url = Url::parse(&format!("{}/{}", cfg.admin_service, url)).unwrap();
+        // GET
+        let response = http.get(url.clone()).send().await.unwrap();
+        assert_eq!(response.status(), 401);
+        // POST
+        let response = http.post(url).send().await.unwrap();
+        assert_eq!(response.status(), 401);
+    }
 }
 
 async fn can_mint_ebill(cfg: &MainConfig) {
