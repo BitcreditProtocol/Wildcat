@@ -13,6 +13,7 @@ use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
+use bcr_wdc_webapi::wallet::ECashBalance;
 // ----- local modules
 // ----- end imports
 
@@ -165,6 +166,11 @@ impl Service<AdminService> {
     }
     pub async fn admin_credit_quote_list(&self) -> Result<ListReplyLight> {
         let url = self.url("v1/admin/credit/quote");
+        self.client.get(url).await
+    }
+
+    pub async fn admin_balance_credit(&self) -> Result<ECashBalance> {
+        let url = self.url("v1/admin/balance/credit");
         self.client.get(url).await
     }
     pub async fn authenticate(
