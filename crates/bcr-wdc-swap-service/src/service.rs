@@ -2,9 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut02 as cdk02;
-use cashu::Amount;
+use cashu::{nut00 as cdk00, nut02 as cdk02, nut07 as cdk07, Amount};
 use futures::future::JoinAll;
 use itertools::Itertools;
 // ----- local imports
@@ -26,6 +24,7 @@ pub trait ProofRepository {
     /// in case of failure, the DB should be in the same state as before the call
     async fn insert(&self, tokens: &[cdk00::Proof]) -> Result<()>;
     async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()>;
+    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cdk07::ProofState>>;
 }
 
 #[derive(Clone)]
@@ -62,6 +61,30 @@ where
         let signatures: Vec<cdk00::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
         Ok(signatures)
+    }
+}
+
+impl<KeysSrvc, ProofRepo> Service<KeysSrvc, ProofRepo>
+where
+    ProofRepo: ProofRepository,
+{
+    pub async fn check_spendable(&self, ys: &[cashu::PublicKey]) -> Result<Vec<cdk07::ProofState>> {
+        let joined = ys
+            .iter()
+            .map(|y| self.proofs.contains(*y))
+            .collect::<JoinAll<_>>();
+        let responses: Vec<_> = joined.await.into_iter().collect::<Result<_>>()?;
+
+        let mut proof_states = Vec::with_capacity(responses.len());
+        for (response, y) in responses.into_iter().zip(ys.iter()) {
+            let proof_state = response.unwrap_or(cdk07::ProofState {
+                y: *y,
+                state: cdk07::State::Unspent,
+                witness: None,
+            });
+            proof_states.push(proof_state);
+        }
+        Ok(proof_states)
     }
 }
 
@@ -109,7 +132,7 @@ where
         Ok(signatures)
     }
 
-    pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<()> {
+    pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
         signatures_utils::basic_proofs_checks(proofs).map_err(Error::InvalidInput)?;
 
@@ -124,9 +147,14 @@ where
         }
         // 2. verify proofs signatures
         self.verify_proofs_signatures(proofs).await?;
+        let mut ys = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes()).map_err(Error::CdkDhke)?;
+            ys.push(y);
+        }
 
         self.proofs.insert(proofs).await?;
-        Ok(())
+        Ok(ys)
     }
 
     pub async fn recover(&self, proofs: &[cdk00::Proof]) -> Result<()> {
