@@ -288,12 +288,47 @@ pub async fn post_check_state(
     )
 )]
 pub async fn post_restore(
-    State(_ctrl): State<AppController>,
-    Json(_request): Json<cdk09::RestoreRequest>,
+    State(ctrl): State<AppController>,
+    Json(request): Json<cdk09::RestoreRequest>,
 ) -> Result<Json<cdk09::RestoreResponse>> {
     tracing::debug!("Requested /v1/restore");
 
-    Err(Error::NotYet(String::from("post_restore")))
+    let outputs = request.outputs.clone();
+    let crsat_signatures = ctrl.keys_client.restore(outputs.clone()).await?;
+    let restore_resp = ctrl.cdk_client.post_restore(request).await?;
+    let sat_signatures = restore_resp
+        .outputs
+        .into_iter()
+        .zip(restore_resp.signatures.into_iter())
+        .collect::<Vec<_>>();
+
+    let mut response = cdk09::RestoreResponse {
+        outputs: Default::default(),
+        signatures: Default::default(),
+        promises: Default::default(),
+    };
+    // we assume that both sat_signatures and crsat_signatures are ordered
+    // according to the order of request.outputs
+    // as described in NUT09
+    let mut crsat_c = 0;
+    let mut sat_c = 0;
+    for blind in outputs {
+        if let Some(element) = crsat_signatures.get(crsat_c) {
+            if blind.blinded_secret == element.0.blinded_secret {
+                response.outputs.push(element.0.clone());
+                response.signatures.push(element.1.clone());
+                crsat_c += 1;
+            }
+        }
+        if let Some(element) = sat_signatures.get(sat_c) {
+            if blind.blinded_secret == element.0.blinded_secret {
+                response.outputs.push(element.0.clone());
+                response.signatures.push(element.1.clone());
+                sat_c += 1;
+            }
+        }
+    }
+    Ok(Json(response))
 }
 
 enum SwapType {
