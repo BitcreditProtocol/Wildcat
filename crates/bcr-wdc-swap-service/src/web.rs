@@ -31,6 +31,6 @@ where
     KeysSrvc: KeysService,
     ProofRepo: ProofRepository,
 {
-    ctrl.burn(&request.proofs).await?;
-    Ok(Json(web_swap::BurnResponse {}))
+    let ys = ctrl.burn(&request.proofs).await?;
+    Ok(Json(web_swap::BurnResponse { ys }))
 }

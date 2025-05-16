@@ -14,7 +14,9 @@ pub struct BurnRequest {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-pub struct BurnResponse {}
+pub struct BurnResponse {
+    pub ys: Vec<cashu::PublicKey>,
+}
 
 ///--------------------------- Recover tokens
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
