@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::swap as web_swap;
-use cashu::nut00 as cdk00;
-use cashu::nut03 as cdk03;
+use cashu::{nut00 as cdk00, nut03 as cdk03, nut07 as cdk07};
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -58,5 +57,16 @@ impl SwapClient {
         let res = self.cl.post(url).json(&request).send().await?;
         let recover_resp: web_swap::RecoverResponse = res.json().await?;
         Ok(recover_resp)
+    }
+
+    pub async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cdk07::ProofState>> {
+        let url = self
+            .base
+            .join("/v1/checkstate")
+            .expect("checkstate relative path");
+        let request = cdk07::CheckStateRequest { ys };
+        let res = self.cl.post(url).json(&request).send().await?;
+        let state_resp: cdk07::CheckStateResponse = res.json().await?;
+        Ok(state_resp.states)
     }
 }
