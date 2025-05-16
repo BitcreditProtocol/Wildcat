@@ -58,7 +58,8 @@ where
 {
     let web = Router::new()
         .route("/v1/swap", post(crate::web::swap_tokens))
-        .route("/v1/burn", post(crate::web::burn_tokens));
+        .route("/v1/burn", post(crate::web::burn_tokens))
+        .route("/v1/checkstate", post(crate::web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new().route("/v1/recover", post(crate::admin::recover_tokens));
 
