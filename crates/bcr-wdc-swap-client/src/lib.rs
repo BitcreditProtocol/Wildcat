@@ -41,12 +41,12 @@ impl SwapClient {
         Ok(signatures.signatures)
     }
 
-    pub async fn burn(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::BurnResponse> {
+    pub async fn burn(&self, proofs: Vec<cdk00::Proof>) -> Result<Vec<cashu::PublicKey>> {
         let url = self.base.join("/v1/burn").expect("burn relative path");
         let request = web_swap::BurnRequest { proofs };
         let res = self.cl.post(url).json(&request).send().await?;
         let burn_resp: web_swap::BurnResponse = res.json().await?;
-        Ok(burn_resp)
+        Ok(burn_resp.ys)
     }
 
     pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::RecoverResponse> {
