@@ -111,6 +111,7 @@ async fn test_auth(cfg: &MainConfig) {
     ];
     let http = reqwest::Client::builder().build().unwrap();
     for url in urls {
+        info!(url=?url, "Testing if authorization is required");
         let url = Url::parse(&format!("{}/{}", cfg.admin_service, url)).unwrap();
         // GET
         let response = http.get(url.clone()).send().await.unwrap();
