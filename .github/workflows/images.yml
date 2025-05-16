@@ -1,0 +1,58 @@
+name: build and push docker images
+
+on:
+  schedule:
+      - cron: "0 10 * * *"
+  push:
+    tags:
+      - "v*.*.*"
+
+
+permissions:
+  contents: read
+
+env:
+  KEY_SERVICE_IMAGE: "bitcr-devs-repo/bcr-wdc-key-service"
+  PROJECT_ID: "cs-host-c9f0ca592f814d028135fa"
+  GAR_LOCATION: ""
+  REPOSITORY: "bitcr-devs-repo"
+  GCR_INSTANCE: ""
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193
+      with:
+        credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a
+
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804
+      with:
+        type=schedule, pattern=nightly
+        type=semver, pattern={{version}}
+
+    - name: Build Docker Images
+      run: just build-docker-images
+
+    - name: Docker auth
+      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+    - name: Build Docker Base Image
+      run: docker build -t wildcat/base-image -f docker/base-image/Dockerfile .
+    - name: Build Docker Key Service
+      run: docker build -t "${{env.KEY_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}" -f docker/key-service/Dockerfile .
+
+    # - name: Push Key Service image
+    #   run: docker push "${{env.KEY_SERVICE_IMAGE}}:${{steps.meta.outputs.tags}}"
+
