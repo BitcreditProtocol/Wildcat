@@ -109,7 +109,7 @@ where
         Ok(signatures)
     }
 
-    pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<()> {
+    pub async fn burn(&self, proofs: &[cdk00::Proof]) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
         signatures_utils::basic_proofs_checks(proofs).map_err(Error::InvalidInput)?;
 
@@ -124,9 +124,14 @@ where
         }
         // 2. verify proofs signatures
         self.verify_proofs_signatures(proofs).await?;
+        let mut ys = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes()).map_err(Error::CdkDhke)?;
+            ys.push(y);
+        }
 
         self.proofs.insert(proofs).await?;
-        Ok(())
+        Ok(ys)
     }
 
     pub async fn recover(&self, proofs: &[cdk00::Proof]) -> Result<()> {
