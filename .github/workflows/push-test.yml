@@ -50,16 +50,36 @@ jobs:
         echo "------------------------------"
 
 
-    - name: Build, push, and verify
-      env:
-        LOCAL_TAG: ${{ env.TEST_IMAGE_NAME }}:local-build
-        REMOTE_TAG_SHA: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.TEST_IMAGE_NAME }}:${{ github.sha }}
-        REMOTE_TAG_TEST: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.TEST_IMAGE_NAME }}:latest-test
+    - name: Build, Push, Verify
       run: |
-        export DOCKER_BUILDKIT=1
-        docker build -t "$LOCAL_TAG" -f Dockerfile.test .
-        docker tag "$LOCAL_TAG" "$REMOTE_TAG_SHA"
-        docker tag "$LOCAL_TAG" "$REMOTE_TAG_TEST"
-        docker push "$REMOTE_TAG_SHA" "$REMOTE_TAG_TEST"
-        docker pull "$REMOTE_TAG_SHA"
+        # Enable BuildKit for potentially faster builds and better output (optional, but good practice)
+        export DOCKER_BUILDKIT=1 
+        
+        LOCAL_TAG="${{ env.TEST_IMAGE_NAME }}:local-build" # Local tag for the built image
+        
+        # Define remote tags for GAR
+        REMOTE_TAG_SHA="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.TEST_IMAGE_NAME }}:${GITHUB_SHA}"
+        REMOTE_TAG_TEST="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.TEST_IMAGE_NAME }}:latest-test"
+
+        echo "Building test image ${LOCAL_TAG} from Dockerfile.test with context ."
+        docker build -t "${LOCAL_TAG}" -f Dockerfile.test . # Context is current directory (repo root)
+
+        echo "Tagging ${LOCAL_TAG} as ${REMOTE_TAG_SHA}"
+        docker tag "${LOCAL_TAG}" "${REMOTE_TAG_SHA}"
+        echo "Pushing ${REMOTE_TAG_SHA}"
+        docker push "${REMOTE_TAG_SHA}" # First push command
+
+        echo "Tagging ${LOCAL_TAG} as ${REMOTE_TAG_TEST}"
+        docker tag "${LOCAL_TAG}" "${REMOTE_TAG_TEST}" # This re-tags the same local image
+        echo "Pushing ${REMOTE_TAG_TEST}"
+        docker push "${REMOTE_TAG_TEST}" # Second push command for the additional tag
+        
+        echo "Test image push complete."
+        echo "You can find the image at:"
+        echo "  ${REMOTE_TAG_SHA}"
+        echo "  ${REMOTE_TAG_TEST}"
+        
+        # Optional: Verify by pulling one of the tags
+        echo "Attempting to pull ${REMOTE_TAG_SHA} to verify..."
+        docker pull "${REMOTE_TAG_SHA}"
 
