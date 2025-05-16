@@ -20,11 +20,15 @@ static_resources:
                         - match: { prefix: "/v1/admin/credit" }
                           route: { cluster: quote_service }
                         - match: { prefix: "/v1/admin/balance" }
-                          route: { cluster: treasury_service }
+                          route:
+                            cluster: treasury_service
+                            prefix_rewrite: "/v1/balance"
                         - match: { prefix: "/v1/admin/keys" }
                           route: { cluster: key_service }
                         - match: { prefix: "/v1/admin/onchain" }
-                          route: { cluster: ebpp_service }
+                          route:
+                            cluster: ebpp_service
+                            prefix_rewrite: "/v1/onchain"
                 http_filters:
                   - name: envoy.filters.http.jwt_authn
                     typed_config:
