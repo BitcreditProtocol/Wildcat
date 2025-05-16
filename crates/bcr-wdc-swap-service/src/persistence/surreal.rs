@@ -2,7 +2,7 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use cashu::nuts::nut00 as cdk00;
+use cashu::{nut00 as cdk00, nut02 as cdk02, nut07 as cdk07};
 use surrealdb::RecordId;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
@@ -22,8 +22,21 @@ pub struct ConnectionConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DBProof {
     id: RecordId,
+    kid: cdk02::Id,
     secret: cashu::secret::Secret,
-    c: cashu::nut01::PublicKey,
+    c: cashu::PublicKey,
+    witness: Option<cdk00::Witness>,
+}
+fn convert_to_db(proof: &cdk00::Proof, table: &str) -> Result<DBProof> {
+    let rid = proof_to_record_id(table, proof)?;
+    let dbentry = DBProof {
+        id: rid,
+        kid: proof.keyset_id,
+        secret: proof.secret.clone(),
+        c: proof.c,
+        witness: proof.witness.clone(),
+    };
+    Ok(dbentry)
 }
 
 #[derive(Debug, Clone)]
@@ -50,12 +63,8 @@ impl ProofRepository for ProofDB {
     async fn insert(&self, tokens: &[cdk00::Proof]) -> Result<()> {
         let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
         for tk in tokens {
-            let rid = proof_to_record_id(&self.table, tk);
-            entries.push(DBProof {
-                id: rid,
-                secret: tk.secret.clone(),
-                c: tk.c,
-            });
+            let db_entry = convert_to_db(tk, &self.table)?;
+            entries.push(db_entry);
         }
         let _: Vec<DBProof> = self
             .db
@@ -73,7 +82,7 @@ impl ProofRepository for ProofDB {
 
     async fn remove(&self, tokens: &[cdk00::Proof]) -> Result<()> {
         for tk in tokens {
-            let rid = proof_to_record_id(&self.table, tk);
+            let rid = proof_to_record_id(&self.table, tk)?;
             let _p: Option<cdk00::Proof> = self
                 .db
                 .delete(rid)
@@ -82,11 +91,32 @@ impl ProofRepository for ProofDB {
         }
         Ok(())
     }
+
+    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cdk07::ProofState>> {
+        let rid = y_to_record_id(&self.table, y);
+        let res: Option<DBProof> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if res.is_some() {
+            let ret_v = cdk07::ProofState {
+                y,
+                state: cdk07::State::Spent,
+                witness: None,
+            };
+            return Ok(Some(ret_v));
+        }
+        Ok(None)
+    }
 }
 
-fn proof_to_record_id(main_table: &str, proof: &cdk00::Proof) -> RecordId {
-    let table = main_table.to_string() + &proof.keyset_id.to_string();
-    RecordId::from_table_key(table, proof.secret.to_string())
+fn proof_to_record_id(main_table: &str, proof: &cdk00::Proof) -> Result<RecordId> {
+    let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes()).map_err(Error::CdkDhke)?;
+    Ok(y_to_record_id(main_table, y))
+}
+fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
+    RecordId::from_table_key(main_table, y.to_string())
 }
 
 #[cfg(test)]
@@ -117,12 +147,12 @@ mod tests {
         );
         db.insert(&proofs).await.unwrap();
 
-        let rid = proof_to_record_id(&db.table, &proofs[0]);
+        let rid = proof_to_record_id(&db.table, &proofs[0]).expect("Failed to get record id");
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
         assert_eq!(res.unwrap().secret, proofs[0].secret);
 
-        let rid = proof_to_record_id(&db.table, &proofs[1]);
+        let rid = proof_to_record_id(&db.table, &proofs[1]).expect("Failed to get record id");
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
         assert_eq!(res.unwrap().secret, proofs[1].secret);

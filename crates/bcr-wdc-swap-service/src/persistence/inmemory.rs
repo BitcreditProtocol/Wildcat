@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex};
 // ----- extra library imports
 use async_trait::async_trait;
 use cashu::dhke as cdk_dhke;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut01 as cdk01;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut07 as cdk07};
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::ProofRepository;
@@ -41,5 +40,18 @@ impl ProofRepository for ProofMap {
             locked.remove(&y);
         }
         Ok(())
+    }
+
+    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cdk07::ProofState>> {
+        let locked = self.proofs.lock().unwrap();
+        if locked.get(&y).is_some() {
+            let ret_v = cdk07::ProofState {
+                y,
+                state: cdk07::State::Spent,
+                witness: None,
+            };
+            return Ok(Some(ret_v));
+        }
+        Ok(None)
     }
 }
