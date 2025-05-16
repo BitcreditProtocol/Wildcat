@@ -2,6 +2,10 @@ name: GCP Registry Push Test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cleot/test-gcp-registry
+  
 
 permissions:
   contents: read
