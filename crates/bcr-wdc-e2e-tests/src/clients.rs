@@ -8,7 +8,7 @@ use bcr_wdc_webapi::quotes::{
     UpdateQuoteResponse,
 };
 use bcr_wdc_webapi::wallet::ECashBalance;
-use cashu::nuts::nut02 as cdk02;
+use cashu::nuts::{nut01 as cdk01, nut02 as cdk02};
 use cashu::{MintBolt11Request, MintBolt11Response};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
@@ -133,18 +133,27 @@ pub struct UserService {}
 pub struct AdminService {}
 
 impl Service<UserService> {
+    /// POST v1/mint/credit/quote
     pub async fn mint_credit_quote(&self, req: EnquireRequest) -> EnquireReply {
         let url = self.url("v1/mint/credit/quote");
         self.client.post(url, &req).await.unwrap()
     }
+    /// GET v1/mint/credit/quote/{quote_id}
     pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> StatusReply {
         let url = self.url(&format!("v1/mint/credit/quote/{quote_id}"));
         self.client.get(url).await.unwrap()
     }
+    /// GET v1/keysets
     pub async fn list_keysets(&self) -> cdk02::KeysetResponse {
         let url = self.url("v1/keysets");
         self.client.get(url).await.unwrap()
     }
+    /// GET v1/keys/{kid}
+    pub async fn list_keys(&self, kid: cashu::Id) -> cdk01::KeysResponse {
+        let url = self.url(&format!("v1/keys/{kid}"));
+        self.client.get(url).await.unwrap()
+    }
+    /// POST v1/mint/ebill
     pub async fn mint_ebill(&self, req: MintBolt11Request<Uuid>) -> MintBolt11Response {
         let url = self.url("v1/mint/ebill");
         self.client.post(url, &req).await.unwrap()
@@ -152,10 +161,12 @@ impl Service<UserService> {
 }
 
 impl Service<AdminService> {
+    /// POST v1/admin/keys/activate
     pub async fn keys_activate(&self, req: ActivateKeysetRequest) {
         let url = self.url("v1/admin/keys/activate");
         self.client.post_(url, &req).await.unwrap()
     }
+    /// POST v1/admin/credit/quote/{quote_id}
     pub async fn admin_credit_quote(
         &self,
         quote_id: Uuid,
@@ -164,11 +175,12 @@ impl Service<AdminService> {
         let url = self.url(&format!("v1/admin/credit/quote/{quote_id}"));
         self.client.post(url, &quote_req).await.unwrap()
     }
+    /// GET v1/admin/credit/quote
     pub async fn admin_credit_quote_list(&self) -> Result<ListReplyLight> {
         let url = self.url("v1/admin/credit/quote");
         self.client.get(url).await
     }
-
+    /// GET v1/admin/balance/credit
     pub async fn admin_balance_credit(&self) -> Result<ECashBalance> {
         let url = self.url("v1/admin/balance/credit");
         self.client.get(url).await
