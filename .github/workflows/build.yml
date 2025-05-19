@@ -1,12 +1,13 @@
 name: Build & push Docker images to GCP Artifact Registry
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - cleot/build-push-to-registry
-#   push:
-#     branches: [ "master" ]
+    #branches: [ "**" ] # only for testing
+    tags:
+      - "v*.*.*"
+  schedule:
+      - cron: "0 10 * * *"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,7 +30,7 @@ env:
 jobs:
 
 # ───────────────────────────────
-# 1) build base once, upload tar
+# build base image, cache, upload local artifact
 # ───────────────────────────────
   base-image:
     runs-on: ubuntu-latest
@@ -49,9 +50,6 @@ jobs:
     - name: Docker auth for Artifact Registry
       run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
 
-    # ───────────────────────────────
-    # Build & load the base image
-    # ───────────────────────────────
     - name: Build base image (remote cache, local load)
       run: |
         CACHE_TAG="${GITHUB_REF_NAME//\//-}"
@@ -67,17 +65,16 @@ jobs:
       with:
         name: base-image
         path: "${{ env.BASE_TAR }}"
-        retention-days: 1          # keep just long enough for this workflow
+        retention-days: 1
 
 # ───────────────────────────────
-# 2) service matrix (needs base)
+# build & push wildcat images
 # ───────────────────────────────
   wildcat-images:
     needs: base-image
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false 
-      #max-parallel: 1
+      fail-fast: false
       matrix:
         service:
           - name: bcr-wdc-key-service
@@ -120,9 +117,6 @@ jobs:
     - name: Load base image
       run: docker load -i "${BASE_TAR}"
 
-    # ─────────────────────────────
-    # metadata for service image
-    # ─────────────────────────────
     - id: meta
       name: Metadata for ${{ matrix.service.name }}
       uses: docker/metadata-action@v5
@@ -136,9 +130,6 @@ jobs:
           # Add 'latest' tag if on the default branch
           type=match,pattern=master,value=latest
 
-    # ─────────────────────────────
-    # build & push service image
-    # ─────────────────────────────
     - id: push
       name: Build & push ${{ matrix.service.name }}
       uses: docker/build-push-action@v6
