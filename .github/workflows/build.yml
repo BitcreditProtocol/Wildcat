@@ -56,7 +56,7 @@ jobs:
           --tag ${{ env.BASE_IMAGE_NAME }} \
           --file docker/base-image/Dockerfile \
           --cache-from=type=registry,ref=${{ env.BASE_IMAGE_CACHE_GAR_TAG }} \
-          --cache-to=type=registry,ref=${{ env.BASE_IMAGE_CACHE_GAR_TAG }},mode=max \ #
+          --cache-to=type=registry,ref=${{ env.BASE_IMAGE_CACHE_GAR_TAG }},mode=max \
           --load \
           . # Build context is repository root
         echo "Base image build complete and loaded as ${{ env.BASE_IMAGE_NAME }}"
