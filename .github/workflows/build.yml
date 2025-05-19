@@ -22,76 +22,31 @@ env:
     GAR_PATH: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev"
     # base image
     BASE_IMAGE_NAME: "wildcat/base-image"
-    BASE_IMAGE_CACHE_GAR_TAG: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/wildcat-base-cache:${{ github.ref_name }}"
+    BASE_IMAGE_CACHE: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/wildcat-base-cache"
+
 
 jobs:
-  base-image:
-    name: Build Base Docker Image
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Authenticate to GCP
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Docker auth for GAR (for base image cache)
-      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
-
-
-    # ----------------------------------------------------------------------
-    # Build and Cache Base image
-    # ----------------------------------------------------------------------
-
-    - name: Build Docker Base Image (with GAR cache)
-      run: |
-        echo "Building base image. Local tag: ${{ env.BASE_IMAGE_NAME }}. Cache target: ${{ env.BASE_IMAGE_CACHE_GAR_TAG }}"
-        DOCKER_BUILDKIT=1 docker buildx build \
-          --tag ${{ env.BASE_IMAGE_NAME }} \
-          --file docker/base-image/Dockerfile \
-          --cache-from=type=registry,ref=${{ env.BASE_IMAGE_CACHE_GAR_TAG }} \
-          --cache-to=type=registry,ref=${{ env.BASE_IMAGE_CACHE_GAR_TAG }},mode=max \
-          --load \
-          . # Build context is repository root
-        echo "Base image build complete and loaded as ${{ env.BASE_IMAGE_NAME }}"
-
-      # cache-from: type=gha
-
-        
-
   wildcat-images:
-    name: Build and Push Wildcat Images
     runs-on: ubuntu-latest
-    needs: base-image    
-  
-    # ----------------------------------------------------------------------
-    # Wildcat services
-    # ----------------------------------------------------------------------
     strategy:
       fail-fast: false
+      max-parallel: 1 # eveluate if we need to parallelize this
       matrix:
         service:
           - name: bcr-wdc-key-service
-            dockerfile_path: docker/key-service/Dockerfile
+            dockerfile: docker/key-service/Dockerfile
           - name: bcr-wdc-treasury-service
-            dockerfile_path: docker/treasury-service/Dockerfile
+            dockerfile: docker/treasury-service/Dockerfile
           - name: bcr-wdc-swap-service
-            dockerfile_path: docker/swap-service/Dockerfile
+            dockerfile: docker/swap-service/Dockerfile
           - name: bcr-wdc-quote-service
-            dockerfile_path: docker/quote-service/Dockerfile
+            dockerfile: docker/quote-service/Dockerfile
           - name: bcr-wdc-wallet-aggregator
-            dockerfile_path: docker/wallet-aggregator/Dockerfile
+            dockerfile: docker/wallet-aggregator/Dockerfile
           - name: bcr-wdc-ebpp
-            dockerfile_path: docker/ebpp/Dockerfile
+            dockerfile: docker/ebpp/Dockerfile
           - name: bcr-wdc-ebill-service
-            dockerfile_path: docker/ebill-service/Dockerfile
-
+            dockerfile: docker/ebill-service/Dockerfile
 
     steps:
     - name: Checkout code
@@ -100,19 +55,35 @@ jobs:
     - name: Authenticate to GCP
       uses: google-github-actions/auth@v2
       with:
-        credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
+        credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Docker auth
+    - name: Docker auth for Artifact Registry
       run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
 
-    # ----------------------------------------------------------------------
-    # Metadata 
-    # ----------------------------------------------------------------------
-    - name: Docker Metadata for ${{ matrix.service.name }}
-      id: meta
+    # ───────────────────────────────
+    # Build & load the base image
+    # ───────────────────────────────
+    - name: Build base image (remote-cache, local load)
+      run: |
+        CACHE_TAG="${GITHUB_REF_NAME//\//-}"
+
+        echo "→ building ${BASE_IMAGE_NAME} using cache tag ${CACHE_TAG}"
+        DOCKER_BUILDKIT=1 docker buildx build \
+          --file docker/base-image/Dockerfile \
+          --tag "${BASE_IMAGE_NAME}" \
+          --cache-from=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}" \
+          --cache-to=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}",mode=max \
+          --load \
+          .
+
+    # ───────────────────────────────
+    # Service image metadata
+    # ───────────────────────────────
+    - id: meta
+      name: Metadata for ${{ matrix.service.name }}
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
@@ -124,32 +95,28 @@ jobs:
           # Add 'latest' tag if on the default branch
           type=match,pattern=master,value=latest
 
-    # ----------------------------------------------------------------------
-    # Build and Push Wildcat Images
-    # ----------------------------------------------------------------------
-    - name: Build and Push ${{ matrix.service.name }}
-      id: push
+    # ───────────────────────────────
+    # Build & push the service image
+    # ───────────────────────────────
+    - id: push
+      name: Build & push ${{ matrix.service.name }}
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: ${{ matrix.service.dockerfile_path }}
-        
-        push: true 
-        # Optional: push: ${{ github.event_name != 'pull_request' }}
-        
+        file: ${{ matrix.service.dockerfile }}
+        push: true
+        #platforms: linux/amd64,linux/arm64
         tags: ${{ steps.meta.outputs.tags }}
-        
         labels: ${{ steps.meta.outputs.labels }}
-        
+
         # Optional: Add build caching for the service image itself if it has many layers
         # cache-from: type=registry,ref=${{ env.GAR_PATH }}/${{ matrix.service.name }}:buildcache
         # cache-to: type=registry,ref=${{ env.GAR_PATH }}/${{ matrix.service.name }}:buildcache,mode=max
 
-    # ----------------------------------------------------------------------
-    # Artifact attestation
-    # ----------------------------------------------------------------------
-
-    - name: Generate artifact attestation
+    # ───────────────────────────────
+    # Provenance attestation
+    # ───────────────────────────────
+    - name: Attest provenance
       uses: actions/attest-build-provenance@v2
       with:
         subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
