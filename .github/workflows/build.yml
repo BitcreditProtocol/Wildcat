@@ -13,7 +13,8 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write # For Workload Identity Federation
+  #id-token: write # required for Workload Identity Federation & provenance
+  #contents: write # required for provenance
 
 env:
     PROJECT_ID: "bitcr-shared"
@@ -25,10 +26,11 @@ env:
     BASE_IMAGE_CACHE: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/wildcat-base-cache"
     BASE_TAR: "base-image.tar"
 
+jobs:
+
 # ───────────────────────────────
 # 1) build base once, upload tar
 # ───────────────────────────────
-jobs:
   base-image:
     runs-on: ubuntu-latest
 
@@ -153,8 +155,8 @@ jobs:
     # ─────────────────────────────
     # provenance
     # ─────────────────────────────
-    - uses: actions/attest-build-provenance@v2
-      with:
-        subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
-        subject-digest: ${{ steps.push.outputs.digest }}
-        push-to-registry: true
+    # - uses: actions/attest-build-provenance@v2
+    #   with:
+    #     subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
+    #     subject-digest: ${{ steps.push.outputs.digest }}
+    #     push-to-registry: true
