@@ -254,8 +254,20 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .sum::<u64>();
     assert_eq!(total_amount, offered_discount.to_sat());
     info!(amount = total_amount, "Mint Successful obtained signatures");
-    for signature in blinded_signatures {
-        info!(c_= ?signature.c, amount = ?signature.amount, keyset_id = ?signature.keyset_id, "Signature");
+
+    // Needed to unblind the signatures
+    let keys = user_service.list_keys(keyset_id).await;
+    let keys = keys.keysets.first().unwrap();
+
+    let secrets = blinds.iter().map(|b| b.1.clone()).collect::<Vec<_>>();
+    let rs = blinds.iter().map(|b| b.2.clone()).collect::<Vec<_>>();
+    // blinded messages has B, x - some Secret, r - blindingFactor
+    // C_ = C - rK, with C being the signature, r the blinding factor and K with public key of the mint (keyset pubkey for amount)
+    let proofs =
+        cashu::dhke::construct_proofs(blinded_signatures, rs, secrets, &keys.keys).unwrap();
+    info!("Got credit tokens");
+    for p in proofs {
+        info!(amount=?p.amount, unblinded=?p.c, secret = ?p.secret, "Proof");
     }
 }
 
