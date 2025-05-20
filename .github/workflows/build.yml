@@ -63,11 +63,10 @@ jobs:
         DOCKER_BUILDKIT=1 docker buildx build \
           --platform linux/amd64 \
           --file docker/base-image/Dockerfile \
-          --tag  ${GAR_PATH}/${BASE_IMAGE_NAME}:${CACHE_TAG} \
-          --push \
+          --tag "${BASE_IMAGE_NAME}" \
           --cache-from=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}" \
           --cache-to=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}",mode=max \
-          --output type=docker,dest="${BASE_TAR}",name=${BASE_IMAGE_NAME}:latest \
+          --output type=docker,dest="${BASE_TAR}",name="${BASE_IMAGE_NAME}" \
           .
 
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
