@@ -2,7 +2,7 @@ name: Build & push Docker images to GCP Artifact Registry
 
 on:
   push:
-    #branches: [ "**" ] # only for testing
+    branches: [ "**" ] # only for testing
     tags:
       - "v*.*.*"
   schedule:
@@ -14,15 +14,13 @@ concurrency:
 
 permissions:
   contents: read
-  #id-token: write # required for Workload Identity Federation & provenance
-  #contents: write # required for provenance
+  #id-token: write # required for Workload Identity Federation
 
 env:
     PROJECT_ID: "bitcr-shared"
     GAR_LOCATION: "europe-west1"
     REPOSITORY: "bitcr-wildcat-dev"
     GAR_PATH: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev"
-    # base image
     BASE_IMAGE_NAME: "wildcat/base-image"
     BASE_IMAGE_CACHE: "europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/wildcat-base-cache"
     BASE_TAR: "base-image.tar"
@@ -73,6 +71,10 @@ jobs:
   wildcat-images:
     needs: base-image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for attest-build-provenance
+      attestations: write # required for attest-build-provenance
     strategy:
       fail-fast: false
       matrix:
@@ -146,8 +148,8 @@ jobs:
     # ─────────────────────────────
     # provenance
     # ─────────────────────────────
-    # - uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
-    #   with:
-    #     subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
-    #     subject-digest: ${{ steps.push.outputs.digest }}
-    #     push-to-registry: true
+    - uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+      with:
+        subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true
