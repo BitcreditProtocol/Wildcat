@@ -35,6 +35,8 @@ pub enum Error {
     BTCAmountParse(#[from] bdk_wallet::bitcoin::amount::ParseAmountError),
     #[error("bitcoin::psbt: {0}")]
     BTCPsbt(#[from] bdk_wallet::bitcoin::psbt::Error),
+    #[error("bitcoin::psbt: {0}")]
+    BTCWif(#[from] bdk_wallet::bitcoin::key::FromWifError),
     #[error("bitcoin::bip32: {0}")]
     BTCBIP32(#[from] bdk_wallet::bitcoin::bip32::Error),
 
@@ -50,6 +52,8 @@ pub enum Error {
     Join(#[from] tokio::task::JoinError),
     #[error("bip21::from_str {0}")]
     Bip21Parse(AnyError),
+    #[error("ebill client error {0}")]
+    EBillClient(bcr_wdc_ebill_client::Error),
 
     #[error("onchain wallet storage path error: {0}")]
     OnChainStore(std::path::PathBuf),
@@ -79,28 +83,33 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
                 CDKPaymentError::Custom(format!("unknown bitcoin address {address}"))
             }
             Error::PaymentRequestNotFound(_) => CDKPaymentError::UnknownPaymentState,
-            Error::Chrono(_) => CDKPaymentError::UnsupportedPaymentOption,
-            Error::Bip21Parse(bip21_err) => CDKPaymentError::Anyhow(bip21_err),
-            Error::DB(db_err) => CDKPaymentError::Anyhow(db_err),
 
+            Error::OnChainStore(_) => CDKPaymentError::Custom(String::from(
+                "leaking internal error, this should never happen",
+            )),
+
+            Error::EBillClient(_) => CDKPaymentError::Custom(String::from("internal error")),
+            Error::Bip21Parse(bip21_err) => CDKPaymentError::Anyhow(bip21_err),
             Error::Join(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::Electrum(_) => CDKPaymentError::Custom(String::from("internal error")),
+            Error::Chrono(_) => CDKPaymentError::UnsupportedPaymentOption,
+            Error::DB(db_err) => CDKPaymentError::Anyhow(db_err),
+            Error::Miniscript(_) => CDKPaymentError::Custom(String::from(
+                "leaking internal error, this should never happen",
+            )),
+
             Error::BTCBIP32(_) => CDKPaymentError::Custom(String::from("internal error")),
+            Error::BTCWif(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCPsbt(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCAmountParse(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCAddressParse(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCPsbtExtract(_) => CDKPaymentError::Custom(String::from("internal error")),
+
             Error::BDKSignOpNotOK => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSQLite(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSigner(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKCreateTx(_) => CDKPaymentError::Custom(String::from("internal error")),
 
-            Error::Miniscript(_) => CDKPaymentError::Custom(String::from(
-                "leaking internal error, this should never happen",
-            )),
-            Error::OnChainStore(_) => CDKPaymentError::Custom(String::from(
-                "leaking internal error, this should never happen",
-            )),
             Error::BDKCannotConnect(_) => CDKPaymentError::Custom(String::from(
                 "leaking internal error, this should never happen",
             )),
