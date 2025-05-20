@@ -127,6 +127,7 @@ jobs:
         password: ${{ steps.auth.outputs.access_token }}
 
     - name: Set up Docker Buildx
+      id: buildx
       uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
       #with:
       #  driver: docker
@@ -141,9 +142,10 @@ jobs:
 
     - name: Import base image into BuildKit
       run: |
-        BUILDER=$(docker buildx inspect --format '{{.Nodes.0.Name}}')
-        docker cp "${BASE_TAR}" "${BUILDER}:/tmp/base.tar"
-        docker exec "${BUILDER}" ctr --namespace buildkit images import /tmp/base.tar
+        BUILDER_CONT="buildx_buildkit_${{ steps.buildx.outputs.name }}0"
+        echo "Using builder: ${BUILDER_CONT}"
+        docker cp "${BASE_TAR}" "${BUILDER_CONT}:/tmp/base.tar"
+        docker exec "${BUILDER_CONT}" ctr --namespace buildkit images import /tmp/base.tar
 
         
     #- name: Load base image
