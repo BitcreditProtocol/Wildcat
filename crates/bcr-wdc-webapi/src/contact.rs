@@ -1,4 +1,4 @@
-use bcr_ebill_api::data::contact;
+use bcr_ebill_core::contact;
 // ----- standard library imports
 // ----- extra library imports
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -29,12 +29,10 @@ pub enum ContactType {
 }
 
 impl TryFrom<u64> for ContactType {
-    type Error = bcr_ebill_api::service::Error;
+    type Error = bcr_ebill_core::ValidationError;
 
     fn try_from(value: u64) -> std::result::Result<Self, Self::Error> {
-        Ok(contact::ContactType::try_from(value)
-            .map_err(Self::Error::Validation)?
-            .into())
+        Ok(contact::ContactType::try_from(value)?.into())
     }
 }
 

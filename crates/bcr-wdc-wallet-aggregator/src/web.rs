@@ -331,6 +331,7 @@ pub async fn post_restore(
     Ok(Json(response))
 }
 
+#[allow(clippy::enum_variant_names)]
 enum SwapType {
     CrSat2CrSat,
     Sat2Sat,
