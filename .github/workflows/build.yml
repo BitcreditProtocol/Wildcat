@@ -38,6 +38,7 @@ jobs:
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Authenticate to GCP
+      id: auth
       uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
       with:
         #credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
@@ -45,13 +46,19 @@ jobs:
         service_account: ${{ secrets.GCLOUD_SERVICE_ACCOUNT }}
         token_format: access_token
 
+    - name: Auth w/ registry
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+      with:
+        registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}
 
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-    - name: Docker auth for Artifact Registry
-      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+    #- name: Docker auth for Artifact Registry
+    #  run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
 
     - name: Build base image (remote cache, local load)
       run: |
@@ -112,21 +119,35 @@ jobs:
         service_account: ${{ secrets.GCLOUD_SERVICE_ACCOUNT }}
         token_format: access_token
 
+    - name: Auth w/ registry
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+      with:
+        registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-      with:
-        driver: docker
+      #with:
+      #  driver: docker
 
-    - name: Docker auth for Artifact Registry
-      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+    #- name: Docker auth for Artifact Registry
+    #  run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
 
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: base-image
         path: .
 
-    - name: Load base image
-      run: docker load -i "${BASE_TAR}"
+    - name: Import base image into BuildKit
+      run: |
+        BUILDER=$(docker buildx inspect --format '{{.Nodes.0.Name}}')
+        docker cp "${BASE_TAR}" "${BUILDER}:/tmp/base.tar"
+        docker exec "${BUILDER}" ctr --namespace buildkit images import /tmp/base.tar
+
+        
+    #- name: Load base image
+    #  run: docker load -i "${BASE_TAR}"
 
     - id: meta
       name: Metadata for ${{ matrix.service.name }}
@@ -157,17 +178,6 @@ jobs:
     # ─────────────────────────────
     # provenance
     # ─────────────────────────────
-
-    - name: Auth w/ registry
-      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: oauth2accesstoken
-        password: ${{ steps.auth.outputs.access_token }}
-      env:
-        REGISTRY: ${{ env.GAR_LOCATION }}-docker.pkg.dev
-
-
     - uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
       with:
         subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
