@@ -4,8 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_wdc_utils::keys::KeysetEntry;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, Amount};
-use cdk_common::mint as cdk_mint;
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut12 as cdk12, Amount, PublicKey};
 use cdk_common::mint::MintKeySetInfo;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
@@ -16,7 +15,7 @@ use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository, Signatu
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeysDBEntry {
-    info: cdk_mint::MintKeySetInfo,
+    info: MintKeySetInfo,
     // unpacking MintKeySet because surrealdb doesn't support BTreeMap<K,V> where K is not a String
     unit: cdk00::CurrencyUnit,
     // surrealdb supports only strings as key type
@@ -121,8 +120,8 @@ impl DB {
         Ok(before_condition)
     }
 
-    async fn info(&self, rid: RecordId) -> SurrealResult<Option<cdk_mint::MintKeySetInfo>> {
-        let info: Option<cdk_mint::MintKeySetInfo> = self
+    async fn info(&self, rid: RecordId) -> SurrealResult<Option<MintKeySetInfo>> {
+        let info: Option<MintKeySetInfo> = self
             .db
             .query("SELECT VALUE info FROM $rid")
             .bind(("rid", rid))
@@ -131,8 +130,8 @@ impl DB {
         Ok(info)
     }
 
-    async fn list_info(&self) -> SurrealResult<Vec<cdk_mint::MintKeySetInfo>> {
-        let infos: Vec<cdk_mint::MintKeySetInfo> = self
+    async fn list_info(&self) -> SurrealResult<Vec<MintKeySetInfo>> {
+        let infos: Vec<MintKeySetInfo> = self
             .db
             .query("SELECT VALUE info FROM type::table($table)")
             .bind(("table", self.table.clone()))
@@ -212,7 +211,7 @@ impl KeysRepository for DBKeys {
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
     }
-    async fn list_info(&self) -> Result<Vec<cdk_mint::MintKeySetInfo>> {
+    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
         self.0
             .list_info()
             .await
@@ -299,6 +298,34 @@ impl QuoteKeysRepository for DBQuoteKeys {
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct SignatureDBEntry {
+    pub amount: Amount,
+    pub keyset_id: cdk02::Id,
+    pub c: PublicKey,
+    pub dleq: Option<cdk12::BlindSignatureDleq>,
+}
+impl std::convert::From<cdk00::BlindSignature> for SignatureDBEntry {
+    fn from(sig: cdk00::BlindSignature) -> Self {
+        Self {
+            amount: sig.amount,
+            keyset_id: sig.keyset_id,
+            c: sig.c,
+            dleq: sig.dleq,
+        }
+    }
+}
+impl std::convert::From<SignatureDBEntry> for cdk00::BlindSignature {
+    fn from(entry: SignatureDBEntry) -> Self {
+        Self {
+            amount: entry.amount,
+            keyset_id: entry.keyset_id,
+            c: entry.c,
+            dleq: entry.dleq,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DBSignatures {
     db: Surreal<surrealdb::engine::any::Any>,
@@ -326,22 +353,23 @@ impl SignaturesRepository for DBSignatures {
         signature: &cdk00::BlindSignature,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
-        let _r: Option<cdk00::BlindSignature> = self
+        let entry = SignatureDBEntry::from(signature.clone());
+        let _r: Option<SignatureDBEntry> = self
             .db
             .insert(rid)
-            .content(signature.clone())
+            .content(entry)
             .await
             .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         Ok(())
     }
     async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>> {
         let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
-        let result: Option<cdk00::BlindSignature> = self
+        let entry: Option<SignatureDBEntry> = self
             .db
             .select(rid)
             .await
             .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
-        Ok(result)
+        Ok(entry.map(cdk00::BlindSignature::from))
     }
 }
 
