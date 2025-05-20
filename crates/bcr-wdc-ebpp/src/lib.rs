@@ -27,7 +27,7 @@ pub type ProdPaymentRepository = persistence::surreal::DBPayments;
 pub type ProdOnChainElectrumApi = bdk_electrum::electrum_client::Client;
 pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainElectrumApi>;
 pub type ProdService =
-    service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::DummyEbillNode>;
+    service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::EBillClient>;
 
 #[serde_as]
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -36,6 +36,7 @@ pub struct AppConfig {
     onchain: onchain::WalletConfig,
     private_keys: persistence::surreal::ConnectionConfig,
     payments: persistence::surreal::PaymentConnectionConfig,
+    ebill_client: ebill::EBillClientConfig,
     electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
     refresh_interval_secs: chrono::Duration,
@@ -55,6 +56,7 @@ impl AppController {
             onchain,
             private_keys,
             payments,
+            ebill_client,
             electrum_url,
             refresh_interval_secs: refresh_interval,
             treasury_service_public_key,
@@ -73,7 +75,7 @@ impl AppController {
             .await
             .expect("payment repo");
 
-        let ebillnode = ebill::DummyEbillNode {};
+        let ebillnode = ebill::EBillClient::new(ebill_client);
 
         let refresh_interval = refresh_interval
             .to_std()
