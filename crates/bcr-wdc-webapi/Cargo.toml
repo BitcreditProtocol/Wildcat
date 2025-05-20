@@ -17,7 +17,6 @@ required-features = ["test-utils"]
 [dependencies]
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
-bcr-ebill-api.workspace = true
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 borsh = {workspace = true, features = ["derive"]}

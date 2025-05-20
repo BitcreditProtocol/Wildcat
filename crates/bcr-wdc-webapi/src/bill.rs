@@ -1,10 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_ebill_api::{
-    data::{bill, contact, notification},
-    util::date::DateTimeUtc,
-};
 pub use bcr_ebill_core::blockchain::bill::block::NodeId;
+use bcr_ebill_core::{bill, contact, notification, util::date::DateTimeUtc};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

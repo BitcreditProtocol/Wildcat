@@ -3,10 +3,7 @@ use thiserror::Error;
 
 // ----- standard library imports
 // ----- extra library imports
-use bcr_ebill_api::{
-    data::{self, identity},
-    util::BcrKeys,
-};
+use bcr_ebill_core::{self as data, identity, util::BcrKeys};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -38,12 +35,10 @@ pub enum IdentityType {
 }
 
 impl TryFrom<u64> for IdentityType {
-    type Error = bcr_ebill_api::service::Error;
+    type Error = bcr_ebill_core::ValidationError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        Ok(identity::IdentityType::try_from(value)
-            .map_err(Self::Error::Validation)?
-            .into())
+        Ok(identity::IdentityType::try_from(value)?.into())
     }
 }
 
