@@ -5,7 +5,7 @@
       {
         "clientId": "bff-dashboard",
         "enabled": true,
-        "publicClient": false,
+        "publicClient": true,
         "secret": "cute-kitties",
         "directAccessGrantsEnabled": true,
         "redirectUris": ["*"],
