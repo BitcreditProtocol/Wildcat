@@ -226,7 +226,6 @@ where
         let mut signatures = Vec::with_capacity(outputs.len());
         for blind in &outputs {
             let signature = self.sign_blind(blind).await?;
-            self.signatures.store(blind, &signature).await?;
             signatures.push(signature);
         }
         self.keys.mark_as_minted(&kid).await?;
