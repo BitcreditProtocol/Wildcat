@@ -13,7 +13,7 @@ use crate::quotes;
 use crate::service::{ListFilters, Repository, SortOrder};
 use crate::TStamp;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
 }

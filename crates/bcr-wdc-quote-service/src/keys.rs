@@ -44,3 +44,46 @@ impl KeysHandler for KeysRestHandler {
         self.0.pre_sign(qid, msg).await.map_err(Error::KeysHandler)
     }
 }
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+    use bcr_wdc_utils::keys::KeysetEntry;
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
+    #[derive(Clone, Debug, Default)]
+    pub struct DummyKeysHandler {
+        keys: Arc<Mutex<HashMap<cdk02::Id, KeysetEntry>>>,
+    }
+
+    #[async_trait]
+    impl KeysHandler for DummyKeysHandler {
+        async fn generate(
+            &self,
+            _qid: Uuid,
+            _amount: bitcoin::Amount,
+            _pk: cdk01::PublicKey,
+            _maturity_date: TStamp,
+        ) -> Result<cdk02::Id> {
+            let keysentry = bcr_wdc_utils::keys::test_utils::generate_keyset();
+            let kid = keysentry.0.id;
+            let mut locked = self.keys.lock().unwrap();
+            locked.insert(kid, keysentry.clone());
+            Ok(kid)
+        }
+
+        async fn sign(
+            &self,
+            _qid: Uuid,
+            msg: &cdk00::BlindedMessage,
+        ) -> Result<cdk00::BlindSignature> {
+            let locked = self.keys.lock().unwrap();
+            let (_, keyset) = locked.get(&msg.keyset_id).expect("Keyset not found");
+            let sig = bcr_wdc_utils::keys::sign_with_keys(keyset, msg).expect("sign_with_keys");
+            Ok(sig)
+        }
+    }
+}

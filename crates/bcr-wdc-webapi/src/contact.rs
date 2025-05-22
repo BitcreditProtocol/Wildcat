@@ -11,6 +11,7 @@ use crate::identity::{File, PostalAddress};
 #[repr(u8)]
 #[derive(
     Debug,
+    Default,
     Copy,
     Clone,
     serde_repr::Serialize_repr,
@@ -23,6 +24,7 @@ use crate::identity::{File, PostalAddress};
 )]
 #[borsh(use_discriminant = true)]
 pub enum ContactType {
+    #[default]
     Person = 0,
     Company = 1,
     Anon = 2,

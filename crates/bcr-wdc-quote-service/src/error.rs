@@ -59,7 +59,7 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::NOT_FOUND,
                 format!("No key for amount {}", amount),
             ),
-            Error::SignWithKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 
             Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
