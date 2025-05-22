@@ -1,11 +1,12 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use bcr_wdc_webapi::keys::ActivateKeysetRequest;
 use bcr_wdc_webapi::quotes::EnquireReply;
 use bcr_wdc_webapi::quotes::{
     EnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
 };
-use cashu::MintBolt11Request;
+use cashu::{MintBolt11Request, MintUrl};
 
 use cashu::nuts::nut02 as cdk02;
 use reqwest::Url;
@@ -140,6 +141,11 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .unwrap();
     info!("Admin service authenticated");
 
+    let mint_info = user_service.mint_info().await;
+    let mint_name = mint_info.name.unwrap();
+    let mint_description = mint_info.description.unwrap();
+    info!(name = mint_name, desc = mint_description, "Mint info");
+
     // Create Ebill
     let (owner_key, bill, signature) = random_ebill();
 
@@ -266,9 +272,40 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let proofs =
         cashu::dhke::construct_proofs(blinded_signatures, rs, secrets, &keys.keys).unwrap();
     info!("Got credit tokens");
-    for p in proofs {
+
+    for p in &proofs {
         info!(amount=?p.amount, unblinded=?p.c, secret = ?p.secret, "Proof");
     }
+
+    // Test Swap
+    info!("Swapping proofs");
+    let new_blinds = generate_blinds(keyset_info.id, &amounts);
+    let bs = new_blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
+    let swap_request = cashu::nut03::SwapRequest::new(proofs, bs);
+    let swap_resp = user_service.swap(swap_request).await;
+    let total_swap = swap_resp
+        .signatures
+        .iter()
+        .map(|s| u64::from(s.amount))
+        .sum::<u64>();
+    assert_eq!(
+        total_swap, total_amount,
+        "Total swap amount does not match total amount"
+    );
+    let secrets = new_blinds.iter().map(|b| b.1.clone()).collect::<Vec<_>>();
+    let rs = new_blinds.iter().map(|b| b.2.clone()).collect::<Vec<_>>();
+    let proofs =
+        cashu::dhke::construct_proofs(swap_resp.signatures, rs, secrets, &keys.keys).unwrap();
+
+    let url = &cfg.user_service;
+    let mint_url = MintUrl::from_str(url).unwrap();
+    let token = cashu::nut00::Token::new(
+        mint_url,
+        proofs,
+        None,
+        cashu::CurrencyUnit::Custom("crsat".into()),
+    );
+    info!(token = token.to_v3_string(), "Swapped Crsat");
 }
 
 #[tokio::main]
