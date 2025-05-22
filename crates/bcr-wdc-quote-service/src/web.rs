@@ -101,7 +101,7 @@ where
 
 #[utoipa::path(
     post,
-    path = "/v1/credit/quote/{id}",
+    path = "/v1/mint/credit/quote/{id}",
     params(
         ("id" = Uuid, Path, description = "The quote id")
     ),
