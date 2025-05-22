@@ -39,14 +39,14 @@ fn main() -> std::io::Result<()> {
         sum: amount.into(),
     };
 
-    let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&bill, &signing_key)
-        .expect("schnorr_sign_borsh_msg_with_key");
     let request = EnquireRequest {
         content: bill,
         public_key,
-        signature,
     };
-    let jason = serde_json::to_string_pretty(&request).expect("Failed to serialize request");
+    let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &signing_key)
+        .expect("schnorr_sign_borsh_msg_with_key");
+    let signed_request = bcr_wdc_webapi::quotes::SignedEnquireRequest { request, signature };
+    let jason = serde_json::to_string_pretty(&signed_request).expect("Failed to serialize request");
     println!("random generated bcr_wdc_webapi::quotes::EnquireRequest in JSON format");
     println!("{}", jason);
     Ok(())

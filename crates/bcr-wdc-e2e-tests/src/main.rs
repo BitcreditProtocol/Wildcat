@@ -4,7 +4,7 @@ use std::str::FromStr;
 use bcr_wdc_webapi::keys::ActivateKeysetRequest;
 use bcr_wdc_webapi::quotes::EnquireReply;
 use bcr_wdc_webapi::quotes::{
-    EnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
+    SignedEnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
 };
 use cashu::{MintBolt11Request, MintUrl};
 
@@ -16,7 +16,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod clients;
 mod test_utils;
 use clients::*;
-use test_utils::{generate_blinds, get_amounts, random_ebill};
+use test_utils::{generate_blinds, get_amounts, random_ebill_request};
 // ----- end imports
 
 #[derive(Debug, serde::Deserialize)]
@@ -147,25 +147,20 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     info!(name = mint_name, desc = mint_description, "Mint info");
 
     // Create Ebill
-    let (owner_key, bill, signature) = random_ebill();
+    let (owner_key, request, signature) = random_ebill_request();
+    let signed_request = SignedEnquireRequest { request, signature };
 
-    let request = EnquireRequest {
-        content: bill,
-        public_key: owner_key.public_key().into(),
-        signature,
-    };
-
-    let bill_amount = request.content.sum;
+    let bill_amount = signed_request.request.content.sum;
 
     info!(
         bill_amount = bill_amount,
-        bill_id = request.content.id,
+        bill_id = signed_request.request.content.id,
         "Bill created"
     );
 
     // Mint Ebill
     info!("Requesting to mint the bill");
-    let enquire_reply: EnquireReply = user_service.mint_credit_quote(request).await;
+    let enquire_reply: EnquireReply = user_service.mint_credit_quote(signed_request).await;
     let quote_id = enquire_reply.id;
 
     info!(quote_id = ?quote_id, "Mint Request Accepted, waiting for admin to process");

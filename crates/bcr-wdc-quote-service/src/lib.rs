@@ -104,7 +104,7 @@ pub fn credit_routes(ctrl: AppController) -> Router {
         bcr_wdc_webapi::identity::PostalAddress,
         bcr_wdc_webapi::quotes::BillInfo,
         bcr_wdc_webapi::quotes::EnquireReply,
-        bcr_wdc_webapi::quotes::EnquireRequest,
+        bcr_wdc_webapi::quotes::SignedEnquireRequest,
         bcr_wdc_webapi::quotes::InfoReply,
         bcr_wdc_webapi::quotes::LightInfo,
         bcr_wdc_webapi::quotes::ListReply,

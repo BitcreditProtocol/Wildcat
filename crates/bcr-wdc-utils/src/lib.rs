@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 // ----- local modules
+pub mod borsh;
 pub mod keys;
 pub mod signatures;
 // ----- local imports

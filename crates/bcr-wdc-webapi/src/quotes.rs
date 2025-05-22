@@ -24,13 +24,21 @@ pub struct BillInfo {
 }
 
 ///--------------------------- Enquire mint quote
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize)]
 pub struct EnquireRequest {
     pub content: BillInfo,
+    #[borsh(
+        serialize_with = "bcr_wdc_utils::borsh::serialize_cdk_pubkey",
+        deserialize_with = "bcr_wdc_utils::borsh::deserialize_cdk_pubkey"
+    )]
+    pub public_key: cdk01::PublicKey,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SignedEnquireRequest {
+    pub request: EnquireRequest,
     #[schema(value_type = String)]
     pub signature: bitcoin::secp256k1::schnorr::Signature,
-
-    pub public_key: cdk01::PublicKey, // left out of the signature as BlindedMessage does not implement borsh
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

@@ -22,30 +22,37 @@ use crate::{
 )]
 pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo>(
     State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
-    Json(req): Json<web_quotes::EnquireRequest>,
+    Json(req): Json<web_quotes::SignedEnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
     QuotesRepo: Repository,
 {
-    tracing::debug!("Received mint quote request for bill: {}", req.content.id,);
+    tracing::debug!(
+        "Received mint quote request for bill: {}",
+        req.request.content.id,
+    );
 
     verify_signature(&req)?;
 
     let bcr_wdc_webapi::quotes::EnquireRequest {
         content,
         public_key,
-        ..
-    } = req;
+    } = req.request;
     let bill = quotes::BillInfo::try_from(content)?;
     let id = ctrl.enquire(bill, public_key, chrono::Utc::now()).await?;
     Ok(Json(web_quotes::EnquireReply { id }))
 }
 
-fn verify_signature(req: &web_quotes::EnquireRequest) -> Result<()> {
-    let holder = req.content.endorsees.last().unwrap_or(&req.content.payee);
+fn verify_signature(req: &web_quotes::SignedEnquireRequest) -> Result<()> {
+    let holder = req
+        .request
+        .content
+        .endorsees
+        .last()
+        .unwrap_or(&req.request.content.payee);
     let pub_key = bitcoin::secp256k1::PublicKey::from_str(&holder.node_id())?;
     bcr_wdc_utils::keys::schnorr_verify_borsh_msg_with_key(
-        &req.content,
+        &req.request,
         &req.signature,
         &pub_key.x_only_public_key().0,
     )?;

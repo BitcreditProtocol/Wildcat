@@ -6,7 +6,7 @@ use thiserror::Error;
 // ----- local imports
 
 // ----- end imports
-//
+
 pub type ChecksResult<T> = std::result::Result<T, ChecksError>;
 #[derive(Debug, Error)]
 pub enum ChecksError {
