@@ -15,8 +15,6 @@ mod service;
 mod web;
 
 // ----- end imports
-#[cfg(feature = "test-utils")]
-pub use crate::service::MintCondition;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
@@ -70,9 +68,9 @@ impl AppController {
 
 pub fn routes<Cntrlr, QuoteKeysRepo, KeysRepo, SignsRepo>(ctrl: Cntrlr) -> Router
 where
-    QuoteKeysRepo: service::QuoteKeysRepository + Send + Sync + 'static,
-    KeysRepo: service::KeysRepository + Send + Sync + 'static,
     SignsRepo: service::SignaturesRepository + Send + Sync + 'static,
+    KeysRepo: service::KeysRepository + Send + Sync + 'static,
+    QuoteKeysRepo: service::QuoteKeysRepository + Send + Sync + 'static,
     service::Service<QuoteKeysRepo, KeysRepo, SignsRepo>: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
@@ -137,6 +135,8 @@ where
 )]
 struct ApiDoc;
 
+#[cfg(feature = "test-utils")]
+pub use crate::service::MintCondition;
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
