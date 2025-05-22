@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 // ----- end imports
 
 ///--------------------------- onchain wallet balance
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct Balance {
     #[schema(value_type=u64)]
     pub immature: btc::Amount,
@@ -33,7 +33,7 @@ impl std::convert::From<bdk_wallet::Balance> for Balance {
 }
 
 ///--------------------------- eCash wallet balance
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ECashBalance {
     pub amount: cdk::Amount,
     pub unit: cdk::CurrencyUnit,

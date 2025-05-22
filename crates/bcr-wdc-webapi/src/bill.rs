@@ -488,7 +488,7 @@ impl From<bill::Endorsement> for Endorsement {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LightSignedBy {
     pub data: LightBillParticipant,
     pub signatory: Option<LightBillIdentParticipant>,
