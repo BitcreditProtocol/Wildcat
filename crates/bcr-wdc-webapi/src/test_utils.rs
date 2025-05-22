@@ -79,7 +79,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Person,
+            t: ContactType::Company,
             email: Some(String::from("logistilla@fournier.com")),
             name: String::from("Logistilla Fournier"),
             node_id: keypair.public_key().to_string(),
