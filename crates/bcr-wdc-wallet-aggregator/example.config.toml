@@ -4,6 +4,6 @@ log_level = "DEBUG"
 
 [appcfg]
 cdk_mint_url = "http://cdk_mint:8085"
-
-[appcfg.keys_client]
-base_url = "http://key-service:3335"
+keys_client_url = "http://key-service:3338"
+swap_client_url = "http://swap-service:3338"
+treasury_client_url = "http://treasury-service:3338"
