@@ -8,7 +8,11 @@ use cashu::nuts::nut02 as cdk02;
 use cashu::Amount;
 // ----- end imports
 
-pub fn random_ebill() -> (Keypair, BillInfo, bitcoin::secp256k1::schnorr::Signature) {
+pub fn random_ebill_request() -> (
+    Keypair,
+    bcr_wdc_webapi::quotes::EnquireRequest,
+    bitcoin::secp256k1::schnorr::Signature,
+) {
     let bill_id = bcr_wdc_webapi::test_utils::random_bill_id();
     let (_, drawee) = bcr_wdc_webapi::test_utils::random_identity_public_data();
     let (_, drawer) = bcr_wdc_webapi::test_utils::random_identity_public_data();
@@ -34,10 +38,14 @@ pub fn random_ebill() -> (Keypair, BillInfo, bitcoin::secp256k1::schnorr::Signat
         sum: amount.into(),
     };
 
-    let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&bill, &endorser_kp)
+    let request = bcr_wdc_webapi::quotes::EnquireRequest {
+        content: bill,
+        public_key: owner_key.public_key().into(),
+    };
+    let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &endorser_kp)
         .expect("schnorr_sign_borsh_msg_with_key");
 
-    (owner_key, bill, signature)
+    (owner_key, request, signature)
 }
 
 fn random_date() -> String {

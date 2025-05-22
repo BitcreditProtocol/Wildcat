@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use anyhow::Result;
 use bcr_wdc_webapi::keys::ActivateKeysetRequest;
 use bcr_wdc_webapi::quotes::{
-    EnquireReply, EnquireRequest, ListReplyLight, StatusReply, UpdateQuoteRequest,
+    EnquireReply, ListReplyLight, SignedEnquireRequest, StatusReply, UpdateQuoteRequest,
     UpdateQuoteResponse,
 };
 use bcr_wdc_webapi::wallet::ECashBalance;
@@ -134,7 +134,7 @@ pub struct AdminService {}
 
 impl Service<UserService> {
     /// POST v1/mint/credit/quote
-    pub async fn mint_credit_quote(&self, req: EnquireRequest) -> EnquireReply {
+    pub async fn mint_credit_quote(&self, req: SignedEnquireRequest) -> EnquireReply {
         let url = self.url("v1/mint/credit/quote");
         self.client.post(url, &req).await.unwrap()
     }
