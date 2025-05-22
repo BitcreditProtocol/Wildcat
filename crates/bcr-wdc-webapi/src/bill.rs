@@ -369,7 +369,9 @@ impl From<BillAnonParticipant> for contact::BillAnonParticipant {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema,
+)]
 pub struct BillIdentParticipant {
     #[serde(rename = "type")]
     pub t: ContactType,

@@ -9,7 +9,7 @@ resolver = "2"
 members = [
     "crates/bcr-wdc-webapi",
     "crates/bcr-wdc-utils",
-    "crates/bcr-wdc-quote-service",
+    "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
     "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
@@ -26,15 +26,16 @@ async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.3.12"}
+bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
+bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
 bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
+bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-client = {path = "./crates/bcr-wdc-swap-client"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
-bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
-bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
 bdk_wallet = {version = "1.1"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}

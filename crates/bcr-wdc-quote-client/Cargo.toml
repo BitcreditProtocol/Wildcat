@@ -1,0 +1,19 @@
+[package]
+name = "bcr-wdc-quote-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bcr-wdc-utils = {workspace = true}
+bcr-wdc-webapi = {workspace = true}
+bitcoin = {workspace = true}
+cashu.workspace = true
+chrono.workspace = true
+reqwest = {workspace = true, features = ["json"]}
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+bcr-wdc-quote-service = {workspace = true, features = ["test-utils"]}
+tokio = {workspace = true}
+bcr-ebill-core = {workspace = true}

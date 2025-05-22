@@ -64,7 +64,14 @@ impl AppController {
         }
     }
 }
-pub fn credit_routes(ctrl: AppController) -> Router {
+pub fn routes<Cntrlr, KeysHndlr, Wlt, QuotesRepo>(ctrl: Cntrlr) -> Router
+where
+    QuotesRepo: service::Repository + Send + Sync + 'static,
+    Wlt: service::Wallet + Send + Sync + 'static,
+    KeysHndlr: service::KeysHandler + Send + Sync + 'static,
+    service::Service<KeysHndlr, Wlt, QuotesRepo>: FromRef<Cntrlr> + Send + Sync + 'static,
+    Cntrlr: Send + Sync + Clone + 'static,
+{
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/v1/admin/credit/swagger-ui")
         .url("/v1/admin/credit/api-docs/openapi.json", ApiDoc::openapi());
 
@@ -145,6 +152,42 @@ impl ApiDoc {
     }
 }
 
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+
+    type TestKeysHandler = keys::test_utils::DummyKeysHandler;
+    type TestQuoteRepository = persistence::inmemory::QuotesIDMap;
+    type TestWallet = wallet::test_utils::DummyWallet;
+    type TestQuotingService = service::Service<TestKeysHandler, TestWallet, TestQuoteRepository>;
+
+    #[derive(Clone, FromRef)]
+    pub struct AppController {
+        quotes: TestQuotingService,
+    }
+
+    impl std::default::Default for AppController {
+        fn default() -> Self {
+            AppController {
+                quotes: TestQuotingService {
+                    keys_hndlr: TestKeysHandler::default(),
+                    wallet: TestWallet::default(),
+                    quotes: TestQuoteRepository::default(),
+                },
+            }
+        }
+    }
+
+    pub fn build_test_server() -> axum_test::TestServer {
+        let cfg = axum_test::TestServerConfig {
+            transport: Some(axum_test::Transport::HttpRandomPort),
+            ..Default::default()
+        };
+        let cntrl = AppController::default();
+        axum_test::TestServer::new_with_config(routes(cntrl), cfg)
+            .expect("failed to start test server")
+    }
+}
 #[test]
 fn it_should_successfully_generate_openapi_docs() {
     let yml = ApiDoc::generate_yml();

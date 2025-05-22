@@ -124,7 +124,9 @@ pub struct NewIdentityPayload {
     pub identity_document_file_upload_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
+#[derive(
+    Debug, Default, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema,
+)]
 pub struct PostalAddress {
     pub country: String,
     pub city: String,

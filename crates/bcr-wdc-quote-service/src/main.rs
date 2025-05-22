@@ -29,7 +29,7 @@ async fn main() {
         .expect("tracing::subscriber::set_global_default");
 
     let app = bcr_wdc_quote_service::AppController::new(maincfg.appcfg).await;
-    let router = bcr_wdc_quote_service::credit_routes(app);
+    let router = bcr_wdc_quote_service::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await
