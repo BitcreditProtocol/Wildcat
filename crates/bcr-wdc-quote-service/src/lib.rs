@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::FromRef;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use cashu::nuts::nut00 as cdk00;
 use cashu::nuts::nut02 as cdk02;
@@ -78,6 +78,7 @@ where
     let user_routes = Router::new()
         .route("/v1/mint/credit/quote", post(web::enquire_quote))
         .route("/v1/mint/credit/quote/{id}", get(web::lookup_quote))
+        .route("/v1/mint/credit/quote/{id}", delete(web::cancel))
         .route("/v1/mint/credit/quote/{id}", post(web::resolve_offer));
 
     let admin_routes = Router::new()
@@ -132,12 +133,13 @@ where
         cdk14::HTLCWitness,
     ),),
     paths(
-        crate::web::enquire_quote,
-        crate::web::lookup_quote,
-        crate::admin::list_pending_quotes,
-        crate::admin::list_quotes,
         crate::admin::admin_lookup_quote,
         crate::admin::admin_update_quote,
+        crate::admin::list_pending_quotes,
+        crate::admin::list_quotes,
+        crate::web::cancel,
+        crate::web::enquire_quote,
+        crate::web::lookup_quote,
         crate::web::resolve_offer,
     )
 )]
