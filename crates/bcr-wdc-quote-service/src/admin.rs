@@ -38,7 +38,13 @@ where
 fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo {
     let status = match quote.status {
         quotes::QuoteStatusDiscriminants::Pending => web_quotes::StatusReplyDiscriminants::Pending,
+        quotes::QuoteStatusDiscriminants::Canceled => {
+            web_quotes::StatusReplyDiscriminants::Canceled
+        }
         quotes::QuoteStatusDiscriminants::Offered => web_quotes::StatusReplyDiscriminants::Offered,
+        quotes::QuoteStatusDiscriminants::OfferExpired => {
+            web_quotes::StatusReplyDiscriminants::OfferExpired
+        }
         quotes::QuoteStatusDiscriminants::Denied => web_quotes::StatusReplyDiscriminants::Denied,
         quotes::QuoteStatusDiscriminants::Rejected => {
             web_quotes::StatusReplyDiscriminants::Rejected
@@ -70,8 +76,14 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
         Some(web_quotes::StatusReplyDiscriminants::Pending) => {
             Some(quotes::QuoteStatusDiscriminants::Pending)
         }
+        Some(web_quotes::StatusReplyDiscriminants::Canceled) => {
+            Some(quotes::QuoteStatusDiscriminants::Canceled)
+        }
         Some(web_quotes::StatusReplyDiscriminants::Offered) => {
             Some(quotes::QuoteStatusDiscriminants::Offered)
+        }
+        Some(web_quotes::StatusReplyDiscriminants::OfferExpired) => {
+            Some(quotes::QuoteStatusDiscriminants::OfferExpired)
         }
         Some(web_quotes::StatusReplyDiscriminants::Denied) => {
             Some(quotes::QuoteStatusDiscriminants::Denied)
@@ -137,6 +149,11 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             submitted: quote.submitted,
             suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
         },
+        quotes::QuoteStatus::Canceled { tstamp } => web_quotes::InfoReply::Canceled {
+            id: quote.id,
+            bill: quote.bill.into(),
+            tstamp,
+        },
         quotes::QuoteStatus::Offered {
             keyset_id,
             ttl,
@@ -147,9 +164,15 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             ttl,
             keyset_id,
         },
-        quotes::QuoteStatus::Denied => web_quotes::InfoReply::Denied {
+        quotes::QuoteStatus::OfferExpired { tstamp } => web_quotes::InfoReply::OfferExpired {
             id: quote.id,
             bill: quote.bill.into(),
+            tstamp,
+        },
+        quotes::QuoteStatus::Denied { tstamp } => web_quotes::InfoReply::Denied {
+            id: quote.id,
+            bill: quote.bill.into(),
+            tstamp,
         },
         quotes::QuoteStatus::Accepted { keyset_id } => web_quotes::InfoReply::Accepted {
             id: quote.id,
@@ -215,14 +238,14 @@ where
     QuotesRepo: Repository,
 {
     tracing::debug!("Received mint quote update request");
-
+    let now = chrono::Utc::now();
     let response = match req {
         web_quotes::UpdateQuoteRequest::Deny => {
-            ctrl.deny(id).await?;
+            ctrl.deny(id, now).await?;
             web_quotes::UpdateQuoteResponse::Denied
         }
         web_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
-            let (discounted, ttl) = ctrl.offer(id, discounted, chrono::Utc::now(), ttl).await?;
+            let (discounted, ttl) = ctrl.offer(id, discounted, now, ttl).await?;
             web_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
         }
     };

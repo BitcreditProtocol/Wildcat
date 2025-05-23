@@ -427,12 +427,13 @@ mod tests {
     #[tokio::test]
     async fn update_status_if_offered_ko() {
         let db = init_mem_db().await;
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
 
         let mut quote = quotes::Quote {
             bill: quotes::BillInfo::default(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
-            status: quotes::QuoteStatus::Denied,
+            status: quotes::QuoteStatus::Denied { tstamp: now },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
@@ -455,7 +456,7 @@ mod tests {
         let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
         assert!(content.is_some());
         let content = content.unwrap();
-        assert!(matches!(content.status, quotes::QuoteStatus::Denied));
+        assert!(matches!(content.status, quotes::QuoteStatus::Denied { .. }));
     }
 
     #[tokio::test]

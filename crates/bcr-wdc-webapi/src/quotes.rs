@@ -52,12 +52,20 @@ pub struct EnquireReply {
 #[serde(tag = "status")]
 pub enum StatusReply {
     Pending,
-    Denied,
+    Canceled {
+        tstamp: DateTime<Utc>,
+    },
+    Denied {
+        tstamp: DateTime<Utc>,
+    },
     Offered {
         keyset_id: cdk02::Id,
         expiration_date: DateTime<Utc>,
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
+    },
+    OfferExpired {
+        tstamp: DateTime<Utc>,
     },
     Accepted {
         keyset_id: cdk02::Id,
@@ -115,15 +123,26 @@ pub enum InfoReply {
         submitted: DateTime<Utc>,
         suggested_expiration: DateTime<Utc>,
     },
+    Canceled {
+        id: uuid::Uuid,
+        bill: BillInfo,
+        tstamp: DateTime<Utc>,
+    },
     Offered {
         id: uuid::Uuid,
         bill: BillInfo,
         ttl: DateTime<Utc>,
         keyset_id: cdk02::Id,
     },
+    OfferExpired {
+        id: uuid::Uuid,
+        bill: BillInfo,
+        tstamp: DateTime<Utc>,
+    },
     Denied {
         id: uuid::Uuid,
         bill: BillInfo,
+        tstamp: DateTime<Utc>,
     },
     Accepted {
         id: uuid::Uuid,

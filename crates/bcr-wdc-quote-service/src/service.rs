@@ -88,7 +88,22 @@ impl<KeysHndlr, Wlt, QuotesRepo> Service<KeysHndlr, Wlt, QuotesRepo>
 where
     QuotesRepo: Repository,
 {
-    const REJECTION_RETENTION: chrono::Duration = chrono::Duration::days(1);
+    pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
+
+    pub async fn new_quote(
+        &self,
+        bill: BillInfo,
+        pub_key: cdk01::PublicKey,
+        submitted: TStamp,
+    ) -> Result<Uuid> {
+        let quote = Quote::new(bill, pub_key, submitted);
+        let qid = quote.id;
+        self.quotes
+            .store(quote)
+            .await
+            .map_err(Error::QuotesRepository)?;
+        Ok(qid)
+    }
 
     pub async fn enquire(
         &self,
@@ -105,7 +120,9 @@ where
 
         // pick the more recent quote for this eBill/endorser
         quotes.sort_by_key(|q| q.submitted);
-        // user rejected the offer recently
+        if let Some(last) = quotes.last_mut() {
+            last.check_expire(submitted);
+        }
         match quotes.last() {
             Some(Quote {
                 id,
@@ -114,22 +131,38 @@ where
             }) => Ok(*id),
             Some(Quote {
                 id,
-                status: QuoteStatus::Denied,
+                status: QuoteStatus::Canceled { tstamp },
+                ..
+            }) => {
+                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                    self.new_quote(bill, pub_key, submitted).await
+                } else {
+                    Err(Error::QuoteAlreadyResolved(*id))
+                }
+            }
+            Some(Quote {
+                id,
+                status: QuoteStatus::Denied { tstamp },
+                ..
+            }) => {
+                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                    self.new_quote(bill, pub_key, submitted).await
+                } else {
+                    Err(Error::QuoteAlreadyResolved(*id))
+                }
+            }
+            Some(Quote {
+                id,
+                status: QuoteStatus::Offered { .. },
                 ..
             }) => Err(Error::QuoteAlreadyResolved(*id)),
             Some(Quote {
                 id,
-                status: QuoteStatus::Offered { ttl, .. },
+                status: QuoteStatus::OfferExpired { tstamp },
                 ..
             }) => {
-                if *ttl < submitted {
-                    let quote = Quote::new(bill, pub_key, submitted);
-                    let id = quote.id;
-                    self.quotes
-                        .store(quote)
-                        .await
-                        .map_err(Error::QuotesRepository)?;
-                    Ok(id)
+                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                    self.new_quote(bill, pub_key, submitted).await
                 } else {
                     Err(Error::QuoteAlreadyResolved(*id))
                 }
@@ -144,31 +177,17 @@ where
                 status: QuoteStatus::Rejected { tstamp },
                 ..
             }) => {
-                if (submitted - tstamp) > Self::REJECTION_RETENTION {
-                    let quote = Quote::new(bill, pub_key, submitted);
-                    let id = quote.id;
-                    self.quotes
-                        .store(quote)
-                        .await
-                        .map_err(Error::QuotesRepository)?;
-                    Ok(id)
+                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                    self.new_quote(bill, pub_key, submitted).await
                 } else {
                     Err(Error::QuoteAlreadyResolved(*id))
                 }
             }
-            None => {
-                let quote = Quote::new(bill, pub_key, submitted);
-                let id = quote.id;
-                self.quotes
-                    .store(quote)
-                    .await
-                    .map_err(Error::QuotesRepository)?;
-                Ok(id)
-            }
+            None => self.new_quote(bill, pub_key, submitted).await,
         }
     }
 
-    pub async fn deny(&self, id: uuid::Uuid) -> Result<()> {
+    pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self
             .quotes
             .load(id)
@@ -178,7 +197,25 @@ where
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
-        quote.deny()?;
+        quote.cancel(submitted)?;
+        self.quotes
+            .update_status_if_pending(quote.id, quote.status)
+            .await
+            .map_err(Error::QuotesRepository)?;
+        Ok(())
+    }
+
+    pub async fn deny(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
+        let old = self
+            .quotes
+            .load(id)
+            .await
+            .map_err(Error::QuotesRepository)?;
+        if old.is_none() {
+            return Err(Error::UnknownQuoteID(id));
+        }
+        let mut quote = old.unwrap();
+        quote.deny(submitted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
             .await
@@ -204,7 +241,7 @@ where
         Ok(())
     }
 
-    pub async fn accept(&self, id: uuid::Uuid) -> Result<()> {
+    pub async fn accept(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self
             .quotes
             .load(id)
@@ -214,7 +251,7 @@ where
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
-        quote.accept()?;
+        quote.accept(submitted)?;
         self.quotes
             .update_status_if_offered(quote.id, quote.status)
             .await
@@ -259,7 +296,7 @@ where
         &self,
         qid: uuid::Uuid,
         discounted: Amount,
-        now: TStamp,
+        submitted: TStamp,
         ttl: Option<TStamp>,
     ) -> Result<(Amount, TStamp)> {
         let mut quote = self.lookup(qid).await?;
@@ -282,7 +319,7 @@ where
         let signatures_fees: Vec<cdk00::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
 
-        let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(now));
+        let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
 
         self.wallet
             .store_signatures(request_id, expiration, signatures_fees)
@@ -469,6 +506,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
             .with(
@@ -477,10 +515,10 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Denied,
+                    status: QuoteStatus::Denied { tstamp: now },
                     id,
                     bill: cloned.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: now,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -492,9 +530,7 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service
-            .enquire(rnd_bill, public_key, chrono::Utc::now())
-            .await;
+        let test_id = service.enquire(rnd_bill, public_key, now).await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -508,6 +544,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let keyset_id = keys_utils::generate_random_keysetid();
         let public_key = keys_utils::publics()[0];
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
@@ -519,12 +556,12 @@ mod tests {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
                         keyset_id,
-                        ttl: chrono::Utc::now() + chrono::Duration::days(1),
+                        ttl: now + chrono::Duration::days(1),
                         discounted: rnd_bill.sum,
                     },
                     id,
                     bill: cloned.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: now,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -536,9 +573,7 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service
-            .enquire(rnd_bill, public_key, chrono::Utc::now())
-            .await;
+        let test_id = service.enquire(rnd_bill, public_key, now).await;
         assert!(test_id.is_err());
         assert!(matches!(
             test_id.unwrap_err(),
@@ -554,6 +589,7 @@ mod tests {
         let keyset_id = keys_utils::generate_random_keysetid();
         let public_key = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
         repo.expect_search_by_bill()
             .with(
                 eq(rnd_bill.id.clone()),
@@ -563,12 +599,12 @@ mod tests {
                 Ok(vec![Quote {
                     status: QuoteStatus::Offered {
                         keyset_id,
-                        ttl: chrono::Utc::now(),
+                        ttl: now,
                         discounted: rnd_bill.sum,
                     },
                     id,
                     bill: cloned.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: now,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -581,12 +617,50 @@ mod tests {
             wallet,
         };
         let test_id = service
-            .enquire(
-                rnd_bill,
-                public_key,
-                chrono::Utc::now() + chrono::Duration::seconds(1),
-            )
+            .enquire(rnd_bill, public_key, now + chrono::Duration::seconds(1))
             .await;
+        assert!(test_id.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_new_quote_request_quote_offered_expired_retention_passed() {
+        let id = Uuid::new_v4();
+        let rnd_bill = generate_random_bill();
+        let cloned = rnd_bill.clone();
+        let keyset_id = keys_utils::generate_random_keysetid();
+        let public_key = keys_utils::publics()[0];
+        let mut repo = MockRepository::new();
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
+        repo.expect_search_by_bill()
+            .with(
+                eq(rnd_bill.id.clone()),
+                eq(rnd_bill.payee.node_id().clone()),
+            )
+            .returning(move |_, _| {
+                Ok(vec![Quote {
+                    status: QuoteStatus::Offered {
+                        keyset_id,
+                        ttl: now,
+                        discounted: rnd_bill.sum,
+                    },
+                    id,
+                    bill: cloned.clone(),
+                    submitted: now,
+                }])
+            });
+        repo.expect_store().returning(|_| Ok(()));
+        let keys_hndlr = MockKeysHandler::new();
+        let wallet = MockWallet::new();
+
+        let service = Service {
+            quotes: repo,
+            keys_hndlr,
+            wallet,
+        };
+        let submitted = now
+            + Service::<MockKeysHandler, MockWallet, MockRepository>::USER_DECISION_RETENTION
+            + chrono::Duration::seconds(1);
+        let test_id = service.enquire(rnd_bill, public_key, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
     }
