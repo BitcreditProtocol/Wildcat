@@ -56,6 +56,7 @@ fn verify_signature(req: &web_quotes::EnquireRequest) -> Result<()> {
 fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     match quote.status {
         quotes::QuoteStatus::Pending { .. } => web_quotes::StatusReply::Pending,
+        quotes::QuoteStatus::Canceled { tstamp } => web_quotes::StatusReply::Canceled { tstamp },
         quotes::QuoteStatus::Denied => web_quotes::StatusReply::Denied,
         quotes::QuoteStatus::Offered {
             keyset_id,
@@ -66,6 +67,9 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
             expiration_date: ttl,
             discounted,
         },
+        quotes::QuoteStatus::OfferExpired { tstamp } => {
+            web_quotes::StatusReply::OfferExpired { tstamp }
+        }
         quotes::QuoteStatus::Rejected { tstamp } => web_quotes::StatusReply::Rejected { tstamp },
         quotes::QuoteStatus::Accepted { keyset_id } => {
             web_quotes::StatusReply::Accepted { keyset_id }
@@ -99,6 +103,7 @@ where
     Ok(Json(convert_to_enquire_reply(quote)))
 }
 
+/// --------------------------- Resolve quote offer
 #[utoipa::path(
     post,
     path = "/v1/credit/quote/{id}",
@@ -124,9 +129,41 @@ where
 {
     tracing::debug!("Received mint quote resolve request for id: {}", id);
 
+    let now = chrono::Utc::now();
     match req {
-        web_quotes::ResolveOffer::Reject => ctrl.reject(id, chrono::Utc::now()).await?,
-        web_quotes::ResolveOffer::Accept => ctrl.accept(id).await?,
+        web_quotes::ResolveOffer::Reject => ctrl.reject(id, now).await?,
+        web_quotes::ResolveOffer::Accept => ctrl.accept(id, now).await?,
     }
     Ok(())
+}
+
+/// --------------------------- Cancel quote inquiry
+#[utoipa::path(
+    delete,
+    path = "/v1/credit/quote/{id}",
+    params(
+        ("id" = Uuid, Path, description = "The quote id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = web_quotes::StatusReply, content_type = "application/json"),
+        (status = 404, description = "Quote not found"),
+        (status = 409, description = "Quote already resolved"),
+    )
+)]
+pub async fn cancel<KeysHndlr, Wlt, QuotesRepo>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<web_quotes::StatusReply>>
+where
+    KeysHndlr: KeysHandler,
+    Wlt: Wallet,
+    QuotesRepo: Repository,
+{
+    tracing::debug!("Received mint quote cancel request for id: {}", id);
+
+    let now = chrono::Utc::now();
+    ctrl.cancel(id, now).await?;
+    let quote = ctrl.lookup(id).await?;
+    let reply = convert_to_enquire_reply(quote);
+    Ok(Json(reply))
 }
