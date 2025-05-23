@@ -63,7 +63,9 @@ pub enum QuoteStatus {
     Canceled {
         tstamp: TStamp,
     },
-    Denied,
+    Denied {
+        tstamp: TStamp,
+    },
     Offered {
         keyset_id: cdk02::Id,
         ttl: TStamp,
@@ -114,9 +116,9 @@ impl Quote {
         }
     }
 
-    pub fn deny(&mut self) -> Result<()> {
+    pub fn deny(&mut self, tstamp: TStamp) -> Result<()> {
         if let QuoteStatus::Pending { .. } = self.status {
-            self.status = QuoteStatus::Denied;
+            self.status = QuoteStatus::Denied { tstamp };
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))

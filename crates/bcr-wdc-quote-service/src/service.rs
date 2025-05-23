@@ -142,9 +142,15 @@ where
             }
             Some(Quote {
                 id,
-                status: QuoteStatus::Denied,
+                status: QuoteStatus::Denied { tstamp },
                 ..
-            }) => Err(Error::QuoteAlreadyResolved(*id)),
+            }) => {
+                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                    self.new_quote(bill, pub_key, submitted).await
+                } else {
+                    Err(Error::QuoteAlreadyResolved(*id))
+                }
+            }
             Some(Quote {
                 id,
                 status: QuoteStatus::Offered { .. },
@@ -199,7 +205,7 @@ where
         Ok(())
     }
 
-    pub async fn deny(&self, id: uuid::Uuid) -> Result<()> {
+    pub async fn deny(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self
             .quotes
             .load(id)
@@ -209,7 +215,7 @@ where
             return Err(Error::UnknownQuoteID(id));
         }
         let mut quote = old.unwrap();
-        quote.deny()?;
+        quote.deny(submitted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
             .await
@@ -500,6 +506,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
             .with(
@@ -508,10 +515,10 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Denied,
+                    status: QuoteStatus::Denied { tstamp: now },
                     id,
                     bill: cloned.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: now,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
