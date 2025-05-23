@@ -8,8 +8,8 @@ use bcr_wdc_webapi::quotes::{
     UpdateQuoteResponse,
 };
 use bcr_wdc_webapi::wallet::ECashBalance;
-use cashu::nuts::{nut01 as cdk01, nut02 as cdk02};
-use cashu::{MintBolt11Request, MintBolt11Response};
+use cashu::nuts::{nut01 as cdk01, nut02 as cdk02, nut03 as cdk03};
+use cashu::{MintBolt11Request, MintBolt11Response, SwapResponse};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Serialize};
@@ -156,6 +156,16 @@ impl Service<UserService> {
     /// POST v1/mint/ebill
     pub async fn mint_ebill(&self, req: MintBolt11Request<Uuid>) -> MintBolt11Response {
         let url = self.url("v1/mint/ebill");
+        self.client.post(url, &req).await.unwrap()
+    }
+    /// GET v1/info
+    pub async fn mint_info(&self) -> cashu::nut06::MintInfo {
+        let url = self.url("v1/info");
+        self.client.get(url).await.unwrap()
+    }
+    /// POST v1/swap
+    pub async fn swap(&self, req: cdk03::SwapRequest) -> SwapResponse {
+        let url = self.url("v1/swap");
         self.client.post(url, &req).await.unwrap()
     }
 }

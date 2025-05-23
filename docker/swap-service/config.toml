@@ -11,4 +11,4 @@ table = "proofs"
 
 
 [appcfg.keys_client]
-base_url = "http://key-service:3335"
+base_url = "http://key-service:3338"
