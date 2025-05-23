@@ -169,9 +169,10 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             bill: quote.bill.into(),
             tstamp,
         },
-        quotes::QuoteStatus::Denied => web_quotes::InfoReply::Denied {
+        quotes::QuoteStatus::Denied { tstamp } => web_quotes::InfoReply::Denied {
             id: quote.id,
             bill: quote.bill.into(),
+            tstamp,
         },
         quotes::QuoteStatus::Accepted { keyset_id } => web_quotes::InfoReply::Accepted {
             id: quote.id,
@@ -237,10 +238,10 @@ where
     QuotesRepo: Repository,
 {
     tracing::debug!("Received mint quote update request");
-
+    let now = chrono::Utc::now();
     let response = match req {
         web_quotes::UpdateQuoteRequest::Deny => {
-            ctrl.deny(id).await?;
+            ctrl.deny(id, now).await?;
             web_quotes::UpdateQuoteResponse::Denied
         }
         web_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {

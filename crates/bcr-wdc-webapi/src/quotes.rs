@@ -47,7 +47,9 @@ pub enum StatusReply {
     Canceled {
         tstamp: DateTime<Utc>,
     },
-    Denied,
+    Denied {
+        tstamp: DateTime<Utc>,
+    },
     Offered {
         keyset_id: cdk02::Id,
         expiration_date: DateTime<Utc>,
@@ -132,6 +134,7 @@ pub enum InfoReply {
     Denied {
         id: uuid::Uuid,
         bill: BillInfo,
+        tstamp: DateTime<Utc>,
     },
     Accepted {
         id: uuid::Uuid,
