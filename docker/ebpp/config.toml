@@ -11,8 +11,8 @@ treasury_service_public_key = "0234dd69c56c36a41230d573d68adeae0030c9bc0bf26f24d
 
 [appcfg.onchain]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-network = "regtest"
-store_path = "/data/regtest"
+network = "testnet"
+store_path = "/data/testnet"
 stop_gap = 2
 max_confirmation_blocks = 2
 avg_transaction_size_bytes = 300

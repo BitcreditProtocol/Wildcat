@@ -173,10 +173,10 @@ services:
       BITCOIN_DATA: /home/bitcoin/data
     command:
       -printtoconsole
-      -regtest=1
+      -testnet=1
       -conf=/home/bitcoin/bitcoin.conf
     healthcheck:
-      test: ["CMD", "bitcoin-cli", "-regtest", "getconnectioncount"]
+      test: ["CMD", "bitcoin-cli", "-testnet", "getconnectioncount"]
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
