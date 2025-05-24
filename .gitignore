@@ -28,3 +28,6 @@ Cargo.lock
 
 # ebill temp files
 /files/*
+
+# keycloak env vars
+.env

@@ -6,16 +6,16 @@
         "clientId": "bff-dashboard",
         "enabled": true,
         "publicClient": true,
-        "secret": "cute-kitties",
+        "secret": "${KEYCLOAK_BFF_DASHBOARD_SECRET}",
         "directAccessGrantsEnabled": true,
-        "redirectUris": ["*"],
-        "webOrigins": ["*"]
+        "redirectUris": ["${KEYCLOAK_BFF_DASHBOARD_URL}/*"],
+        "webOrigins": ["${KEYCLOAK_BFF_DASHBOARD_URL}"]
       },
       {
         "clientId": "bff-local-dev",
         "enabled": true,
         "publicClient": false,
-        "secret": "cute-kitties",
+        "secret": "${KEYCLOAK_BFF_LOCAL_DEV_SECRET}",
         "directAccessGrantsEnabled": true,
         "redirectUris": ["http://localhost:*", "http://127.0.0.1:*"]
       }
