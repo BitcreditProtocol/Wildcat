@@ -194,7 +194,7 @@ services:
       - start-dev
       - --import-realm
       - --http-port=8080
-      - --proxy=edge
+      - --proxy-headers=xforwarded
       - --hostname=${KEYCLOAK_HOSTNAME}
     ports:
       - "8080:8080"
