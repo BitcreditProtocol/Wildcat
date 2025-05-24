@@ -183,14 +183,19 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_SECRET}
+      KEYCLOAK_BFF_DASHBOARD_URL: ${KEYCLOAK_BFF_DASHBOARD_URL}
+      KEYCLOAK_BFF_DASHBOARD_SECRET: ${KEYCLOAK_BFF_DASHBOARD_SECRET}
+      KEYCLOAK_BFF_LOCAL_DEV_SECRET: ${KEYCLOAK_BFF_LOCAL_DEV_SECRET}
       KC_DB: dev-file
-      KC_PROXY: "edge"
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+      #KC_PROXY: "edge"
+      #KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
       KC_HTTPS_PORT: "443"
     command:
       - start-dev
       - --import-realm
       - --http-port=8080
+      - --proxy=edge
+      - --hostname=${KEYCLOAK_HOSTNAME}
     ports:
       - "8080:8080"
     volumes:
