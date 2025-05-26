@@ -6,6 +6,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+    environment:
+      - KEY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/key-service/config.toml:/key-service/config.toml
     healthcheck:
