@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash;
 use std::str::FromStr;
 use tokio::signal;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
@@ -9,11 +10,16 @@ struct MainConfig {
     log_level: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct SeedConfig {
+    mnemonic: bip39::Mnemonic,
+}
+
 #[tokio::main]
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("TREASURY"))
+        .add_source(config::Environment::with_prefix("TREASURY_SERVICE"))
         .build()
         .expect("Failed to build treasury config");
 
@@ -28,11 +34,20 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    let seed = [0u8; 32];
-    let secret = bitcoin::secp256k1::SecretKey::from_str(
-        "0a4d621638017a90cbb929e5bcbe8106a9c396d499a930a83e62814c52860bf2",
-    )
-    .expect("Failed to parse secret key from hex");
+    // seed is acquired from environment variables
+    let settings = config::Config::builder()
+        .add_source(config::Environment::with_prefix("TREASURY_SERVICE"))
+        .build()
+        .expect("Failed to build seed config");
+    let seedcfg: SeedConfig = settings
+        .try_deserialize()
+        .expect("Failed to parse seed config");
+    let seed = seedcfg.mnemonic.to_seed("treasury-service");
+    let signing_seed = seedcfg.mnemonic.to_seed("treasury-service-signing");
+    let signing_slice = bitcoin::hashes::sha256::Hash::hash(&signing_seed);
+    let secret = bitcoin::secp256k1::SecretKey::from_slice(signing_slice.as_byte_array())
+        .expect("Failed to create secret key from seed");
+
     let app = bcr_wdc_treasury_service::AppController::new(&seed, secret, maincfg.appcfg).await;
     let router = bcr_wdc_treasury_service::routes(app);
 

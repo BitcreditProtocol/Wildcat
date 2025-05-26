@@ -24,6 +24,8 @@ services:
         condition: service_healthy
       cdk_mint:
         condition: service_started
+    environment:
+      - TREASURY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
       - ./.docker_data/treasury-service/:/data/

@@ -12,6 +12,7 @@ bcr-wdc-key-client = {workspace = true}
 bcr-wdc-swap-client = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = { workspace = true}
+bip39 = {workspace = true}
 bitcoin.workspace = true
 borsh = { workspace = true }
 cashu = { workspace = true, features = ["wallet"]}
