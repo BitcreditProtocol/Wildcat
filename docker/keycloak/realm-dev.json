@@ -6,10 +6,10 @@
         "clientId": "bff-dashboard",
         "enabled": true,
         "publicClient": true,
-        "secret": "cute-kitties",
+        "secret": "${KEYCLOAK_BFF_DASHBOARD_SECRET}",
         "directAccessGrantsEnabled": true,
-        "redirectUris": ["*"],
-        "webOrigins": ["*"]
+        "redirectUris": ["${WDC_DASHBOARD_URL}/*"],
+        "webOrigins": ["${WDC_DASHBOARD_URL}"]
       },
       {
         "clientId": "bff-local-dev",
