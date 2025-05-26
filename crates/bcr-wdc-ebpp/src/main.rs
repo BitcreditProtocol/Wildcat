@@ -9,6 +9,11 @@ struct MainConfig {
     appcfg: bcr_wdc_ebpp::AppConfig,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct SeedConfig {
+    mnemonic: bip39::Mnemonic,
+}
+
 #[tokio::main]
 async fn main() {
     let settings = config::Config::builder()
@@ -21,6 +26,16 @@ async fn main() {
         .try_deserialize()
         .expect("Failed to parse wildcat config");
 
+    // seed is acquired from environment variables
+    let settings = config::Config::builder()
+        .add_source(config::Environment::with_prefix("EBPP"))
+        .build()
+        .expect("Failed to build seed config");
+    let seedcfg: SeedConfig = settings
+        .try_deserialize()
+        .expect("Failed to parse seed config");
+    let seed = seedcfg.mnemonic.to_seed("eBill-Payment-Processor");
+
     tracing_log::LogTracer::init().expect("LogTracer init");
     let level_filter = LevelFilter::from_str(&maincfg.log_level).expect("log level");
     let stdout_log = tracing_subscriber::fmt::layer().with_filter(level_filter);
@@ -28,7 +43,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    let controller = bcr_wdc_ebpp::AppController::new(maincfg.appcfg).await;
+    let controller = bcr_wdc_ebpp::AppController::new(&seed, maincfg.appcfg).await;
     let mut grpc_server = controller
         .new_grpc_server()
         .await

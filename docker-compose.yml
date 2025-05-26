@@ -120,6 +120,8 @@ services:
         condition: service_healthy
       electrs:
         condition: service_started
+    environment:
+      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/

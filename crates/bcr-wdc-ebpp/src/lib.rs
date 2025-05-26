@@ -49,7 +49,7 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub async fn new(cfg: AppConfig) -> Self {
+    pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
         let AppConfig {
             grpc_address,
             onchain,
@@ -65,7 +65,7 @@ impl AppController {
             .expect("private keys repo");
         let electrum_client = bdk_electrum::electrum_client::Client::new(&electrum_url)
             .expect("electrum_client::Client::new");
-        let onchain_wallet = ProdOnChainWallet::new(onchain, key_repo, electrum_client)
+        let onchain_wallet = ProdOnChainWallet::new(seed, onchain, key_repo, electrum_client)
             .await
             .expect("onchain wallet");
 

@@ -15,6 +15,7 @@ bdk_core = {version = "0.4"}
 bdk_electrum = {version = "0.21"}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
 bip21 = {version = "0.5"}
+bip39 = {workspace = true}
 cashu = {workspace = true}
 cdk-common = {workspace = true}
 cdk-payment-processor = {workspace = true, features = ["fake"]}
