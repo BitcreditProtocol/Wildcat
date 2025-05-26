@@ -20,11 +20,9 @@ static_resources:
                         envoy.filters.http.cors:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
                           allow_origin_string_match:
-                          #- exact: "https://wildcat-dashboard.pages.dev"
-                          - suffix: ".pages.dev"
                           - suffix: ".minibill.tech"
                           - prefix: "http://localhost:"
-                          - prefix: "http://127.0.0.1:" 
+                          - prefix: "http://127.0.0.1:"
                           allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
                           allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Access-Control-Allow-Origin"
                           allow_credentials: true
@@ -42,8 +40,6 @@ static_resources:
                           route:
                             cluster: ebpp_service
                             prefix_rewrite: "/v1/onchain"
-                        - match: { prefix: "/v1/info" }
-                          route: { cluster: wallet_aggregator }
                 http_filters:
                   - name: envoy.filters.http.cors
                     typed_config:
@@ -136,18 +132,6 @@ static_resources:
                       address: ebpp
                       port_value: 9090
 
-    - name: wallet_aggregator
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: wallet_aggregator
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: wallet-aggregator
-                      port_value: 3338
     - name: keycloak_service
       connect_timeout: 5s
       type: STRICT_DNS
