@@ -173,10 +173,10 @@ services:
       BITCOIN_DATA: /home/bitcoin/data
     command:
       -printtoconsole
-      -regtest=1
+      -testnet=1
       -conf=/home/bitcoin/bitcoin.conf
     healthcheck:
-      test: ["CMD", "bitcoin-cli", "-regtest", "getconnectioncount"]
+      test: ["CMD", "bitcoin-cli", "-testnet", "getconnectioncount"]
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
@@ -205,3 +205,7 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
+    environment:
+      - ELECTRS_NETWORK=testnet
+      - ELECTRS_DAEMON_RPC_ADDR=bitcoin-core:18332
+      - ELECTRS_DAEMON_P2P_ADDR=bitcoin-core:18333
