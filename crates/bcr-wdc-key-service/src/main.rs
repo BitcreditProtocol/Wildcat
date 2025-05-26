@@ -9,17 +9,32 @@ struct MainConfig {
     log_level: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct SeedConfig {
+    mnemonic: bip39::Mnemonic,
+}
+
 #[tokio::main]
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("KEY"))
+        .add_source(config::Environment::with_prefix("KEY_SERVICE"))
         .build()
         .expect("Failed to build wildcat config");
 
     let maincfg: MainConfig = settings
         .try_deserialize()
         .expect("Failed to parse wildcat config");
+
+    // seed is acquired from environment variables
+    let settings = config::Config::builder()
+        .add_source(config::Environment::with_prefix("KEY_SERVICE"))
+        .build()
+        .expect("Failed to build seed config");
+    let seedcfg: SeedConfig = settings
+        .try_deserialize()
+        .expect("Failed to parse seed config");
+    let seed = seedcfg.mnemonic.to_seed("key-service");
 
     tracing_log::LogTracer::init().expect("LogTracer init");
     let level_filter = LevelFilter::from_str(&maincfg.log_level).expect("log level");
@@ -28,8 +43,6 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    // we keep seed separate from the app config
-    let seed = [0u8; 32];
     let app = bcr_wdc_key_service::AppController::new(&seed, maincfg.appcfg).await;
     let router = bcr_wdc_key_service::routes(app);
 
