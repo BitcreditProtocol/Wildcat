@@ -12,8 +12,6 @@ use uuid::Uuid;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("bdk_wallet::keys {0}")]
-    BDKKey(#[from] bdk_wallet::keys::KeyError),
     #[error("bdk_wallet::rusqlite {0}")]
     BDKSQLite(#[from] bdk_wallet::rusqlite::Error),
     #[error("bdk_wallet::LoadWithPersisted {0}")]
@@ -37,13 +35,13 @@ pub enum Error {
     BTCAmountParse(#[from] bdk_wallet::bitcoin::amount::ParseAmountError),
     #[error("bitcoin::psbt: {0}")]
     BTCPsbt(#[from] bdk_wallet::bitcoin::psbt::Error),
+    #[error("bitcoin::bip32: {0}")]
+    BTCBIP32(#[from] bdk_wallet::bitcoin::bip32::Error),
 
     #[error("miniscript: {0}")]
     Miniscript(#[from] bdk_wallet::miniscript::Error),
     #[error("DB errror: {0}")]
     DB(AnyError),
-    #[error("Mnemonic to xpriv conversion failed")]
-    MnemonicToXpriv,
     #[error("chrono conversion: {0}")]
     Chrono(#[from] chrono::OutOfRangeError),
     #[error("electrum_client: {0}")]
@@ -87,20 +85,17 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
 
             Error::Join(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::Electrum(_) => CDKPaymentError::Custom(String::from("internal error")),
+            Error::BTCBIP32(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCPsbt(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCAmountParse(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCAddressParse(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCPsbtExtract(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSignOpNotOK => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSQLite(_) => CDKPaymentError::Custom(String::from("internal error")),
-            Error::BDKKey(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSigner(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKCreateTx(_) => CDKPaymentError::Custom(String::from("internal error")),
 
             Error::Miniscript(_) => CDKPaymentError::Custom(String::from(
-                "leaking internal error, this should never happen",
-            )),
-            Error::MnemonicToXpriv => CDKPaymentError::Custom(String::from(
                 "leaking internal error, this should never happen",
             )),
             Error::OnChainStore(_) => CDKPaymentError::Custom(String::from(

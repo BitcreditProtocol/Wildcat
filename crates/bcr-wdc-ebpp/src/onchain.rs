@@ -13,7 +13,6 @@ use bdk_wallet::{
     },
     chain::ChainPosition,
     descriptor::template::Bip84,
-    keys::{bip39::Mnemonic, DerivableKey, ExtendedKey},
     miniscript::{descriptor::KeyMap, Descriptor, DescriptorPublicKey},
     rusqlite::OpenFlags,
     KeychainKind, SignOptions, TxOrdering,
@@ -33,7 +32,6 @@ pub type SingleSecretKeyDescriptor = (Descriptor<DescriptorPublicKey>, KeyMap);
 #[serde_as]
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct WalletConfig {
-    mnemonic: Mnemonic,
     network: Network,
     store_path: std::path::PathBuf,
     stop_gap: usize,
@@ -95,15 +93,19 @@ where
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
     const MIN_FEE_RATE_BTC_PER_KBYTE: f64 = 0.000005; // minimum fee rate in btc/KByte
 
-    pub async fn new(cfg: WalletConfig, repo: KeyRepo, api: ElectrumApi) -> Result<Self> {
+    pub async fn new(
+        seed: &[u8],
+        cfg: WalletConfig,
+        repo: KeyRepo,
+        api: ElectrumApi,
+    ) -> Result<Self> {
         if !cfg.store_path.is_dir() {
             return Err(Error::OnChainStore(cfg.store_path));
         }
 
         let electrum_client = Arc::new(BdkElectrumClient::new(api));
 
-        let exkey: ExtendedKey = cfg.mnemonic.into_extended_key()?;
-        let xpriv = exkey.into_xprv(cfg.network).ok_or(Error::MnemonicToXpriv)?;
+        let xpriv = Xpriv::new_master(cfg.network, seed).map_err(Error::BTCBIP32)?;
         let main_store = cfg.store_path.join(Self::MAIN_STORE_FNAME);
         let (age, main) = initialize_main_wallet(&main_store, xpriv, cfg.network)?;
         let main = Arc::new(Mutex::new(main));

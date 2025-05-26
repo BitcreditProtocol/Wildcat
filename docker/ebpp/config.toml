@@ -10,7 +10,6 @@ refresh_interval_secs=30
 treasury_service_public_key = "0234dd69c56c36a41230d573d68adeae0030c9bc0bf26f24d3e1b64c604d293c68"
 
 [appcfg.onchain]
-mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 network = "regtest"
 store_path = "/data/regtest"
 stop_gap = 2
