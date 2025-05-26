@@ -6,6 +6,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+    environment:
+      - KEY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/key-service/config.toml:/key-service/config.toml
     healthcheck:
@@ -22,6 +24,8 @@ services:
         condition: service_healthy
       cdk_mint:
         condition: service_started
+    environment:
+      - TREASURY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
       - ./.docker_data/treasury-service/:/data/
@@ -103,13 +107,6 @@ services:
     depends_on:
       ebpp:
         condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:8085/v1/info || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-      start_interval: 3s
 
   ebpp:
     image: wildcat/ebpp
@@ -120,6 +117,8 @@ services:
         condition: service_healthy
       electrs:
         condition: service_started
+    environment:
+      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
@@ -186,6 +185,10 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
+    environment:
+      - ELECTRS_NETWORK=regtest
+      - ELECTRS_DAEMON_RPC_ADDR=bitcoin-core:18443
+      - ELECTRS_DAEMON_P2P_ADDR=bitcoin-core:18444
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
