@@ -84,4 +84,16 @@ impl QuoteClient {
         }
         Ok(())
     }
+
+    pub async fn cancel(&self, qid: Uuid) -> Result<()> {
+        let url = self
+            .base
+            .join(&format!("/v1/mint/credit/quote/{qid}"))
+            .expect("resolve relative path");
+        let res = self.cl.delete(url).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(qid));
+        }
+        Ok(())
+    }
 }
