@@ -43,10 +43,13 @@ build-docker-ebill-service: build-docker-base-image
 build-docker-eiou-service: build-docker-base-image
     docker build -t wildcat/eiou-service -f docker/eiou-service/Dockerfile .
 
+build-docker-balance-collector: build-docker-base-image
+    docker build -t wildcat/balance-collector -f docker/balance-collector/Dockerfile .
+
 build-docker-e2e-tests: build-docker-base-image
     docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
 
-build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-ebpp build-docker-ebill-service build-docker-eiou-service
+build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-ebpp build-docker-ebill-service build-docker-eiou-service build-docker-balance-collector
 
 openapi-generate-docs:
   @cargo run --package bcr-wdc-quote-service --bin gen_api
