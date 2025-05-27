@@ -7,6 +7,7 @@ license = "MIT"
 resolver = "2"
 
 members = [
+    "crates/bcr-wdc-balance-collector",
     "crates/bcr-wdc-e2e-tests",
     "crates/bcr-wdc-ebill-service", "crates/bcr-wdc-ebill-client",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
@@ -29,6 +30,7 @@ bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git
 bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
 bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
+bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
 bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}

@@ -228,3 +228,16 @@ services:
       - ELECTRS_NETWORK=testnet
       - ELECTRS_DAEMON_RPC_ADDR=bitcoin-core:18332
       - ELECTRS_DAEMON_P2P_ADDR=bitcoin-core:18333
+
+  balance-collector:
+    image: wildcat/balance-collector
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      treasury-service:
+        condition: service_started
+      ebpp:
+        condition: service_started
+    volumes:
+      - ./docker/balance-collector/config.toml:/balance-collector/config.toml

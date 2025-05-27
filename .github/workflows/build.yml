@@ -104,6 +104,8 @@ jobs:
             dockerfile: docker/ebill-service/Dockerfile
           - name: bcr-wdc-eiou-service
             dockerfile: docker/eiou-service/Dockerfile
+          - name: bcr-wdc-balance-collector
+            dockerfile: docker/balance-collector/Dockerfile
 
     steps:
     - name: Checkout code

@@ -1,0 +1,13 @@
+
+log_level = "DEBUG"
+interval_minutes = 60
+
+[appcfg]
+treasury_url = "http://treasury-service:3338"
+ebpp_url = "http://ebpp:3338"
+eiou_url = "http://eiou-service:3338"
+
+[appcfg.db_config]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "collector"
