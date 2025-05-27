@@ -70,6 +70,16 @@ static_resources:
                             cache_duration:
                               seconds: 600
                           forward_payload_header: x-jwt-payload
+                        keycloak_provider_external_secure:
+                          issuer: https://keycloak.wildcat-dev-docker.minibill.tech/realms/dev
+                          remote_jwks:
+                            http_uri:
+                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
+                              cluster: keycloak_service
+                              timeout: 5s
+                            cache_duration:
+                              seconds: 600
+                          forward_payload_header: x-jwt-payload
                       rules:
                         - match: { prefix: "/v1/admin" }
                           requires:
@@ -77,6 +87,7 @@ static_resources:
                               requirements:
                                 - provider_name: keycloak_provider_service
                                 - provider_name: keycloak_provider_localhost
+                                - provider_name: keycloak_provider_external_secure
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -145,7 +156,7 @@ static_resources:
                   address:
                     socket_address:
                       address: ebpp
-                      port_value: 9090
+                      port_value: 3338
 
     - name: keycloak_service
       connect_timeout: 5s
