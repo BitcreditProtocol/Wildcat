@@ -7,17 +7,17 @@ license = "MIT"
 resolver = "2"
 
 members = [
-    "crates/bcr-wdc-webapi",
-    "crates/bcr-wdc-utils",
+    "crates/bcr-wdc-e2e-tests",
+    "crates/bcr-wdc-ebill-service", "crates/bcr-wdc-ebill-client",
+    "crates/bcr-wdc-ebpp",
+    "crates/bcr-wdc-eiou-service",
+    "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
     "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
-    "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
+    "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
-    "crates/bcr-wdc-ebpp",
-    "crates/bcr-wdc-ebill-service",
-    "crates/bcr-wdc-ebill-client",
-    "crates/bcr-wdc-e2e-tests",
+    "crates/bcr-wdc-webapi",
 ]
 
 [workspace.dependencies]
