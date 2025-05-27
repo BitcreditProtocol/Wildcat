@@ -36,6 +36,8 @@ static_resources:
                             prefix_rewrite: "/v1/balance"
                         - match: { prefix: "/v1/admin/keys" }
                           route: { cluster: key_service }
+                        - match: { prefix: "/v1/admin/eiou" }
+                          route: { cluster: eiou_service }
                         - match: { prefix: "/v1/admin/onchain" }
                           route:
                             cluster: ebpp_service
@@ -117,6 +119,19 @@ static_resources:
                   address:
                     socket_address:
                       address: key-service
+                      port_value: 3338
+
+    - name: eiou_service
+      connect_timeout: 5s
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: eiou_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: eiou-service
                       port_value: 3338
 
     - name: ebpp_service
