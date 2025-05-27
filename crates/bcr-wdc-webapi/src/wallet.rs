@@ -32,6 +32,17 @@ impl std::convert::From<bdk_wallet::Balance> for Balance {
     }
 }
 
+impl std::convert::From<Balance> for bdk_wallet::Balance {
+    fn from(blnc: Balance) -> Self {
+        Self {
+            immature: blnc.immature,
+            trusted_pending: blnc.trusted_pending,
+            untrusted_pending: blnc.untrusted_pending,
+            confirmed: blnc.confirmed,
+        }
+    }
+}
+
 ///--------------------------- eCash wallet balance
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ECashBalance {
