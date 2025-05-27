@@ -1,0 +1,12 @@
+[package]
+name = "bcr-wdc-ebpp-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bcr-wdc-webapi = {workspace = true}
+bdk_wallet = {workspace = true}
+chrono.workspace = true
+reqwest = {workspace = true, features = ["json"]}
+thiserror.workspace = true
