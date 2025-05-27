@@ -1,0 +1,20 @@
+[package]
+name = "bcr-wdc-eiou-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum = {workspace = true, features = ["macros"]}
+bcr-wdc-webapi = {workspace = true}
+bitcoin = {workspace = true}
+config = {workspace = true}
+serde  = {workspace = true}
+thiserror.workspace = true
+tokio = {workspace = true, features = ["signal"]}
+tracing = {workspace = true, features = ["log"]}
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true}
+utoipa = {workspace = true, features = ["axum_extras"]}
+utoipa-swagger-ui = {workspace = true, features = ["axum"]}
