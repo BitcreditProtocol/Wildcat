@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::signatures as web_signatures;
+use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
 use cashu::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03, Amount};
 use thiserror::Error;
 use uuid::Uuid;
@@ -77,5 +77,25 @@ impl TreasuryClient {
         let res = self.cl.post(url).json(&request).send().await?;
         let response: cdk03::SwapResponse = res.json().await?;
         Ok(response.signatures)
+    }
+
+    pub async fn crsat_balance(&self) -> Result<web_wallet::ECashBalance> {
+        let url = self
+            .base
+            .join("/v1/balance/credit")
+            .expect("crsat balance relative path");
+        let res = self.cl.get(url).send().await?;
+        let response: web_wallet::ECashBalance = res.json().await?;
+        Ok(response)
+    }
+
+    pub async fn sat_balance(&self) -> Result<web_wallet::ECashBalance> {
+        let url = self
+            .base
+            .join("/v1/balance/debit")
+            .expect("sat balance relative path");
+        let res = self.cl.get(url).send().await?;
+        let response: web_wallet::ECashBalance = res.json().await?;
+        Ok(response)
     }
 }
