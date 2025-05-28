@@ -1,5 +1,16 @@
 services:
 
+  eiou-service:
+    image: wildcat/eiou-service
+    pull_policy: never
+    volumes:
+      - ./docker/eiou-service/config.toml:/eiou-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
   key-service:
     image: wildcat/key-service
     pull_policy: never

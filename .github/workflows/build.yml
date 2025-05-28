@@ -102,6 +102,8 @@ jobs:
             dockerfile: docker/ebpp/Dockerfile
           - name: bcr-wdc-ebill-service
             dockerfile: docker/ebill-service/Dockerfile
+          - name: bcr-wdc-eiou-service
+            dockerfile: docker/eiou-service/Dockerfile
 
     steps:
     - name: Checkout code
