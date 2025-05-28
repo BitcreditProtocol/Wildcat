@@ -179,8 +179,8 @@ impl KeyClient {
     ) -> Result<Vec<cdk00::BlindSignature>> {
         let url = self
             .base
-            .join("/v1/admin/keys/activate")
-            .expect("activate relative path");
+            .join("/v1/mint/ebill")
+            .expect("mint relative path");
         let mut msg = cdk04::MintBolt11Request {
             quote: qid,
             outputs,
