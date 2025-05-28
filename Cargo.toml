@@ -10,7 +10,7 @@ members = [
     "crates/bcr-wdc-e2e-tests",
     "crates/bcr-wdc-ebill-service", "crates/bcr-wdc-ebill-client",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
-    "crates/bcr-wdc-eiou-service",
+    "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
     "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
     "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
