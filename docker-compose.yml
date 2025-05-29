@@ -156,11 +156,6 @@ services:
 
   bff-dashboard-service:
     image: envoyproxy/envoy:v1.33.0
-    environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_SECRET}
-      WDC_DASHBOARD_URL: ${WDC_DASHBOARD_URL}
-      KEYCLOAK_BFF_DASHBOARD_SECRET: ${KEYCLOAK_BFF_DASHBOARD_SECRET}
     depends_on:
       - keycloak
       - quote-service
@@ -187,26 +182,28 @@ services:
     environment:
       BITCOIN_DATA: /home/bitcoin/data
     command:
-      -printtoconsole
-      -testnet=1
-      -conf=/home/bitcoin/bitcoin.conf
+      - -printtoconsole
+      - ${BITCOIN_NETWORK_COMMAND_ARG:--regtest=1}
+      - -conf=/home/bitcoin/bitcoin.conf
     healthcheck:
-      test: ["CMD", "bitcoin-cli", "-testnet", "getconnectioncount"]
+      test: ["CMD", "bitcoin-cli", "${BITCOIN_CLI_NETWORK_ARG:--regtest}", "getconnectioncount"]
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_SECRET}
-      WDC_DASHBOARD_URL: ${WDC_DASHBOARD_URL}
-      KEYCLOAK_BFF_DASHBOARD_SECRET: ${KEYCLOAK_BFF_DASHBOARD_SECRET}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_SECRET:-admin}
+      WDC_DASHBOARD_URL: ${WDC_DASHBOARD_URL:-http://localhost:5173}
+      KEYCLOAK_BFF_DASHBOARD_SECRET: ${KEYCLOAK_BFF_DASHBOARD_SECRET:-cute-kitties}
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS:-*}
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS:-*}
       KC_DB: dev-file
     command:
       - start-dev
       - --import-realm
       - --http-port=8080
       - --proxy-headers=xforwarded
-      - --hostname=${KEYCLOAK_HOSTNAME}
+      - --hostname=${KEYCLOAK_HOSTNAME:-localhost}
     ports:
       - "8080:8080"
     volumes:
@@ -225,9 +222,9 @@ services:
     volumes:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
     environment:
-      - ELECTRS_NETWORK=testnet
-      - ELECTRS_DAEMON_RPC_ADDR=bitcoin-core:18332
-      - ELECTRS_DAEMON_P2P_ADDR=bitcoin-core:18333
+      ELECTRS_NETWORK: ${ELECTRS_NETWORK:-regtest}
+      ELECTRS_DAEMON_RPC_ADDR: ${ELECTRS_DAEMON_RPC_ADDR:-bitcoin-core:18443}
+      ELECTRS_DAEMON_P2P_ADDR: ${ELECTRS_DAEMON_P2P_ADDR:-bitcoin-core:18444}
 
   balance-collector:
     image: wildcat/balance-collector
