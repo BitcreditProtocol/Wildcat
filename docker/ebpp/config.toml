@@ -29,3 +29,6 @@ namespace = "test"
 database = "ebpp"
 incoming_payments_table = "incomings"
 outgoing_payments_table = "outgoings"
+
+[appcfg.ebill_client]
+base_url = "http://ebill-service:3338"
