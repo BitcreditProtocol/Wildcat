@@ -8,8 +8,8 @@
         "publicClient": true,
         "secret": "${KEYCLOAK_BFF_DASHBOARD_SECRET}",
         "directAccessGrantsEnabled": true,
-        "redirectUris": ["${WDC_DASHBOARD_URL}/*"],
-        "webOrigins": ["${WDC_DASHBOARD_URL}"]
+        "redirectUris": ["${KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS}"],
+        "webOrigins": ["${KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS}"]
       },
       {
         "clientId": "bff-local-dev",
