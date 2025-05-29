@@ -197,6 +197,8 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: dev-file
       KC_HEALTH_ENABLED: true
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      WDC_DASHBOARD_URL: "http://localhost:5173"
     command:
       - start-dev
       - --import-realm

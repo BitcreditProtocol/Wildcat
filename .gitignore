@@ -20,6 +20,8 @@ Cargo.lock
 # docker compose data
 .docker_data/
 !.docker_data/treasury-service/.gitkeep
+!.docker_data/ebpp/regtest/.gitkeep
+!.docker_data/ebpp/testnet/.gitkeep
 
 # open api related files (definitions, helpers, etc.)
 /openapi.json
