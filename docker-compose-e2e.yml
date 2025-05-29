@@ -146,6 +146,13 @@ services:
 
   bff-dashboard-service:
     image: envoyproxy/envoy:v1.33.0
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: dev-file
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      WDC_DASHBOARD_URL: "http://localhost:5173"
     depends_on:
       - keycloak
       - quote-service
