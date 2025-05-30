@@ -102,7 +102,11 @@ impl axum::response::IntoResponse for BillServiceError {
         let response = match self.0 {
             bill_service::Error::NoFileForFileUploadId
             | bill_service::Error::DraweeNotInContacts
+            | bill_service::Error::CancelMintRequestNotPending
             | bill_service::Error::BuyerNotInContacts
+            | bill_service::Error::RejectMintRequestNotOffered
+            | bill_service::Error::AcceptMintOfferExpired
+            | bill_service::Error::AcceptMintRequestNotOffered
             | bill_service::Error::EndorseeNotInContacts
             | bill_service::Error::MintNotInContacts
             | bill_service::Error::RecourseeNotInContacts
@@ -138,6 +142,8 @@ impl axum::response::IntoResponse for ValidationError {
                 | bcr_ebill_api::util::ValidationError::FieldEmpty(_)
                 | bcr_ebill_api::util::ValidationError::InvalidSum
                 | bcr_ebill_api::util::ValidationError::InvalidCurrency
+                | bcr_ebill_api::util::ValidationError::RequestToMintForBillAndMintAlreadyActive
+                | bcr_ebill_api::util::ValidationError::InvalidMint(_)
                 | bcr_ebill_api::util::ValidationError::InvalidPaymentAddress
                 | bcr_ebill_api::util::ValidationError::InvalidDate
                 | bcr_ebill_api::util::ValidationError::IdentityCantBeAnon

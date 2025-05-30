@@ -1,7 +1,7 @@
 // ----- standard library imports
 use bcr_ebill_api::{
     service::notification_service::{create_nostr_clients, create_nostr_consumer},
-    NostrConfig,
+    MintConfig, NostrConfig,
 };
 use std::str::FromStr;
 // ----- extra library imports
@@ -49,6 +49,10 @@ async fn main() {
         nostr_config: NostrConfig {
             relays: maincfg.appcfg.nostr_cfg.relays.clone(),
             only_known_contacts: maincfg.appcfg.nostr_cfg.only_known_contacts,
+        },
+        mint_config: MintConfig {
+            default_mint_url: maincfg.appcfg.mint_config.default_mint_url.clone(),
+            default_mint_node_id: maincfg.appcfg.mint_config.default_mint_node_id.clone(),
         },
         db_config: bcr_ebill_api::SurrealDbConfig {
             connection_string: maincfg.appcfg.ebill_db.connection.clone(),

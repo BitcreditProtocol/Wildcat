@@ -466,7 +466,7 @@ pub struct BillCombinedBitcoinKey {
 impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
     fn from(val: bill::BillCombinedBitcoinKey) -> Self {
         BillCombinedBitcoinKey {
-            private_key: val.private_key,
+            private_key: val.private_descriptor,
         }
     }
 }
