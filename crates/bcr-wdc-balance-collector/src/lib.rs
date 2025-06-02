@@ -1,8 +1,12 @@
 // ----- standard library imports
-use bcr_wdc_webapi::wallet as web_wallet;
-use surrealdb::{engine::any::Any, Surreal};
+// ----- extra library imports
+use axum::{extract::FromRef, routing::get, Router};
+use utoipa::OpenApi;
 // ----- local modules
+mod admin;
 mod error;
+mod persistence;
+mod service;
 // ----- local imports
 use error::Result;
 
@@ -10,85 +14,74 @@ use error::Result;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
-#[derive(Debug, serde::Deserialize)]
-pub struct DBConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-}
+type ProdDB = persistence::surreal::DBBalance;
+type ProdService = service::Service<ProdDB>;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AppConfig {
     pub treasury_url: bcr_wdc_treasury_client::Url,
     pub ebpp_url: bcr_wdc_ebpp_client::Url,
     pub eiou_url: bcr_wdc_eiou_client::Url,
-    pub db_config: DBConfig,
+    pub db_config: persistence::surreal::DBConfig,
 }
 
+#[derive(Debug, Clone, FromRef)]
 pub struct AppController {
-    pub treasury: bcr_wdc_treasury_client::TreasuryClient,
-    pub ebpp: bcr_wdc_ebpp_client::EBPPClient,
-    pub eiou: bcr_wdc_eiou_client::EIOUClient,
-    pub db: surrealdb::Surreal<surrealdb::engine::any::Any>,
+    pub service: ProdService,
 }
 
 impl AppController {
     pub async fn new(config: AppConfig) -> Result<Self> {
-        let AppConfig {
-            treasury_url,
-            ebpp_url,
-            eiou_url,
-            db_config,
-        } = config;
-        let db = Surreal::<Any>::init();
-        db.connect(db_config.connection).await?;
-        db.use_ns(db_config.namespace).await?;
-        db.use_db(db_config.database).await?;
+        let db = persistence::surreal::DBBalance::new(config.db_config).await?;
+        let treasury = bcr_wdc_treasury_client::TreasuryClient::new(config.treasury_url);
+        let ebpp = bcr_wdc_ebpp_client::EBPPClient::new(config.ebpp_url);
+        let eiou = bcr_wdc_eiou_client::EIOUClient::new(config.eiou_url);
 
-        let treasury = bcr_wdc_treasury_client::TreasuryClient::new(treasury_url);
-        let ebpp = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_url);
-        let eiou = bcr_wdc_eiou_client::EIOUClient::new(eiou_url);
-        Ok(Self {
+        let service = ProdService {
             treasury,
             ebpp,
             eiou,
             db,
-        })
-    }
+        };
 
-    async fn collect_crsat_balance(&self, tstamp: TStamp) -> Result<()> {
-        let balance = self.treasury.crsat_balance().await?;
-        let rid = surrealdb::RecordId::from_table_key("crsat", tstamp.timestamp());
-        let _: Option<web_wallet::ECashBalance> = self.db.insert(rid).content(balance).await?;
-        Ok(())
-    }
-
-    async fn collect_sat_balance(&self, tstamp: TStamp) -> Result<()> {
-        let balance = self.treasury.sat_balance().await?;
-        let rid = surrealdb::RecordId::from_table_key("sat", tstamp.timestamp());
-        let _: Option<web_wallet::ECashBalance> = self.db.insert(rid).content(balance).await?;
-        Ok(())
-    }
-
-    async fn collect_onchain_balance(&self, tstamp: TStamp) -> Result<()> {
-        let balance = self.ebpp.balance().await?;
-        let rid = surrealdb::RecordId::from_table_key("btc", tstamp.timestamp());
-        let _: Option<bdk_wallet::Balance> = self.db.insert(rid).content(balance).await?;
-        Ok(())
-    }
-
-    async fn collect_eiou_balance(&self, tstamp: TStamp) -> Result<()> {
-        let balance = self.eiou.balance().await?;
-        let rid = surrealdb::RecordId::from_table_key("eiou", tstamp.timestamp());
-        let _: Option<bdk_wallet::Balance> = self.db.insert(rid).content(balance).await?;
-        Ok(())
+        Ok(Self { service })
     }
 
     pub async fn collect_balances(&self, tstamp: TStamp) -> Result<()> {
-        self.collect_crsat_balance(tstamp).await?;
-        self.collect_sat_balance(tstamp).await?;
-        self.collect_onchain_balance(tstamp).await?;
-        self.collect_eiou_balance(tstamp).await?;
+        self.service.collect_crsat_balance(tstamp).await?;
+        self.service.collect_sat_balance(tstamp).await?;
+        self.service.collect_onchain_balance(tstamp).await?;
+        self.service.collect_eiou_balance(tstamp).await?;
         Ok(())
     }
 }
+
+pub fn routes(ctrl: AppController) -> Router {
+    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
+
+    let admin = Router::new()
+        .route("/v1/admin/crsat/chart", get(admin::crsat_chart))
+        .route("/v1/admin/sat/chart", get(admin::sat_chart))
+        .route("/v1/admin/btc/chart", get(admin::btc_chart))
+        .route("/v1/admin/eiou/chart", get(admin::eiou_chart));
+
+    Router::new().merge(admin).with_state(ctrl).merge(swagger)
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    components(schemas(
+        bcr_wdc_webapi::wallet::Balance,
+        bcr_wdc_webapi::wallet::Candle,
+        bcr_wdc_webapi::wallet::CandleChart,
+        bcr_wdc_webapi::wallet::ECashBalance,
+    ),),
+    paths(
+        admin::crsat_chart,
+        admin::sat_chart,
+        admin::btc_chart,
+        admin::eiou_chart,
+    )
+)]
+struct ApiDoc;
