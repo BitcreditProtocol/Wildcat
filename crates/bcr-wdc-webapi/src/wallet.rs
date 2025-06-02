@@ -49,3 +49,18 @@ pub struct ECashBalance {
     pub amount: cdk::Amount,
     pub unit: cdk::CurrencyUnit,
 }
+
+///--------------------------- eCash balance chart
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct Candle {
+    pub date: chrono::DateTime<chrono::Utc>,
+    pub open: u64,
+    pub high: u64,
+    pub low: u64,
+    pub close: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CandleChart {
+    pub candles: Vec<Candle>,
+}

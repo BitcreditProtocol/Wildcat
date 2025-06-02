@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 // ----- standard library imports
 // ----- extra library imports
 use thiserror::Error;
@@ -17,4 +18,26 @@ pub enum Error {
     Eiou(#[from] bcr_wdc_eiou_client::Error),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] bcr_wdc_treasury_client::Error),
+}
+
+impl axum::response::IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        tracing::error!("Error: {}", self);
+        let resp = match self {
+            Error::Treasury(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Treasury client error"),
+            ),
+            Error::Eiou(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("E-IOU client error"),
+            ),
+            Error::Ebpp(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("EBPP client error"),
+            ),
+            Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("DB error")),
+        };
+        resp.into_response()
+    }
 }
