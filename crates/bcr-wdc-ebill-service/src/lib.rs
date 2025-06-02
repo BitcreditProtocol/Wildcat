@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use bcr_ebill_api::{
-    external::bitcoin::BitcoinClient,
+    external::{bitcoin::BitcoinClient, mint::MintClient},
     service::{
         bill_service::{service::BillService, BillServiceApi},
         contact_service::{ContactService, ContactServiceApi},
@@ -27,6 +27,7 @@ pub struct AppConfig {
     pub bitcoin_network: String,
     pub esplora_base_url: String,
     pub nostr_cfg: NostrConfig,
+    pub mint_config: MintConfig,
     pub data_dir: String,
     pub job_runner_initial_delay_seconds: u64,
     pub job_runner_check_interval_seconds: u64,
@@ -36,6 +37,12 @@ pub struct AppConfig {
 pub struct NostrConfig {
     pub only_known_contacts: bool,
     pub relays: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct MintConfig {
+    pub default_mint_url: String,
+    pub default_mint_node_id: String,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -73,6 +80,7 @@ impl AppController {
             db.notification_store.clone(),
             contact_service.clone(),
             db.queued_message_store.clone(),
+            db.nostr_chain_event_store.clone(),
             cfg.nostr_config.relays.to_owned(),
         )
         .await
@@ -89,6 +97,8 @@ impl AppController {
             db.company_chain_store.clone(),
             db.contact_store.clone(),
             db.company_store.clone(),
+            db.mint_store.clone(),
+            Arc::new(MintClient::new()),
         ));
 
         let identity_service = IdentityService::new(
@@ -134,7 +144,6 @@ pub fn routes(ctrl: AppController) -> Router {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
-    use async_broadcast::Receiver;
     use async_trait::async_trait;
     use bcr_ebill_api::{
         data::{
@@ -145,6 +154,7 @@ pub mod test_utils {
             },
             contact::{BillIdentParticipant, BillParticipant, Contact, ContactType},
             identity::{ActiveIdentityState, Identity, IdentityType, IdentityWithAll},
+            mint::MintRequestState,
             notification::{ActionType, Notification},
             File, OptionalPostalAddress, PostalAddress,
         },
@@ -155,7 +165,9 @@ pub mod test_utils {
         NotificationFilter,
     };
     use bcr_ebill_core::{blockchain::bill::BillBlockchain, ServiceTraitBounds};
-    use bcr_ebill_transport::{event::chain_event::BillChainEvent, Result as NotifResult};
+    use bcr_ebill_transport::{
+        event::bill_events::BillChainEvent, transport::NostrContactData, Result as NotifResult,
+    };
     use std::collections::HashMap;
 
     mockall::mock! {
@@ -249,6 +261,38 @@ pub mod test_utils {
                 current_identity_node_id: &str,
             ) -> BillResult<Vec<Endorsement>>;
             async fn clear_bill_cache(&self) -> BillResult<()>;
+            async fn request_to_mint(
+                &self,
+                bill_id: &str,
+                mint_node_id: &str,
+                signer_public_data: &BillParticipant,
+                signer_keys: &BcrKeys,
+                timestamp: u64,
+            ) -> BillResult<()>;
+            async fn get_mint_state(
+                &self,
+                bill_id: &str,
+                current_identity_node_id: &str,
+            ) -> BillResult<Vec<MintRequestState>>;
+            async fn cancel_request_to_mint(
+                &self,
+                mint_request_id: &str,
+                current_identity_node_id: &str,
+            ) -> BillResult<()>;
+            async fn accept_mint_offer(
+                &self,
+                mint_request_id: &str,
+                signer_public_data: &BillParticipant,
+                signer_keys: &BcrKeys,
+                timestamp: u64,
+            ) -> BillResult<()>;
+            async fn reject_mint_offer(
+                &self,
+                mint_request_id: &str,
+                current_identity_node_id: &str,
+            ) -> BillResult<()>;
+            async fn check_mint_state(&self, bill_id: &str, current_identity_node_id: &str) -> BillResult<()>;
+            async fn check_mint_state_for_all_bills(&self) -> BillResult<()>;
         }
     }
 
@@ -260,7 +304,7 @@ pub mod test_utils {
         #[async_trait]
         impl PushApi for PushApi {
             async fn send(&self, value: serde_json::Value);
-            async fn subscribe(&self) -> Receiver<serde_json::Value>;
+            async fn subscribe(&self) -> bcr_ebill_transport::Receiver<serde_json::Value>;
         }
     }
 
@@ -399,6 +443,7 @@ pub mod test_utils {
 
         #[async_trait]
         impl NotificationServiceApi for NotificationServiceApi {
+            async fn resolve_contact(&self, node_id: &str) -> NotifResult<Option<NostrContactData>>;
             async fn send_bill_is_signed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
             async fn send_bill_is_accepted_event(&self, event: &BillChainEvent) -> NotifResult<()>;
             async fn send_request_to_accept_event(&self, event: &BillChainEvent) -> NotifResult<()>;
@@ -442,6 +487,7 @@ pub mod test_utils {
             async fn send_request_to_mint_event(
                 &self,
                 sender_node_id: &str,
+                mint: &BillParticipant,
                 bill: &BitcreditBill,
             ) -> NotifResult<()>;
             async fn send_new_quote_event(&self, quote: &BitcreditBill) -> NotifResult<()>;
