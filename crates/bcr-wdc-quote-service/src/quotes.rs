@@ -72,12 +72,15 @@ pub enum QuoteStatus {
         discounted: bitcoin::Amount,
     },
     OfferExpired {
+        discounted: bitcoin::Amount,
         tstamp: TStamp,
     },
     Rejected {
+        discounted: bitcoin::Amount,
         tstamp: TStamp,
     },
     Accepted {
+        discounted: bitcoin::Amount,
         keyset_id: cdk02::Id,
     },
 }
@@ -144,16 +147,22 @@ impl Quote {
     }
 
     pub fn check_expire(&mut self, tstamp: TStamp) {
-        if let QuoteStatus::Offered { ttl, .. } = self.status {
+        if let QuoteStatus::Offered {
+            ttl, discounted, ..
+        } = self.status
+        {
             if tstamp > ttl {
-                self.status = QuoteStatus::OfferExpired { tstamp: ttl };
+                self.status = QuoteStatus::OfferExpired {
+                    tstamp: ttl,
+                    discounted,
+                };
             }
         }
     }
 
     pub fn reject(&mut self, tstamp: TStamp) -> Result<()> {
-        if let QuoteStatus::Offered { .. } = self.status {
-            self.status = QuoteStatus::Rejected { tstamp };
+        if let QuoteStatus::Offered { discounted, .. } = self.status {
+            self.status = QuoteStatus::Rejected { tstamp, discounted };
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))
@@ -163,8 +172,15 @@ impl Quote {
     pub fn accept(&mut self, tstamp: TStamp) -> Result<()> {
         self.check_expire(tstamp);
         match self.status {
-            QuoteStatus::Offered { keyset_id, .. } => {
-                self.status = QuoteStatus::Accepted { keyset_id }
+            QuoteStatus::Offered {
+                keyset_id,
+                discounted,
+                ..
+            } => {
+                self.status = QuoteStatus::Accepted {
+                    keyset_id,
+                    discounted,
+                }
             }
             _ => return Err(Error::QuoteAlreadyResolved(self.id)),
         };

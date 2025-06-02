@@ -74,13 +74,19 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
             expiration_date: ttl,
             discounted,
         },
-        quotes::QuoteStatus::OfferExpired { tstamp } => {
-            web_quotes::StatusReply::OfferExpired { tstamp }
+        quotes::QuoteStatus::OfferExpired { tstamp, discounted } => {
+            web_quotes::StatusReply::OfferExpired { tstamp, discounted }
         }
-        quotes::QuoteStatus::Rejected { tstamp } => web_quotes::StatusReply::Rejected { tstamp },
-        quotes::QuoteStatus::Accepted { keyset_id } => {
-            web_quotes::StatusReply::Accepted { keyset_id }
+        quotes::QuoteStatus::Rejected { tstamp, discounted } => {
+            web_quotes::StatusReply::Rejected { tstamp, discounted }
         }
+        quotes::QuoteStatus::Accepted {
+            keyset_id,
+            discounted,
+        } => web_quotes::StatusReply::Accepted {
+            keyset_id,
+            discounted,
+        },
     }
 }
 

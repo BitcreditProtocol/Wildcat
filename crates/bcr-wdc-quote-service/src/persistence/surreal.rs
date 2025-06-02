@@ -370,6 +370,7 @@ mod tests {
             submitted: TStamp::default(),
             status: quotes::QuoteStatus::Rejected {
                 tstamp: TStamp::default(),
+                discounted: bitcoin::Amount::default(),
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -419,6 +420,7 @@ mod tests {
 
         quote.status = quotes::QuoteStatus::Accepted {
             keyset_id: keys_test::generate_random_keysetid(),
+            discounted: bitcoin::Amount::default(),
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_ok());
