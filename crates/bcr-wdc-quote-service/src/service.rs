@@ -158,7 +158,11 @@ where
             }) => Err(Error::QuoteAlreadyResolved(*id)),
             Some(Quote {
                 id,
-                status: QuoteStatus::OfferExpired { tstamp },
+                status:
+                    QuoteStatus::OfferExpired {
+                        tstamp,
+                        discounted: _,
+                    },
                 ..
             }) => {
                 if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
@@ -174,7 +178,11 @@ where
             }) => Err(Error::QuoteAlreadyResolved(*id)),
             Some(Quote {
                 id,
-                status: QuoteStatus::Rejected { tstamp },
+                status:
+                    QuoteStatus::Rejected {
+                        tstamp,
+                        discounted: _,
+                    },
                 ..
             }) => {
                 if (submitted - tstamp) > Self::USER_DECISION_RETENTION {

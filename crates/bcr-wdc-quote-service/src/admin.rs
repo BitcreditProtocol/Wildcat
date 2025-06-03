@@ -157,31 +157,40 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         quotes::QuoteStatus::Offered {
             keyset_id,
             ttl,
-            discounted: _,
+            discounted,
         } => web_quotes::InfoReply::Offered {
             id: quote.id,
             bill: quote.bill.into(),
+            discounted,
             ttl,
             keyset_id,
         },
-        quotes::QuoteStatus::OfferExpired { tstamp } => web_quotes::InfoReply::OfferExpired {
-            id: quote.id,
-            bill: quote.bill.into(),
-            tstamp,
-        },
+        quotes::QuoteStatus::OfferExpired { tstamp, discounted } => {
+            web_quotes::InfoReply::OfferExpired {
+                id: quote.id,
+                bill: quote.bill.into(),
+                discounted,
+                tstamp,
+            }
+        }
         quotes::QuoteStatus::Denied { tstamp } => web_quotes::InfoReply::Denied {
             id: quote.id,
             bill: quote.bill.into(),
             tstamp,
         },
-        quotes::QuoteStatus::Accepted { keyset_id } => web_quotes::InfoReply::Accepted {
+        quotes::QuoteStatus::Accepted {
+            keyset_id,
+            discounted,
+        } => web_quotes::InfoReply::Accepted {
             id: quote.id,
             bill: quote.bill.into(),
+            discounted,
             keyset_id,
         },
-        quotes::QuoteStatus::Rejected { tstamp } => web_quotes::InfoReply::Rejected {
+        quotes::QuoteStatus::Rejected { tstamp, discounted } => web_quotes::InfoReply::Rejected {
             id: quote.id,
             bill: quote.bill.into(),
+            discounted,
             tstamp,
         },
     }

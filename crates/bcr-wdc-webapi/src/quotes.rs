@@ -66,12 +66,18 @@ pub enum StatusReply {
     },
     OfferExpired {
         tstamp: DateTime<Utc>,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     Accepted {
         keyset_id: cdk02::Id,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     Rejected {
         tstamp: DateTime<Utc>,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
 }
 
@@ -133,11 +139,15 @@ pub enum InfoReply {
         bill: BillInfo,
         ttl: DateTime<Utc>,
         keyset_id: cdk02::Id,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     OfferExpired {
         id: uuid::Uuid,
         bill: BillInfo,
         tstamp: DateTime<Utc>,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     Denied {
         id: uuid::Uuid,
@@ -148,11 +158,15 @@ pub enum InfoReply {
         id: uuid::Uuid,
         bill: BillInfo,
         keyset_id: cdk02::Id,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
     Rejected {
         id: uuid::Uuid,
         bill: BillInfo,
         tstamp: DateTime<Utc>,
+        #[schema(value_type = u64)]
+        discounted: bitcoin::Amount,
     },
 }
 
