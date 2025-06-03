@@ -20,10 +20,10 @@ static_resources:
                         envoy.filters.http.cors:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
                           allow_origin_string_match:
-                          - suffix: ".minibill.tech"
-                          - suffix: "wildcat-dashboard.pages.dev"
-                          - prefix: "http://localhost:"
-                          - prefix: "http://127.0.0.1:"
+                            - suffix: ".minibill.tech"
+                            - suffix: "wildcat-dashboard.pages.dev"
+                            - prefix: "http://localhost:"
+                            - prefix: "http://127.0.0.1:"
                           allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
                           allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Access-Control-Allow-Origin"
                           allow_credentials: true
@@ -35,6 +35,10 @@ static_resources:
                           route:
                             cluster: treasury_service
                             prefix_rewrite: "/v1/balance"
+                        - match: { prefix: "/v1/admin/keysets" }
+                          route:
+                            cluster: key_service
+                            prefix_rewrite: "/v1/keysets"
                         - match: { prefix: "/v1/admin/keys" }
                           route: { cluster: key_service }
                         - match: { prefix: "/v1/admin/eiou" }
