@@ -103,22 +103,45 @@ where
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/keys/activate/",
-    request_body(content = web_keys::ActivateKeysetRequest, content_type = "application/json"),
+    path = "/v1/admin/keys/enable/",
+    request_body(content = web_keys::EnableKeysetRequest, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response"),
         (status = 404, description = "keyset id not found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn activate<QuotesKeysRepo, KeysRepo, SignsRepo>(
+pub async fn enable<QuotesKeysRepo, KeysRepo, SignsRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Json(request): Json<web_keys::ActivateKeysetRequest>,
+    Json(request): Json<web_keys::EnableKeysetRequest>,
 ) -> Result<()>
 where
     QuotesKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
-    tracing::debug!("Received activate request");
-    ctrl.activate(&request.qid).await
+    tracing::debug!("Received enable request");
+    ctrl.enable(&request.qid).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/admin/keys/deactivate/",
+    request_body(content = web_keys::DeactivateKeysetRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = cdk02::Id, content_type = "application/json"),
+        (status = 404, description = "keyset id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn deactivate<QuotesKeysRepo, KeysRepo, SignsRepo>(
+    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
+    Json(request): Json<web_keys::DeactivateKeysetRequest>,
+) -> Result<Json<cdk02::Id>>
+where
+    QuotesKeysRepo: QuoteKeysRepository,
+    KeysRepo: KeysRepository,
+{
+    tracing::debug!("Received deactivate request");
+    let kid = ctrl.deactivate(request.kid).await?;
+    Ok(Json(kid))
 }

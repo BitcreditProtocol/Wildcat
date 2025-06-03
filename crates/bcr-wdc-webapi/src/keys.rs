@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use cashu::{nut00 as cdk00, nut01 as cdk01, Amount};
+use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, Amount};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
@@ -26,8 +26,14 @@ pub struct PreSignRequest {
     pub msg: cdk00::BlindedMessage,
 }
 
-///--------------------------- Activate keyset
+///--------------------------- Enable keyset
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
-pub struct ActivateKeysetRequest {
+pub struct EnableKeysetRequest {
     pub qid: uuid::Uuid,
+}
+
+///--------------------------- Deactivate keyset
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct DeactivateKeysetRequest {
+    pub kid: cdk02::Id,
 }

@@ -130,6 +130,22 @@ impl DB {
         Ok(info)
     }
 
+    async fn update_info(
+        &self,
+        rid: RecordId,
+        info: MintKeySetInfo,
+    ) -> SurrealResult<Option<MintKeySetInfo>> {
+        let entry: Option<KeysDBEntry> = self
+            .db
+            .query("UPDATE $rid SET info = $info")
+            .bind(("rid", rid))
+            .bind(("info", info))
+            .await?
+            .take(0)?;
+        let info = entry.map(|KeysDBEntry { info, .. }| info);
+        Ok(info)
+    }
+
     async fn list_info(&self) -> SurrealResult<Vec<MintKeySetInfo>> {
         let infos: Vec<MintKeySetInfo> = self
             .db
@@ -210,6 +226,16 @@ impl KeysRepository for DBKeys {
             .info(rid)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))
+    }
+    async fn update_info(&self, kid: &cdk02::Id, info: MintKeySetInfo) -> Result<()> {
+        let rid = RecordId::from_table_key(self.0.table.clone(), kid.to_string());
+        let opt_info = self
+            .0
+            .update_info(rid, info)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        opt_info.ok_or(Error::UnknownKeyset(*kid))?;
+        Ok(())
     }
     async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
         self.0
@@ -543,5 +569,41 @@ mod tests {
         let dbk = DBKeys(db);
         let result = dbk.mark_as_minted(&kid).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_info() {
+        let db = init_mem_db().await;
+        let (mut info, keyset) = keys_test::generate_random_keyset();
+        let pk = keys_test::publics()[0];
+        let mint_condition = MintCondition {
+            target: Amount::from(199),
+            pub_key: pk,
+            is_minted: true,
+        };
+        let kid = info.id;
+        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_from((info.clone(), keyset), mint_condition);
+        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+
+        info.active = false;
+
+        let dbk = DBKeys(db);
+        dbk.update_info(&kid, info).await.unwrap();
+        let updated_info = dbk.info(&kid).await.unwrap().unwrap();
+        assert!(!updated_info.active);
+    }
+
+    #[tokio::test]
+    async fn update_info_kid_not_present() {
+        let db = init_mem_db().await;
+        let (mut info, _) = keys_test::generate_random_keyset();
+        let kid = info.id;
+
+        info.active = false;
+
+        let dbk = DBKeys(db);
+        let res = dbk.update_info(&kid, info).await;
+        assert!(res.is_err());
     }
 }

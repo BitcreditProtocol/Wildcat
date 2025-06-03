@@ -28,6 +28,13 @@ impl InMemoryKeyMap {
         Ok(a)
     }
 
+    pub fn update_info(&self, kid: &cdk02::Id, new_info: cdk_mint::MintKeySetInfo) -> Result<()> {
+        let mut locked = self.keys.write().unwrap();
+        let ((info, _), _) = locked.get_mut(kid).ok_or(Error::UnknownKeyset(*kid))?;
+        *info = new_info;
+        Ok(())
+    }
+
     pub fn condition(&self, kid: &cdk02::Id) -> Result<Option<MintCondition>> {
         let a = self
             .keys
@@ -101,6 +108,9 @@ impl InMemoryKeyMap {
 impl KeysRepository for InMemoryKeyMap {
     async fn info(&self, kid: &cdk02::Id) -> Result<Option<cdk_mint::MintKeySetInfo>> {
         self.info(kid)
+    }
+    async fn update_info(&self, kid: &cdk02::Id, info: cdk_mint::MintKeySetInfo) -> Result<()> {
+        self.update_info(kid, info)
     }
     async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
         self.list_info()

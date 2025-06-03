@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_wdc_webapi::keys::ActivateKeysetRequest;
+use bcr_wdc_webapi::keys::EnableKeysetRequest;
 use bcr_wdc_webapi::quotes::EnquireReply;
 use bcr_wdc_webapi::quotes::{
     SignedEnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
@@ -214,7 +214,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     .unwrap();
 
     // Activate keyset
-    let activate_request_payload = ActivateKeysetRequest { qid: quote_id };
+    let activate_request_payload = EnableKeysetRequest { qid: quote_id };
     info!("Activating keyset for quote_id: {}", quote_id);
     admin_service.keys_activate(activate_request_payload).await;
 

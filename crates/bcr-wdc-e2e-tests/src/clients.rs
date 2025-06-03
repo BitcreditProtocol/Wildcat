@@ -2,7 +2,7 @@
 use std::marker::PhantomData;
 // ----- extra library imports
 use anyhow::Result;
-use bcr_wdc_webapi::keys::ActivateKeysetRequest;
+use bcr_wdc_webapi::keys::EnableKeysetRequest;
 use bcr_wdc_webapi::quotes::{
     EnquireReply, ListReplyLight, SignedEnquireRequest, StatusReply, UpdateQuoteRequest,
     UpdateQuoteResponse,
@@ -171,9 +171,9 @@ impl Service<UserService> {
 }
 
 impl Service<AdminService> {
-    /// POST v1/admin/keys/activate
-    pub async fn keys_activate(&self, req: ActivateKeysetRequest) {
-        let url = self.url("v1/admin/keys/activate");
+    /// POST v1/admin/keys/enable
+    pub async fn keys_activate(&self, req: EnableKeysetRequest) {
+        let url = self.url("v1/admin/keys/enable");
         self.client.post_(url, &req).await.unwrap()
     }
     /// POST v1/admin/credit/quote/{quote_id}
