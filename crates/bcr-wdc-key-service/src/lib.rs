@@ -90,7 +90,8 @@ where
         .route("/v1/admin/keys/pre_sign", post(admin::pre_sign))
         .route("/v1/admin/keys/generate", post(admin::generate))
         .route("/v1/admin/keys/verify", post(admin::verify_proof))
-        .route("/v1/admin/keys/activate", post(admin::activate));
+        .route("/v1/admin/keys/deactivate", post(admin::deactivate))
+        .route("/v1/admin/keys/enable", post(admin::enable));
 
     Router::new()
         .merge(web)
@@ -102,7 +103,8 @@ where
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
-        bcr_wdc_webapi::keys::ActivateKeysetRequest,
+        bcr_wdc_webapi::keys::DeactivateKeysetRequest,
+        bcr_wdc_webapi::keys::EnableKeysetRequest,
         bcr_wdc_webapi::keys::GenerateKeysetRequest,
         bcr_wdc_webapi::keys::KeysetMintCondition,
         bcr_wdc_webapi::keys::PreSignRequest,
@@ -120,7 +122,8 @@ where
         cdk09::RestoreResponse,
     ),),
     paths(
-        admin::activate,
+        admin::deactivate,
+        admin::enable,
         admin::generate,
         admin::pre_sign,
         admin::sign_blind,

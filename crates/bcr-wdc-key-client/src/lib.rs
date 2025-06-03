@@ -157,12 +157,12 @@ impl KeyClient {
         Ok(kid)
     }
 
-    pub async fn activate_keyset(&self, qid: uuid::Uuid) -> Result<()> {
+    pub async fn enable_keyset(&self, qid: uuid::Uuid) -> Result<()> {
         let url = self
             .base
-            .join("/v1/admin/keys/activate")
-            .expect("activate relative path");
-        let msg = web_keys::ActivateKeysetRequest { qid };
+            .join("/v1/admin/keys/enable")
+            .expect("enable relative path");
+        let msg = web_keys::EnableKeysetRequest { qid };
         let res = self.cl.post(url).json(&msg).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceFromIdNotFound(qid));
@@ -213,6 +213,20 @@ impl KeyClient {
             .zip(signatures.into_iter())
             .collect::<Vec<_>>();
         Ok(ret_val)
+    }
+
+    pub async fn deactivate_keyset(&self, kid: cdk02::Id) -> Result<cdk02::Id> {
+        let url = self
+            .base
+            .join("/v1/admin/keys/deactivate")
+            .expect("deactivate relative path");
+        let msg = web_keys::DeactivateKeysetRequest { kid };
+        let res = self.cl.post(url).json(&msg).send().await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(kid));
+        }
+        res.json::<cdk02::Id>().await?;
+        Ok(kid)
     }
 }
 

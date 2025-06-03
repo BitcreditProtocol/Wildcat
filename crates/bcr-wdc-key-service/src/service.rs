@@ -25,6 +25,7 @@ pub struct MintCondition {
 pub trait KeysRepository {
     async fn info(&self, id: &cdk02::Id) -> Result<Option<MintKeySetInfo>>;
     async fn list_info(&self) -> Result<Vec<MintKeySetInfo>>;
+    async fn update_info(&self, kid: &cdk02::Id, info: MintKeySetInfo) -> Result<()>;
     async fn keyset(&self, id: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>>;
     async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>>;
     async fn condition(&self, id: &cdk02::Id) -> Result<Option<MintCondition>>;
@@ -103,6 +104,17 @@ where
             .await?
             .ok_or(Error::UnknownKeyset(kid))?;
         Ok(condition.pub_key)
+    }
+
+    pub async fn deactivate(&self, kid: cdk02::Id) -> Result<cdk02::Id> {
+        let mut info = self
+            .keys
+            .info(&kid)
+            .await?
+            .ok_or(Error::UnknownKeyset(kid))?;
+        info.active = false;
+        self.keys.update_info(&kid, info.clone()).await?;
+        Ok(info.id)
     }
 }
 
@@ -238,7 +250,7 @@ where
     QuoteKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
-    pub async fn activate(&self, qid: &uuid::Uuid) -> Result<()> {
+    pub async fn enable(&self, qid: &uuid::Uuid) -> Result<()> {
         let mut entry = self
             .quote_keys
             .entry(qid)
@@ -294,7 +306,7 @@ mod tests {
             .await
             .unwrap();
 
-        service.activate(&qid).await.unwrap();
+        service.enable(&qid).await.unwrap();
 
         (service, kid, qid)
     }
