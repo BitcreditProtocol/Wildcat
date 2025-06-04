@@ -113,6 +113,46 @@ pub async fn get_mint_keyset(
 }
 
 #[utoipa::path(
+    get,
+    path = "/v1/keysets/{kid}",
+    params(
+        ("kid" = cdk02::Id, Path, description = "The keyset id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "Keyset not found"),
+    )
+)]
+pub async fn get_keyset_info(
+    State(ctrl): State<AppController>,
+    Path(kid): Path<cdk02::Id>,
+) -> Result<Json<cdk02::KeySetInfo>> {
+    tracing::debug!("Requested /v1/keysets/{}", kid);
+
+    if let Ok(info) = ctrl.keys_client.keyset_info(kid).await {
+        Ok(Json(info))
+    } else {
+        let keysets = ctrl.cdk_client.get_mint_keysets().await?.keysets;
+
+        for active_keyset in keysets {
+            if active_keyset.id == kid {
+                return Ok(Json(active_keyset));
+            }
+        }
+        // if there are no keys, then it doesn't exist, otherwise its inactive
+        let keys = ctrl.cdk_client.get_mint_keyset(kid).await?;
+        Ok(Json(cdk02::KeySetInfo {
+            id: kid,
+            active: false,
+            unit: keys.unit,
+            // Fee doesn't matter as we cannot swap into it
+            // we can only swap into a different active keyset
+            input_fee_ppk: 0,
+        }))
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/v1/mint/quote/bolt11",
     responses (
@@ -274,24 +314,25 @@ pub async fn post_check_state(
     State(ctrl): State<AppController>,
     Json(request): Json<cdk07::CheckStateRequest>,
 ) -> Result<Json<cdk07::CheckStateResponse>> {
-    tracing::info!("Requested /v1/checkstate");
+    tracing::debug!("Requested /v1/checkstate");
 
     let n = request.ys.len();
     let credit_states = ctrl.swap_client.check_state(request.ys.clone()).await?;
-    assert_eq!(credit_states.len(), n);
     let debit_states = ctrl.cdk_client.post_check_state(request).await?.states;
     assert_eq!(debit_states.len(), n);
-
-    tracing::info!("Debit states: {:?}", debit_states);
-    tracing::info!("Credit states: {:?}", credit_states);
+    assert_eq!(credit_states.len(), n);
+    if debit_states.len() != n || credit_states.len() != n {
+        return Err(Error::NotYet(
+            "Unhandled credit and debit length mismatch".into(),
+        ));
+    }
 
     let mut merged = Vec::new();
     for (debit, credit) in debit_states.iter().zip(credit_states.iter()) {
         if debit.state != cashu::nut07::State::Unspent
             && credit.state != cashu::nut07::State::Unspent
         {
-            // This should not happen
-            panic!("Coin spent both on debit and credit");
+            return Err(Error::NotYet("Unhandled credit and debit are spent".into()));
         }
         if debit.state != cashu::nut07::State::Unspent {
             merged.push(debit.clone());
