@@ -1,9 +1,11 @@
+use std::env::consts::OS;
+
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_wdc_key_client::KeyClient;
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut04 as cdk04, nut05 as cdk05,
-    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09,
+    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09, CheckStateRequest, ProofState,
 };
 use cdk::wallet::{HttpClient as CDKClient, MintConnector};
 use futures::future::JoinAll;
@@ -271,13 +273,35 @@ pub async fn post_swap(
     )
 )]
 pub async fn post_check_state(
-    State(ctrl): State<CDKClient>,
+    State(ctrl): State<AppController>,
     Json(request): Json<cdk07::CheckStateRequest>,
 ) -> Result<Json<cdk07::CheckStateResponse>> {
-    tracing::debug!("Requested /v1/checkstate");
+    tracing::info!("Requested /v1/checkstate");
 
-    let response = ctrl.post_check_state(request).await?;
-    Ok(Json(response))
+    let n = request.ys.len();
+    let credit_states = ctrl.swap_client.check_state(request.ys.clone()).await?;
+    assert_eq!(credit_states.len(), n);
+    let debit_states = ctrl.cdk_client.post_check_state(request).await?.states;
+    assert_eq!(debit_states.len(), n);
+
+    tracing::info!("Debit states: {:?}", debit_states);
+    tracing::info!("Credit states: {:?}", credit_states);
+
+    let mut merged = Vec::new();
+    for (debit, credit) in debit_states.iter().zip(credit_states.iter()) {
+        if debit.state != cashu::nut07::State::Unspent
+            && credit.state != cashu::nut07::State::Unspent
+        {
+            // This should not happen
+            panic!("Coin spent both on debit and credit");
+        }
+        if debit.state != cashu::nut07::State::Unspent {
+            merged.push(debit.clone());
+        } else {
+            merged.push(credit.clone());
+        }
+    }
+    Ok(Json(cdk07::CheckStateResponse { states: merged }))
 }
 
 #[utoipa::path(
