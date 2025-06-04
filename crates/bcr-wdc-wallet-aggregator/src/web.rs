@@ -1,11 +1,9 @@
-use std::env::consts::OS;
-
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_wdc_key_client::KeyClient;
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut04 as cdk04, nut05 as cdk05,
-    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09, CheckStateRequest, ProofState,
+    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09,
 };
 use cdk::wallet::{HttpClient as CDKClient, MintConnector};
 use futures::future::JoinAll;
