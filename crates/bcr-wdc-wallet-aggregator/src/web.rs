@@ -319,8 +319,6 @@ pub async fn post_check_state(
     let n = request.ys.len();
     let credit_states = ctrl.swap_client.check_state(request.ys.clone()).await?;
     let debit_states = ctrl.cdk_client.post_check_state(request).await?.states;
-    assert_eq!(debit_states.len(), n);
-    assert_eq!(credit_states.len(), n);
     if debit_states.len() != n || credit_states.len() != n {
         return Err(Error::NotYet(
             "Unhandled credit and debit length mismatch".into(),
