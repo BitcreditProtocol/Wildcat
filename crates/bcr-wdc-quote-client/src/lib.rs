@@ -73,6 +73,53 @@ impl QuoteClient {
         Ok(reply)
     }
 
+    pub async fn list(&self, params: web_quotes::ListParam) -> Result<web_quotes::ListReplyLight> {
+        let url = self
+            .base
+            .join("/v1/admin/credit/quote")
+            .expect("list relative path");
+        let mut request = self.cl.get(url);
+        let web_quotes::ListParam {
+            bill_maturity_date_from,
+            bill_maturity_date_to,
+            status,
+            bill_id,
+            bill_drawee_id,
+            bill_drawer_id,
+            bill_payer_id,
+            bill_holder_id,
+            ..
+        } = params;
+        if let Some(date) = bill_maturity_date_from {
+            request = request.query(&[("bill_maturity_date_from", date.to_string())]);
+        }
+        if let Some(date) = bill_maturity_date_to {
+            request = request.query(&[("bill_maturity_date_to", date.to_string())]);
+        }
+        if let Some(status) = status {
+            request = request.query(&[("status", status.to_string())]);
+        }
+        if let Some(bill_id) = bill_id {
+            request = request.query(&[("bill_id", bill_id)]);
+        }
+        if let Some(bill_drawee_id) = bill_drawee_id {
+            request = request.query(&[("bill_drawee_id", bill_drawee_id)]);
+        }
+        if let Some(bill_drawer_id) = bill_drawer_id {
+            request = request.query(&[("bill_drawer_id", bill_drawer_id)]);
+        }
+        if let Some(bill_payer_id) = bill_payer_id {
+            request = request.query(&[("bill_payer_id", bill_payer_id)]);
+        }
+        if let Some(bill_holder_id) = bill_holder_id {
+            request = request.query(&[("bill_holder_id", bill_holder_id)]);
+        }
+        let response = request.send().await?;
+
+        let reply = response.json::<web_quotes::ListReplyLight>().await?;
+        Ok(reply)
+    }
+
     pub async fn resolve(&self, qid: Uuid, action: web_quotes::ResolveOffer) -> Result<()> {
         let url = self
             .base

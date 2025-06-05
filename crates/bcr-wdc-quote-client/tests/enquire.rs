@@ -5,6 +5,8 @@ use bcr_wdc_utils::keys::test_utils::generate_random_keypair;
 use bcr_wdc_webapi::{bill as web_bill, quotes as web_quotes};
 // ----- local imports
 
+// ----- end imports
+
 #[tokio::test]
 async fn enquire() {
     let server = bcr_wdc_quote_service::test_utils::build_test_server();
