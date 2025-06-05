@@ -37,6 +37,7 @@ fn main() -> std::io::Result<()> {
         payee: BillParticipant::Ident(payee),
         endorsees,
         sum: amount.into(),
+        file_urls: vec![],
     };
 
     let request = EnquireRequest {

@@ -331,6 +331,7 @@ mod tests {
                 current_holder: BillParticipant::Ident(BillIdentParticipant::default()),
                 sum: bitcoin::Amount::default(),
                 maturity_date: TStamp::default(),
+                file_urls: Vec::default(),
             }
         }
     }

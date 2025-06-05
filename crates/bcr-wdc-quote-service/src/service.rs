@@ -449,6 +449,7 @@ mod tests {
             endorsees: Default::default(),
             sum: Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
+            file_urls: Vec::default(),
         }
     }
 
