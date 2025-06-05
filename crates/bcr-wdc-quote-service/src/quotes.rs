@@ -20,6 +20,7 @@ pub struct BillInfo {
     pub current_holder: BillParticipant,
     pub sum: Amount,
     pub maturity_date: TStamp,
+    pub file_urls: Vec<url::Url>,
 }
 impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
     type Error = Error;
@@ -35,6 +36,7 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
             current_holder: current_holder.into(),
             sum: Amount::from_sat(bill.sum),
             maturity_date,
+            file_urls: bill.file_urls,
         })
     }
 }
@@ -49,6 +51,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
             endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
             sum: bill.sum.to_sat(),
             maturity_date,
+            file_urls: bill.file_urls,
         }
     }
 }

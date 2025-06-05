@@ -32,6 +32,7 @@ async fn enquire() {
         maturity_date: String::from("2023-12-01T00:00:00.000Z"),
         sum: 1000,
         endorsees: Vec::new(),
+        file_urls: vec![],
     };
     let mint_pubkey = bcr_wdc_utils::keys::test_utils::publics()[0];
     let _result = client

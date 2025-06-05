@@ -21,6 +21,7 @@ itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 thiserror.workspace = true
+url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

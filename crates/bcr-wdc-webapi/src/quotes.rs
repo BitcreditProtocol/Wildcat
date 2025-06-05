@@ -21,6 +21,12 @@ pub struct BillInfo {
     pub endorsees: Vec<BillParticipant>,
     pub sum: u64, // in satoshis, converted to bitcoin::Amount in the service
     pub maturity_date: String,
+    #[borsh(
+        serialize_with = "bcr_wdc_utils::borsh::serialize_vec_url",
+        deserialize_with = "bcr_wdc_utils::borsh::deserialize_vec_url"
+    )]
+    #[schema(value_type = Vec<String>)]
+    pub file_urls: Vec<url::Url>, // urls of files, encrypted and uploaded for the mint to the mint's relay
 }
 
 ///--------------------------- Enquire mint quote

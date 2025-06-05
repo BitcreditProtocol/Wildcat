@@ -36,6 +36,7 @@ pub fn random_ebill_request() -> (
         payee: BillParticipant::Ident(payee),
         endorsees,
         sum: amount.into(),
+        file_urls: vec![],
     };
 
     let request = bcr_wdc_webapi::quotes::EnquireRequest {

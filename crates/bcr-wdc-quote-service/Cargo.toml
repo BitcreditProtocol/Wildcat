@@ -32,6 +32,7 @@ tokio = {workspace = true, features = ["signal"]}
 tracing = {workspace = true }
 tracing-log = {workspace = true}
 tracing-subscriber = {workspace = true}
+url = {workspace = true, features = ["serde"]}
 utoipa = {workspace = true, features = ["axum_extras", "yaml"]}
 utoipa-swagger-ui = {workspace = true, features = ["axum"]}
 uuid.workspace = true
