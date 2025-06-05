@@ -1,15 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_utils::keys::test_utils as keys_test;
-use bcr_wdc_webapi::{
-    bill::BillParticipant,
-    quotes::{BillInfo, EnquireRequest},
-};
+use bcr_wdc_utils::keys as keys_utils;
+use bcr_wdc_webapi::test_utils::generate_random_bill_enquire_request;
 use bdk_wallet::serde_json;
-use cashu::Amount;
-use rand::Rng;
 // ----- local imports
-use bcr_wdc_webapi::test_utils::{random_bill_id, random_date, random_identity_public_data};
 // ----- end imports
 
 fn main() -> std::io::Result<()> {

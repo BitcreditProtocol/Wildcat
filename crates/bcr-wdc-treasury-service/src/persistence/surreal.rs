@@ -9,11 +9,12 @@ use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::credit::{PremintSignatures, Repository};
+use crate::credit::{self, PremintSignatures};
+use crate::debit;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct ConnectionConfig {
+pub struct CreditConnectionConfig {
     pub connection: String,
     pub namespace: String,
     pub database: String,
@@ -124,7 +125,7 @@ struct DBEntryBalance {
 }
 
 #[derive(Debug, Clone)]
-pub struct DBRepository {
+pub struct CreditRepository {
     db: Surreal<Any>,
     secrets: String,
     counters: String,
@@ -132,8 +133,8 @@ pub struct DBRepository {
     proofs: String,
 }
 
-impl DBRepository {
-    pub async fn new(config: ConnectionConfig) -> SurrealResult<Self> {
+impl CreditRepository {
+    pub async fn new(config: CreditConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(config.connection).await?;
         db_connection.use_ns(config.namespace).await?;
@@ -224,7 +225,7 @@ impl DBRepository {
 }
 
 #[async_trait]
-impl Repository for DBRepository {
+impl credit::Repository for CreditRepository {
     async fn next_counter(&self, kid: cdk02::Id) -> Result<u32> {
         let entry = self.next_counter(kid).await.map_err(Error::DB)?;
         Ok(entry.counter)
@@ -304,18 +305,77 @@ impl Repository for DBRepository {
     }
 }
 
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DebitConnectionConfig {
+    pub connection: String,
+    pub namespace: String,
+    pub database: String,
+    pub table: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DebitRepository {
+    db: Surreal<Any>,
+    table: String,
+}
+impl DebitRepository {
+    pub async fn new(config: DebitConnectionConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self {
+            db: db_connection,
+            table: config.table,
+        })
+    }
+}
+
+#[async_trait]
+impl debit::Repository for DebitRepository {
+    async fn store_quote(&self, quote: debit::MintQuote) -> Result<()> {
+        let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
+        let _: Option<String> = self
+            .db
+            .insert(rid)
+            .content(quote)
+            .await
+            .map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn delete_quote(&self, quote_id: String) -> Result<()> {
+        let rid = RecordId::from_table_key(&self.table, quote_id);
+        let _: Option<String> = self.db.delete(rid).await.map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn list_quotes(&self) -> Result<Vec<debit::MintQuote>> {
+        let statement = String::from("SELECT * FROM type::table($table)");
+        let entries: Vec<debit::MintQuote> = self
+            .db
+            .query(statement)
+            .bind(("table", self.table.clone()))
+            .await
+            .map_err(Error::DB)?
+            .take(0)
+            .map_err(Error::DB)?;
+        Ok(entries)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
 
-    async fn init_mem_db() -> DBRepository {
+    async fn init_mem_db() -> CreditRepository {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBRepository {
+        CreditRepository {
             db: sdb,
             secrets: "secrets".to_string(),
             counters: "counters".to_string(),

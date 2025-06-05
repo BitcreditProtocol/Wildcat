@@ -12,48 +12,89 @@ use crate::error::{Error, Result};
 
 // ----- end imports
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Wallet {
+pub trait Wallet: Clone + Send {
     async fn mint_quote(
         &self,
         amount: Amount,
         signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote>;
-
+    async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
     async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
-
     async fn swap_to_messages(
         &self,
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>>;
-
     async fn balance(&self) -> Result<Amount>;
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait ProofClient {
+pub trait WildcatService: Clone + Send {
     async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
+    async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MintQuote {
+    pub qid: String,
+    pub ebill_id: String,
+}
+
+#[async_trait]
+pub trait Repository: Clone + Send {
+    async fn store_quote(&self, quote: MintQuote) -> Result<()>;
+    async fn delete_quote(&self, qid: String) -> Result<()>;
+    async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
 }
 
 #[derive(Clone)]
-pub struct Service<Wlt, ProofCl> {
+pub struct Service<Wlt, WdcSrvc, Repo> {
     pub wallet: Wlt,
-    pub proof: ProofCl,
+    pub wdc: WdcSrvc,
     pub signing_keys: bitcoin::secp256k1::Keypair,
+    pub repo: Repo,
+    pub monitor_interval: tokio::time::Duration,
 }
 
-impl<Wlt, ProofCl> Service<Wlt, ProofCl>
+impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
 where
     Wlt: Wallet,
 {
+    pub async fn balance(&self) -> Result<Amount> {
+        self.wallet.balance().await
+    }
+}
+
+impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
+where
+    Wlt: Wallet + 'static,
+    WdcSrvc: WildcatService + 'static,
+    Repo: Repository + 'static,
+{
+    pub async fn init_monitors_for_past_ebills(&self) -> Result<()> {
+        let quotes = self.repo.list_quotes().await?;
+        for quote in quotes {
+            let ebill_id = quote.ebill_id.clone();
+            tokio::spawn(monitor_quote(
+                quote.qid,
+                ebill_id,
+                self.wallet.clone(),
+                self.repo.clone(),
+                self.wdc.clone(),
+                self.monitor_interval,
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn mint_from_ebill(
         &self,
         ebill_id: String,
         amount: Amount,
     ) -> Result<cdk::wallet::MintQuote> {
-        let request = web::signatures::RequestToMintFromEBillDesc { ebill_id };
+        let request = web::signatures::RequestToMintFromEBillDesc {
+            ebill_id: ebill_id.clone(),
+        };
         let signature =
             bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
                 .map_err(Error::SchnorrBorshMsg)?;
@@ -61,18 +102,29 @@ where
             data: request,
             signature,
         };
-        self.wallet.mint_quote(amount, signed_request).await
-    }
-
-    pub async fn balance(&self) -> Result<Amount> {
-        self.wallet.balance().await
+        let quote = self.wallet.mint_quote(amount, signed_request).await?;
+        let mint_quote = MintQuote {
+            qid: quote.id.clone(),
+            ebill_id: ebill_id.clone(),
+        };
+        self.repo.store_quote(mint_quote).await?;
+        let ebill_cloned = ebill_id.clone();
+        tokio::spawn(monitor_quote(
+            quote.id.clone(),
+            ebill_cloned,
+            self.wallet.clone(),
+            self.repo.clone(),
+            self.wdc.clone(),
+            self.monitor_interval,
+        ));
+        Ok(quote)
     }
 }
 
-impl<Wlt, ProofCl> Service<Wlt, ProofCl>
+impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
 where
     Wlt: Wallet,
-    ProofCl: ProofClient,
+    WdcSrvc: WildcatService,
 {
     pub async fn redeem(
         &self,
@@ -102,7 +154,7 @@ where
             }
         }
         // 2. burning crsat, implicitly checking proofs
-        self.proof.burn(inputs).await?;
+        self.wdc.burn(inputs).await?;
 
         // attempting a swap for 3 times with 1 sec pause
         let mut retries = 1_usize;
@@ -117,8 +169,94 @@ where
     }
 }
 
+async fn monitor_quote(
+    qid: String,
+    ebill_id: String,
+    wlt: impl Wallet,
+    repo: impl Repository,
+    wdc: impl WildcatService,
+    interval: tokio::time::Duration,
+) {
+    loop {
+        tokio::time::sleep(interval).await;
+        let result = wlt.mint(qid.clone()).await;
+        let Ok(status) = result else {
+            tracing::warn!("Failed to mint quote {qid}: {result:?}");
+            continue;
+        };
+        if !matches!(status, cashu::MintQuoteState::Paid) {
+            tracing::info!("Quote {qid} is not paid yet, retrying...");
+            continue;
+        }
+        let result = wdc.deactivate_keyset_for_ebill(&ebill_id).await;
+        if let Err(e) = result {
+            tracing::warn!(
+                "Failed to deactivate keyset for ebill {ebill_id} after minting quote {qid}: {e}"
+            );
+            continue;
+        }
+        let result = repo.delete_quote(qid.clone()).await;
+        match result {
+            Ok(_) => {
+                tracing::info!("Successfully deactivated keyset for ebill {ebill_id} after minting quote {qid}");
+                break;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to delete quote {qid} after deactivating keyset for ebill {ebill_id}: {e}"
+                );
+            }
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    mockall::mock! {
+        Wallet {}
+        impl Clone for Wallet {
+            fn clone(&self) -> Self;
+        }
+        #[async_trait]
+        impl super::Wallet for Wallet {
+            async fn mint_quote(
+                &self,
+                amount: Amount,
+                signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
+            ) -> Result<cdk::wallet::MintQuote>;
+            async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
+            async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
+            async fn swap_to_messages(
+                &self,
+                outputs: &[cdk00::BlindedMessage],
+            ) -> Result<Vec<cdk00::BlindSignature>>;
+            async fn balance(&self) -> Result<Amount>;
+        }
+    }
+    mockall::mock! {
+        WildcatService {}
+        impl Clone for WildcatService {
+            fn clone(&self) -> Self;
+        }
+        #[async_trait]
+        impl super::WildcatService for WildcatService {
+            async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
+            async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+        }
+    }
+    mockall::mock! {
+        Repository {}
+        impl Clone for Repository {
+            fn clone(&self) -> Self;
+        }
+        #[async_trait]
+        impl super::Repository for Repository {
+            async fn store_quote(&self, quote: MintQuote) -> Result<()>;
+            async fn delete_quote(&self, qid: String) -> Result<()>;
+            async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
+        }
+    }
+
     use super::*;
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
@@ -133,7 +271,8 @@ mod tests {
     async fn mint_from_ebill() {
         let amount = Amount::from(1000_u64);
         let ebill_id = String::from("ebill_id");
-        let proof = MockProofClient::new();
+        let mut wdc = MockWildcatService::new();
+        let mut repo = MockRepository::new();
         let mut wallet = MockWallet::new();
         let ebill_id_clone = ebill_id.clone();
         let signed_request_check = predicate::function(
@@ -152,15 +291,34 @@ mod tests {
             expiry: Default::default(),
             secret_key: None,
         };
+        let qid_cloned = mint_quote.id.clone();
+        let ebill_cloned = ebill_id.clone();
         wallet
             .expect_mint_quote()
             .with(eq(amount), signed_request_check)
             .returning(move |_, _| Ok(mint_quote.clone()));
+        let wallet_cloned = MockWallet::new();
+        wallet.expect_clone().return_once(move || wallet_cloned);
+
+        repo.expect_store_quote()
+            .with(eq(MintQuote {
+                qid: qid_cloned,
+                ebill_id: ebill_cloned,
+            }))
+            .returning(|_| Ok(()));
+        let repo_cloned = MockRepository::new();
+        repo.expect_clone().return_once(move || repo_cloned);
+
+        let wdc_cloned = MockWildcatService::new();
+        wdc.expect_clone().return_once(move || wdc_cloned);
+
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
         let quote = service.mint_from_ebill(ebill_id, amount).await.unwrap();
         assert_eq!(quote.id, "mint_quote_id");
@@ -168,14 +326,17 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_no_inputs() {
-        let proof = MockProofClient::new();
+        let wdc = MockWildcatService::new();
         let wallet = MockWallet::new();
+        let repo = MockRepository::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
 
         let (_, keyset) = generate_keyset();
@@ -189,14 +350,17 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_no_outputs() {
-        let proof = MockProofClient::new();
+        let wdc = MockWildcatService::new();
         let wallet = MockWallet::new();
+        let repo = MockRepository::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
 
         let (_, keyset) = generate_keyset();
@@ -207,14 +371,17 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_unmatched_amounts() {
-        let proof = MockProofClient::new();
+        let wdc = MockWildcatService::new();
         let wallet = MockWallet::new();
+        let repo = MockRepository::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
 
         let (_, keyset) = generate_keyset();
@@ -229,7 +396,8 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_inactive_keyset() {
-        let proof = MockProofClient::new();
+        let wdc = MockWildcatService::new();
+        let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
         wallet.expect_get_keysets_info().returning(|kids| {
             let mut infos = Vec::new();
@@ -248,7 +416,9 @@ mod tests {
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
 
         let (_, keyset) = generate_keyset();
@@ -263,7 +433,8 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_unknow_keyset() {
-        let proof = MockProofClient::new();
+        let wdc = MockWildcatService::new();
+        let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
         wallet
             .expect_get_keysets_info()
@@ -273,7 +444,9 @@ mod tests {
         let service = Service {
             wallet,
             signing_keys,
-            proof,
+            wdc,
+            repo,
+            monitor_interval: tokio::time::Duration::from_secs(5),
         };
 
         let (_, keyset) = generate_keyset();
