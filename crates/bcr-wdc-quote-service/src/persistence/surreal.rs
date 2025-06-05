@@ -134,6 +134,7 @@ impl DBQuotes {
         );
         let status = filters.status;
         add_filter_statement!(statement, first, status, "status.status == $status");
+        add_filter_statement!(statement, first, filters.bill_id, "bill.id == $bill_id");
         add_filter_statement!(
             statement,
             first,

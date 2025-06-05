@@ -103,6 +103,7 @@ impl Repository for QuotesIDMap {
                     bill_maturity_date_from,
                     bill_maturity_date_to,
                     status,
+                    bill_id,
                     bill_drawee_id,
                     bill_drawer_id,
                     bill_payer_id,
@@ -120,6 +121,11 @@ impl Repository for QuotesIDMap {
                 }
                 if let Some(status) = status {
                     if quote.status.discriminant() != *status {
+                        return false;
+                    }
+                }
+                if let Some(bill_id) = bill_id {
+                    if quote.bill.id != *bill_id {
                         return false;
                     }
                 }

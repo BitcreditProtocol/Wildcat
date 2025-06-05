@@ -93,6 +93,7 @@ pub struct ListParam {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
     pub status: Option<StatusReplyDiscriminants>,
+    pub bill_id: Option<String>,
     pub bill_drawee_id: Option<String>,
     pub bill_drawer_id: Option<String>,
     pub bill_payer_id: Option<String>,
