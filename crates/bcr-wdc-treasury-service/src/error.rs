@@ -14,42 +14,48 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     // external errors wrappers
     #[error("cashu::nut13 error {0}")]
-    CDK13(CDK13Error),
+    CDK13(#[from] CDK13Error),
     #[error("CDK Wallet error {0}")]
-    CDKWallet(cdk::Error),
+    CDKWallet(#[from] cdk::Error),
     #[error("DB error {0}")]
-    DB(SurrealError),
+    DB(#[from] SurrealError),
     #[error("Secp256k1 error {0}")]
-    Secp256k1(bitcoin::secp256k1::Error),
+    Secp256k1(#[from] bitcoin::secp256k1::Error),
     #[error("Serde_json error {0}")]
-    SerdeJson(serde_json::Error),
+    SerdeJson(#[from] serde_json::Error),
     #[error("schnorr borsh message {0}")]
-    SchnorrBorshMsg(bcr_wdc_utils::keys::SchnorrBorshMsgError),
-    #[error("Proof client error {0}")]
-    ProofCl(bcr_wdc_swap_client::Error),
+    SchnorrBorshMsg(#[from] bcr_wdc_utils::keys::SchnorrBorshMsgError),
+    #[error("keys client {0}")]
+    KeyClient(#[from] bcr_wdc_key_client::Error),
+    #[error("Swap client error {0}")]
+    SwapClient(#[from] bcr_wdc_swap_client::Error),
+    #[error("Quote client error {0}")]
+    QuoteClient(#[from] bcr_wdc_quote_client::Error),
+
     #[error("invalid inputs {0}")]
     InvalidInput(signatures_utils::ChecksError),
     #[error("invalid outputs {0}")]
     InvalidOutput(signatures_utils::ChecksError),
-    //debit errors
     #[error("inactive keyset {0}")]
     InactiveKeyset(cdk02::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
     UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),
-    // credit errors
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
     #[error("request id not found {0}")]
     RequestIDNotFound(Uuid),
-    #[error("keys client {0}")]
-    KeyClient(bcr_wdc_key_client::Error),
+    #[error("ebill id not found {0}")]
+    EBillNotFound(String),
 }
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::EBillNotFound(id) => {
+                (StatusCode::NOT_FOUND, format!("EBill ID not found: {id}"))
+            }
             Error::KeyClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::RequestIDNotFound(request_id) => (
@@ -68,7 +74,8 @@ impl axum::response::IntoResponse for Error {
 
             Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
-            Error::ProofCl(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::SwapClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

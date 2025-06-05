@@ -63,6 +63,19 @@ impl Wallet for CDKWallet {
             .map_err(Error::CDKWallet)
     }
 
+    async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState> {
+        let result = self
+            .wlt
+            .mint(&quote, cashu::amount::SplitTarget::default(), None)
+            .await;
+        match result {
+            Ok(_) => Ok(cashu::MintQuoteState::Paid),
+            // if unknown it must have been paid already in the past
+            Err(cdk_common::Error::UnknownQuote) => Ok(cashu::MintQuoteState::Paid),
+            Err(e) => Err(Error::CDKWallet(e)),
+        }
+    }
+
     async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>> {
         let mint_infos = self
             .wlt
@@ -87,6 +100,11 @@ impl Wallet for CDKWallet {
         let total = outputs
             .iter()
             .fold(Amount::ZERO, |acc, msg| acc + msg.amount);
+
+        self.wlt
+            .check_all_mint_quotes()
+            .await
+            .map_err(Error::CDKWallet)?;
 
         let inputs = self
             .wlt
@@ -115,6 +133,10 @@ impl Wallet for CDKWallet {
     }
 
     async fn balance(&self) -> Result<Amount> {
+        self.wlt
+            .check_all_mint_quotes()
+            .await
+            .map_err(Error::CDKWallet)?;
         self.wlt.total_balance().await.map_err(Error::CDKWallet)
     }
 }

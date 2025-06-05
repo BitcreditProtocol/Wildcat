@@ -1,14 +1,14 @@
 // ----- standard library imports
 // ----- extra library imports
 // ----- local modules
-mod proof;
 mod service;
 mod wallet;
+mod wildcat;
 
 // ----- local imports
 
 // ----- end imports
 
-pub use proof::{ProofCl, ProofClientConfig};
-pub use service::{ProofClient, Service, Wallet};
+pub use service::{MintQuote, Repository, Service, Wallet, WildcatService};
 pub use wallet::{CDKWallet, CDKWalletConfig};
+pub use wildcat::{WildcatCl, WildcatClientConfig};

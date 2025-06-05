@@ -61,12 +61,14 @@ where
 
 // ----- sat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn request_mint_from_ebill<Wlt, ProofCl>(
-    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
+pub async fn request_mint_from_ebill<Wlt, WdcSrvc, Repo>(
+    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
     Json(request): Json<web_signatures::RequestToMintFromEBillRequest>,
 ) -> Result<Json<web_signatures::RequestToMintfromEBillResponse>>
 where
-    Wlt: debit::Wallet,
+    Wlt: debit::Wallet + 'static,
+    WdcSrvc: debit::WildcatService + 'static,
+    Repo: debit::Repository + 'static,
 {
     tracing::debug!("Received request to mint from ebill");
 
@@ -81,13 +83,13 @@ where
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn redeem<Wlt, ProofCl>(
-    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
+pub async fn redeem<Wlt, WdcSrvc, Repo>(
+    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
     Json(request): Json<cdk03::SwapRequest>,
 ) -> Result<Json<cdk03::SwapResponse>>
 where
     Wlt: debit::Wallet,
-    ProofCl: debit::ProofClient,
+    WdcSrvc: debit::WildcatService,
 {
     tracing::debug!("Received request to redeem");
 
@@ -96,8 +98,8 @@ where
     Ok(Json(response))
 }
 
-pub async fn sat_balance<Wlt, ProofCl>(
-    State(ctrl): State<debit::Service<Wlt, ProofCl>>,
+pub async fn sat_balance<Wlt, WdcSrvc, Repo>(
+    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
 ) -> Result<Json<web_wallet::ECashBalance>>
 where
     Wlt: debit::Wallet,

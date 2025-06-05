@@ -40,6 +40,7 @@ pub fn generate_random_bill_enquire_request(
         payee: BillParticipant::Ident(payee),
         endorsees,
         sum: amount.to_sat(),
+        file_urls: vec![],
     };
 
     let request = EnquireRequest {

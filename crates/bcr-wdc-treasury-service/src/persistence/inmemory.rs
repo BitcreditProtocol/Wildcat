@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
 use uuid::Uuid;
 // ----- local imports
-use crate::credit::{PremintSignatures, Repository};
+use crate::credit::{self, PremintSignatures};
 use crate::error::{Error, Result};
 
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryRepository {
+pub struct InMemoryCreditRepository {
     counters: Arc<Mutex<HashMap<cdk02::Id, u32>>>,
     secrets: Arc<Mutex<HashMap<Uuid, cdk00::PreMintSecrets>>>,
     signatures: Arc<Mutex<HashMap<Uuid, Vec<cdk00::BlindSignature>>>>,
@@ -18,7 +18,7 @@ pub struct InMemoryRepository {
 }
 
 #[async_trait]
-impl Repository for InMemoryRepository {
+impl credit::Repository for InMemoryCreditRepository {
     async fn next_counter(&self, kid: cdk02::Id) -> Result<u32> {
         let val = self
             .counters

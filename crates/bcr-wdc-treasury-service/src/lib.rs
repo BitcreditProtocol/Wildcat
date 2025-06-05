@@ -13,55 +13,69 @@ mod persistence;
 mod web;
 // ----- local imports
 
-type ProdCrSatRepository = persistence::surreal::DBRepository;
-type ProdCrSatKeysService = credit::KeySrvc;
-type ProdCrSatService = credit::Service<ProdCrSatRepository, ProdCrSatKeysService>;
+type ProdCreditRepository = persistence::surreal::CreditRepository;
+type ProdCreditKeysService = credit::KeySrvc;
+type ProdCreditService = credit::Service<ProdCreditRepository, ProdCreditKeysService>;
 
-type ProdSatWallet = debit::CDKWallet;
-type ProdProofClient = debit::ProofCl;
-type ProdSatService = debit::Service<ProdSatWallet, ProdProofClient>;
+type ProdDebitWallet = debit::CDKWallet;
+type ProdWildcatClient = debit::WildcatCl;
+type ProdDebitRepository = persistence::surreal::DebitRepository;
+type ProdDebitService = debit::Service<ProdDebitWallet, ProdWildcatClient, ProdDebitRepository>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    crsat_keys_service: credit::KeySrvcConfig,
-    crsat_repo: persistence::surreal::ConnectionConfig,
+    credit_keys_service: credit::KeySrvcConfig,
+    credit_repo: persistence::surreal::CreditConnectionConfig,
+    debit_repo: persistence::surreal::DebitConnectionConfig,
     sat_wallet: debit::CDKWalletConfig,
-    proof_client: debit::ProofClientConfig,
+    wildcat: debit::WildcatClientConfig,
+    monitor_interval_sec: u64,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    crsat: ProdCrSatService,
-    sat: ProdSatService,
+    crsat: ProdCreditService,
+    sat: ProdDebitService,
 }
 
 impl AppController {
     pub async fn new(seed: &[u8], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
         let AppConfig {
-            crsat_keys_service,
-            crsat_repo,
+            credit_keys_service,
+            credit_repo,
+            debit_repo,
             sat_wallet,
-            proof_client,
+            wildcat,
+            monitor_interval_sec,
         } = cfg;
-        let repo = ProdCrSatRepository::new(crsat_repo)
+        let repo = ProdCreditRepository::new(credit_repo)
             .await
             .expect("Failed to create repository");
         let xpriv = btc32::Xpriv::new_master(bitcoin::NetworkKind::Main, seed)
             .expect("Failed to create xpriv");
-        let keys = ProdCrSatKeysService::new(crsat_keys_service);
-        let crsat = ProdCrSatService { repo, xpriv, keys };
+        let keys = ProdCreditKeysService::new(credit_keys_service);
+        let crsat = ProdCreditService { repo, xpriv, keys };
 
-        let wallet = ProdSatWallet::new(sat_wallet, seed)
+        let wallet = ProdDebitWallet::new(sat_wallet, seed)
             .await
             .expect("Failed to create wallet");
-        let proof_client = ProdProofClient::new(proof_client);
+        let wdc = ProdWildcatClient::new(wildcat);
+        let repo = ProdDebitRepository::new(debit_repo)
+            .await
+            .expect("Failed to create repository");
         let signing_keys =
             secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::global::SECP256K1, &secret);
-        let sat = ProdSatService {
+        let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
+        let sat = ProdDebitService {
             wallet,
             signing_keys,
-            proof: proof_client,
+            wdc,
+            repo,
+            monitor_interval,
         };
+        sat.init_monitors_for_past_ebills()
+            .await
+            .expect("Failed to initialize monitors");
 
         Self { crsat, sat }
     }
