@@ -63,6 +63,7 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/info", get(web::get_mint_info))
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
+        .route("/v1/keysets/{kid}", get(web::get_keyset_info))
         .route("/v1/keys/{kid}", get(web::get_mint_keyset))
         .route("/v1/mint/quote/bolt11", post(web::post_mint_quote))
         .route(
