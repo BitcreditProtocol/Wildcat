@@ -1,11 +1,53 @@
 // ----- standard library imports
 use chrono::NaiveTime;
 // ----- extra library imports
+use bcr_wdc_utils::keys::test_utils as keys_test;
+use bitcoin::Amount;
 use rand::Rng;
 // ----- local imports
-use crate::{bill::BillIdentParticipant, contact::ContactType, identity::PostalAddress};
-use bcr_wdc_utils::keys::test_utils as keys_test;
+use crate::{
+    bill::{BillIdentParticipant, BillParticipant},
+    contact::ContactType,
+    identity::PostalAddress,
+    quotes::{BillInfo, EnquireRequest},
+};
 // ----- end imports
+
+// returns a random `EnquireRequest` with the bill's holder signing keys
+pub fn generate_random_bill_enquire_request(
+) -> (crate::quotes::EnquireRequest, bitcoin::secp256k1::Keypair) {
+    let bill_id = random_bill_id();
+    let (_, drawee) = random_identity_public_data();
+    let (_, drawer) = random_identity_public_data();
+    let (mut signing_key, payee) = random_identity_public_data();
+
+    let endorsees_size = rand::thread_rng().gen_range(0..3);
+    let mut endorsees: Vec<BillParticipant> = Vec::with_capacity(endorsees_size);
+    for _ in 0..endorsees_size {
+        let (keypair, endorse) = random_identity_public_data();
+        endorsees.push(BillParticipant::Ident(endorse));
+        signing_key = keypair;
+    }
+
+    let public_key = keys_test::publics()[0];
+    let amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
+
+    let bill = BillInfo {
+        id: bill_id,
+        maturity_date: random_date(),
+        drawee,
+        drawer,
+        payee: BillParticipant::Ident(payee),
+        endorsees,
+        sum: amount.to_sat(),
+    };
+
+    let request = EnquireRequest {
+        content: bill,
+        public_key,
+    };
+    (request, signing_key)
+}
 
 pub fn random_bill_id() -> String {
     let keypair = keys_test::generate_random_keypair();

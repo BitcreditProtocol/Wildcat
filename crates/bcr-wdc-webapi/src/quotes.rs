@@ -54,7 +54,7 @@ pub struct EnquireReply {
 
 /// --------------------------- Look up quote
 #[derive(Debug, Serialize, Deserialize, ToSchema, strum::EnumDiscriminants)]
-#[strum_discriminants(derive(Serialize, Deserialize, ToSchema))]
+#[strum_discriminants(derive(Serialize, Deserialize, ToSchema, strum::Display))]
 #[serde(tag = "status")]
 pub enum StatusReply {
     Pending,
