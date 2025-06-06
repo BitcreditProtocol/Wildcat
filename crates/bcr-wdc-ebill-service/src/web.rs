@@ -147,10 +147,26 @@ pub async fn get_bill_attachment(
     Path((bill_id, file_name)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     tracing::debug!("Received get bill attachment request");
+    let current_timestamp = util::date::now().timestamp() as u64;
+    let identity = ctrl.identity_service.get_identity().await?;
+    // get bill
+    let bill = ctrl
+        .bill_service
+        .get_detail(&bill_id, &identity, &identity.node_id, current_timestamp)
+        .await?;
+
+    // check if this file even exists on the bill
+    let file = match bill.data.files.iter().find(|f| f.name == file_name) {
+        Some(f) => f,
+        None => {
+            return Err(bcr_ebill_api::service::bill_service::Error::NotFound.into());
+        }
+    };
+
     let keys = ctrl.bill_service.get_bill_keys(&bill_id).await?;
     let file_bytes = ctrl
         .bill_service
-        .open_and_decrypt_attached_file(&bill_id, &file_name, &keys.private_key)
+        .open_and_decrypt_attached_file(&bill_id, file, &keys.private_key)
         .await
         .map_err(|_| bcr_ebill_api::service::Error::NotFound)?;
 

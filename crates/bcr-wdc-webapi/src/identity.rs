@@ -199,6 +199,7 @@ impl From<OptionalPostalAddress> for data::OptionalPostalAddress {
 pub struct File {
     pub name: String,
     pub hash: String,
+    pub nostr_hash: String,
 }
 
 impl From<data::File> for File {
@@ -206,6 +207,7 @@ impl From<data::File> for File {
         File {
             name: val.name,
             hash: val.hash,
+            nostr_hash: val.nostr_hash,
         }
     }
 }

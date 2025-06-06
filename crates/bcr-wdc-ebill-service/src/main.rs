@@ -3,6 +3,7 @@ use bcr_ebill_api::{
     service::notification_service::{create_nostr_clients, create_nostr_consumer},
     MintConfig, NostrConfig,
 };
+use bcr_ebill_transport::chain_keys::ChainKeyService;
 use std::str::FromStr;
 // ----- extra library imports
 use tokio::signal;
@@ -115,6 +116,8 @@ async fn main() {
         db_clone.bill_blockchain_store.clone(),
         db_clone.bill_store.clone(),
         db_clone.nostr_contact_store.clone(),
+        std::sync::Arc::new(ChainKeyService::new(db_clone.bill_store.clone())),
+        db_clone.nostr_chain_event_store.clone(),
     )
     .await
     .expect("Failed to create Nostr consumer");
