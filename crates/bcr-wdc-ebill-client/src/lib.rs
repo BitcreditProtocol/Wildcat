@@ -68,7 +68,7 @@ impl EbillClient {
         let url = self
             .base
             .join("/identity/detail")
-            .expect("seed phrase restoration relative path");
+            .expect("identity detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound("identity".into()));
