@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use bcr_ebill_api::{
-    external::{bitcoin::BitcoinClient, mint::MintClient},
+    external::{bitcoin::BitcoinClient, file_storage::FileStorageClient, mint::MintClient},
     service::{
         bill_service::{service::BillService, BillServiceApi},
         contact_service::{ContactService, ContactServiceApi},
@@ -67,9 +67,11 @@ impl AppController {
         nostr_clients: Vec<Arc<NostrClient>>,
         db: bcr_ebill_api::DbContext,
     ) -> Self {
+        let file_upload_client = Arc::new(FileStorageClient::new());
         let contact_service = Arc::new(ContactService::new(
             db.contact_store.clone(),
             db.file_upload_store.clone(),
+            file_upload_client.clone(),
             db.identity_store.clone(),
             db.nostr_contact_store.clone(),
             &cfg.clone(),
@@ -91,6 +93,7 @@ impl AppController {
             db.bill_blockchain_store.clone(),
             db.identity_store.clone(),
             db.file_upload_store.clone(),
+            file_upload_client.clone(),
             Arc::new(BitcoinClient::new()),
             notification_service.clone(),
             db.identity_chain_store.clone(),
@@ -104,6 +107,7 @@ impl AppController {
         let identity_service = IdentityService::new(
             db.identity_store.clone(),
             db.file_upload_store.clone(),
+            file_upload_client.clone(),
             db.identity_chain_store.clone(),
         );
 
@@ -209,16 +213,9 @@ pub mod test_utils {
             async fn open_and_decrypt_attached_file(
                 &self,
                 bill_id: &str,
-                file_name: &str,
+                file: &File,
                 bill_private_key: &str,
             ) -> BillResult<Vec<u8>>;
-            async fn encrypt_and_save_uploaded_file(
-                &self,
-                file_name: &str,
-                file_bytes: &[u8],
-                bill_id: &str,
-                bill_public_key: &str,
-            ) -> BillResult<File>;
             async fn issue_new_bill(&self, data: BillIssueData) -> BillResult<BitcreditBill>;
             async fn execute_bill_action(
                 &self,
@@ -364,10 +361,12 @@ pub mod test_utils {
             async fn is_known_npub(&self, npub: &bcr_ebill_api::service::contact_service::PublicKey) -> Result<bool>;
             async fn open_and_decrypt_file(
                 &self,
+                contact: Contact,
                 id: &str,
                 file_name: &str,
                 private_key: &str,
             ) -> Result<Vec<u8>>;
+            async fn get_nostr_npubs(&self) -> Result<Vec<bcr_ebill_api::service::contact_service::PublicKey>>;
         }
     }
 
@@ -427,6 +426,7 @@ pub mod test_utils {
             async fn recover_from_seedphrase(&self, seed: &str) -> Result<()>;
             async fn open_and_decrypt_file(
                 &self,
+                identity: Identity,
                 id: &str,
                 file_name: &str,
                 private_key: &str,
