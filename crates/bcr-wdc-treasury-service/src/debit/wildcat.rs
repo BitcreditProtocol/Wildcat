@@ -88,6 +88,11 @@ impl WildcatService for WildcatCl {
         }
         Err(Error::EBillNotFound(ebill_id.to_string()))
     }
+
+    async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
+        let info = self.key_cl.keyset_info(kid).await?;
+        Ok(info)
+    }
 }
 
 fn extract_keyset_id(quote: web_quotes::StatusReply) -> Option<cdk02::Id> {

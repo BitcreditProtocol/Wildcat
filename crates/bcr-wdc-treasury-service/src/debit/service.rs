@@ -20,7 +20,7 @@ pub trait Wallet: Clone + Send {
         signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote>;
     async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
-    async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
+    async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
     async fn swap_to_messages(
         &self,
         outputs: &[cdk00::BlindedMessage],
@@ -32,6 +32,7 @@ pub trait Wallet: Clone + Send {
 pub trait WildcatService: Clone + Send {
     async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
     async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+    async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -145,22 +146,35 @@ where
             return Err(Error::UnmatchingAmount(total_input, total_output));
         }
         // expensive verifications
-        // 1. outputs' keyset ID(s) are active
+        // 1. output keysets must be active
         let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
-        let infos = self.wallet.get_keysets_info(&unique_ids).await?;
+        let infos = self.wallet.keysets_info(&unique_ids).await?;
         for info in infos {
             if !info.active {
                 return Err(Error::InactiveKeyset(info.id));
             }
         }
-        // 2. burning crsat, implicitly checking proofs
+        // 2. input keysets must be inactive
+        let unique_ids: Vec<_> = inputs.iter().map(|p| p.keyset_id).unique().collect();
+        for id in unique_ids {
+            let info = self.wdc.keyset_info(id).await?;
+            if info.active {
+                return Err(Error::ActiveKeyset(info.id));
+            }
+        }
+        // 3. do we have enough balance?
+        let balance = self.wallet.balance().await?;
+        if balance < total_input {
+            return Err(Error::UnmatchingAmount(total_input, balance));
+        }
+        // 4. burning crsat, implicitly checking proofs
         self.wdc.burn(inputs).await?;
 
         // attempting a swap for 3 times with 1 sec pause
         let mut retries = 1_usize;
         let mut response = self.wallet.swap_to_messages(outputs).await;
         while response.is_err() && retries <= 3 {
-            tracing::warn!("swap failed, attempt {}, retry in 1 second", retries);
+            tracing::warn!("swap failed, attempt {retries}, retry in 1 second");
             tokio::time::sleep(core::time::Duration::from_secs(1)).await;
             response = self.wallet.swap_to_messages(outputs).await;
             retries += 1;
@@ -225,7 +239,7 @@ mod tests {
                 signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
             ) -> Result<cdk::wallet::MintQuote>;
             async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
-            async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
+            async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
             async fn swap_to_messages(
                 &self,
                 outputs: &[cdk00::BlindedMessage],
@@ -242,6 +256,7 @@ mod tests {
         impl super::WildcatService for WildcatService {
             async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
             async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+            async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
         }
     }
     mockall::mock! {
@@ -399,7 +414,7 @@ mod tests {
         let wdc = MockWildcatService::new();
         let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
-        wallet.expect_get_keysets_info().returning(|kids| {
+        wallet.expect_keysets_info().returning(|kids| {
             let mut infos = Vec::new();
             for kid in kids {
                 infos.push(cdk02::KeySetInfo {
@@ -437,7 +452,7 @@ mod tests {
         let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
         wallet
-            .expect_get_keysets_info()
+            .expect_keysets_info()
             .returning(|kids| Err(Error::UnknownKeyset(kids[0])));
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
