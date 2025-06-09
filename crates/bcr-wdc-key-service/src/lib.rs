@@ -104,7 +104,9 @@ where
 #[openapi(
     components(schemas(
         bcr_wdc_webapi::keys::DeactivateKeysetRequest,
+        bcr_wdc_webapi::keys::DeactivateKeysetResponse,
         bcr_wdc_webapi::keys::EnableKeysetRequest,
+        bcr_wdc_webapi::keys::EnableKeysetResponse,
         bcr_wdc_webapi::keys::GenerateKeysetRequest,
         bcr_wdc_webapi::keys::KeysetMintCondition,
         bcr_wdc_webapi::keys::PreSignRequest,

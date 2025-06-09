@@ -32,8 +32,18 @@ pub struct EnableKeysetRequest {
     pub qid: uuid::Uuid,
 }
 
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct EnableKeysetResponse {
+    pub kid: cdk02::Id,
+}
+
 ///--------------------------- Deactivate keyset
 #[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct DeactivateKeysetRequest {
+    pub kid: cdk02::Id,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct DeactivateKeysetResponse {
     pub kid: cdk02::Id,
 }

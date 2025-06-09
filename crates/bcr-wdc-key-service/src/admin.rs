@@ -106,7 +106,7 @@ where
     path = "/v1/admin/keys/enable/",
     request_body(content = web_keys::EnableKeysetRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response"),
+        (status = 200, description = "Successful response", body = web_keys::EnableKeysetResponse, content_type = "application/json"),
         (status = 404, description = "keyset id not found"),
     )
 )]
@@ -114,13 +114,15 @@ where
 pub async fn enable<QuotesKeysRepo, KeysRepo, SignsRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(request): Json<web_keys::EnableKeysetRequest>,
-) -> Result<()>
+) -> Result<Json<web_keys::EnableKeysetResponse>>
 where
     QuotesKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
     tracing::debug!("Received enable request");
-    ctrl.enable(&request.qid).await
+    let kid = ctrl.enable(&request.qid).await?;
+    let response = web_keys::EnableKeysetResponse { kid };
+    Ok(Json(response))
 }
 
 #[utoipa::path(
@@ -128,7 +130,7 @@ where
     path = "/v1/admin/keys/deactivate/",
     request_body(content = web_keys::DeactivateKeysetRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk02::Id, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_keys::DeactivateKeysetResponse, content_type = "application/json"),
         (status = 404, description = "keyset id not found"),
     )
 )]
@@ -136,12 +138,13 @@ where
 pub async fn deactivate<QuotesKeysRepo, KeysRepo, SignsRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
     Json(request): Json<web_keys::DeactivateKeysetRequest>,
-) -> Result<Json<cdk02::Id>>
+) -> Result<Json<web_keys::DeactivateKeysetResponse>>
 where
     QuotesKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
     tracing::debug!("Received deactivate request");
     let kid = ctrl.deactivate(request.kid).await?;
-    Ok(Json(kid))
+    let response = web_keys::DeactivateKeysetResponse { kid };
+    Ok(Json(response))
 }

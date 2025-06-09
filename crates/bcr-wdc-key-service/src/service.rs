@@ -250,13 +250,14 @@ where
     QuoteKeysRepo: QuoteKeysRepository,
     KeysRepo: KeysRepository,
 {
-    pub async fn enable(&self, qid: &uuid::Uuid) -> Result<()> {
+    pub async fn enable(&self, qid: &uuid::Uuid) -> Result<cdk02::Id> {
         let mut entry = self
             .quote_keys
             .entry(qid)
             .await?
             .ok_or(Error::UnknownKeysetFromId(*qid))?;
         entry.0.active = true;
+        let kid = entry.0.id;
         let condition = self
             .quote_keys
             .condition(qid)
@@ -264,7 +265,7 @@ where
             .ok_or(Error::UnknownKeysetFromId(*qid))?;
 
         self.keys.store(entry, condition).await?;
-        Ok(())
+        Ok(kid)
     }
 }
 
