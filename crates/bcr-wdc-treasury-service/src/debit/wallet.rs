@@ -57,10 +57,8 @@ impl Wallet for CDKWallet {
         signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote> {
         let description = serde_json::to_string(&signed_request).map_err(Error::SerdeJson)?;
-        self.wlt
-            .mint_quote(amount, Some(description))
-            .await
-            .map_err(Error::CDKWallet)
+        let quote = self.wlt.mint_quote(amount, Some(description)).await?;
+        Ok(quote)
     }
 
     async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState> {
@@ -76,12 +74,8 @@ impl Wallet for CDKWallet {
         }
     }
 
-    async fn get_keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>> {
-        let mint_infos = self
-            .wlt
-            .get_active_mint_keysets()
-            .await
-            .map_err(Error::CDKWallet)?;
+    async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>> {
+        let mint_infos = self.wlt.get_active_mint_keysets().await?;
         let mut infos: Vec<cdk02::KeySetInfo> = Vec::with_capacity(kids.len());
         for kid in kids {
             if let Some(info) = mint_infos.iter().find(|info| info.id == *kid) {
@@ -101,16 +95,9 @@ impl Wallet for CDKWallet {
             .iter()
             .fold(Amount::ZERO, |acc, msg| acc + msg.amount);
 
-        self.wlt
-            .check_all_mint_quotes()
-            .await
-            .map_err(Error::CDKWallet)?;
+        self.wlt.check_all_mint_quotes().await?;
 
-        let inputs = self
-            .wlt
-            .swap_from_unspent(total, None, true)
-            .await
-            .map_err(Error::CDKWallet)?;
+        let inputs = self.wlt.swap_from_unspent(total, None, true).await?;
         let request = cdk03::SwapRequest::new(inputs.clone(), outputs.to_vec());
 
         match self.client.post_swap(request).await {
@@ -119,8 +106,7 @@ impl Wallet for CDKWallet {
                 let amount = self
                     .wlt
                     .receive_proofs(inputs, ReceiveOptions::default(), None)
-                    .await
-                    .map_err(Error::CDKWallet)?;
+                    .await?;
                 tracing::warn!(
                     "swap_to_messages failed with {}, restoring proofs, expected {}, received {}",
                     e,
@@ -133,10 +119,7 @@ impl Wallet for CDKWallet {
     }
 
     async fn balance(&self) -> Result<Amount> {
-        self.wlt
-            .check_all_mint_quotes()
-            .await
-            .map_err(Error::CDKWallet)?;
+        self.wlt.check_all_mint_quotes().await?;
         self.wlt.total_balance().await.map_err(Error::CDKWallet)
     }
 }
