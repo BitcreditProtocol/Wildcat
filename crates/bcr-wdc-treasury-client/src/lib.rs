@@ -37,7 +37,7 @@ impl TreasuryClient {
         let request = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
         let url = self
             .base
-            .join("/v1/credit/generate_blinds")
+            .join("/v1/admin/treasury/credit/generate_blinds")
             .expect("generate_blinds relative path");
         let res = self.cl.post(url).json(&request).send().await?;
         let response: web_signatures::GenerateBlindedMessagesResponse = res.json().await?;
@@ -57,7 +57,7 @@ impl TreasuryClient {
         };
         let url = self
             .base
-            .join("/v1/credit/store_signatures")
+            .join("/v1/admin/treasury/credit/store_signatures")
             .expect("store_signatures relative path");
         let res = self.cl.post(url).json(&request).send().await?;
         res.error_for_status()?;
@@ -72,7 +72,7 @@ impl TreasuryClient {
         let request = cdk03::SwapRequest::new(inputs, outputs);
         let url = self
             .base
-            .join("/v1/debit/redeem")
+            .join("/v1/admin/treasury/debit/redeem")
             .expect("redeem relative path");
         let res = self.cl.post(url).json(&request).send().await?;
         let response: cdk03::SwapResponse = res.json().await?;
@@ -82,7 +82,7 @@ impl TreasuryClient {
     pub async fn crsat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
-            .join("/v1/balance/credit")
+            .join("/v1/admin/treasury/credit/balance")
             .expect("crsat balance relative path");
         let res = self.cl.get(url).send().await?;
         let response: web_wallet::ECashBalance = res.json().await?;
@@ -92,7 +92,7 @@ impl TreasuryClient {
     pub async fn sat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
-            .join("/v1/balance/debit")
+            .join("/v1/admin/treasury/debit/balance")
             .expect("sat balance relative path");
         let res = self.cl.get(url).send().await?;
         let response: web_wallet::ECashBalance = res.json().await?;

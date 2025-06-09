@@ -6,11 +6,11 @@ use axum::Router;
 use bitcoin::bip32 as btc32;
 use bitcoin::secp256k1;
 // ----- local modules
+mod admin;
 mod credit;
 mod debit;
 mod error;
 mod persistence;
-mod web;
 // ----- local imports
 
 type ProdCreditRepository = persistence::surreal::CreditRepository;
@@ -64,7 +64,7 @@ impl AppController {
             .await
             .expect("Failed to create repository");
         let signing_keys =
-            secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::global::SECP256K1, &secret);
+            secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
         let sat = ProdDebitService {
             wallet,
@@ -82,18 +82,18 @@ impl AppController {
 }
 
 pub fn routes(app: AppController) -> Router {
-    Router::new()
-        .route(
-            "/v1/credit/generate_blinds",
-            post(web::generate_blind_messages),
-        )
-        .route("/v1/credit/store_signatures", post(web::store_signatures))
-        .route(
-            "/v1/debit/request_to_mint_from_ebill",
-            post(web::request_mint_from_ebill),
-        )
-        .route("/v1/debit/redeem", post(web::redeem))
-        .route("/v1/balance/credit", get(web::crsat_balance))
-        .route("/v1/balance/debit", get(web::sat_balance))
-        .with_state(app)
+    Router::new().nest(
+        "/v1/admin/treasury",
+        Router::new()
+            .route("/credit/generate_blinds", post(admin::generate_blinds))
+            .route("/credit/store_signatures", post(admin::store_signatures))
+            .route("/credit/balance", get(admin::crsat_balance))
+            .route("/debit/redeem", post(admin::redeem))
+            .route("/debit/balance", get(admin::sat_balance))
+            .route(
+                "/debit/request_to_mint_from_ebill",
+                post(admin::request_mint_from_ebill),
+            )
+            .with_state(app),
+    )
 }
