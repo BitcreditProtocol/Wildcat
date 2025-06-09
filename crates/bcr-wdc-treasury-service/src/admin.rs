@@ -10,7 +10,7 @@ use crate::error::Result;
 
 // ----- crsat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn generate_blind_messages<Repo, KeySrvc>(
+pub async fn generate_blinds<Repo, KeySrvc>(
     State(ctrl): State<credit::Service<Repo, KeySrvc>>,
     Json(request): Json<web_signatures::GenerateBlindedMessagesRequest>,
 ) -> Result<Json<web_signatures::GenerateBlindedMessagesResponse>>

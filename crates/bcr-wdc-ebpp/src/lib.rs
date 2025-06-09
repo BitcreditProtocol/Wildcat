@@ -12,13 +12,13 @@ use cdk_payment_processor::PaymentProcessorServer;
 use serde_with::serde_as;
 use utoipa::OpenApi;
 // ----- local modules
+mod admin;
 mod ebill;
 mod error;
 mod onchain;
 mod payment;
 mod persistence;
 mod service;
-mod web;
 
 // ----- end imports
 
@@ -106,10 +106,15 @@ impl AppController {
 pub fn routes(ctrl: AppController) -> Router {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
-    let web = Router::new().route("/v1/onchain/balance", get(web::balance));
-    Router::new().merge(web).with_state(ctrl).merge(swagger)
+    let admin = Router::new().nest(
+        "/v1/admin/ebpp/",
+        Router::new()
+            .route("/onchain/balance", get(admin::balance))
+            .with_state(ctrl),
+    );
+    Router::new().merge(admin).merge(swagger)
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(Balance),), paths(web::balance))]
+#[openapi(components(schemas(Balance),), paths(admin::balance))]
 struct ApiDoc;

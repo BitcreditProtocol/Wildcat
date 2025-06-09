@@ -31,7 +31,7 @@ impl EBPPClient {
     pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
         let url = self
             .base
-            .join("/v1/admin/onchain/balance")
+            .join("/v1/admin/ebpp/onchain/balance")
             .expect("balance relative path");
         let res = self.cl.get(url).send().await?;
         let blnc = res.json::<web_wallet::Balance>().await?;
