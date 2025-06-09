@@ -7,7 +7,7 @@ bind_address = "0.0.0.0:3338"
 grpc_address = "0.0.0.0:9090"
 electrum_url = "electrs:50001"
 refresh_interval_secs=30
-treasury_service_public_key = "0234dd69c56c36a41230d573d68adeae0030c9bc0bf26f24d3e1b64c604d293c68"
+treasury_service_public_key = "038139c78cd7cf8ca3af105a64f29c21b91584eddbdb8f3a64bb9fbb4b19d545f9"
 
 [appcfg.onchain]
 network = "regtest"
