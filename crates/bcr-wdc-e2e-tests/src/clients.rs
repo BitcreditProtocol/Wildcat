@@ -192,7 +192,7 @@ impl Service<AdminService> {
     }
     /// GET v1/admin/balance/credit
     pub async fn admin_balance_credit(&self) -> Result<ECashBalance> {
-        let url = self.url("v1/admin/balance/credit");
+        let url = self.url("v1/admin/treasury/credit/balance");
         self.client.get(url).await
     }
     pub async fn authenticate(
