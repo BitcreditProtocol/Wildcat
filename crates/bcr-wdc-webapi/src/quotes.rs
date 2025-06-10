@@ -211,3 +211,10 @@ pub enum ResolveOffer {
     Reject,
     Accept,
 }
+
+/// --------------------------- Get encrypted bill file from request to mint
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct RequestEncryptedFileUrlPayload {
+    #[schema(value_type = String)]
+    pub file_url: url::Url,
+}

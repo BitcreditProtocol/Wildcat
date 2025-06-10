@@ -38,6 +38,10 @@ pub enum Error {
     /// all errors originating from identity conversion
     #[error("Invalid identity")]
     IdentityConversion,
+
+    /// all errors originating from File Downloading
+    #[error("File Download Error: {0}")]
+    FileDownload(String),
 }
 
 impl axum::response::IntoResponse for Error {
@@ -48,6 +52,7 @@ impl axum::response::IntoResponse for Error {
             Error::BillService(e) => BillServiceError(e).into_response(),
             Error::NotificationService(e) => ServiceError(e.into()).into_response(),
             Error::Validation(e) => ValidationError(e).into_response(),
+            Error::FileDownload(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
             Error::IdentityConversion => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 String::from("invalid identity"),

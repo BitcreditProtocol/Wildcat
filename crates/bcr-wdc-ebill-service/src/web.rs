@@ -1,14 +1,14 @@
-use std::str::FromStr;
-
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue},
     response::IntoResponse,
     Json,
 };
 use bcr_ebill_api::{
+    constants::MAX_FILE_SIZE_BYTES,
     data::{self, bill, contact, identity},
     util::{self, file::detect_content_type_for_bytes, ValidationError},
 };
@@ -17,12 +17,17 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
-    contact::{Contact, ContactType, NewContactPayload},
     identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
+    quotes::RequestEncryptedFileUrlPayload,
 };
+use futures::StreamExt;
+use reqwest::StatusCode;
 // ----- local imports
 
-use crate::{error::Result, AppController};
+use crate::{
+    error::{Error, Result},
+    AppController,
+};
 // ----- end imports
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -182,6 +187,91 @@ pub async fn get_bill_attachment(
     Ok((headers, file_bytes))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, bill_file_url_req))]
+pub async fn get_encrypted_bill_file_from_request_to_mint(
+    State(ctrl): State<AppController>,
+    Query(bill_file_url_req): Query<RequestEncryptedFileUrlPayload>,
+) -> Result<impl IntoResponse> {
+    tracing::debug!(
+        "Received get encrypted bill file from request to mint, url: {}",
+        bill_file_url_req.file_url
+    );
+
+    if bill_file_url_req.file_url.scheme() != "https" {
+        return Err(Error::FileDownload("Only HTTPS urls are allowed".into()));
+    }
+
+    let keys = ctrl.identity_service.get_full_identity().await?.key_pair;
+    // fetch the file by URL
+    let resp = reqwest::get(bill_file_url_req.file_url.clone())
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Error downloading file from {}: {e}",
+                bill_file_url_req.file_url.to_string()
+            );
+            Error::FileDownload("Could not download file".into())
+        })?;
+
+    // check status code
+    if resp.status() != StatusCode::OK {
+        return Err(Error::FileDownload("Could not download file".into()));
+    }
+
+    // check content length
+    match resp.content_length() {
+        Some(len) => {
+            if len > MAX_FILE_SIZE_BYTES as u64 {
+                return Err(Error::FileDownload("File too large".into()));
+            }
+        }
+        None => {
+            return Err(Error::FileDownload("no Content-Length set".into()));
+        }
+    };
+    // stream bytes and stop if response gets too large
+    let mut stream = resp.bytes_stream();
+    let mut total: usize = 0;
+    let mut file_bytes = Vec::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            tracing::error!(
+                "Error downloading file from {}: {e}",
+                bill_file_url_req.file_url.to_string()
+            );
+            Error::FileDownload("Could not download file".into())
+        })?;
+        total += chunk.len();
+        if total > MAX_FILE_SIZE_BYTES {
+            return Err(Error::FileDownload("File too large".into()));
+        }
+        file_bytes.extend_from_slice(&chunk);
+    }
+
+    // decrypt file with private key
+    let decrypted = util::crypto::decrypt_ecies(&file_bytes, &keys.get_private_key_string())
+        .map_err(|e| {
+            tracing::error!(
+                "Error decrypting file from {}: {e}",
+                bill_file_url_req.file_url.to_string()
+            );
+            Error::FileDownload("Decryption Error".into())
+        })?;
+
+    // detect content type and return response
+    let content_type = detect_content_type_for_bytes(&decrypted).ok_or(
+        bcr_ebill_api::service::Error::Validation(ValidationError::InvalidContentType),
+    )?;
+    let parsed_content_type: HeaderValue = content_type.parse().map_err(|_| {
+        bcr_ebill_api::service::Error::Validation(ValidationError::InvalidContentType)
+    })?;
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, parsed_content_type);
+
+    Ok((headers, decrypted))
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_to_pay_bill(
     State(ctrl): State<AppController>,
@@ -222,30 +312,4 @@ pub async fn bill_bitcoin_key(
         )
         .await?;
     Ok(Json(combined_key.into()))
-}
-
-// TODO: remove this, once we don't need to manually add contacts anymore for nostr transport to work
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn create_contact(
-    State(ctrl): State<AppController>,
-    Json(payload): Json<NewContactPayload>,
-) -> Result<Json<Contact>> {
-    tracing::debug!("Received create contact request");
-    let contact = ctrl
-        .contact_service
-        .add_contact(
-            &payload.node_id,
-            contact::ContactType::from(ContactType::try_from(payload.t)?),
-            payload.name,
-            payload.email,
-            payload.postal_address.map(data::PostalAddress::from),
-            payload.date_of_birth_or_registration,
-            payload.country_of_birth_or_registration,
-            payload.city_of_birth_or_registration,
-            payload.identification_number,
-            payload.avatar_file_upload_id,
-            payload.proof_document_file_upload_id,
-        )
-        .await?;
-    Ok(Json(contact.into()))
 }
