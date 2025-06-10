@@ -157,7 +157,7 @@ impl KeyClient {
         Ok(kid)
     }
 
-    pub async fn enable_keyset(&self, qid: uuid::Uuid) -> Result<()> {
+    pub async fn enable_keyset(&self, qid: uuid::Uuid) -> Result<cdk02::Id> {
         let url = self
             .base
             .join("/v1/admin/keys/enable")
@@ -167,8 +167,8 @@ impl KeyClient {
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceFromIdNotFound(qid));
         }
-        res.error_for_status()?;
-        Ok(())
+        let response: web_keys::EnableKeysetResponse = res.json().await?;
+        Ok(response.kid)
     }
 
     pub async fn mint(
@@ -225,8 +225,8 @@ impl KeyClient {
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
         }
-        res.json::<cdk02::Id>().await?;
-        Ok(kid)
+        let response: web_keys::DeactivateKeysetResponse = res.json().await?;
+        Ok(response.kid)
     }
 }
 
