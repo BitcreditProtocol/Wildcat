@@ -145,7 +145,7 @@ pub fn routes(ctrl: AppController) -> Router {
         .route("/v1/bill/request_to_pay", put(web::request_to_pay_bill))
         .route("/v1/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
         .route(
-            "/v1/get_file_from_request_to_mint",
+            "/v1/admin/ebill/get_file_from_request_to_mint",
             get(web::get_encrypted_bill_file_from_request_to_mint),
         )
         .with_state(ctrl)

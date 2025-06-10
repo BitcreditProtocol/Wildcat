@@ -43,6 +43,8 @@ static_resources:
                           route: { cluster: eiou_service }
                         - match: { prefix: "/v1/admin/ebpp" }
                           route: { cluster: ebpp_service}
+                        - match: { prefix: "/v1/admin/ebill" }
+                          route: { cluster: ebill_service}
                 http_filters:
                   - name: envoy.filters.http.cors
                     typed_config:
@@ -171,6 +173,19 @@ static_resources:
                     socket_address:
                       address: keycloak
                       port_value: 8080
+
+    - name: ebill_service
+      connect_timeout: 5s
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: ebill_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ebill-service
+                      port_value: 3338
 
 admin:
   access_log_path: /tmp/admin_access.log
