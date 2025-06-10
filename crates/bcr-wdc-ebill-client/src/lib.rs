@@ -5,7 +5,6 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
-    contact::NewContactPayload,
     identity::{Identity, NewIdentityPayload, SeedPhrase},
 };
 use reqwest::header;
@@ -44,7 +43,7 @@ impl EbillClient {
     pub async fn backup_seed_phrase(&self) -> Result<SeedPhrase> {
         let url = self
             .base
-            .join("/identity/seed/backup")
+            .join("/v1/identity/seed/backup")
             .expect("seed phrase relative path");
         let res = self.cl.get(url).send().await?;
         let seed_phrase = res.json::<SeedPhrase>().await?;
@@ -54,7 +53,7 @@ impl EbillClient {
     pub async fn restore_from_seed_phrase(&self, seed_phrase: &SeedPhrase) -> Result<()> {
         let url = self
             .base
-            .join("/identity/seed/recover")
+            .join("/v1/identity/seed/recover")
             .expect("seed phrase backup relative path");
         let res = self.cl.put(url).json(seed_phrase).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
@@ -67,7 +66,7 @@ impl EbillClient {
     pub async fn get_identity(&self) -> Result<Identity> {
         let url = self
             .base
-            .join("/identity/detail")
+            .join("/v1/identity/detail")
             .expect("identity detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -80,21 +79,8 @@ impl EbillClient {
     pub async fn create_identity(&self, payload: &NewIdentityPayload) -> Result<()> {
         let url = self
             .base
-            .join("/identity/create")
+            .join("/v1/identity/create")
             .expect("create identity relative path");
-        let res = self.cl.post(url).json(payload).send().await?;
-        if res.status() == reqwest::StatusCode::BAD_REQUEST {
-            return Err(Error::InvalidRequest);
-        }
-        res.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn create_contact(&self, payload: &NewContactPayload) -> Result<()> {
-        let url = self
-            .base
-            .join("/contact/create")
-            .expect("create contact relative path");
         let res = self.cl.post(url).json(payload).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
@@ -106,7 +92,7 @@ impl EbillClient {
     pub async fn get_bills(&self) -> Result<Vec<BitcreditBill>> {
         let url = self
             .base
-            .join("/bill/list")
+            .join("/v1/bill/list")
             .expect("bill list relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -119,7 +105,7 @@ impl EbillClient {
     pub async fn get_bill(&self, bill_id: &str) -> Result<BitcreditBill> {
         let url = self
             .base
-            .join(&format!("/bill/detail/{bill_id}"))
+            .join(&format!("/v1/bill/detail/{bill_id}"))
             .expect("bill detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -132,7 +118,7 @@ impl EbillClient {
     pub async fn get_bill_endorsements(&self, bill_id: &str) -> Result<Vec<Endorsement>> {
         let url = self
             .base
-            .join(&format!("/bill/endorsements/{bill_id}"))
+            .join(&format!("/v1/bill/endorsements/{bill_id}"))
             .expect("bill detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -150,7 +136,7 @@ impl EbillClient {
     ) -> Result<(String, Vec<u8>)> {
         let url = self
             .base
-            .join(&format!("/bill/attachment/{bill_id}/{file_name}"))
+            .join(&format!("/v1/bill/attachment/{bill_id}/{file_name}"))
             .expect("bill attachment relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -171,7 +157,7 @@ impl EbillClient {
     ) -> Result<BillCombinedBitcoinKey> {
         let url = self
             .base
-            .join(&format!("/bill/bitcoin_key/{bill_id}"))
+            .join(&format!("/v1/bill/bitcoin_key/{bill_id}"))
             .expect("bill bitcoin key relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -187,7 +173,7 @@ impl EbillClient {
     ) -> Result<()> {
         let url = self
             .base
-            .join("/bill/request_to_pay")
+            .join("/v1/bill/request_to_pay")
             .expect("req to pay bill relative path");
         let res = self.cl.put(url).json(payload).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {

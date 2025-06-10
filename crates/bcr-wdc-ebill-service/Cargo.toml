@@ -17,11 +17,13 @@ bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git"
 bcr-wdc-webapi.workspace = true
 config.workspace = true
 serde.workspace = true
+futures.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal", "time"]}
 tracing = {workspace = true, features = ["log"]}
 tracing-log = {workspace = true}
+reqwest = {workspace = true, features = ["stream"]}
 bitcoin = {workspace = true, features = ["serde"]}
 tracing-subscriber = {workspace = true, features = ["serde"]}
 url = {workspace = true, features = ["serde"]}

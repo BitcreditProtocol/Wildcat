@@ -125,23 +125,29 @@ impl AppController {
 
 pub fn routes(ctrl: AppController) -> Router {
     Router::new()
-        .route("/identity/detail", get(web::get_identity))
-        .route("/identity/create", post(web::create_identity))
-        .route("/identity/seed/backup", get(web::get_seed_phrase))
-        .route("/identity/seed/recover", put(web::recover_from_seed_phrase))
-        .route("/contact/create", post(web::create_contact))
-        .route("/bill/list", get(web::get_bills))
-        .route("/bill/detail/{bill_id}", get(web::get_bill_detail))
+        .route("/v1/identity/detail", get(web::get_identity))
+        .route("/v1/identity/create", post(web::create_identity))
+        .route("/v1/identity/seed/backup", get(web::get_seed_phrase))
         .route(
-            "/bill/endorsements/{bill_id}",
+            "/v1/identity/seed/recover",
+            put(web::recover_from_seed_phrase),
+        )
+        .route("/v1/bill/list", get(web::get_bills))
+        .route("/v1/bill/detail/{bill_id}", get(web::get_bill_detail))
+        .route(
+            "/v1/bill/endorsements/{bill_id}",
             get(web::get_bill_endorsements),
         )
         .route(
-            "/bill/attachment/{bill_id}/{file_name}",
+            "/v1/bill/attachment/{bill_id}/{file_name}",
             get(web::get_bill_attachment),
         )
-        .route("/bill/request_to_pay", put(web::request_to_pay_bill))
-        .route("/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
+        .route("/v1/bill/request_to_pay", put(web::request_to_pay_bill))
+        .route("/v1/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
+        .route(
+            "/v1/get_file_from_request_to_mint",
+            get(web::get_encrypted_bill_file_from_request_to_mint),
+        )
         .with_state(ctrl)
 }
 
