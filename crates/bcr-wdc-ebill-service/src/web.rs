@@ -196,6 +196,11 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
         "Received get encrypted bill file from request to mint, url: {}",
         bill_file_url_req.file_url
     );
+
+    if bill_file_url_req.file_url.scheme() != "https" {
+        return Err(Error::FileDownload("Only HTTPS urls are allowed".into()));
+    }
+
     let keys = ctrl.identity_service.get_full_identity().await?.key_pair;
     // fetch the file by URL
     let resp = reqwest::get(bill_file_url_req.file_url.clone())
