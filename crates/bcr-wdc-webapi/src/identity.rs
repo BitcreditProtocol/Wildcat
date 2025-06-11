@@ -5,6 +5,7 @@ use thiserror::Error;
 // ----- extra library imports
 use bcr_ebill_core::{self as data, identity, util::BcrKeys};
 use borsh::{BorshDeserialize, BorshSerialize};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
@@ -16,6 +17,8 @@ pub enum Error {
     InvalidBitcoinKey,
     #[error("Invalid URL")]
     InvalidUrl,
+    #[error("Invalid date")]
+    InvalidDate(chrono::ParseError),
 }
 
 #[repr(u8)]
@@ -73,7 +76,7 @@ pub struct Identity {
     pub bitcoin_public_key: bitcoin::PublicKey,
     pub npub: String,
     pub postal_address: OptionalPostalAddress,
-    pub date_of_birth: Option<String>,
+    pub date_of_birth: Option<NaiveDate>,
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
     pub identification_number: Option<String>,
@@ -91,6 +94,12 @@ impl TryFrom<(identity::Identity, BcrKeys)> for Identity {
             .map(|r| url::Url::parse(r).map_err(|_| Self::Error::InvalidUrl))
             .collect::<Result<_, _>>()?;
 
+        let date_of_birth: Option<NaiveDate> = identity
+            .date_of_birth
+            .as_deref()
+            .map(NaiveDate::from_str)
+            .transpose()
+            .map_err(Self::Error::InvalidDate)?;
         Ok(Self {
             node_id: identity.node_id.clone(),
             name: identity.name,
@@ -99,7 +108,7 @@ impl TryFrom<(identity::Identity, BcrKeys)> for Identity {
                 .map_err(|_| Error::InvalidBitcoinKey)?,
             npub: keys.get_nostr_npub(),
             postal_address: identity.postal_address.into(),
-            date_of_birth: identity.date_of_birth,
+            date_of_birth,
             country_of_birth: identity.country_of_birth,
             city_of_birth: identity.city_of_birth,
             identification_number: identity.identification_number,
