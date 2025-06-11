@@ -40,5 +40,5 @@ uuid.workspace = true
 bip39 = {workspace = true}
 mockall.workspace = true
 surrealdb = {workspace = true, features = ["kv-mem"]}
-bcr-wdc-key-service = {path = ".", features = ["test-utils"]}
+bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
 
