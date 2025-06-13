@@ -364,7 +364,7 @@ pub mod test_utils {
                 avatar_file_upload_id: Option<String>,
                 proof_document_file_upload_id: Option<String>,
             ) -> Result<Contact>;
-            async fn is_known_npub(&self, npub: &bcr_ebill_api::service::contact_service::PublicKey) -> Result<bool>;
+            async fn is_known_npub(&self, npub: &bcr_ebill_core::nostr_contact::NostrPublicKey) -> Result<bool>;
             async fn open_and_decrypt_file(
                 &self,
                 contact: Contact,
@@ -372,7 +372,8 @@ pub mod test_utils {
                 file_name: &str,
                 private_key: &str,
             ) -> Result<Vec<u8>>;
-            async fn get_nostr_npubs(&self) -> Result<Vec<bcr_ebill_api::service::contact_service::PublicKey>>;
+            async fn get_nostr_npubs(&self) -> Result<Vec<bcr_ebill_core::nostr_contact::NostrPublicKey>>;
+            async fn get_nostr_contact_by_node_id(&self, node_id: &str) -> Result<Option<bcr_ebill_core::nostr_contact::NostrContact>>;
         }
     }
 
