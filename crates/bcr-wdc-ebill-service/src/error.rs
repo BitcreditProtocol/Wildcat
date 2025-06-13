@@ -147,6 +147,8 @@ impl axum::response::IntoResponse for ValidationError {
                 | bcr_ebill_api::util::ValidationError::FieldEmpty(_)
                 | bcr_ebill_api::util::ValidationError::InvalidSum
                 | bcr_ebill_api::util::ValidationError::InvalidCurrency
+                | bcr_ebill_api::util::ValidationError::InvalidBillId
+                | bcr_ebill_api::util::ValidationError::InvalidNodeId
                 | bcr_ebill_api::util::ValidationError::RequestToMintForBillAndMintAlreadyActive
                 | bcr_ebill_api::util::ValidationError::InvalidMint(_)
                 | bcr_ebill_api::util::ValidationError::InvalidPaymentAddress

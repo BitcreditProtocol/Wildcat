@@ -68,6 +68,11 @@ async fn main() {
     let db = bcr_ebill_api::get_db_context(&api_config)
         .await
         .expect("Failed to create DB context");
+    // set the network and check if the configured network matches the persisted network and fail, if not
+    db.identity_store
+        .set_or_check_network(api_config.bitcoin_network())
+        .await
+        .expect("Couldn't set, or check btc network");
 
     // initialize identity keys
     let keys = db
