@@ -2,11 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_ebill_client::{EbillClient, Url};
-use bdk_wallet::{
-    bitcoin::{Amount, PrivateKey},
-    keys::KeyMap,
-    miniscript::descriptor,
-};
+use bdk_wallet::bitcoin::Amount;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::EBillNode;
@@ -43,22 +39,14 @@ impl EBillNode for EBillClient {
             .request_to_pay_bill(&request)
             .await
             .map_err(Error::EBillClient)?;
-        let bcr_wdc_webapi::bill::BillCombinedBitcoinKey { private_key } = self
+        let bcr_wdc_webapi::bill::BillCombinedBitcoinKey { private_descriptor } = self
             .0
-            .get_bitcoin_private_key_for_bill(bill)
+            .get_bitcoin_private_descriptor_for_bill(bill)
             .await
             .map_err(Error::EBillClient)?;
-        let priv_key = PrivateKey::from_wif(&private_key).map_err(Error::BTCWif)?;
-        let single = descriptor::SinglePriv {
-            key: priv_key,
-            origin: None,
-        };
-        let secret_descriptor = descriptor::DescriptorSecretKey::Single(single);
-        let pub_descriptor = secret_descriptor
-            .to_public(secp256k1::global::SECP256K1)
-            .expect("invalid single secret descriptor");
-        let kmap = KeyMap::from_iter(std::iter::once((pub_descriptor.clone(), secret_descriptor)));
-        let descriptor = descriptor::Descriptor::new_pkh(pub_descriptor).expect("invalid pubkey");
-        Ok(descriptor.to_string_with_secret(&kmap))
+        if private_descriptor.is_empty() {
+            return Err(Error::InvalidDescriptor(private_descriptor));
+        }
+        Ok(private_descriptor)
     }
 }
