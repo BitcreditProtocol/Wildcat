@@ -112,7 +112,7 @@ where
         let cloned_main = main.clone();
         let cloned_electrum_client = electrum_client.clone();
         let stop_gap = cfg.stop_gap;
-        tokio::task::spawn_blocking(move || {
+        timed_spawn_blocking("Wallet::new, full scan for main wallet", move || {
             wallet_full_scan(cloned_main, age, cloned_electrum_client, stop_gap);
         })
         .await?;
@@ -125,7 +125,7 @@ where
             let cloned_wlt = main.clone();
             let cloned_electrum_client = electrum_client.clone();
             let stop_gap = cfg.stop_gap;
-            tokio::task::spawn_blocking(move || {
+            timed_spawn_blocking("Wallet::new, full scan for single-use wallet", move || {
                 wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
             })
             .await?;
@@ -206,7 +206,7 @@ where
         let cloned_wlt = wlt.clone();
         let cloned_electrum_client = self.electrum_client.clone();
         let stop_gap = self.stop_gap;
-        tokio::task::spawn_blocking(move || {
+        timed_spawn_blocking("Wallet::add_descriptor, new single full_scan", move || {
             wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
         })
         .await?;
@@ -262,18 +262,18 @@ where
         let cloned = self.electrum_client.clone();
         let max_confirmation_blocks = self.max_confirmation_blocks;
         let avg_transaction_size = self.avg_transaction_size_bytes;
-        tokio::task::spawn_blocking(move || {
-            let fee_rate = cloned.inner.estimate_fee(max_confirmation_blocks)?;
-            let fee_rate = if fee_rate > Self::MIN_FEE_RATE_BTC_PER_KBYTE {
-                fee_rate
-            } else {
-                Self::MIN_FEE_RATE_BTC_PER_KBYTE
-            };
-            let fee = fee_rate * avg_transaction_size as f64 / 1000.0;
-            let amount = Amount::from_btc(fee)?;
-            Ok(amount)
+        let raw_fee_rate: f64 = timed_spawn_blocking("Wallet::estimate_fees", move || {
+            cloned.inner.estimate_fee(max_confirmation_blocks)
         })
-        .await?
+        .await??;
+        let fee_rate = if raw_fee_rate > Self::MIN_FEE_RATE_BTC_PER_KBYTE {
+            raw_fee_rate
+        } else {
+            Self::MIN_FEE_RATE_BTC_PER_KBYTE
+        };
+        let fee = fee_rate * avg_transaction_size as f64 / 1000.0;
+        let amount = Amount::from_btc(fee)?;
+        Ok(amount)
     }
 
     async fn send_to(
@@ -463,7 +463,9 @@ where
     ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     let cloned_electrum_client = electrum_client.clone();
-    let main_sync_task = tokio::task::spawn_blocking(|| wallet_sync(main, cloned_electrum_client));
+    let main_sync_task = timed_spawn_blocking("wallets_sync, main wallet ", || {
+        wallet_sync(main, cloned_electrum_client)
+    });
     let joined: JoinAll<_> = {
         let locked_singles = singles.lock().unwrap();
         locked_singles
@@ -471,7 +473,9 @@ where
             .map(|wlt| {
                 let cloned_wlt = wlt.clone();
                 let cloned_electrum_client = electrum_client.clone();
-                tokio::task::spawn_blocking(move || wallet_sync(cloned_wlt, cloned_electrum_client))
+                timed_spawn_blocking("wallets_sync, single wallet", move || {
+                    wallet_sync(cloned_wlt, cloned_electrum_client)
+                })
             })
             .collect()
     };
@@ -566,6 +570,25 @@ where
     let total_spent = amount + total_fee;
     wallet.persist(db)?;
     Ok((txid, total_spent))
+}
+
+async fn timed_spawn_blocking<F, T>(
+    note: &'static str,
+    f: F,
+) -> std::result::Result<T, tokio::task::JoinError>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let hndl = tokio::task::spawn_blocking(move || {
+        let start = std::time::Instant::now();
+        let result = f();
+        let end = std::time::Instant::now();
+        let elapsed = end - start;
+        tracing::trace!("{note} took: {elapsed:?}");
+        Ok(result)
+    });
+    hndl.await?
 }
 
 #[cfg(test)]
