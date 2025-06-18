@@ -114,7 +114,8 @@ where
         let stop_gap = cfg.stop_gap;
         tokio::task::spawn_blocking(move || {
             wallet_full_scan(cloned_main, age, cloned_electrum_client, stop_gap);
-        });
+        })
+        .await?;
 
         let mut singles = Vec::new();
         let keys = repo.get_private_keys().await?;
@@ -126,7 +127,8 @@ where
             let stop_gap = cfg.stop_gap;
             tokio::task::spawn_blocking(move || {
                 wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
-            });
+            })
+            .await?;
             singles.push(wlt);
         }
 
@@ -206,7 +208,8 @@ where
         let stop_gap = self.stop_gap;
         tokio::task::spawn_blocking(move || {
             wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
-        });
+        })
+        .await?;
         let mut locked = self.singles.lock().unwrap();
         locked.push(wlt);
         Ok(addr_info.address)
@@ -259,7 +262,7 @@ where
         let cloned = self.electrum_client.clone();
         let max_confirmation_blocks = self.max_confirmation_blocks;
         let avg_transaction_size = self.avg_transaction_size_bytes;
-        let hndlr = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let fee_rate = cloned.inner.estimate_fee(max_confirmation_blocks)?;
             let fee_rate = if fee_rate > Self::MIN_FEE_RATE_BTC_PER_KBYTE {
                 fee_rate
@@ -269,8 +272,8 @@ where
             let fee = fee_rate * avg_transaction_size as f64 / 1000.0;
             let amount = Amount::from_btc(fee)?;
             Ok(amount)
-        });
-        hndlr.await?
+        })
+        .await?
     }
 
     async fn send_to(
