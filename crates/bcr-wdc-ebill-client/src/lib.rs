@@ -151,7 +151,7 @@ impl EbillClient {
         Ok((content_type, bytes.to_vec()))
     }
 
-    pub async fn get_bitcoin_private_key_for_bill(
+    pub async fn get_bitcoin_private_descriptor_for_bill(
         &self,
         bill_id: &str,
     ) -> Result<BillCombinedBitcoinKey> {

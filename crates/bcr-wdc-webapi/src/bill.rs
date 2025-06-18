@@ -460,13 +460,13 @@ pub struct RequestToPayBitcreditBillPayload {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BillCombinedBitcoinKey {
-    pub private_key: String,
+    pub private_descriptor: String,
 }
 
 impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
     fn from(val: bill::BillCombinedBitcoinKey) -> Self {
         BillCombinedBitcoinKey {
-            private_key: val.private_descriptor,
+            private_descriptor: val.private_descriptor,
         }
     }
 }

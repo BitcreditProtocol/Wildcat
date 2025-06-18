@@ -22,7 +22,9 @@ async fn bill_calls() {
     assert!(response.is_err());
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
 
-    let response = client.get_bitcoin_private_key_for_bill("some_id").await;
+    let response = client
+        .get_bitcoin_private_descriptor_for_bill("some_id")
+        .await;
     assert!(response.is_err());
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
 
