@@ -134,8 +134,9 @@ where
 {
     tracing::debug!("Received request to list quotes");
 
+    let now = chrono::Utc::now();
     let (filters, sort) = convert_into_list_params(params.0);
-    let quotes = ctrl.list_light(filters, sort).await?;
+    let quotes = ctrl.list_light(filters, sort, now).await?;
     let response = web_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
     };
@@ -221,7 +222,8 @@ where
 {
     tracing::debug!("Received mint quote lookup request");
 
-    let quote = ctrl.lookup(id).await?;
+    let now = chrono::Utc::now();
+    let quote = ctrl.lookup(id, now).await?;
     let response = convert_to_info_reply(quote);
     Ok(Json(response))
 }

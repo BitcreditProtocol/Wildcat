@@ -112,7 +112,8 @@ where
 {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
-    let quote = ctrl.lookup(id).await?;
+    let now = chrono::Utc::now();
+    let quote = ctrl.lookup(id, now).await?;
     Ok(Json(convert_to_enquire_reply(quote)))
 }
 
@@ -176,7 +177,7 @@ where
 
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
-    let quote = ctrl.lookup(id).await?;
+    let quote = ctrl.lookup(id, now).await?;
     let reply = convert_to_enquire_reply(quote);
     Ok(Json(reply))
 }

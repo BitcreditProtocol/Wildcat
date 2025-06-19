@@ -122,76 +122,56 @@ where
         // pick the more recent quote for this eBill/endorser
         quotes.sort_by_key(|q| q.submitted);
         if let Some(last) = quotes.last_mut() {
-            last.check_expire(submitted);
+            let changed = last.check_expire(submitted);
+            if changed {
+                self.quotes
+                    .update_status_if_offered(last.id, last.status.clone())
+                    .await
+                    .map_err(Error::QuotesRepository)?;
+            }
         }
         match quotes.last() {
             Some(Quote {
                 id,
-                status: QuoteStatus::Pending { .. },
-                ..
-            }) => Ok(*id),
-            Some(Quote {
-                id,
                 status: QuoteStatus::Canceled { tstamp },
                 ..
-            }) => {
-                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
-                    self.new_quote(bill, pub_key, submitted).await
-                } else {
-                    Err(Error::QuoteAlreadyResolved(*id))
-                }
-            }
-            Some(Quote {
+            })
+            | Some(Quote {
                 id,
                 status: QuoteStatus::Denied { tstamp },
                 ..
+            })
+            | Some(Quote {
+                id,
+                status: QuoteStatus::OfferExpired { tstamp, .. },
+                ..
+            })
+            | Some(Quote {
+                id,
+                status: QuoteStatus::Rejected { tstamp, .. },
+                ..
             }) => {
                 if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
                     self.new_quote(bill, pub_key, submitted).await
                 } else {
-                    Err(Error::QuoteAlreadyResolved(*id))
+                    Ok(*id)
                 }
             }
             Some(Quote {
+                id,
+                status: QuoteStatus::Pending { .. },
+                ..
+            })
+            | Some(Quote {
                 id,
                 status: QuoteStatus::Offered { .. },
                 ..
-            }) => Err(Error::QuoteAlreadyResolved(*id)),
-            Some(Quote {
-                id,
-                status:
-                    QuoteStatus::OfferExpired {
-                        tstamp,
-                        discounted: _,
-                    },
-                ..
-            }) => {
-                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
-                    self.new_quote(bill, pub_key, submitted).await
-                } else {
-                    Err(Error::QuoteAlreadyResolved(*id))
-                }
-            }
-            Some(Quote {
+            })
+            | Some(Quote {
                 id,
                 status: QuoteStatus::Accepted { .. },
                 ..
-            }) => Err(Error::QuoteAlreadyResolved(*id)),
-            Some(Quote {
-                id,
-                status:
-                    QuoteStatus::Rejected {
-                        tstamp,
-                        discounted: _,
-                    },
-                ..
-            }) => {
-                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
-                    self.new_quote(bill, pub_key, submitted).await
-                } else {
-                    Err(Error::QuoteAlreadyResolved(*id))
-                }
-            }
+            }) => Ok(*id),
             None => self.new_quote(bill, pub_key, submitted).await,
         }
     }
@@ -268,12 +248,21 @@ where
         Ok(())
     }
 
-    pub async fn lookup(&self, id: uuid::Uuid) -> Result<Quote> {
-        self.quotes
+    pub async fn lookup(&self, id: uuid::Uuid, now: TStamp) -> Result<Quote> {
+        let mut quote = self
+            .quotes
             .load(id)
             .await
             .map_err(Error::QuotesRepository)?
-            .ok_or(Error::UnknownQuoteID(id))
+            .ok_or(Error::UnknownQuoteID(id))?;
+        let changed = quote.check_expire(now);
+        if changed {
+            self.quotes
+                .update_status_if_offered(quote.id, quote.status.clone())
+                .await
+                .map_err(Error::QuotesRepository)?;
+        }
+        Ok(quote)
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
@@ -287,11 +276,35 @@ where
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
+        now: TStamp,
     ) -> Result<Vec<LightQuote>> {
-        self.quotes
+        let mut lights = self
+            .quotes
             .list_light(filters, sort)
             .await
-            .map_err(Error::QuotesRepository)
+            .map_err(Error::QuotesRepository)?;
+
+        for light in lights.iter_mut() {
+            if matches!(light.status, QuoteStatusDiscriminants::Offered) {
+                let mut quote = self
+                    .quotes
+                    .load(light.id)
+                    .await
+                    .map_err(Error::QuotesRepository)?
+                    .ok_or(Error::InternalServer(String::from(
+                        "light quote ID not found in quote",
+                    )))?;
+                let changed = quote.check_expire(now);
+                if changed {
+                    self.quotes
+                        .update_status_if_offered(light.id, quote.status.clone())
+                        .await
+                        .map_err(Error::QuotesRepository)?;
+                    light.status = QuoteStatusDiscriminants::from(quote.status.clone());
+                }
+            }
+        }
+        Ok(lights)
     }
 }
 
@@ -308,7 +321,7 @@ where
         submitted: TStamp,
         ttl: Option<TStamp>,
     ) -> Result<(Amount, TStamp)> {
-        let mut quote = self.lookup(qid).await?;
+        let mut quote = self.lookup(qid, submitted).await?;
         let QuoteStatus::Pending { public_key } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
@@ -540,12 +553,8 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service.enquire(rnd_bill, public_key, now).await;
-        assert!(test_id.is_err());
-        assert!(matches!(
-            test_id.unwrap_err(),
-            Error::QuoteAlreadyResolved(_)
-        ));
+        let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
+        assert_eq!(id, test_id);
     }
 
     #[tokio::test]
@@ -583,12 +592,8 @@ mod tests {
             keys_hndlr,
             wallet,
         };
-        let test_id = service.enquire(rnd_bill, public_key, now).await;
-        assert!(test_id.is_err());
-        assert!(matches!(
-            test_id.unwrap_err(),
-            Error::QuoteAlreadyResolved(_)
-        ));
+        let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
+        assert_eq!(id, test_id);
     }
 
     #[tokio::test]
@@ -617,7 +622,8 @@ mod tests {
                     submitted: now,
                 }])
             });
-        repo.expect_store().returning(|_| Ok(()));
+        repo.expect_update_status_if_offered()
+            .returning(|_, _| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
 
@@ -628,8 +634,9 @@ mod tests {
         };
         let test_id = service
             .enquire(rnd_bill, public_key, now + chrono::Duration::seconds(1))
-            .await;
-        assert!(test_id.is_err());
+            .await
+            .unwrap();
+        assert_eq!(id, test_id);
     }
 
     #[tokio::test]
@@ -658,6 +665,8 @@ mod tests {
                     submitted: now,
                 }])
             });
+        repo.expect_update_status_if_offered()
+            .returning(|_, _| Ok(()));
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();

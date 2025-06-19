@@ -149,7 +149,7 @@ impl Quote {
         Ok(())
     }
 
-    pub fn check_expire(&mut self, tstamp: TStamp) {
+    pub fn check_expire(&mut self, tstamp: TStamp) -> bool {
         if let QuoteStatus::Offered {
             ttl, discounted, ..
         } = self.status
@@ -159,8 +159,10 @@ impl Quote {
                     tstamp: ttl,
                     discounted,
                 };
+                return true;
             }
         }
+        false
     }
 
     pub fn reject(&mut self, tstamp: TStamp) -> Result<()> {
