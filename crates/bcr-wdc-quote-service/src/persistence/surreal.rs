@@ -16,7 +16,7 @@ struct QuoteDBEntry {
     qid: surrealdb::Uuid, // can't be `id`, reserved word in surreal
     bill: quotes::BillInfo,
     submitted: TStamp,
-    status: quotes::QuoteStatus,
+    status: quotes::Status,
 }
 
 impl From<QuoteDBEntry> for quotes::Quote {
@@ -44,7 +44,7 @@ impl From<quotes::Quote> for QuoteDBEntry {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct LightQuoteDBEntry {
     qid: uuid::Uuid,
-    status: quotes::QuoteStatusDiscriminants,
+    status: quotes::StatusDiscriminants,
     sum: bitcoin::Amount,
     maturity_date: TStamp,
 }
@@ -179,7 +179,7 @@ impl DBQuotes {
 
     async fn list_by_status(
         &self,
-        status: quotes::QuoteStatusDiscriminants,
+        status: quotes::StatusDiscriminants,
         since: Option<TStamp>,
     ) -> SurrealResult<Vec<Uuid>> {
         let mut query = String::from(
@@ -223,7 +223,7 @@ impl Repository for DBQuotes {
     async fn update_status_if_pending(
         &self,
         qid: uuid::Uuid,
-        new: quotes::QuoteStatus,
+        new: quotes::Status,
     ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<QuoteDBEntry> = self
@@ -231,11 +231,11 @@ impl Repository for DBQuotes {
             .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE ")
             .bind(("rid", recordid))
             .bind(("new", new))
-            .bind(("status", quotes::QuoteStatusDiscriminants::Pending))
+            .bind(("status", quotes::StatusDiscriminants::Pending))
             .await?
             .take(0)?;
         let before = before.ok_or(anyhow::anyhow!("Quote not found or not pending"))?;
-        if !matches!(before.status, quotes::QuoteStatus::Pending { .. }) {
+        if !matches!(before.status, quotes::Status::Pending { .. }) {
             return Err(anyhow::anyhow!("Quote not pending"));
         }
         Ok(())
@@ -244,7 +244,7 @@ impl Repository for DBQuotes {
     async fn update_status_if_offered(
         &self,
         qid: uuid::Uuid,
-        new: quotes::QuoteStatus,
+        new: quotes::Status,
     ) -> AnyResult<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<QuoteDBEntry> = self
@@ -252,21 +252,21 @@ impl Repository for DBQuotes {
             .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
             .bind(("rid", recordid))
             .bind(("new", new))
-            .bind(("status", quotes::QuoteStatusDiscriminants::Offered))
+            .bind(("status", quotes::StatusDiscriminants::Offered))
             .await?
             .take(0)?;
         if before.is_none() {
             return Err(anyhow::anyhow!("Quote not found or not pending"));
         }
         let before = before.unwrap();
-        if !matches!(before.status, quotes::QuoteStatus::Offered { .. }) {
+        if !matches!(before.status, quotes::Status::Offered { .. }) {
             return Err(anyhow::anyhow!("Quote not offered"));
         }
         Ok(())
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
-        self.list_by_status(quotes::QuoteStatusDiscriminants::Pending, since)
+        self.list_by_status(quotes::StatusDiscriminants::Pending, since)
             .await
             .map_err(Into::into)
     }
@@ -345,7 +345,7 @@ mod tests {
             bill: quotes::BillInfo::default(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
         };
@@ -353,7 +353,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, quote.id);
         let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
-        quote.status = quotes::QuoteStatus::Offered {
+        quote.status = quotes::Status::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
@@ -370,7 +370,7 @@ mod tests {
             bill: quotes::BillInfo::default(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
-            status: quotes::QuoteStatus::Rejected {
+            status: quotes::Status::Rejected {
                 tstamp: TStamp::default(),
                 discounted: bitcoin::Amount::default(),
             },
@@ -385,7 +385,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        quote.status = quotes::QuoteStatus::Offered {
+        quote.status = quotes::Status::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
@@ -396,10 +396,7 @@ mod tests {
         let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
         assert!(content.is_some());
         let content = content.unwrap();
-        assert!(matches!(
-            content.status,
-            quotes::QuoteStatus::Rejected { .. }
-        ));
+        assert!(matches!(content.status, quotes::Status::Rejected { .. }));
     }
 
     #[tokio::test]
@@ -410,7 +407,7 @@ mod tests {
             bill: quotes::BillInfo::default(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
-            status: quotes::QuoteStatus::Offered {
+            status: quotes::Status::Offered {
                 keyset_id: keys_test::generate_random_keysetid(),
                 ttl: TStamp::default(),
                 discounted: bitcoin::Amount::default(),
@@ -420,7 +417,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, quote.id);
         let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
-        quote.status = quotes::QuoteStatus::Accepted {
+        quote.status = quotes::Status::Accepted {
             keyset_id: keys_test::generate_random_keysetid(),
             discounted: bitcoin::Amount::default(),
         };
@@ -437,7 +434,7 @@ mod tests {
             bill: quotes::BillInfo::default(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
-            status: quotes::QuoteStatus::Denied { tstamp: now },
+            status: quotes::Status::Denied { tstamp: now },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
         let rid = RecordId::from_table_key(&db.table, quote.id);
@@ -449,7 +446,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        quote.status = quotes::QuoteStatus::Offered {
+        quote.status = quotes::Status::Offered {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
@@ -460,7 +457,7 @@ mod tests {
         let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
         assert!(content.is_some());
         let content = content.unwrap();
-        assert!(matches!(content.status, quotes::QuoteStatus::Denied { .. }));
+        assert!(matches!(content.status, quotes::Status::Denied { .. }));
     }
 
     #[tokio::test]
@@ -471,7 +468,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid);
         let entry = QuoteDBEntry {
             qid,
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
@@ -516,7 +513,7 @@ mod tests {
         assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
-            status: Some(quotes::QuoteStatusDiscriminants::Pending),
+            status: Some(quotes::StatusDiscriminants::Pending),
             bill_drawee_id: Some(String::from("none")),
             ..Default::default()
         };
@@ -524,7 +521,7 @@ mod tests {
         assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
-            status: Some(quotes::QuoteStatusDiscriminants::Pending),
+            status: Some(quotes::StatusDiscriminants::Pending),
             bill_drawee_id: Some(String::from("drawee")),
             ..Default::default()
         };
@@ -540,7 +537,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid1);
         let entry = QuoteDBEntry {
             qid: qid1,
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
@@ -555,7 +552,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid2);
         let entry = QuoteDBEntry {
             qid: qid2,
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
@@ -570,7 +567,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid3);
         let entry = QuoteDBEntry {
             qid: qid3,
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
@@ -610,7 +607,7 @@ mod tests {
         let rid = RecordId::from_table_key(&db.table, qid1);
         let entry = QuoteDBEntry {
             qid: qid1,
-            status: quotes::QuoteStatus::Pending {
+            status: quotes::Status::Pending {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {

@@ -49,12 +49,12 @@ impl Repository for QuotesIDMap {
     async fn update_status_if_pending(
         &self,
         qid: uuid::Uuid,
-        new: quotes::QuoteStatus,
+        new: quotes::Status,
     ) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
-            if matches!(old.status, quotes::QuoteStatus::Pending { .. }) {
+            if matches!(old.status, quotes::Status::Pending { .. }) {
                 old.status = new;
             }
         }
@@ -64,12 +64,12 @@ impl Repository for QuotesIDMap {
     async fn update_status_if_offered(
         &self,
         qid: uuid::Uuid,
-        new: quotes::QuoteStatus,
+        new: quotes::Status,
     ) -> AnyResult<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
-            if matches!(old.status, quotes::QuoteStatus::Offered { .. }) {
+            if matches!(old.status, quotes::Status::Offered { .. }) {
                 old.status = new;
             }
         }
@@ -82,7 +82,7 @@ impl Repository for QuotesIDMap {
             .read()
             .unwrap()
             .iter()
-            .filter(|(_, q)| matches!(q.status, quotes::QuoteStatus::Pending { .. }))
+            .filter(|(_, q)| matches!(q.status, quotes::Status::Pending { .. }))
             .filter(|(_, q)| q.submitted >= since.unwrap_or_default())
             .map(|(id, _)| *id)
             .collect();

@@ -59,7 +59,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize))]
 #[serde(tag = "status")]
-pub enum QuoteStatus {
+pub enum Status {
     Pending {
         public_key: cdk01::PublicKey,
     },
@@ -90,7 +90,7 @@ pub enum QuoteStatus {
 
 #[derive(Debug, Clone)]
 pub struct Quote {
-    pub status: QuoteStatus,
+    pub status: Status,
     pub id: Uuid,
     pub bill: BillInfo,
     pub submitted: TStamp,
@@ -98,7 +98,7 @@ pub struct Quote {
 
 pub struct LightQuote {
     pub id: Uuid,
-    pub status: QuoteStatusDiscriminants,
+    pub status: StatusDiscriminants,
     pub sum: Amount,
     pub maturity_date: TStamp,
 }
@@ -106,7 +106,7 @@ pub struct LightQuote {
 impl Quote {
     pub fn new(bill: BillInfo, public_key: cdk01::PublicKey, submitted: TStamp) -> Self {
         Self {
-            status: QuoteStatus::Pending { public_key },
+            status: Status::Pending { public_key },
             id: Uuid::new_v4(),
             bill,
             submitted,
@@ -114,8 +114,8 @@ impl Quote {
     }
 
     pub fn cancel(&mut self, tstamp: TStamp) -> Result<()> {
-        if let QuoteStatus::Pending { .. } = self.status {
-            self.status = QuoteStatus::Canceled { tstamp };
+        if let Status::Pending { .. } = self.status {
+            self.status = Status::Canceled { tstamp };
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))
@@ -123,8 +123,8 @@ impl Quote {
     }
 
     pub fn deny(&mut self, tstamp: TStamp) -> Result<()> {
-        if let QuoteStatus::Pending { .. } = self.status {
-            self.status = QuoteStatus::Denied { tstamp };
+        if let Status::Pending { .. } = self.status {
+            self.status = Status::Denied { tstamp };
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))
@@ -137,11 +137,11 @@ impl Quote {
         ttl: TStamp,
         discounted: bitcoin::Amount,
     ) -> Result<()> {
-        let QuoteStatus::Pending { .. } = self.status else {
+        let Status::Pending { .. } = self.status else {
             return Err(Error::QuoteAlreadyResolved(self.id));
         };
 
-        self.status = QuoteStatus::Offered {
+        self.status = Status::Offered {
             keyset_id,
             ttl,
             discounted,
@@ -150,12 +150,12 @@ impl Quote {
     }
 
     pub fn check_expire(&mut self, tstamp: TStamp) -> bool {
-        if let QuoteStatus::Offered {
+        if let Status::Offered {
             ttl, discounted, ..
         } = self.status
         {
             if tstamp > ttl {
-                self.status = QuoteStatus::OfferExpired {
+                self.status = Status::OfferExpired {
                     tstamp: ttl,
                     discounted,
                 };
@@ -166,8 +166,8 @@ impl Quote {
     }
 
     pub fn reject(&mut self, tstamp: TStamp) -> Result<()> {
-        if let QuoteStatus::Offered { discounted, .. } = self.status {
-            self.status = QuoteStatus::Rejected { tstamp, discounted };
+        if let Status::Offered { discounted, .. } = self.status {
+            self.status = Status::Rejected { tstamp, discounted };
             Ok(())
         } else {
             Err(Error::QuoteAlreadyResolved(self.id))
@@ -177,12 +177,12 @@ impl Quote {
     pub fn accept(&mut self, tstamp: TStamp) -> Result<()> {
         self.check_expire(tstamp);
         match self.status {
-            QuoteStatus::Offered {
+            Status::Offered {
                 keyset_id,
                 discounted,
                 ..
             } => {
-                self.status = QuoteStatus::Accepted {
+                self.status = Status::Accepted {
                     keyset_id,
                     discounted,
                 }
