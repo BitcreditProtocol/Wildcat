@@ -37,12 +37,15 @@ pub enum Error {
     InvalidAmount(bitcoin::Amount),
     #[error("Invalid blindedMessages: {0}")]
     InvalidKeysetId(cdk02::Id),
+    #[error("Internal server error: {0}")]
+    InternalServer(String),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::InternalServer(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             Error::InvalidKeysetId(_) => {
                 (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID"))
             }
