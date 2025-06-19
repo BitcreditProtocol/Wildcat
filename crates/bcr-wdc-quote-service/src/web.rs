@@ -62,10 +62,10 @@ fn verify_signature(req: &web_quotes::SignedEnquireRequest) -> Result<()> {
 /// --------------------------- Look up quote
 fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
     match quote.status {
-        quotes::QuoteStatus::Pending { .. } => web_quotes::StatusReply::Pending,
-        quotes::QuoteStatus::Canceled { tstamp } => web_quotes::StatusReply::Canceled { tstamp },
-        quotes::QuoteStatus::Denied { tstamp } => web_quotes::StatusReply::Denied { tstamp },
-        quotes::QuoteStatus::Offered {
+        quotes::Status::Pending { .. } => web_quotes::StatusReply::Pending,
+        quotes::Status::Canceled { tstamp } => web_quotes::StatusReply::Canceled { tstamp },
+        quotes::Status::Denied { tstamp } => web_quotes::StatusReply::Denied { tstamp },
+        quotes::Status::Offered {
             keyset_id,
             ttl,
             discounted,
@@ -74,13 +74,13 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
             expiration_date: ttl,
             discounted,
         },
-        quotes::QuoteStatus::OfferExpired { tstamp, discounted } => {
+        quotes::Status::OfferExpired { tstamp, discounted } => {
             web_quotes::StatusReply::OfferExpired { tstamp, discounted }
         }
-        quotes::QuoteStatus::Rejected { tstamp, discounted } => {
+        quotes::Status::Rejected { tstamp, discounted } => {
             web_quotes::StatusReply::Rejected { tstamp, discounted }
         }
-        quotes::QuoteStatus::Accepted {
+        quotes::Status::Accepted {
             keyset_id,
             discounted,
         } => web_quotes::StatusReply::Accepted {

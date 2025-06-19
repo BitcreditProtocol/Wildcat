@@ -37,21 +37,15 @@ where
 
 fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo {
     let status = match quote.status {
-        quotes::QuoteStatusDiscriminants::Pending => web_quotes::StatusReplyDiscriminants::Pending,
-        quotes::QuoteStatusDiscriminants::Canceled => {
-            web_quotes::StatusReplyDiscriminants::Canceled
-        }
-        quotes::QuoteStatusDiscriminants::Offered => web_quotes::StatusReplyDiscriminants::Offered,
-        quotes::QuoteStatusDiscriminants::OfferExpired => {
+        quotes::StatusDiscriminants::Pending => web_quotes::StatusReplyDiscriminants::Pending,
+        quotes::StatusDiscriminants::Canceled => web_quotes::StatusReplyDiscriminants::Canceled,
+        quotes::StatusDiscriminants::Offered => web_quotes::StatusReplyDiscriminants::Offered,
+        quotes::StatusDiscriminants::OfferExpired => {
             web_quotes::StatusReplyDiscriminants::OfferExpired
         }
-        quotes::QuoteStatusDiscriminants::Denied => web_quotes::StatusReplyDiscriminants::Denied,
-        quotes::QuoteStatusDiscriminants::Rejected => {
-            web_quotes::StatusReplyDiscriminants::Rejected
-        }
-        quotes::QuoteStatusDiscriminants::Accepted => {
-            web_quotes::StatusReplyDiscriminants::Accepted
-        }
+        quotes::StatusDiscriminants::Denied => web_quotes::StatusReplyDiscriminants::Denied,
+        quotes::StatusDiscriminants::Rejected => web_quotes::StatusReplyDiscriminants::Rejected,
+        quotes::StatusDiscriminants::Accepted => web_quotes::StatusReplyDiscriminants::Accepted,
     };
     web_quotes::LightInfo {
         id: quote.id,
@@ -75,25 +69,25 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
     let status = match status {
         None => None,
         Some(web_quotes::StatusReplyDiscriminants::Pending) => {
-            Some(quotes::QuoteStatusDiscriminants::Pending)
+            Some(quotes::StatusDiscriminants::Pending)
         }
         Some(web_quotes::StatusReplyDiscriminants::Canceled) => {
-            Some(quotes::QuoteStatusDiscriminants::Canceled)
+            Some(quotes::StatusDiscriminants::Canceled)
         }
         Some(web_quotes::StatusReplyDiscriminants::Offered) => {
-            Some(quotes::QuoteStatusDiscriminants::Offered)
+            Some(quotes::StatusDiscriminants::Offered)
         }
         Some(web_quotes::StatusReplyDiscriminants::OfferExpired) => {
-            Some(quotes::QuoteStatusDiscriminants::OfferExpired)
+            Some(quotes::StatusDiscriminants::OfferExpired)
         }
         Some(web_quotes::StatusReplyDiscriminants::Denied) => {
-            Some(quotes::QuoteStatusDiscriminants::Denied)
+            Some(quotes::StatusDiscriminants::Denied)
         }
         Some(web_quotes::StatusReplyDiscriminants::Rejected) => {
-            Some(quotes::QuoteStatusDiscriminants::Rejected)
+            Some(quotes::StatusDiscriminants::Rejected)
         }
         Some(web_quotes::StatusReplyDiscriminants::Accepted) => {
-            Some(quotes::QuoteStatusDiscriminants::Accepted)
+            Some(quotes::StatusDiscriminants::Accepted)
         }
     };
     let sort = match sort {
@@ -146,18 +140,18 @@ where
 /// --------------------------- Look up request
 fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
     match quote.status {
-        quotes::QuoteStatus::Pending { .. } => web_quotes::InfoReply::Pending {
+        quotes::Status::Pending { .. } => web_quotes::InfoReply::Pending {
             id: quote.id,
             bill: quote.bill.into(),
             submitted: quote.submitted,
             suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
         },
-        quotes::QuoteStatus::Canceled { tstamp } => web_quotes::InfoReply::Canceled {
+        quotes::Status::Canceled { tstamp } => web_quotes::InfoReply::Canceled {
             id: quote.id,
             bill: quote.bill.into(),
             tstamp,
         },
-        quotes::QuoteStatus::Offered {
+        quotes::Status::Offered {
             keyset_id,
             ttl,
             discounted,
@@ -168,7 +162,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             ttl,
             keyset_id,
         },
-        quotes::QuoteStatus::OfferExpired { tstamp, discounted } => {
+        quotes::Status::OfferExpired { tstamp, discounted } => {
             web_quotes::InfoReply::OfferExpired {
                 id: quote.id,
                 bill: quote.bill.into(),
@@ -176,12 +170,12 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
                 tstamp,
             }
         }
-        quotes::QuoteStatus::Denied { tstamp } => web_quotes::InfoReply::Denied {
+        quotes::Status::Denied { tstamp } => web_quotes::InfoReply::Denied {
             id: quote.id,
             bill: quote.bill.into(),
             tstamp,
         },
-        quotes::QuoteStatus::Accepted {
+        quotes::Status::Accepted {
             keyset_id,
             discounted,
         } => web_quotes::InfoReply::Accepted {
@@ -190,7 +184,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             discounted,
             keyset_id,
         },
-        quotes::QuoteStatus::Rejected { tstamp, discounted } => web_quotes::InfoReply::Rejected {
+        quotes::Status::Rejected { tstamp, discounted } => web_quotes::InfoReply::Rejected {
             id: quote.id,
             bill: quote.bill.into(),
             discounted,

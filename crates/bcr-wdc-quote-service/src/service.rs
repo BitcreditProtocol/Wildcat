@@ -9,7 +9,7 @@ use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::quotes::{BillInfo, LightQuote, Quote, QuoteStatus, QuoteStatusDiscriminants};
+use crate::quotes::{BillInfo, LightQuote, Quote, Status, StatusDiscriminants};
 use crate::TStamp;
 
 // ---------- required traits
@@ -17,7 +17,7 @@ use crate::TStamp;
 pub struct ListFilters {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
-    pub status: Option<QuoteStatusDiscriminants>,
+    pub status: Option<StatusDiscriminants>,
     pub bill_id: Option<String>,
     pub bill_drawee_id: Option<String>,
     pub bill_drawer_id: Option<String>,
@@ -35,8 +35,8 @@ pub enum SortOrder {
 #[async_trait]
 pub trait Repository {
     async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
-    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
-    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: QuoteStatus) -> AnyResult<()>;
+    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> AnyResult<()>;
+    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> AnyResult<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
     async fn list_light(
         &self,
@@ -133,22 +133,22 @@ where
         match quotes.last() {
             Some(Quote {
                 id,
-                status: QuoteStatus::Canceled { tstamp },
+                status: Status::Canceled { tstamp },
                 ..
             })
             | Some(Quote {
                 id,
-                status: QuoteStatus::Denied { tstamp },
+                status: Status::Denied { tstamp },
                 ..
             })
             | Some(Quote {
                 id,
-                status: QuoteStatus::OfferExpired { tstamp, .. },
+                status: Status::OfferExpired { tstamp, .. },
                 ..
             })
             | Some(Quote {
                 id,
-                status: QuoteStatus::Rejected { tstamp, .. },
+                status: Status::Rejected { tstamp, .. },
                 ..
             }) => {
                 if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
@@ -159,17 +159,17 @@ where
             }
             Some(Quote {
                 id,
-                status: QuoteStatus::Pending { .. },
+                status: Status::Pending { .. },
                 ..
             })
             | Some(Quote {
                 id,
-                status: QuoteStatus::Offered { .. },
+                status: Status::Offered { .. },
                 ..
             })
             | Some(Quote {
                 id,
-                status: QuoteStatus::Accepted { .. },
+                status: Status::Accepted { .. },
                 ..
             }) => Ok(*id),
             None => self.new_quote(bill, pub_key, submitted).await,
@@ -285,7 +285,7 @@ where
             .map_err(Error::QuotesRepository)?;
 
         for light in lights.iter_mut() {
-            if matches!(light.status, QuoteStatusDiscriminants::Offered) {
+            if matches!(light.status, StatusDiscriminants::Offered) {
                 let mut quote = self
                     .quotes
                     .load(light.id)
@@ -300,7 +300,7 @@ where
                         .update_status_if_offered(light.id, quote.status.clone())
                         .await
                         .map_err(Error::QuotesRepository)?;
-                    light.status = QuoteStatusDiscriminants::from(quote.status.clone());
+                    light.status = StatusDiscriminants::from(quote.status.clone());
                 }
             }
         }
@@ -322,7 +322,7 @@ where
         ttl: Option<TStamp>,
     ) -> Result<(Amount, TStamp)> {
         let mut quote = self.lookup(qid, submitted).await?;
-        let QuoteStatus::Pending { public_key } = quote.status else {
+        let Status::Pending { public_key } = quote.status else {
             return Err(Error::QuoteAlreadyResolved(qid));
         };
 
@@ -501,7 +501,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Pending { public_key },
+                    status: Status::Pending { public_key },
                     id,
                     bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
@@ -538,7 +538,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Denied { tstamp: now },
+                    status: Status::Denied { tstamp: now },
                     id,
                     bill: cloned.clone(),
                     submitted: now,
@@ -573,7 +573,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Offered {
+                    status: Status::Offered {
                         keyset_id,
                         ttl: now + chrono::Duration::days(1),
                         discounted: rnd_bill.sum,
@@ -612,7 +612,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Offered {
+                    status: Status::Offered {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
@@ -655,7 +655,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: QuoteStatus::Offered {
+                    status: Status::Offered {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
