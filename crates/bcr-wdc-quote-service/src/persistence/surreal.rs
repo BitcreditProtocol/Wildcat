@@ -1,15 +1,19 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Result as AnyResult;
+use anyhow::anyhow;
 use async_trait::async_trait;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
-// ----- local modules
 // ----- local imports
-use crate::quotes;
-use crate::service::{ListFilters, Repository, SortOrder};
-use crate::TStamp;
+use crate::{
+    error::{Error, Result},
+    quotes,
+    service::{ListFilters, Repository, SortOrder},
+    TStamp,
+};
+
+// ----- end imports
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteDBEntry {
@@ -215,16 +219,16 @@ impl DBQuotes {
 
 #[async_trait]
 impl Repository for DBQuotes {
-    async fn load(&self, qid: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
-        let res = self.load(qid).await?.map(quotes::Quote::from);
+    async fn load(&self, qid: uuid::Uuid) -> Result<Option<quotes::Quote>> {
+        let res = self
+            .load(qid)
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
+            .map(quotes::Quote::from);
         Ok(res)
     }
 
-    async fn update_status_if_pending(
-        &self,
-        qid: uuid::Uuid,
-        new: quotes::Status,
-    ) -> AnyResult<()> {
+    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<QuoteDBEntry> = self
             .db
@@ -232,20 +236,20 @@ impl Repository for DBQuotes {
             .bind(("rid", recordid))
             .bind(("new", new))
             .bind(("status", quotes::StatusDiscriminants::Pending))
-            .await?
-            .take(0)?;
-        let before = before.ok_or(anyhow::anyhow!("Quote not found or not pending"))?;
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
+        let before = before.ok_or(Error::QuotesRepository(anyhow!(
+            "Quote not found or not pending"
+        )))?;
         if !matches!(before.status, quotes::Status::Pending { .. }) {
-            return Err(anyhow::anyhow!("Quote not pending"));
+            return Err(Error::QuotesRepository(anyhow!("Quote not pending")));
         }
         Ok(())
     }
 
-    async fn update_status_if_offered(
-        &self,
-        qid: uuid::Uuid,
-        new: quotes::Status,
-    ) -> AnyResult<()> {
+    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
         let before: Option<QuoteDBEntry> = self
             .db
@@ -253,30 +257,37 @@ impl Repository for DBQuotes {
             .bind(("rid", recordid))
             .bind(("new", new))
             .bind(("status", quotes::StatusDiscriminants::Offered))
-            .await?
-            .take(0)?;
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         if before.is_none() {
-            return Err(anyhow::anyhow!("Quote not found or not pending"));
+            return Err(Error::QuotesRepository(anyhow!(
+                "Quote not found or not offered"
+            )));
         }
         let before = before.unwrap();
         if !matches!(before.status, quotes::Status::Offered { .. }) {
-            return Err(anyhow::anyhow!("Quote not offered"));
+            return Err(Error::QuotesRepository(anyhow!("Quote not offered")));
         }
         Ok(())
     }
 
-    async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
         self.list_by_status(quotes::StatusDiscriminants::Pending, since)
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))
     }
 
     async fn list_light(
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> AnyResult<Vec<quotes::LightQuote>> {
-        let db_result = self.light_list(filters, sort).await?;
+    ) -> Result<Vec<quotes::LightQuote>> {
+        let db_result = self
+            .light_list(filters, sort)
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         let response = db_result
             .into_iter()
             .map(std::convert::Into::into)
@@ -284,18 +295,21 @@ impl Repository for DBQuotes {
         Ok(response)
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> Result<Vec<quotes::Quote>> {
         let res = self
             .search_by_bill(bill, endorser)
-            .await?
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
             .into_iter()
             .map(quotes::Quote::from)
             .collect();
         Ok(res)
     }
 
-    async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
-        self.store(quote.into()).await?;
+    async fn store(&self, quote: quotes::Quote) -> Result<()> {
+        self.store(quote.into())
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         Ok(())
     }
 }

@@ -2,16 +2,18 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
-use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_wdc_webapi::bill::NodeId;
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::quotes;
-use crate::service::{ListFilters, Repository, SortOrder};
-use crate::TStamp;
+use crate::{
+    error::Result,
+    quotes,
+    service::{ListFilters, Repository, SortOrder},
+    TStamp,
+};
 
 #[derive(Default, Clone, Debug)]
 pub struct QuotesIDMap {
@@ -19,7 +21,7 @@ pub struct QuotesIDMap {
 }
 #[async_trait]
 impl Repository for QuotesIDMap {
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> Result<Vec<quotes::Quote>> {
         Ok(self
             .quotes
             .read()
@@ -38,19 +40,15 @@ impl Repository for QuotesIDMap {
             .collect())
     }
 
-    async fn store(&self, quote: quotes::Quote) -> AnyResult<()> {
+    async fn store(&self, quote: quotes::Quote) -> Result<()> {
         self.quotes.write().unwrap().insert(quote.id, quote);
         Ok(())
     }
-    async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<quotes::Quote>> {
+    async fn load(&self, id: uuid::Uuid) -> Result<Option<quotes::Quote>> {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
 
-    async fn update_status_if_pending(
-        &self,
-        qid: uuid::Uuid,
-        new: quotes::Status,
-    ) -> AnyResult<()> {
+    async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
@@ -61,11 +59,7 @@ impl Repository for QuotesIDMap {
         Ok(())
     }
 
-    async fn update_status_if_offered(
-        &self,
-        qid: uuid::Uuid,
-        new: quotes::Status,
-    ) -> AnyResult<()> {
+    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
@@ -76,7 +70,7 @@ impl Repository for QuotesIDMap {
         Ok(())
     }
 
-    async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>> {
+    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
         let a = self
             .quotes
             .read()
@@ -92,7 +86,7 @@ impl Repository for QuotesIDMap {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> AnyResult<Vec<quotes::LightQuote>> {
+    ) -> Result<Vec<quotes::LightQuote>> {
         let mut a: Vec<quotes::Quote> = self
             .quotes
             .read()

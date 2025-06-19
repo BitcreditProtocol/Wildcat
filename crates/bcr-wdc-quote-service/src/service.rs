@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_wdc_webapi::bill::NodeId;
 use bitcoin::Amount;
@@ -34,17 +33,17 @@ pub enum SortOrder {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository {
-    async fn load(&self, id: uuid::Uuid) -> AnyResult<Option<Quote>>;
-    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> AnyResult<()>;
-    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> AnyResult<()>;
-    async fn list_pendings(&self, since: Option<TStamp>) -> AnyResult<Vec<Uuid>>;
+    async fn load(&self, id: uuid::Uuid) -> Result<Option<Quote>>;
+    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
+    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
+    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>>;
     async fn list_light(
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> AnyResult<Vec<LightQuote>>;
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<Quote>>;
-    async fn store(&self, quote: Quote) -> AnyResult<()>;
+    ) -> Result<Vec<LightQuote>>;
+    async fn search_by_bill(&self, bill: &str, endorser: &str) -> Result<Vec<Quote>>;
+    async fn store(&self, quote: Quote) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -99,10 +98,7 @@ where
     ) -> Result<Uuid> {
         let quote = Quote::new(bill, pub_key, submitted);
         let qid = quote.id;
-        self.quotes
-            .store(quote)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        self.quotes.store(quote).await?;
         Ok(qid)
     }
 
@@ -113,11 +109,7 @@ where
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
-        let mut quotes = self
-            .quotes
-            .search_by_bill(&bill.id, holder_id)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
         // pick the more recent quote for this eBill/endorser
         quotes.sort_by_key(|q| q.submitted);
@@ -126,8 +118,7 @@ where
             if changed {
                 self.quotes
                     .update_status_if_offered(last.id, last.status.clone())
-                    .await
-                    .map_err(Error::QuotesRepository)?;
+                    .await?;
             }
         }
         match quotes.last() {
@@ -177,11 +168,7 @@ where
     }
 
     pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
-        let old = self
-            .quotes
-            .load(id)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
@@ -189,17 +176,12 @@ where
         quote.cancel(submitted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
-            .await
-            .map_err(Error::QuotesRepository)?;
+            .await?;
         Ok(())
     }
 
     pub async fn deny(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
-        let old = self
-            .quotes
-            .load(id)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
@@ -207,17 +189,12 @@ where
         quote.deny(submitted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
-            .await
-            .map_err(Error::QuotesRepository)?;
+            .await?;
         Ok(())
     }
 
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
-        let old = self
-            .quotes
-            .load(id)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
@@ -225,17 +202,12 @@ where
         quote.reject(tstamp)?;
         self.quotes
             .update_status_if_offered(quote.id, quote.status)
-            .await
-            .map_err(Error::QuotesRepository)?;
+            .await?;
         Ok(())
     }
 
     pub async fn accept(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
-        let old = self
-            .quotes
-            .load(id)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let old = self.quotes.load(id).await?;
         if old.is_none() {
             return Err(Error::UnknownQuoteID(id));
         }
@@ -243,8 +215,7 @@ where
         quote.accept(submitted)?;
         self.quotes
             .update_status_if_offered(quote.id, quote.status)
-            .await
-            .map_err(Error::QuotesRepository)?;
+            .await?;
         Ok(())
     }
 
@@ -252,24 +223,19 @@ where
         let mut quote = self
             .quotes
             .load(id)
-            .await
-            .map_err(Error::QuotesRepository)?
+            .await?
             .ok_or(Error::UnknownQuoteID(id))?;
         let changed = quote.check_expire(now);
         if changed {
             self.quotes
                 .update_status_if_offered(quote.id, quote.status.clone())
-                .await
-                .map_err(Error::QuotesRepository)?;
+                .await?;
         }
         Ok(quote)
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
-        self.quotes
-            .list_pendings(since)
-            .await
-            .map_err(Error::QuotesRepository)
+        self.quotes.list_pendings(since).await
     }
 
     pub async fn list_light(
@@ -278,19 +244,14 @@ where
         sort: Option<SortOrder>,
         now: TStamp,
     ) -> Result<Vec<LightQuote>> {
-        let mut lights = self
-            .quotes
-            .list_light(filters, sort)
-            .await
-            .map_err(Error::QuotesRepository)?;
+        let mut lights = self.quotes.list_light(filters, sort).await?;
 
         for light in lights.iter_mut() {
             if matches!(light.status, StatusDiscriminants::Offered) {
                 let mut quote = self
                     .quotes
                     .load(light.id)
-                    .await
-                    .map_err(Error::QuotesRepository)?
+                    .await?
                     .ok_or(Error::InternalServer(String::from(
                         "light quote ID not found in quote",
                     )))?;
@@ -298,8 +259,7 @@ where
                 if changed {
                     self.quotes
                         .update_status_if_offered(light.id, quote.status.clone())
-                        .await
-                        .map_err(Error::QuotesRepository)?;
+                        .await?;
                     light.status = StatusDiscriminants::from(quote.status.clone());
                 }
             }
@@ -350,8 +310,7 @@ where
         quote.offer(kid, expiration, discounted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
-            .await
-            .map_err(Error::QuotesRepository)?;
+            .await?;
 
         Ok((discounted, expiration))
     }
