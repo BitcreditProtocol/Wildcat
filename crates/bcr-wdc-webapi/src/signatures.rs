@@ -1,3 +1,4 @@
+use bcr_ebill_core::bill::BillId;
 // ----- standard library imports
 // ----- extra library imports
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -30,7 +31,7 @@ pub struct StoreBlindSignaturesRequest {
 /// --------------------------- request to mint from ebill description
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct RequestToMintFromEBillDesc {
-    pub ebill_id: String,
+    pub ebill_id: BillId,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,7 +43,8 @@ pub struct SignedRequestToMintFromEBillDesc {
 /// --------------------------- request to pay ebill
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RequestToMintFromEBillRequest {
-    pub ebill_id: String,
+    #[schema(value_type = String)]
+    pub ebill_id: BillId,
     pub amount: cashu::Amount,
 }
 

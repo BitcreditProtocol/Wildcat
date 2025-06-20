@@ -16,5 +16,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-wdc-quote-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
 tokio = {workspace = true}
 bcr-ebill-core = {workspace = true}

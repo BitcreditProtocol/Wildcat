@@ -1,3 +1,4 @@
+use bcr_ebill_core::{bill::BillId, NodeId, PublicKey};
 // ----- standard library imports
 use chrono::NaiveTime;
 // ----- extra library imports
@@ -50,9 +51,18 @@ pub fn generate_random_bill_enquire_request(
     (request, signing_key)
 }
 
-pub fn random_bill_id() -> String {
+pub fn random_bill_id() -> BillId {
     let keypair = keys_test::generate_random_keypair();
-    bcr_ebill_core::util::sha256_hash(&keypair.public_key().serialize())
+    BillId::new(keypair.public_key(), bitcoin::Network::Testnet)
+}
+
+pub fn random_node_id() -> NodeId {
+    let keypair = keys_test::generate_random_keypair();
+    NodeId::new(keypair.public_key(), bitcoin::Network::Testnet)
+}
+
+pub fn node_id_from_pub_key(pub_key: PublicKey) -> NodeId {
+    NodeId::new(pub_key, bitcoin::Network::Testnet)
 }
 
 pub fn random_date() -> String {
@@ -73,7 +83,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Person,
             email: Some(String::from("Carissa@kemp.com")),
             name: String::from("Carissa Kemp"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Vorarlberg"),
@@ -86,7 +96,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Person,
             email: Some(String::from("alana@carrillo.com")),
             name: String::from("Alana Carrillo"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Spain"),
                 city: String::from("Madrid"),
@@ -99,7 +109,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Person,
             email: Some(String::from("geremia@pisani.com")),
             name: String::from("Geremia Pisani"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Italy"),
                 city: String::from("Firenze"),
@@ -112,7 +122,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Person,
             email: Some(String::from("andreas@koenig.com")),
             name: String::from("Andreas Koenig"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Lorberhof"),
@@ -125,7 +135,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("logistilla@fournier.com")),
             name: String::from("Logistilla Fournier"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("France"),
                 city: String::from("Toulous"),
@@ -138,7 +148,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("moonlimited@ltd.com")),
             name: String::from("Moon Limited"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("USA"),
                 city: String::from("New York"),
@@ -151,7 +161,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("blanco@spa.com")),
             name: String::from("Blanco y Asoc."),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Argentina"),
                 city: String::from("Puerto Clara"),
@@ -164,7 +174,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("alexanderurner@grimm.com")),
             name: String::from("Grimm GmbH"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Perg"),
@@ -177,7 +187,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("antoniosegovia@santiago.com")),
             name: String::from("Empresa Santiago"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Spain"),
                 city: String::from("Vall Juarez"),
@@ -190,7 +200,7 @@ pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentP
             t: ContactType::Company,
             email: Some(String::from("santoro_group@spa.com")),
             name: String::from("Santoro Group"),
-            node_id: keypair.public_key().to_string(),
+            node_id: node_id_from_pub_key(keypair.public_key()),
             postal_address: PostalAddress {
                 country: String::from("Italy"),
                 city: String::from("Prunetta"),

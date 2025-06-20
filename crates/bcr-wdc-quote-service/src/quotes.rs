@@ -1,4 +1,5 @@
 // ----- standard library imports
+use bcr_ebill_core::bill::BillId;
 use std::str::FromStr;
 // ----- extra library imports
 use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
@@ -12,7 +13,7 @@ use crate::TStamp;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BillInfo {
-    pub id: String,
+    pub id: BillId,
     pub drawee: BillIdentParticipant,
     pub drawer: BillIdentParticipant,
     pub payee: BillParticipant,
