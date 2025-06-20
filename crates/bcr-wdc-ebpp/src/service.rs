@@ -65,7 +65,11 @@ pub trait PaymentRepository: Sync {
 #[async_trait]
 pub trait EBillNode: Sync {
     /// Returns a string representing the bitcoin descriptor where payment is expected
-    async fn request_to_pay(&self, bill: &str, amount: btc::Amount) -> Result<String>;
+    async fn request_to_pay(
+        &self,
+        bill: &bcr_wdc_webapi::bill::BillId,
+        amount: btc::Amount,
+    ) -> Result<String>;
 }
 
 #[derive(Debug, Clone)]

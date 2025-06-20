@@ -1,3 +1,4 @@
+use bcr_ebill_core::{bill::BillId, NodeId};
 // ----- standard library imports
 use chrono::{DateTime, Utc};
 // ----- extra library imports
@@ -14,7 +15,8 @@ use crate::bill::{BillIdentParticipant, BillParticipant};
 ///--------------------------- Enquire mint quote
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillInfo {
-    pub id: String,
+    #[schema(value_type=String)]
+    pub id: BillId,
     pub drawee: BillIdentParticipant,
     pub drawer: BillIdentParticipant,
     pub payee: BillParticipant,
@@ -93,11 +95,16 @@ pub struct ListParam {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
     pub status: Option<StatusReplyDiscriminants>,
-    pub bill_id: Option<String>,
-    pub bill_drawee_id: Option<String>,
-    pub bill_drawer_id: Option<String>,
-    pub bill_payer_id: Option<String>,
-    pub bill_holder_id: Option<String>,
+    #[param(value_type = Option<String>)]
+    pub bill_id: Option<BillId>,
+    #[param(value_type = Option<String>)]
+    pub bill_drawee_id: Option<NodeId>,
+    #[param(value_type = Option<String>)]
+    pub bill_drawer_id: Option<NodeId>,
+    #[param(value_type = Option<String>)]
+    pub bill_payer_id: Option<NodeId>,
+    #[param(value_type = Option<String>)]
+    pub bill_holder_id: Option<NodeId>,
     pub sort: Option<ListSort>,
 }
 

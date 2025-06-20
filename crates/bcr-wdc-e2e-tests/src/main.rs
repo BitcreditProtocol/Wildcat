@@ -154,7 +154,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!(
         bill_amount = bill_amount,
-        bill_id = signed_request.request.content.id,
+        bill_id = signed_request.request.content.id.to_string(),
         "Bill created"
     );
 

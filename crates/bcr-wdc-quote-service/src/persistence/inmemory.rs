@@ -4,7 +4,8 @@ use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_webapi::bill::NodeId;
+use bcr_ebill_core::bill::BillId;
+use bcr_ebill_core::NodeId;
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
@@ -19,7 +20,11 @@ pub struct QuotesIDMap {
 }
 #[async_trait]
 impl Repository for QuotesIDMap {
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> AnyResult<Vec<quotes::Quote>> {
+    async fn search_by_bill(
+        &self,
+        bill: &BillId,
+        endorser: &NodeId,
+    ) -> AnyResult<Vec<quotes::Quote>> {
         Ok(self
             .quotes
             .read()
@@ -32,7 +37,7 @@ impl Repository for QuotesIDMap {
                     .last()
                     .unwrap_or(&quote.bill.payee)
                     .node_id();
-                quote.bill.id == bill && holder == endorser
+                quote.bill.id == *bill && holder == endorser
             })
             .map(|x| x.1.clone())
             .collect())

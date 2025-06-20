@@ -190,7 +190,7 @@ pub mod test_utils {
             async fn get_bill_balances(
                 &self,
                 currency: &str,
-                current_identity_node_id: &str,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<BillsBalanceOverview>;
             async fn search_bills(
                 &self,
@@ -199,88 +199,88 @@ pub mod test_utils {
                 date_range_from: Option<u64>,
                 date_range_to: Option<u64>,
                 role: &BillsFilterRole,
-                current_identity_node_id: &str,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<Vec<LightBitcreditBillResult>>;
-            async fn get_bills(&self, current_identity_node_id: &str) -> BillResult<Vec<BitcreditBillResult>>;
+            async fn get_bills(&self, current_identity_node_id: &bcr_ebill_core::NodeId) -> BillResult<Vec<BitcreditBillResult>>;
             async fn get_combined_bitcoin_key_for_bill(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 caller_public_data: &BillParticipant,
                 caller_keys: &BcrKeys,
             ) -> BillResult<BillCombinedBitcoinKey>;
             async fn get_detail(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 local_identity: &Identity,
-                current_identity_node_id: &str,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
                 current_timestamp: u64,
             ) -> BillResult<BitcreditBillResult>;
-            async fn get_bill_keys(&self, bill_id: &str) -> BillResult<BillKeys>;
+            async fn get_bill_keys(&self, bill_id: &bcr_ebill_core::bill::BillId) -> BillResult<BillKeys>;
             async fn open_and_decrypt_attached_file(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 file: &File,
-                bill_private_key: &str,
+                bill_private_key: &bcr_ebill_core::SecretKey,
             ) -> BillResult<Vec<u8>>;
             async fn issue_new_bill(&self, data: BillIssueData) -> BillResult<BitcreditBill>;
             async fn execute_bill_action(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 bill_action: BillAction,
                 signer_public_data: &BillParticipant,
                 signer_keys: &BcrKeys,
                 timestamp: u64,
             ) -> BillResult<BillBlockchain>;
             async fn check_bills_payment(&self) -> BillResult<()>;
-            async fn check_payment_for_bill(&self, bill_id: &str, identity: &Identity) -> BillResult<()>;
+            async fn check_payment_for_bill(&self, bill_id: &bcr_ebill_core::bill::BillId, identity: &Identity) -> BillResult<()>;
             async fn check_bills_offer_to_sell_payment(&self) -> BillResult<()>;
             async fn check_offer_to_sell_payment_for_bill(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 identity: &IdentityWithAll,
             ) -> BillResult<()>;
             async fn check_bills_in_recourse_payment(&self) -> BillResult<()>;
             async fn check_recourse_payment_for_bill(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 identity: &IdentityWithAll,
             ) -> BillResult<()>;
             async fn check_bills_timeouts(&self, now: u64) -> BillResult<()>;
             async fn get_past_endorsees(
                 &self,
-                bill_id: &str,
-                current_identity_node_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<Vec<PastEndorsee>>;
             async fn get_past_payments(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 caller_public_data: &BillParticipant,
                 caller_keys: &BcrKeys,
                 timestamp: u64,
             ) -> BillResult<Vec<PastPaymentResult>>;
             async fn get_endorsements(
                 &self,
-                bill_id: &str,
-                current_identity_node_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<Vec<Endorsement>>;
             async fn clear_bill_cache(&self) -> BillResult<()>;
             async fn request_to_mint(
                 &self,
-                bill_id: &str,
-                mint_node_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                mint_node_id: &bcr_ebill_core::NodeId,
                 signer_public_data: &BillParticipant,
                 signer_keys: &BcrKeys,
                 timestamp: u64,
             ) -> BillResult<()>;
             async fn get_mint_state(
                 &self,
-                bill_id: &str,
-                current_identity_node_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<Vec<MintRequestState>>;
             async fn cancel_request_to_mint(
                 &self,
                 mint_request_id: &str,
-                current_identity_node_id: &str,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<()>;
             async fn accept_mint_offer(
                 &self,
@@ -292,9 +292,9 @@ pub mod test_utils {
             async fn reject_mint_offer(
                 &self,
                 mint_request_id: &str,
-                current_identity_node_id: &str,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
             ) -> BillResult<()>;
-            async fn check_mint_state(&self, bill_id: &str, current_identity_node_id: &str) -> BillResult<()>;
+            async fn check_mint_state(&self, bill_id: &bcr_ebill_core::bill::BillId, current_identity_node_id: &bcr_ebill_core::NodeId) -> BillResult<()>;
             async fn check_mint_state_for_all_bills(&self) -> BillResult<()>;
         }
     }
@@ -320,12 +320,12 @@ pub mod test_utils {
         impl ContactServiceApi for ContactServiceApi {
             async fn search(&self, search_term: &str) -> Result<Vec<Contact>>;
             async fn get_contacts(&self) -> Result<Vec<Contact>>;
-            async fn get_contact(&self, node_id: &str) -> Result<Contact>;
-            async fn get_identity_by_node_id(&self, node_id: &str) -> Result<Option<BillParticipant>>;
-            async fn delete(&self, node_id: &str) -> Result<()>;
+            async fn get_contact(&self, node_id: &bcr_ebill_core::NodeId) -> Result<Contact>;
+            async fn get_identity_by_node_id(&self, node_id: &bcr_ebill_core::NodeId) -> Result<Option<BillParticipant>>;
+            async fn delete(&self, node_id: &bcr_ebill_core::NodeId) -> Result<()>;
             async fn update_contact(
                 &self,
-                node_id: &str,
+                node_id: &bcr_ebill_core::NodeId,
                 name: Option<String>,
                 email: Option<String>,
                 postal_address: OptionalPostalAddress,
@@ -338,7 +338,7 @@ pub mod test_utils {
             ) -> Result<()>;
             async fn add_contact(
                 &self,
-                node_id: &str,
+                node_id: &bcr_ebill_core::NodeId,
                 t: ContactType,
                 name: String,
                 email: Option<String>,
@@ -352,7 +352,7 @@ pub mod test_utils {
             ) -> Result<Contact>;
             async fn deanonymize_contact(
                 &self,
-                node_id: &str,
+                node_id: &bcr_ebill_core::NodeId,
                 t: ContactType,
                 name: String,
                 email: Option<String>,
@@ -368,12 +368,12 @@ pub mod test_utils {
             async fn open_and_decrypt_file(
                 &self,
                 contact: Contact,
-                id: &str,
+                id: &bcr_ebill_core::NodeId,
                 file_name: &str,
-                private_key: &str,
+                private_key: &bcr_ebill_core::SecretKey,
             ) -> Result<Vec<u8>>;
             async fn get_nostr_npubs(&self) -> Result<Vec<bcr_ebill_core::nostr_contact::NostrPublicKey>>;
-            async fn get_nostr_contact_by_node_id(&self, node_id: &str) -> Result<Option<bcr_ebill_core::nostr_contact::NostrContact>>;
+            async fn get_nostr_contact_by_node_id(&self, node_id: &bcr_ebill_core::NodeId) -> Result<Option<bcr_ebill_core::nostr_contact::NostrContact>>;
         }
     }
 
@@ -434,13 +434,13 @@ pub mod test_utils {
             async fn open_and_decrypt_file(
                 &self,
                 identity: Identity,
-                id: &str,
+                id: &bcr_ebill_core::NodeId,
                 file_name: &str,
-                private_key: &str,
+                private_key: &bcr_ebill_core::SecretKey,
             ) -> Result<Vec<u8>>;
             async fn get_current_identity(&self) -> Result<ActiveIdentityState>;
-            async fn set_current_personal_identity(&self, node_id: &str) -> Result<()>;
-            async fn set_current_company_identity(&self, node_id: &str) -> Result<()>;
+            async fn set_current_personal_identity(&self, node_id: &bcr_ebill_core::NodeId) -> Result<()>;
+            async fn set_current_company_identity(&self, node_id: &bcr_ebill_core::NodeId) -> Result<()>;
         }
     }
     mockall::mock! {
@@ -450,7 +450,7 @@ pub mod test_utils {
 
         #[async_trait]
         impl NotificationServiceApi for NotificationServiceApi {
-            async fn resolve_contact(&self, node_id: &str) -> NotifResult<Option<NostrContactData>>;
+            async fn resolve_contact(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<Option<NostrContactData>>;
             async fn send_bill_is_signed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
             async fn send_bill_is_accepted_event(&self, event: &BillChainEvent) -> NotifResult<()>;
             async fn send_request_to_accept_event(&self, event: &BillChainEvent) -> NotifResult<()>;
@@ -479,8 +479,8 @@ pub mod test_utils {
             ) -> NotifResult<()>;
             async fn send_request_to_action_timed_out_event(
                 &self,
-                sender_node_id: &str,
-                bill_id: &str,
+                sender_node_id: &bcr_ebill_core::NodeId,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 sum: Option<u64>,
                 timed_out_action: ActionType,
                 recipients: Vec<BillParticipant>,
@@ -493,7 +493,7 @@ pub mod test_utils {
             ) -> NotifResult<()>;
             async fn send_request_to_mint_event(
                 &self,
-                sender_node_id: &str,
+                sender_node_id: &bcr_ebill_core::NodeId,
                 mint: &BillParticipant,
                 bill: &BitcreditBill,
             ) -> NotifResult<()>;
@@ -504,20 +504,20 @@ pub mod test_utils {
                 filter: NotificationFilter,
             ) -> NotifResult<Vec<Notification>>;
             async fn mark_notification_as_done(&self, notification_id: &str) -> NotifResult<()>;
-            async fn get_active_bill_notification(&self, bill_id: &str) -> Option<Notification>;
+            async fn get_active_bill_notification(&self, bill_id: &bcr_ebill_core::bill::BillId) -> Option<Notification>;
             async fn get_active_bill_notifications(
                 &self,
-                bill_ids: &[String],
-            ) -> HashMap<String, Notification>;
+                bill_ids: &[bcr_ebill_core::bill::BillId],
+            ) -> HashMap<bcr_ebill_core::bill::BillId, Notification>;
             async fn check_bill_notification_sent(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 block_height: i32,
                 action: ActionType,
             ) -> NotifResult<bool>;
             async fn mark_bill_notification_sent(
                 &self,
-                bill_id: &str,
+                bill_id: &bcr_ebill_core::bill::BillId,
                 block_height: i32,
                 action: ActionType,
             ) -> NotifResult<()>;

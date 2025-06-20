@@ -14,7 +14,7 @@ use bcr_ebill_api::{
 };
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
+        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
     identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
@@ -70,7 +70,7 @@ pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<Iden
         return Err(bcr_ebill_api::service::Error::NotFound.into());
     } else {
         let full_identity = ctrl.identity_service.get_full_identity().await?;
-        Identity::try_from((full_identity.identity, full_identity.key_pair))
+        Identity::try_from(full_identity.identity)
             .map_err(|_| crate::error::Error::IdentityConversion)?
     };
     Ok(Json(my_identity))
@@ -120,7 +120,7 @@ pub async fn get_bills(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bill_detail(
     State(ctrl): State<AppController>,
-    Path(bill_id): Path<String>,
+    Path(bill_id): Path<BillId>,
 ) -> Result<Json<BitcreditBill>> {
     tracing::debug!("Received get bill detail request");
     let current_timestamp = util::date::now().timestamp() as u64;
@@ -135,7 +135,7 @@ pub async fn get_bill_detail(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bill_endorsements(
     State(ctrl): State<AppController>,
-    Path(bill_id): Path<String>,
+    Path(bill_id): Path<BillId>,
 ) -> Result<Json<Vec<Endorsement>>> {
     tracing::debug!("Received get bill detail request");
     let identity = ctrl.identity_service.get_identity().await?;
@@ -149,7 +149,7 @@ pub async fn get_bill_endorsements(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bill_attachment(
     State(ctrl): State<AppController>,
-    Path((bill_id, file_name)): Path<(String, String)>,
+    Path((bill_id, file_name)): Path<(BillId, String)>,
 ) -> Result<impl IntoResponse> {
     tracing::debug!("Received get bill attachment request");
     let current_timestamp = util::date::now().timestamp() as u64;
@@ -250,8 +250,8 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
     }
 
     // decrypt file with private key
-    let decrypted = util::crypto::decrypt_ecies(&file_bytes, &keys.get_private_key_string())
-        .map_err(|e| {
+    let decrypted =
+        util::crypto::decrypt_ecies(&file_bytes, &keys.get_private_key()).map_err(|e| {
             tracing::error!(
                 "Error decrypting file from {}: {e}",
                 bill_file_url_req.file_url.to_string()
@@ -298,7 +298,7 @@ pub async fn request_to_pay_bill(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn bill_bitcoin_key(
     State(ctrl): State<AppController>,
-    Path(bill_id): Path<String>,
+    Path(bill_id): Path<BillId>,
 ) -> Result<Json<BillCombinedBitcoinKey>> {
     tracing::debug!("Received get bill bitcoin private key request");
     let identity::IdentityWithAll { identity, key_pair } =
