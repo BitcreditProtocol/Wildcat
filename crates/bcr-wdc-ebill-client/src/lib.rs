@@ -2,7 +2,7 @@
 // ----- extra library imports
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillsResponse, BitcreditBill, Endorsement,
+        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
     identity::{Identity, NewIdentityPayload, SeedPhrase},
@@ -22,6 +22,8 @@ pub enum Error {
     InvalidRequest,
     #[error("invalid content type")]
     InvalidContentType,
+    #[error("invalid bill id")]
+    InvalidBillId,
     #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
 }
@@ -102,27 +104,27 @@ impl EbillClient {
         Ok(bills.bills)
     }
 
-    pub async fn get_bill(&self, bill_id: &str) -> Result<BitcreditBill> {
+    pub async fn get_bill(&self, bill_id: &BillId) -> Result<BitcreditBill> {
         let url = self
             .base
             .join(&format!("/v1/bill/detail/{bill_id}"))
             .expect("bill detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(bill_id.into()));
+            return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
         let bill = res.json::<BitcreditBill>().await?;
         Ok(bill)
     }
 
-    pub async fn get_bill_endorsements(&self, bill_id: &str) -> Result<Vec<Endorsement>> {
+    pub async fn get_bill_endorsements(&self, bill_id: &BillId) -> Result<Vec<Endorsement>> {
         let url = self
             .base
             .join(&format!("/v1/bill/endorsements/{bill_id}"))
             .expect("bill detail relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(bill_id.into()));
+            return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
         let endorsements = res.json::<Vec<Endorsement>>().await?;
         Ok(endorsements)
@@ -131,7 +133,7 @@ impl EbillClient {
     /// Returns the content type and the bytes of the file
     pub async fn get_bill_attachment(
         &self,
-        bill_id: &str,
+        bill_id: &BillId,
         file_name: &str,
     ) -> Result<(String, Vec<u8>)> {
         let url = self
@@ -153,7 +155,7 @@ impl EbillClient {
 
     pub async fn get_bitcoin_private_descriptor_for_bill(
         &self,
-        bill_id: &str,
+        bill_id: &BillId,
     ) -> Result<BillCombinedBitcoinKey> {
         let url = self
             .base
@@ -161,7 +163,7 @@ impl EbillClient {
             .expect("bill bitcoin key relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(bill_id.into()));
+            return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
         let btc_key = res.json::<BillCombinedBitcoinKey>().await?;
         Ok(btc_key)
@@ -180,7 +182,7 @@ impl EbillClient {
             return Err(Error::InvalidRequest);
         }
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::ResourceNotFound(payload.bill_id.to_owned()));
+            return Err(Error::ResourceNotFound(payload.bill_id.to_string()));
         }
         res.error_for_status()?;
         Ok(())

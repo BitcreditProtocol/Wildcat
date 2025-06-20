@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_webapi::bill::NodeId;
+use bcr_ebill_core::{bill::BillId, NodeId};
 use bitcoin::Amount;
 use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use futures::future::JoinAll;
@@ -17,11 +17,11 @@ pub struct ListFilters {
     pub bill_maturity_date_from: Option<chrono::NaiveDate>,
     pub bill_maturity_date_to: Option<chrono::NaiveDate>,
     pub status: Option<StatusDiscriminants>,
-    pub bill_id: Option<String>,
-    pub bill_drawee_id: Option<String>,
-    pub bill_drawer_id: Option<String>,
-    pub bill_payer_id: Option<String>,
-    pub bill_holder_id: Option<String>,
+    pub bill_id: Option<BillId>,
+    pub bill_drawee_id: Option<NodeId>,
+    pub bill_drawer_id: Option<NodeId>,
+    pub bill_payer_id: Option<NodeId>,
+    pub bill_holder_id: Option<NodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,7 @@ pub trait Repository {
         filters: ListFilters,
         sort: Option<SortOrder>,
     ) -> Result<Vec<LightQuote>>;
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> Result<Vec<Quote>>;
+    async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> Result<()>;
 }
 
@@ -326,6 +326,7 @@ mod tests {
     use super::*;
     use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
     use bcr_wdc_utils::keys::test_utils as keys_utils;
+    use bcr_wdc_webapi::test_utils::{random_bill_id, random_node_id};
     use mockall::predicate::*;
     use rand::{seq::IteratorRandom, Rng};
 
@@ -333,9 +334,7 @@ mod tests {
         let identities = vec![
             BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: String::from(
-                    "02a5b1c2d3e4f56789abcdef0123456789abcdef0123456789abcdef0123456789",
-                ),
+                node_id: random_node_id(),
                 name: String::from("Alice"),
                 postal_address: bcr_ebill_core::PostalAddress {
                     country: String::from("USA"),
@@ -348,9 +347,7 @@ mod tests {
             },
             BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Company,
-                node_id: String::from(
-                    "03b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
-                ),
+                node_id: random_node_id(),
                 name: String::from("Bob Corp"),
                 postal_address: bcr_ebill_core::PostalAddress {
                     country: String::from("UK"),
@@ -363,9 +360,7 @@ mod tests {
             },
             BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: String::from(
-                    "02c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
-                ),
+                node_id: random_node_id(),
                 name: String::from("Charlie"),
                 postal_address: bcr_ebill_core::PostalAddress {
                     country: String::from("France"),
@@ -378,9 +373,7 @@ mod tests {
             },
             BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Company,
-                node_id: String::from(
-                    "03d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789",
-                ),
+                node_id: random_node_id(),
                 name: String::from("Dave Ltd"),
                 postal_address: bcr_ebill_core::PostalAddress {
                     country: String::from("Japan"),
@@ -393,7 +386,7 @@ mod tests {
             },
             BillIdentParticipant {
                 t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: String::from("02e5f6789abcdef0123456789abcdef0123456789abcdef0123456789"),
+                node_id: random_node_id(),
                 name: String::from("Eve"),
                 postal_address: bcr_ebill_core::PostalAddress {
                     country: String::from("Germany"),
@@ -411,10 +404,9 @@ mod tests {
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
-        let ids = keys_utils::publics();
         let holder = generate_random_identity();
         BillInfo {
-            id: ids.into_iter().choose(&mut rng).unwrap().to_string(),
+            id: random_bill_id(),
             drawee: generate_random_identity(),
             drawer: generate_random_identity(),
             payee: BillParticipant::Ident(holder.clone()),

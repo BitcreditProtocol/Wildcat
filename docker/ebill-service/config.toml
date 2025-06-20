@@ -12,7 +12,7 @@ only_known_contacts = false
 
 [appcfg.mint_config]
 default_mint_url = "http://localhost:4343"
-default_mint_node_id = "039180c169e5f6d7c579cf1cefa37bffd47a2b389c8125601f4068c87bea795943"
+default_mint_node_id = "bitcrt039180c169e5f6d7c579cf1cefa37bffd47a2b389c8125601f4068c87bea795943"
 
 [appcfg]
 bitcoin_network = "testnet"

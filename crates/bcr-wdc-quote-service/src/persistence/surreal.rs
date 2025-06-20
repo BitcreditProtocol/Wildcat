@@ -2,6 +2,8 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
+use bcr_ebill_core::bill::BillId;
+use bcr_ebill_core::NodeId;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
@@ -207,7 +209,11 @@ impl DBQuotes {
         db_query.await?.take("qid")
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> SurrealResult<Vec<QuoteDBEntry>> {
+    async fn search_by_bill(
+        &self,
+        bill: &BillId,
+        endorser: &NodeId,
+    ) -> SurrealResult<Vec<QuoteDBEntry>> {
         let results: Vec<QuoteDBEntry> = self.db
             .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND (bill.current_holder.Anon.node_id == $endorser OR bill.current_holder.Ident.node_id == $endorser) ORDER BY submitted DESC")
             .bind(("table", self.table.clone()))
@@ -295,7 +301,7 @@ impl Repository for DBQuotes {
         Ok(response)
     }
 
-    async fn search_by_bill(&self, bill: &str, endorser: &str) -> Result<Vec<quotes::Quote>> {
+    async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<quotes::Quote>> {
         let res = self
             .search_by_bill(bill, endorser)
             .await
@@ -318,9 +324,9 @@ impl Repository for DBQuotes {
 mod tests {
     use super::*;
     use crate::{quotes::BillInfo, service};
-    use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
+    use bcr_ebill_core::contact::BillParticipant;
     use bcr_wdc_utils::keys::test_utils as keys_test;
-    use bcr_wdc_webapi::bill::NodeId;
+    use bcr_wdc_webapi::test_utils::{random_bill_id, random_identity_public_data};
     use std::str::FromStr;
     use surrealdb::RecordId;
 
@@ -338,12 +344,12 @@ mod tests {
     impl Default for BillInfo {
         fn default() -> Self {
             Self {
-                id: String::default(),
-                drawee: BillIdentParticipant::default(),
-                drawer: BillIdentParticipant::default(),
-                payee: BillParticipant::Ident(BillIdentParticipant::default()),
+                id: random_bill_id(),
+                drawee: random_identity_public_data().1.into(),
+                drawer: random_identity_public_data().1.into(),
+                payee: BillParticipant::Ident(random_identity_public_data().1.into()),
                 endorsees: Vec::default(),
-                current_holder: BillParticipant::Ident(BillIdentParticipant::default()),
+                current_holder: BillParticipant::Ident(random_identity_public_data().1.into()),
                 sum: bitcoin::Amount::default(),
                 maturity_date: TStamp::default(),
                 file_urls: Vec::default(),
@@ -486,25 +492,22 @@ mod tests {
                 public_key: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                drawee: BillIdentParticipant {
-                    node_id: String::from("drawee"),
-                    ..Default::default()
-                },
-                drawer: BillIdentParticipant {
-                    node_id: String::from("drawer"),
-                    ..Default::default()
-                },
-                payee: BillParticipant::Ident(BillIdentParticipant {
-                    node_id: String::from("payer"),
-                    ..Default::default()
-                }),
-                endorsees: Default::default(),
+                drawee: random_identity_public_data().1.into(),
+                drawer: random_identity_public_data().1.into(),
+                payee: BillParticipant::Ident(random_identity_public_data().1.into()),
+                endorsees: vec![],
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
             },
             submitted: TStamp::default(),
         };
-        let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
+        let _: QuoteDBEntry = db
+            .db
+            .insert(rid)
+            .content(entry.clone())
+            .await
+            .unwrap()
+            .unwrap();
 
         let filters = service::ListFilters::default();
         let res = db.list_light(filters, None).await.unwrap();
@@ -528,7 +531,7 @@ mod tests {
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
-            bill_drawee_id: Some(String::from("none")),
+            bill_drawee_id: Some(random_identity_public_data().1.node_id),
             ..Default::default()
         };
         let res = db.list_light(filters, None).await.unwrap();
@@ -536,7 +539,7 @@ mod tests {
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
-            bill_drawee_id: Some(String::from("drawee")),
+            bill_drawee_id: Some(entry.bill.drawee.node_id),
             ..Default::default()
         };
         let res = db.list_light(filters, None).await.unwrap();
@@ -626,10 +629,7 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
-                current_holder: BillParticipant::Ident(BillIdentParticipant {
-                    node_id: String::from("endorser"),
-                    ..Default::default()
-                }),
+                current_holder: BillParticipant::Ident(random_identity_public_data().1.into()),
                 ..Default::default()
             },
             submitted: TStamp::default(),

@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_quote_client::QuoteClient;
-use bcr_wdc_utils::keys::test_utils::generate_random_keypair;
-use bcr_wdc_webapi::{bill as web_bill, quotes as web_quotes};
+use bcr_wdc_webapi::{
+    bill as web_bill, quotes as web_quotes,
+    test_utils::{random_bill_id, random_identity_public_data},
+};
 // ----- local imports
 
 // ----- end imports
@@ -13,21 +15,11 @@ async fn enquire() {
     let server_url = server.server_address().expect("address");
     let client = QuoteClient::new(server_url);
 
-    let drawer = web_bill::BillIdentParticipant {
-        node_id: generate_random_keypair().public_key().to_string(),
-        ..Default::default()
-    };
-    let drawee = web_bill::BillIdentParticipant {
-        node_id: generate_random_keypair().public_key().to_string(),
-        ..Default::default()
-    };
-    let payee_keys = generate_random_keypair();
-    let payee = web_bill::BillIdentParticipant {
-        node_id: payee_keys.public_key().to_string(),
-        ..Default::default()
-    };
+    let drawer = random_identity_public_data().1;
+    let drawee = random_identity_public_data().1;
+    let (payee_keys, payee) = random_identity_public_data();
     let bill = web_quotes::BillInfo {
-        id: generate_random_keypair().public_key().to_string(),
+        id: random_bill_id(),
         drawer,
         drawee,
         payee: web_bill::BillParticipant::Ident(payee),

@@ -4,6 +4,7 @@ use bcr_ebill_api::{
     MintConfig, NostrConfig,
 };
 use bcr_ebill_transport::chain_keys::ChainKeyService;
+use bcr_wdc_webapi::bill::NodeId;
 use std::str::FromStr;
 // ----- extra library imports
 use tokio::signal;
@@ -53,7 +54,10 @@ async fn main() {
         },
         mint_config: MintConfig {
             default_mint_url: maincfg.appcfg.mint_config.default_mint_url.clone(),
-            default_mint_node_id: maincfg.appcfg.mint_config.default_mint_node_id.clone(),
+            default_mint_node_id: NodeId::from_str(
+                &maincfg.appcfg.mint_config.default_mint_node_id,
+            )
+            .expect("Invalid Mint Node Id"),
         },
         db_config: bcr_ebill_api::SurrealDbConfig {
             connection_string: maincfg.appcfg.ebill_db.connection.clone(),
@@ -80,11 +84,10 @@ async fn main() {
         .get_or_create_key_pair()
         .await
         .expect("Failed to get, or create local identity keys");
-    let local_node_id = keys.get_public_key();
+    let local_node_id = NodeId::new(keys.pub_key(), api_config.bitcoin_network());
     info!("Local node id: {local_node_id:?}");
-    info!("Local npub: {:?}", keys.get_nostr_npub());
-    info!("Local npriv: {:?}", keys.get_nostr_npriv());
-    info!("Local npub as hex: {:?}", keys.get_nostr_npub_as_hex());
+    info!("Local npub: {:?}", local_node_id.npub());
+    info!("Local npub as hex: {:?}", local_node_id.npub().to_hex());
 
     // set up nostr clients for existing identities
     let nostr_clients = create_nostr_clients(

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bcr_wdc_key_client as key;
 use bcr_wdc_quote_client as quote;
 use bcr_wdc_swap_client as swap;
-use bcr_wdc_webapi::quotes as web_quotes;
+use bcr_wdc_webapi::{bill::BillId, quotes as web_quotes};
 use cashu::{nut00 as cdk00, nut02 as cdk02};
 // ----- local imports
 use crate::{
@@ -47,10 +47,10 @@ impl WildcatService for WildcatCl {
         self.swap_cl.burn(inputs.to_vec()).await?;
         Ok(())
     }
-    async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id> {
+    async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id> {
         // find all quotes for the ebill
         let params = web_quotes::ListParam {
-            bill_id: Some(ebill_id.to_string()),
+            bill_id: Some(ebill_id.clone()),
             ..Default::default()
         };
         let list = self.quote_cl.list(params).await?;
