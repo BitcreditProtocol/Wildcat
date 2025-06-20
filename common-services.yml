@@ -1,0 +1,218 @@
+services:
+
+  ######################################################################################## ours
+  ebpp:
+    image: wildcat/ebpp
+    ports:
+      - "9090:9090"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      electrs:
+        condition: service_started
+    environment:
+      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/ebpp/config.toml:/ebpp/config.toml
+      - ./.docker_data/ebpp/:/data/
+
+  key-service:
+    image: wildcat/key-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - KEY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/key-service/config.toml:/key-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  swap-service:
+    image: wildcat/swap-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      key-service:
+        condition: service_healthy
+    volumes:
+      - ./docker/swap-service/config.toml:/swap-service/config.toml
+
+  treasury-service:
+    image: wildcat/treasury-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      cdk-mintd:
+        condition: service_started
+    environment:
+      - TREASURY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/treasury-service/config.toml:/treasury-service/config.toml
+      - ./.docker_data/treasury-service/:/data/
+
+  quote-service:
+    image: wildcat/quote-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      key-service:
+        condition: service_healthy
+      treasury-service:
+        condition: service_started
+    volumes:
+      - ./docker/quote-service/config.toml:/quote-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  eiou-service:
+    image: wildcat/eiou-service
+    pull_policy: never
+    volumes:
+      - ./docker/eiou-service/config.toml:/eiou-service/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  wallet-aggregator:
+    image: wildcat/wallet-aggregator
+    pull_policy: never
+    depends_on:
+      key-service:
+        condition: service_healthy
+      swap-service:
+        condition: service_started # no healthcheck yet
+      cdk-mintd:
+        condition: service_started # no healthcheck yet
+    volumes:
+      - ./docker/wallet-aggregator/config.toml:/wallet-aggregator/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ebill-service:
+    image: wildcat/ebill-service
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/ebill-service/config.toml:/ebill-service/config.toml
+
+  balance-collector:
+    image: wildcat/balance-collector
+    pull_policy: never
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      treasury-service:
+        condition: service_started
+      ebpp:
+        condition: service_started
+    volumes:
+      - ./docker/balance-collector/config.toml:/balance-collector/config.toml
+
+  ######################################################################################## 3rd parties
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
+    healthcheck:
+      test: ['CMD-SHELL', '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { java.net.URI uri = java.net.URI.create(args[0]); System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)uri.toURL().openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:9000/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    volumes:
+      - ./.docker_data/surrealdb:/data
+    command:
+      - start
+      - --unauthenticated
+      - rocksdb:/data/database.db
+    user: ${UID}:${GID}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: [ "CMD", "/surreal", "is-ready" ]
+      interval: 5s
+      retries: 5
+
+  bitcoin-core:
+    image: bitcoin/bitcoin:28.1
+    volumes:
+      - ./docker/bitcoin-core/bitcoin.conf:/root/.bitcoin/bitcoin.conf
+      - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
+      - ./.docker_data/bitcoin-core/:/home/bitcoin/data
+    environment:
+      BITCOIN_DATA: /home/bitcoin/data
+
+  electrs:
+    image: getumbrel/electrs:v0.10.9
+    depends_on:
+      bitcoin-core:
+        condition: service_healthy
+    volumes:
+      - ./docker/electrs/config.toml:/data/.electrs/config.toml
+
+  cdk-mintd:
+    image: thesimplekid/cdk-mintd:0.9
+    platform: linux/amd64
+    volumes:
+      - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
+    restart: unless-stopped
+    command: ["cdk-mintd"]
+    depends_on:
+      ebpp:
+        condition: service_started
+
+  bff-dashboard-service:
+    image: envoyproxy/envoy:v1.33.0
+    depends_on:
+      - keycloak
+      - quote-service
+      - treasury-service
+      - key-service
+      - ebpp
+    volumes:
+      - ./docker/bff-dashboard-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "4242:4242"  
+    command: >
+      /usr/local/bin/envoy
+      -c /etc/envoy/envoy.yaml
+      --log-level info
+    networks:
+      - default
+
+  bff-wallet-service:
+    image: nginx:stable-bookworm
+    ports:
+      - "4343:4242"
+    depends_on:
+      - quote-service
+      - wallet-aggregator
+    volumes:
+      - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
+    restart: unless-stopped

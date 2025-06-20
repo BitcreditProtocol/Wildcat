@@ -1,0 +1,108 @@
+services:
+
+  ######################################################################################## ours
+  ebpp:
+    extends:
+        file: common-services.yml
+        service: ebpp
+
+  key-service:
+    extends:
+        file: common-services.yml
+        service: key-service
+
+  swap-service:
+    extends:
+        file: common-services.yml
+        service: swap-service
+
+  treasury-service:
+    extends:
+        file: common-services.yml
+        service: treasury-service
+
+  quote-service:
+    extends:
+        file: common-services.yml
+        service: quote-service
+
+  eiou-service:
+    extends:
+        file: common-services.yml
+        service: eiou-service
+
+  wallet-aggregator:
+    extends:
+        file: common-services.yml
+        service: wallet-aggregator
+
+  ebill-service:
+    extends:
+        file: common-services.yml
+        service: ebill-service
+
+  balance-collector:
+    extends:
+        file: common-services.yml
+        service: balance-collector
+
+  ######################################################################################## 3rd parties
+  keycloak:
+    extends:
+        file: common-services.yml
+        service: keycloak
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      WDC_DASHBOARD_URL: http://localhost:5173
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
+      KC_DB: dev-file
+    command:
+      - start-dev
+      - --import-realm
+      - --http-port=8080
+      - --proxy-headers=xforwarded
+      - --hostname=localhost
+
+
+  surrealdb:
+    extends:
+        file: common-services.yml
+        service: surrealdb
+
+  bitcoin-core:
+    extends:
+        file: common-services.yml
+        service: bitcoin-core
+    command:
+      - -printtoconsole
+      - --regtest=1
+      - -conf=/home/bitcoin/bitcoin.conf
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "--regtest", "getconnectioncount"]
+
+  electrs:
+    extends:
+        file: common-services.yml
+        service: electrs
+    environment:
+      ELECTRS_NETWORK: regtest
+      ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
+      ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
+
+  cdk-mintd:
+    extends:
+        file: common-services.yml
+        service: cdk-mintd
+
+  bff-dashboard-service:
+    extends:
+        file: common-services.yml
+        service: bff-dashboard-service
+
+  bff-wallet-service:
+    extends:
+        file: common-services.yml
+        service: bff-wallet-service
