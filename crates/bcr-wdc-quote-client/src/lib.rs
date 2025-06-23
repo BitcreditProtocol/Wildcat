@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::quotes as web_quotes;
 pub use reqwest::Url;
 use thiserror::Error;
@@ -26,6 +27,7 @@ pub enum Error {
 pub struct QuoteClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    auth: AuthorizationPlugin,
 }
 
 impl QuoteClient {
@@ -33,7 +35,29 @@ impl QuoteClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            auth: Default::default(),
         }
+    }
+
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn enquire(
@@ -114,9 +138,8 @@ impl QuoteClient {
         if let Some(bill_holder_id) = bill_holder_id {
             request = request.query(&[("bill_holder_id", bill_holder_id)]);
         }
-        let response = request.send().await?;
 
-        let reply = response.json::<web_quotes::ListReplyLight>().await?;
+        let reply = self.auth.authorize(request).send().await?.json().await?;
         Ok(reply)
     }
 
