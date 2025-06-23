@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
 use cashu::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03, Amount};
 use thiserror::Error;
@@ -19,6 +20,7 @@ pub enum Error {
 pub struct TreasuryClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    auth: AuthorizationPlugin,
 }
 
 impl TreasuryClient {
@@ -26,7 +28,29 @@ impl TreasuryClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            auth: Default::default(),
         }
+    }
+
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn generate_blinds(
@@ -34,13 +58,14 @@ impl TreasuryClient {
         kid: cdk02::Id,
         amount: Amount,
     ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
-        let request = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
+        let msg = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
         let url = self
             .base
             .join("/v1/admin/treasury/credit/generate_blinds")
             .expect("generate_blinds relative path");
-        let res = self.cl.post(url).json(&request).send().await?;
-        let response: web_signatures::GenerateBlindedMessagesResponse = res.json().await?;
+        let request = self.cl.post(url).json(&msg);
+        let response: web_signatures::GenerateBlindedMessagesResponse =
+            self.auth.authorize(request).send().await?.json().await?;
         Ok((response.request_id, response.messages))
     }
 
@@ -50,7 +75,7 @@ impl TreasuryClient {
         expiration: chrono::DateTime<chrono::Utc>,
         signatures: Vec<cdk00::BlindSignature>,
     ) -> Result<()> {
-        let request = web_signatures::StoreBlindSignaturesRequest {
+        let msg = web_signatures::StoreBlindSignaturesRequest {
             rid,
             expiration,
             signatures,
@@ -59,8 +84,9 @@ impl TreasuryClient {
             .base
             .join("/v1/admin/treasury/credit/store_signatures")
             .expect("store_signatures relative path");
-        let res = self.cl.post(url).json(&request).send().await?;
-        res.error_for_status()?;
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?;
+        response.error_for_status()?;
         Ok(())
     }
 
@@ -69,13 +95,14 @@ impl TreasuryClient {
         inputs: Vec<cdk00::Proof>,
         outputs: Vec<cdk00::BlindedMessage>,
     ) -> Result<Vec<cdk00::BlindSignature>> {
-        let request = cdk03::SwapRequest::new(inputs, outputs);
+        let msg = cdk03::SwapRequest::new(inputs, outputs);
         let url = self
             .base
             .join("/v1/admin/treasury/debit/redeem")
             .expect("redeem relative path");
-        let res = self.cl.post(url).json(&request).send().await?;
-        let response: cdk03::SwapResponse = res.json().await?;
+        let request = self.cl.post(url).json(&msg);
+        let response: cdk03::SwapResponse =
+            self.auth.authorize(request).send().await?.json().await?;
         Ok(response.signatures)
     }
 
@@ -84,8 +111,9 @@ impl TreasuryClient {
             .base
             .join("/v1/admin/treasury/credit/balance")
             .expect("crsat balance relative path");
-        let res = self.cl.get(url).send().await?;
-        let response: web_wallet::ECashBalance = res.json().await?;
+        let request = self.cl.get(url);
+        let response: web_wallet::ECashBalance =
+            self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
     }
 
@@ -94,8 +122,9 @@ impl TreasuryClient {
             .base
             .join("/v1/admin/treasury/debit/balance")
             .expect("sat balance relative path");
-        let res = self.cl.get(url).send().await?;
-        let response: web_wallet::ECashBalance = res.json().await?;
+        let request = self.cl.get(url);
+        let response: web_wallet::ECashBalance =
+            self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
     }
 }
