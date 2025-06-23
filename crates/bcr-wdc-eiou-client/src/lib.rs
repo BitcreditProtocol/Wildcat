@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::eiou as web_eiou;
 use thiserror::Error;
 // ----- local imports
@@ -18,6 +19,7 @@ pub enum Error {
 pub struct EIOUClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    auth: AuthorizationPlugin,
 }
 
 impl EIOUClient {
@@ -25,16 +27,38 @@ impl EIOUClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            auth: Default::default(),
         }
+    }
+
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn balance(&self) -> Result<web_eiou::BalanceResponse> {
         let url = self
             .base
-            .join("v1/admin/eiou/balance")
+            .join("/v1/admin/eiou/balance")
             .expect("eiou balance relative path");
-        let res = self.cl.get(url).send().await?;
-        let blnc = res.json::<web_eiou::BalanceResponse>().await?;
-        Ok(blnc)
+        let request = self.cl.get(url);
+        let response = self.auth.authorize(request).send().await?.json().await?;
+        Ok(response)
     }
 }
