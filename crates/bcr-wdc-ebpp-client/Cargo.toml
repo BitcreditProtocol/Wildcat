@@ -5,8 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bdk_wallet = {workspace = true}
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
+serde = {workspace = true, features = ["derive"]}
 thiserror.workspace = true
