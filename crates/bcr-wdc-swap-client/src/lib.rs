@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::swap as web_swap;
 use cashu::{nut00 as cdk00, nut03 as cdk03, nut07 as cdk07};
 use thiserror::Error;
@@ -18,6 +19,7 @@ pub enum Error {
 pub struct SwapClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    auth: AuthorizationPlugin,
 }
 
 impl SwapClient {
@@ -25,7 +27,29 @@ impl SwapClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            auth: Default::default(),
         }
+    }
+
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn swap(
@@ -51,12 +75,12 @@ impl SwapClient {
     pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::RecoverResponse> {
         let url = self
             .base
-            .join("/v1/recover")
+            .join("/v1/admin/swap/recover")
             .expect("recover relative path");
-        let request = web_swap::RecoverRequest { proofs };
-        let res = self.cl.post(url).json(&request).send().await?;
-        let recover_resp: web_swap::RecoverResponse = res.json().await?;
-        Ok(recover_resp)
+        let msg = web_swap::RecoverRequest { proofs };
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?.json().await?;
+        Ok(response)
     }
 
     pub async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cdk07::ProofState>> {
