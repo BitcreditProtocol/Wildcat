@@ -31,7 +31,7 @@ services:
         file: common-services.yml
         service: surrealdb
 
-  cdk_mint:
+  cdk-mintd:
     extends:
         file: common-services.yml
         service: cdk-mintd
@@ -61,20 +61,20 @@ services:
         file: common-services.yml
         service: bitcoin-core
     command:
-      -printtoconsole
-      -regtest=1
-      -conf=/home/bitcoin/bitcoin.conf
+      - -printtoconsole
+      - --regtest=1
+      - -conf=/home/bitcoin/bitcoin.conf
     healthcheck:
-      test: ["CMD", "bitcoin-cli", "-regtest", "getconnectioncount"]
+      test: ["CMD", "bitcoin-cli", "--regtest", "getconnectioncount"]
 
   electrs:
     extends:
         file: common-services.yml
         service: electrs
     environment:
-      - ELECTRS_NETWORK: regtest
-      - ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
-      - ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
+      ELECTRS_NETWORK: regtest
+      ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
+      ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
 
   keycloak:
     extends:
