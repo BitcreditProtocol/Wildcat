@@ -141,6 +141,12 @@ static_resources:
                                 - provider_name: keycloak_provider_service
                                 - provider_name: keycloak_provider_localhost
                                 - provider_name: keycloak_provider_external_secure
+                                - provider_name: keycloak_provider_external_docker_dev_secure
+                                - provider_name: keycloak_provider_external_docker_staging_secure
+                                - provider_name: keycloak_provider_external_docker_secure
+                                - provider_name: keycloak_provider_external_cluster_dev_secure
+                                - provider_name: keycloak_provider_external_cluster_staging_secure
+                                - provider_name: keycloak_provider_external_cluster_secure
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
