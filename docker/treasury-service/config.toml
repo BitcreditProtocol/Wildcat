@@ -21,7 +21,7 @@ database = "treasury"
 table = "mint_quotes"
 
 [appcfg.sat_wallet]
-mint_url = "http://cdk_mint:8085"
+mint_url = "http://cdk-mintd:8085"
 storage = "/data/cdk-wallet-redb.redb"
 
 [appcfg.wildcat]
