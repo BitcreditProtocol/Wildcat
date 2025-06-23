@@ -11,6 +11,7 @@ bitcoin = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
+serde = {workspace = true, features = ["derive"]}
 thiserror.workspace = true
 uuid.workspace = true
 
