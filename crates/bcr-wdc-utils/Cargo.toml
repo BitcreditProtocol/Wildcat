@@ -19,8 +19,12 @@ cdk-common = {workspace = true}
 chrono.workspace = true
 itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
+reqwest = {workspace = true, features = ["json"]}
 secp256k1 = {workspace = true, features = ["global-context"]}
+serde = {workspace = true, features = ["derive"]}
 thiserror.workspace = true
+tokio = {workspace = true, features = ["time", "rt"]}
+tracing = {workspace = true}
 url.workspace = true
 uuid.workspace = true
 
