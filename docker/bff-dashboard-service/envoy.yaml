@@ -140,7 +140,6 @@ static_resources:
                               requirements:
                                 - provider_name: keycloak_provider_service
                                 - provider_name: keycloak_provider_localhost
-                                - provider_name: keycloak_provider_external_secure
                                 - provider_name: keycloak_provider_external_docker_dev_secure
                                 - provider_name: keycloak_provider_external_docker_staging_secure
                                 - provider_name: keycloak_provider_external_docker_secure
