@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::keys as web_keys;
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut09 as cdk09, nut20 as cdk20,
@@ -30,6 +31,7 @@ pub enum Error {
 pub struct KeyClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    auth: AuthorizationPlugin,
 }
 
 impl KeyClient {
@@ -37,7 +39,29 @@ impl KeyClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            auth: Default::default(),
         }
+    }
+
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
@@ -85,14 +109,15 @@ impl KeyClient {
             .base
             .join("/v1/admin/keys/sign")
             .expect("sign relative path");
-        let res = self.cl.post(url).json(msg).send().await?;
-        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+        let request = self.cl.post(url).json(msg);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(msg.keyset_id));
         }
-        let sig = res.json::<cdk00::BlindSignature>().await?;
+        let sig = response.json::<cdk00::BlindSignature>().await?;
         Ok(sig)
     }
 
@@ -101,14 +126,15 @@ impl KeyClient {
             .base
             .join("/v1/admin/keys/verify")
             .expect("verify relative path");
-        let res = self.cl.post(url).json(proof).send().await?;
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
+        let request = self.cl.post(url).json(proof);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(proof.keyset_id));
         }
-        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
-        res.error_for_status()?;
+        response.error_for_status()?;
         Ok(())
     }
 
@@ -125,11 +151,12 @@ impl KeyClient {
             qid,
             msg: msg.clone(),
         };
-        let res = self.cl.post(url).json(&msg).send().await?;
-        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
-        let sig = res.json::<cdk00::BlindSignature>().await?;
+        let sig = response.json::<cdk00::BlindSignature>().await?;
         Ok(sig)
     }
 
@@ -149,11 +176,12 @@ impl KeyClient {
             condition: web_keys::KeysetMintCondition { amount, public_key },
             expire,
         };
-        let res = self.cl.post(url).json(&msg).send().await?;
-        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
-        let kid = res.json::<cdk02::Id>().await?;
+        let kid = response.json::<cdk02::Id>().await?;
         Ok(kid)
     }
 
@@ -163,11 +191,12 @@ impl KeyClient {
             .join("/v1/admin/keys/enable")
             .expect("enable relative path");
         let msg = web_keys::EnableKeysetRequest { qid };
-        let res = self.cl.post(url).json(&msg).send().await?;
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceFromIdNotFound(qid));
         }
-        let response: web_keys::EnableKeysetResponse = res.json().await?;
+        let response: web_keys::EnableKeysetResponse = response.json().await?;
         Ok(response.kid)
     }
 
@@ -221,11 +250,12 @@ impl KeyClient {
             .join("/v1/admin/keys/deactivate")
             .expect("deactivate relative path");
         let msg = web_keys::DeactivateKeysetRequest { kid };
-        let res = self.cl.post(url).json(&msg).send().await?;
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
         }
-        let response: web_keys::DeactivateKeysetResponse = res.json().await?;
+        let response: web_keys::DeactivateKeysetResponse = response.json().await?;
         Ok(response.kid)
     }
 }
