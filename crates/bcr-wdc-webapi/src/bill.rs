@@ -1,7 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
-pub use bcr_ebill_core::blockchain::bill::block::NodeId;
-use bcr_ebill_core::{bill, contact, notification, util::date::DateTimeUtc};
+pub use bcr_ebill_core::bill::BillId;
+pub use bcr_ebill_core::NodeId;
+use bcr_ebill_core::{
+    bill::{self},
+    contact, notification,
+    util::date::DateTimeUtc,
+};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -19,7 +24,8 @@ pub struct BillsResponse<T: Serialize> {
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BitcreditBill {
-    pub id: String,
+    #[schema(value_type=String)]
+    pub id: BillId,
     pub participants: BillParticipants,
     pub data: BillData,
     pub status: BillStatus,
@@ -293,7 +299,8 @@ pub struct BillParticipants {
     pub payee: BillParticipant,
     pub endorsee: Option<BillParticipant>,
     pub endorsements_count: u64,
-    pub all_participant_node_ids: Vec<String>,
+    #[schema(value_type=Vec<String>)]
+    pub all_participant_node_ids: Vec<NodeId>,
 }
 
 impl From<bill::BillParticipants> for BillParticipants {
@@ -315,6 +322,15 @@ pub enum BillParticipant {
     Ident(BillIdentParticipant),
 }
 
+impl BillParticipant {
+    pub fn node_id(&self) -> NodeId {
+        match self {
+            BillParticipant::Ident(data) => data.node_id.clone(),
+            BillParticipant::Anon(data) => data.node_id.clone(),
+        }
+    }
+}
+
 impl From<contact::BillParticipant> for BillParticipant {
     fn from(val: contact::BillParticipant) -> Self {
         match val {
@@ -333,18 +349,10 @@ impl From<BillParticipant> for contact::BillParticipant {
     }
 }
 
-impl NodeId for BillParticipant {
-    fn node_id(&self) -> String {
-        match self {
-            BillParticipant::Ident(data) => data.node_id.clone(),
-            BillParticipant::Anon(data) => data.node_id.clone(),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillAnonParticipant {
-    pub node_id: String,
+    #[schema(value_type=String)]
+    pub node_id: NodeId,
     pub email: Option<String>,
     pub nostr_relays: Vec<String>,
 }
@@ -369,13 +377,12 @@ impl From<BillAnonParticipant> for contact::BillAnonParticipant {
     }
 }
 
-#[derive(
-    Default, Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema,
-)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillIdentParticipant {
     #[serde(rename = "type")]
     pub t: ContactType,
-    pub node_id: String,
+    #[schema(value_type=String)]
+    pub node_id: NodeId,
     pub name: String,
     #[serde(flatten)]
     pub postal_address: PostalAddress,
@@ -412,7 +419,8 @@ impl From<BillIdentParticipant> for contact::BillIdentParticipant {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Notification {
     pub id: String,
-    pub node_id: Option<String>,
+    #[schema(value_type=Option<String>)]
+    pub node_id: Option<NodeId>,
     pub notification_type: NotificationType,
     pub reference_id: Option<String>,
     pub description: String,
@@ -454,7 +462,7 @@ impl From<notification::NotificationType> for NotificationType {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestToPayBitcreditBillPayload {
-    pub bill_id: String,
+    pub bill_id: BillId,
     pub currency: String,
 }
 
@@ -522,7 +530,7 @@ impl From<contact::LightBillParticipant> for LightBillParticipant {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LightBillAnonParticipant {
-    pub node_id: String,
+    pub node_id: NodeId,
 }
 
 impl From<contact::LightBillAnonParticipant> for LightBillAnonParticipant {
@@ -538,7 +546,7 @@ pub struct LightBillIdentParticipant {
     #[serde(rename = "type")]
     pub t: ContactType,
     pub name: String,
-    pub node_id: String,
+    pub node_id: NodeId,
 }
 impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
     fn from(val: contact::LightBillIdentParticipant) -> Self {
@@ -555,7 +563,7 @@ pub struct LightBillIdentParticipantWithAddress {
     #[serde(rename = "type")]
     pub t: ContactType,
     pub name: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     #[serde(flatten)]
     pub postal_address: PostalAddress,
 }

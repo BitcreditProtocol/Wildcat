@@ -2,6 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_ebill_client::{EbillClient, Url};
+use bcr_wdc_webapi::bill::BillId;
 use bdk_wallet::bitcoin::Amount;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -25,14 +26,14 @@ impl EBillClient {
 
 #[async_trait]
 impl EBillNode for EBillClient {
-    async fn request_to_pay(&self, bill: &str, amount: Amount) -> Result<String> {
+    async fn request_to_pay(&self, bill: &BillId, amount: Amount) -> Result<String> {
         tracing::info!(
             "EBillClient: request_to_pay called with bill: {}, amount: {}",
             bill,
             amount
         );
         let request = bcr_wdc_webapi::bill::RequestToPayBitcreditBillPayload {
-            bill_id: String::from(bill),
+            bill_id: bill.to_owned(),
             currency: String::from("sat"),
         };
         self.0

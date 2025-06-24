@@ -3,7 +3,7 @@ use thiserror::Error;
 
 // ----- standard library imports
 // ----- extra library imports
-use bcr_ebill_core::{self as data, identity, util::BcrKeys};
+use bcr_ebill_core::{self as data, identity, NodeId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ pub struct SeedPhrase {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Identity {
-    pub node_id: String,
+    pub node_id: NodeId,
     pub name: String,
     pub email: Option<String>,
     pub bitcoin_public_key: bitcoin::PublicKey,
@@ -85,9 +85,9 @@ pub struct Identity {
     pub nostr_relays: Vec<url::Url>,
 }
 
-impl TryFrom<(identity::Identity, BcrKeys)> for Identity {
+impl TryFrom<identity::Identity> for Identity {
     type Error = Error;
-    fn try_from((identity, keys): (identity::Identity, BcrKeys)) -> Result<Self, Self::Error> {
+    fn try_from(identity: identity::Identity) -> Result<Self, Self::Error> {
         let nostr_relays: Vec<url::Url> = identity
             .nostr_relays
             .iter()
@@ -104,9 +104,8 @@ impl TryFrom<(identity::Identity, BcrKeys)> for Identity {
             node_id: identity.node_id.clone(),
             name: identity.name,
             email: identity.email,
-            bitcoin_public_key: bitcoin::PublicKey::from_str(&identity.node_id)
-                .map_err(|_| Error::InvalidBitcoinKey)?,
-            npub: keys.get_nostr_npub(),
+            bitcoin_public_key: identity.node_id.pub_key().into(),
+            npub: identity.node_id.npub().to_string(),
             postal_address: identity.postal_address.into(),
             date_of_birth,
             country_of_birth: identity.country_of_birth,

@@ -1,8 +1,7 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_wdc_webapi::{bill::NodeId, quotes as web_quotes};
+use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::{
@@ -50,7 +49,7 @@ fn verify_signature(req: &web_quotes::SignedEnquireRequest) -> Result<()> {
         .endorsees
         .last()
         .unwrap_or(&req.request.content.payee);
-    let pub_key = bitcoin::secp256k1::PublicKey::from_str(&holder.node_id())?;
+    let pub_key = holder.node_id().pub_key();
     bcr_wdc_utils::keys::schnorr_verify_borsh_msg_with_key(
         &req.request,
         &req.signature,

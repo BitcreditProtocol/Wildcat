@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use bcr_wdc_utils::signatures as signatures_utils;
 use bcr_wdc_webapi as web;
+use bcr_wdc_webapi::bill::BillId;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
@@ -31,14 +32,14 @@ pub trait Wallet: Clone + Send {
 #[async_trait]
 pub trait WildcatService: Clone + Send {
     async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
-    async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+    async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id>;
     async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MintQuote {
     pub qid: String,
-    pub ebill_id: String,
+    pub ebill_id: BillId,
 }
 
 #[async_trait]
@@ -90,7 +91,7 @@ where
 
     pub async fn mint_from_ebill(
         &self,
-        ebill_id: String,
+        ebill_id: BillId,
         amount: Amount,
     ) -> Result<cdk::wallet::MintQuote> {
         let request = web::signatures::RequestToMintFromEBillDesc {
@@ -185,7 +186,7 @@ where
 
 async fn monitor_quote(
     qid: String,
-    ebill_id: String,
+    ebill_id: BillId,
     wlt: impl Wallet,
     repo: impl Repository,
     wdc: impl WildcatService,
@@ -255,7 +256,7 @@ mod tests {
         #[async_trait]
         impl super::WildcatService for WildcatService {
             async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
-            async fn deactivate_keyset_for_ebill(&self, ebill_id: &str) -> Result<cdk02::Id>;
+            async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id>;
             async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
         }
     }
@@ -285,7 +286,8 @@ mod tests {
     #[tokio::test]
     async fn mint_from_ebill() {
         let amount = Amount::from(1000_u64);
-        let ebill_id = String::from("ebill_id");
+        let ebill_id =
+            BillId::from_str("bitcrt285psGq4Lz4fEQwfM3We5HPznJq8p1YvRaddszFaU5dY").unwrap();
         let mut wdc = MockWildcatService::new();
         let mut repo = MockRepository::new();
         let mut wallet = MockWallet::new();

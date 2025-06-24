@@ -39,6 +39,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-wdc-utils = { workspace = true, features = ["test-utils"] }
+bcr-wdc-webapi = { workspace = true, features = ["test-utils"] }
 bip39 = {workspace = true}
 mockall.workspace = true
 rand.workspace = true
