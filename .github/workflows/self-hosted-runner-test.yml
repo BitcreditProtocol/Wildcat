@@ -1,0 +1,88 @@
+name: 'Self-Hosted Runner Test'
+
+on:
+  push:
+    branches:
+      - 'cleot/self-hosted-runner-setup'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests on Self-Hosted Runner
+    runs-on: [self-hosted, wildcat-dev-docker]
+
+    steps:
+      - name: 'Check out repository code'
+        uses: actions/checkout@v4
+
+      - name: 'Environment Check'
+        run: |
+          echo "--------------------------------------------------"
+          echo "I am running in this directory:"
+          pwd
+          echo "--------------------------------------------------"
+          echo "My user is:"
+          whoami
+
+      - name: 'Check User ID and Group Permissions (id)'
+        run: |
+          echo "Verifying user ID and group memberships..."
+          id
+
+      - name: 'Check System Health'
+        run: |
+          echo "Checking available disk space..."
+          df -h
+          echo "--------------------------------------------------"
+          echo "Checking OS version..."
+          cat /etc/os-release || echo "Could not determine OS version."
+          
+      - name: 'Test Network Access'
+        run: |
+          echo "Testing ability to reach external sites..."
+          curl -I https://github.com
+          echo "--------------------------------------------------"
+          echo "Network access to github.com confirmed."
+
+      - name: 'Advanced Docker Test (Volume Mounting)'
+        run: |
+          echo "--- Starting Advanced Docker Volume Test ---"
+          
+          # Step A: List the current directory on the runner host
+          echo "Step A: Listing files on the runner before container starts..."
+          ls -la
+          
+          # Step B: Run a container, mount the current directory, and list files from INSIDE it
+          echo "Step B: Running container and listing files from INSIDE the container..."
+          docker run --rm -v "$(pwd)":/workspace alpine:latest ls -la /workspace
+          
+          # Step C: Run a container and CREATE a file from INSIDE it
+          echo "Step C: Running container and creating a new file from INSIDE..."
+          docker run --rm -v "$(pwd)":/workspace alpine:latest sh -c "echo 'This file was created from within a Docker container' > /workspace/container-created-this.txt"
+          
+          # Step D: List files on the runner host AGAIN to see the new file
+          echo "Step D: Listing files on the runner AGAIN to see the new file..."
+          ls -la
+          
+          echo "--------------------------------------------------"
+          echo "✅ If you see 'container-created-this.txt' in the final list, the volume mount test was a success!"
+        
+      - name: '7. Test Persistent File Copy to Home Directory'
+        run: |
+          echo "--- Testing ability to copy artifacts to a persistent location ---"
+          TARGET_DIR="$HOME/wildcat"
+          
+          echo "Ensuring target directory exists: $TARGET_DIR"
+          mkdir -p $TARGET_DIR
+
+          echo "Creating a test artifact file in the current workspace..."
+          echo "This is a test artifact generated at $(date)" > artifact-from-workspace.txt
+          
+          echo "Copying 'artifact-from-workspace.txt' to '$TARGET_DIR'..."
+          cp artifact-from-workspace.txt $TARGET_DIR/
+          
+          echo "Verifying copy was successful by listing the target directory:"
+          ls -la $TARGET_DIR
+          
+          echo "--------------------------------------------------"
+          echo "If you see 'artifact-from-workspace.txt' in the list above, this test was a success!"
