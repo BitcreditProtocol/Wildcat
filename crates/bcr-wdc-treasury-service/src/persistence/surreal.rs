@@ -335,7 +335,7 @@ impl DebitRepository {
 impl debit::Repository for DebitRepository {
     async fn store_quote(&self, quote: debit::MintQuote) -> Result<()> {
         let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
-        let _: Option<String> = self
+        let _: Option<debit::MintQuote> = self
             .db
             .insert(rid)
             .content(quote)
@@ -346,7 +346,7 @@ impl debit::Repository for DebitRepository {
 
     async fn delete_quote(&self, quote_id: String) -> Result<()> {
         let rid = RecordId::from_table_key(&self.table, quote_id);
-        let _: Option<String> = self.db.delete(rid).await.map_err(Error::DB)?;
+        let _: Option<debit::MintQuote> = self.db.delete(rid).await.map_err(Error::DB)?;
         Ok(())
     }
 
@@ -366,11 +366,14 @@ impl debit::Repository for DebitRepository {
 
 #[cfg(test)]
 mod tests {
+    use crate::debit::Repository;
+
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
+    use bcr_wdc_webapi::test_utils::random_bill_id;
 
-    async fn init_mem_db() -> CreditRepository {
+    async fn init_cred_mem_db() -> CreditRepository {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
@@ -386,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn next_counter_newkeyset() {
-        let db = init_mem_db().await;
+        let db = init_cred_mem_db().await;
         let kid = keys_utils::generate_random_keysetid();
         let c = db.next_counter(kid).await.expect("next_counter failed");
         assert_eq!(c.counter, 0);
@@ -394,7 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn next_counter_existingkeyset() {
-        let db = init_mem_db().await;
+        let db = init_cred_mem_db().await;
         let kid = keys_utils::generate_random_keysetid();
         let rid = RecordId::from_table_key(&db.counters, kid.to_string());
         let _resp: Option<DBEntryCounter> = db
@@ -409,14 +412,14 @@ mod tests {
 
     #[tokio::test]
     async fn list_balance_by_keyset_id_empty() {
-        let db = init_mem_db().await;
+        let db = init_cred_mem_db().await;
         let balances = db.list_balance_by_keyset_id().await.unwrap();
         assert_eq!(balances.len(), 0);
     }
 
     #[tokio::test]
     async fn list_balance_by_keyset_id() {
-        let db = init_mem_db().await;
+        let db = init_cred_mem_db().await;
 
         let (_, keyset) = keys_utils::generate_random_keyset();
         let proofs =
@@ -441,7 +444,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_premint_signatures() {
-        let db = init_mem_db().await;
+        let db = init_cred_mem_db().await;
         let (_, keyset) = keys_utils::generate_random_keyset();
         let amounts = [Amount::from(8_u64), Amount::from(4_u64)];
         let signatures = signatures_test::generate_signatures(&keyset, &amounts);
@@ -461,5 +464,33 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].request_id, entry.request_id);
         assert_eq!(entries[0].signatures.len(), entry.signatures.len());
+    }
+
+    async fn init_deb_mem_db() -> DebitRepository {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DebitRepository {
+            db: sdb,
+            table: String::from("test"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mint_quote() {
+        let db = init_deb_mem_db().await;
+
+        let quote = debit::MintQuote {
+            qid: Uuid::new_v4().to_string(),
+            ebill_id: random_bill_id(),
+        };
+        db.store_quote(quote.clone()).await.unwrap();
+
+        let list = db.list_quotes().await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].qid, quote.qid);
+
+        db.delete_quote(quote.qid.clone()).await.unwrap();
     }
 }
