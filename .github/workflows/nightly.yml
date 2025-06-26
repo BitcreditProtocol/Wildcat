@@ -1,9 +1,9 @@
-name: build and push Docker images
+name: build and push nightly Docker images
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -145,7 +145,7 @@ jobs:
       with:
         images: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
         tags: |
-          type=semver,pattern={{version}}
+          type=match,pattern=dev,value=nightly
 
     - id: push
       name: Build & push ${{ matrix.service.name }}
