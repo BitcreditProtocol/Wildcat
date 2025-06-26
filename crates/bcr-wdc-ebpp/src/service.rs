@@ -142,13 +142,11 @@ where
         description: String,
         unix_expiry: Option<u64>,
     ) -> PaymentResult<CreateIncomingPaymentResponse> {
-        let unit_str = unit.to_string();
-        let amount_u: u64 = amount.into();
-        let _span = tracing::debug_span!(
-            "create_incoming_payment_request",
-            amount_u,
-            unit_str,
-            description
+        tracing::trace!(
+            amount = ?amount,
+            unit = ?unit,
+            description = ?description,
+            "create_incoming_payment_request"
         );
 
         if !matches!(unit, CurrencyUnit::Sat) {
@@ -160,6 +158,10 @@ where
             serde_json::from_str::<SignedRequestToMintFromEBillDesc>(&description);
         let payment_type = match parsed_description {
             Ok(ebill_request_to_mint) => {
+                tracing::trace!(
+                    bill_id = ?ebill_request_to_mint.data.ebill_id,
+                    "Parsed EBill request",
+                );
                 let request = validate_ebill_request_signature(
                     &ebill_request_to_mint,
                     &self.treasury_pubkey,
