@@ -236,6 +236,7 @@ where
         let response = PaymentQuoteResponse {
             request_lookup_id: outgoing.reqid.to_string(),
             amount: Amount::from(outgoing.amount.to_sat()),
+            unit: CurrencyUnit::Sat,
             fee,
             state: outgoing.status,
         };

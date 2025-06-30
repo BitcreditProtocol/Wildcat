@@ -39,13 +39,14 @@ impl Factory {
             Self::MAX_ORDER,
             self.unit.clone(),
             path.clone(),
+            Some(expire.timestamp() as u64),
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             unit: self.unit.clone(),
             active: false,
             valid_from: chrono::Utc::now().timestamp() as u64,
-            valid_to: Some(expire.timestamp() as u64),
+            final_expiry: Some(expire.timestamp() as u64),
             derivation_path: path,
             derivation_path_index: None,
             max_order: Self::MAX_ORDER,
@@ -63,6 +64,7 @@ fn generate_mintkeyset(
     max_order: u8,
     unit: cdk00::CurrencyUnit,
     path: btc32::DerivationPath,
+    final_expiry: Option<u64>,
 ) -> cdk02::MintKeySet {
     let secp = secp256k1::global::SECP256K1;
     let xpriv = master.derive_priv(secp, &path).expect("RNG busted");
@@ -91,6 +93,7 @@ fn generate_mintkeyset(
         id: (&keys).into(),
         unit,
         keys,
+        final_expiry,
     }
 }
 

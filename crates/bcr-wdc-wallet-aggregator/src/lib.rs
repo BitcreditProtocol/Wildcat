@@ -65,18 +65,6 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keysets/{kid}", get(web::get_keyset_info))
         .route("/v1/keys/{kid}", get(web::get_mint_keyset))
-        .route("/v1/mint/quote/bolt11", post(web::post_mint_quote))
-        .route(
-            "/v1/mint/quote/bolt11/{quote_id}",
-            get(web::get_mint_quote_status),
-        )
-        .route("/v1/mint/bolt11", post(web::post_mint))
-        .route("/v1/melt/quote/bolt11", post(web::post_melt_quote))
-        .route(
-            "/v1/melt/quote/bolt11/{quote_id}",
-            get(web::get_melt_quote_status),
-        )
-        .route("/v1/melt/bolt11", post(web::post_melt))
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
@@ -90,12 +78,6 @@ pub fn routes(app: AppController) -> Router {
     crate::web::get_mint_keys,
     crate::web::get_mint_keysets,
     crate::web::get_mint_keyset,
-    crate::web::post_mint_quote,
-    crate::web::get_mint_quote_status,
-    crate::web::post_mint,
-    crate::web::post_melt_quote,
-    crate::web::get_melt_quote_status,
-    crate::web::post_melt,
     crate::web::post_swap,
     crate::web::post_check_state,
     crate::web::post_restore,

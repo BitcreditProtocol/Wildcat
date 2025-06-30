@@ -8,8 +8,11 @@ use bcr_wdc_webapi::quotes::{
     UpdateQuoteResponse,
 };
 use bcr_wdc_webapi::wallet::ECashBalance;
-use cashu::nuts::{nut01 as cdk01, nut02 as cdk02, nut03 as cdk03};
-use cashu::{MintBolt11Request, MintBolt11Response, SwapResponse};
+use cashu::nuts::{
+    nut01 as cdk01, nut02 as cdk02, nut03 as cdk03,
+    nut04::{MintRequest, MintResponse},
+};
+use cashu::SwapResponse;
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Serialize};
@@ -133,14 +136,14 @@ pub struct UserService {}
 pub struct AdminService {}
 
 impl Service<UserService> {
-    /// POST v1/mint/credit/quote
+    /// POST v1/mint/quote/credit
     pub async fn mint_credit_quote(&self, req: SignedEnquireRequest) -> EnquireReply {
-        let url = self.url("v1/mint/credit/quote");
+        let url = self.url("v1/mint/quote/credit");
         self.client.post(url, &req).await.unwrap()
     }
-    /// GET v1/mint/credit/quote/{quote_id}
+    /// GET v1/mint/quote/credit/{quote_id}
     pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> StatusReply {
-        let url = self.url(&format!("v1/mint/credit/quote/{quote_id}"));
+        let url = self.url(&format!("v1/mint/quote/credit/{quote_id}"));
         self.client.get(url).await.unwrap()
     }
     /// GET v1/keysets
@@ -154,7 +157,7 @@ impl Service<UserService> {
         self.client.get(url).await.unwrap()
     }
     /// POST v1/mint/ebill
-    pub async fn mint_ebill(&self, req: MintBolt11Request<Uuid>) -> MintBolt11Response {
+    pub async fn mint_ebill(&self, req: MintRequest<Uuid>) -> MintResponse {
         let url = self.url("v1/mint/ebill");
         self.client.post(url, &req).await.unwrap()
     }

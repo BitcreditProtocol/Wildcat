@@ -45,11 +45,11 @@ bdk_wallet = {version = "2.0"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
-cashu = {version = "0.9", default-features = false}
-cdk = {version = "0.9"}
-cdk-common = {version = "0.9"}
-cdk-payment-processor = {version = "0.9", default-features = false}
-cdk-redb = {version = "0.9"}
+cashu = {version = "0.11", default-features = false}
+cdk = {version = "0.11"}
+cdk-common = {version = "0.11"}
+cdk-payment-processor = {version = "0.11", default-features = false}
+cdk-redb = {version = "0.11"}
 chrono = {version = "0.4"}
 config = {version = "0.15"}
 futures = {version = "0.3"}

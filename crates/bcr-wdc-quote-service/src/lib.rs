@@ -76,10 +76,10 @@ where
         .url("/v1/admin/credit/api-docs/openapi.json", ApiDoc::openapi());
 
     let user_routes = Router::new()
-        .route("/v1/mint/credit/quote", post(web::enquire_quote))
-        .route("/v1/mint/credit/quote/{id}", get(web::lookup_quote))
-        .route("/v1/mint/credit/quote/{id}", delete(web::cancel))
-        .route("/v1/mint/credit/quote/{id}", post(web::resolve_offer));
+        .route("/v1/mint/quote/credit", post(web::enquire_quote))
+        .route("/v1/mint/quote/credit/{id}", get(web::lookup_quote))
+        .route("/v1/mint/quote/credit/{id}", delete(web::cancel))
+        .route("/v1/mint/quote/credit/{id}", post(web::resolve_offer));
 
     let admin_routes = Router::new()
         .route(

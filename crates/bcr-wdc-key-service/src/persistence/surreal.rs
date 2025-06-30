@@ -20,6 +20,7 @@ pub struct KeysDBEntry {
     unit: cdk00::CurrencyUnit,
     // surrealdb supports only strings as key type
     keys: HashMap<String, cdk01::MintKeyPair>,
+    final_expiry: Option<u64>,
 
     condition: MintCondition,
 }
@@ -37,6 +38,7 @@ fn convert_from(ke: KeysetEntry, condition: MintCondition) -> KeysDBEntry {
         info,
         unit,
         keys: serialized_keys,
+        final_expiry: keyset.final_expiry,
         condition,
     }
 }
@@ -46,6 +48,7 @@ fn convert_to(dbk: KeysDBEntry) -> (KeysetEntry, MintCondition) {
         info,
         unit,
         keys,
+        final_expiry,
         condition,
     } = dbk;
     let mut keysmap: BTreeMap<Amount, cdk01::MintKeyPair> = BTreeMap::default();
@@ -58,6 +61,7 @@ fn convert_to(dbk: KeysDBEntry) -> (KeysetEntry, MintCondition) {
         id: info.id,
         unit,
         keys: cdk01::MintKeys::new(keysmap),
+        final_expiry,
     };
     ((info, keyset), condition)
 }
