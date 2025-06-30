@@ -9,7 +9,7 @@ use axum::{
 use bcr_ebill_api::{
     external::{bitcoin::BitcoinClient, file_storage::FileStorageClient, mint::MintClient},
     service::{
-        bill_service::{service::BillService, BillServiceApi},
+        bill_service::{BillService, BillServiceApi},
         contact_service::{ContactService, ContactServiceApi},
         identity_service::{IdentityService, IdentityServiceApi},
         notification_service::{create_notification_service, NostrClient},
