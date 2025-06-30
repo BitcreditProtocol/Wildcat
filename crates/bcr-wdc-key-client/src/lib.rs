@@ -210,7 +210,7 @@ impl KeyClient {
             .base
             .join("/v1/mint/ebill")
             .expect("mint relative path");
-        let mut msg = cdk04::MintBolt11Request {
+        let mut msg = cdk04::MintRequest {
             quote: qid,
             outputs,
             signature: None,
@@ -220,7 +220,7 @@ impl KeyClient {
         if result.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceFromIdNotFound(qid));
         }
-        let response = result.json::<cdk04::MintBolt11Response>().await?;
+        let response = result.json::<cdk04::MintResponse>().await?;
         Ok(response.signatures)
     }
 

@@ -121,15 +121,15 @@ where
 #[utoipa::path(
     post,
     path = "/v1/mint/ebill",
-    request_body(content = cdk04::MintBolt11Request<String>, content_type = "application/json"),
+    request_body(content = cdk04::MintRequest<String>, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk04::MintBolt11Response, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cdk04::MintResponse, content_type = "application/json"),
     )
 )]
 pub async fn mint_ebill<QuotesKeysRepo, KeysRepo, SignsRepo>(
     State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Json(req): Json<cdk04::MintBolt11Request<String>>,
-) -> Result<Json<cdk04::MintBolt11Response>>
+    Json(req): Json<cdk04::MintRequest<String>>,
+) -> Result<Json<cdk04::MintResponse>>
 where
     KeysRepo: KeysRepository,
     SignsRepo: SignaturesRepository,
@@ -150,7 +150,7 @@ where
     let qid =
         uuid::Uuid::from_str(&req.quote).map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
     let signatures = ctrl.mint(qid, req.outputs).await?;
-    let response = cdk04::MintBolt11Response { signatures };
+    let response = cdk04::MintResponse { signatures };
     Ok(Json(response))
 }
 

@@ -277,7 +277,7 @@ mod tests {
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bcr_wdc_webapi as web;
-    use cashu::{nut00 as cdk00, nut04 as cdk04, Amount};
+    use cashu::{nut00 as cdk00, nut23 as cdk23, Amount};
     use mockall::predicate::*;
     use mockall::*;
     use secp256k1::global::SECP256K1;
@@ -304,7 +304,7 @@ mod tests {
             amount,
             unit: cdk00::CurrencyUnit::Sat,
             request: Default::default(),
-            state: cdk04::QuoteState::Pending,
+            state: cdk23::QuoteState::Pending,
             expiry: Default::default(),
             secret_key: None,
         };
@@ -424,6 +424,7 @@ mod tests {
                     active: false,
                     unit: cdk00::CurrencyUnit::Sat,
                     input_fee_ppk: 0,
+                    final_expiry: None,
                 });
             }
             Ok(infos)

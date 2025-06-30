@@ -2,8 +2,8 @@
 use axum::extract::{Json, Path, State};
 use bcr_wdc_key_client::KeyClient;
 use cashu::{
-    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut04 as cdk04, nut05 as cdk05,
-    nut06 as cdk06, nut07 as cdk07, nut09 as cdk09,
+    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut06 as cdk06, nut07 as cdk07,
+    nut09 as cdk09,
 };
 use cdk::wallet::{HttpClient as CDKClient, MintConnector};
 use futures::future::JoinAll;
@@ -145,121 +145,12 @@ pub async fn get_keyset_info(
             id: kid,
             active: false,
             unit: keys.unit,
+            final_expiry: keys.final_expiry,
             // Fee doesn't matter as we cannot swap into it
             // we can only swap into a different active keyset
             input_fee_ppk: 0,
         }))
     }
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/mint/quote/bolt11",
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-    )
-)]
-pub async fn post_mint_quote(
-    State(ctrl): State<CDKClient>,
-    Json(request): Json<cdk04::MintQuoteBolt11Request>,
-) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
-    tracing::debug!("Requested /v1/mint/quote/bolt11");
-
-    let response = ctrl.post_mint_quote(request).await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/mint/quote/bolt11/{quote_id}",
-    params(
-        ("quote_id" = &str, Path, description = "The quote id")
-    ),
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-        (status = 404, description = "Quote not found"),
-    )
-)]
-pub async fn get_mint_quote_status(
-    State(ctrl): State<CDKClient>,
-    Path(quote_id): Path<String>,
-) -> Result<Json<cdk04::MintQuoteBolt11Response<String>>> {
-    tracing::debug!("Requested /v1/mint/quote/bolt11/{}", quote_id);
-
-    let response = ctrl.get_mint_quote_status(quote_id.as_str()).await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/mint/bolt11",
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-    )
-)]
-pub async fn post_mint(
-    State(ctrl): State<CDKClient>,
-    Json(request): Json<cdk04::MintBolt11Request<String>>,
-) -> Result<Json<cdk04::MintBolt11Response>> {
-    tracing::debug!("Requested /v1/mint/bolt11");
-
-    let response = ctrl.post_mint(request).await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/melt/quote/bolt11",
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-    )
-)]
-pub async fn post_melt_quote(
-    State(ctrl): State<CDKClient>,
-    Json(request): Json<cdk05::MeltQuoteBolt11Request>,
-) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    tracing::debug!("Requested /v1/melt/quote/bolt11");
-
-    let response = ctrl.post_melt_quote(request).await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/melt/quote/bolt11/{quote_id}",
-    params(
-        ("quote_id" = &str, Path, description = "The quote id")
-    ),
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-        (status = 404, description = "Quote not found"),
-    )
-)]
-pub async fn get_melt_quote_status(
-    State(ctrl): State<CDKClient>,
-    Path(quote_id): Path<String>,
-) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    tracing::debug!("Requested /v1/melt/quote/bolt11/{}", quote_id);
-
-    let response = ctrl.get_melt_quote_status(quote_id.as_str()).await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/melt/bolt11",
-    responses (
-        (status = 200, description = "Successful response", content_type = "application/json"),
-    )
-)]
-pub async fn post_melt(
-    State(ctrl): State<CDKClient>,
-    Json(request): Json<cdk05::MeltBolt11Request<String>>,
-) -> Result<Json<cdk05::MeltQuoteBolt11Response<String>>> {
-    tracing::debug!("Requested /v1/melt/bolt11");
-
-    let response = ctrl.post_melt(request).await?;
-    Ok(Json(response))
 }
 
 #[utoipa::path(

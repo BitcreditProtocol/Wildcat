@@ -4,13 +4,10 @@ use bitcoin::{
     bip32 as btc32,
     hashes::{sha256::Hash as Sha256, Hash},
 };
-use cashu::dhke as cdk_dhke;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut02 as cdk02;
-use cashu::nuts::nut10 as cdk10;
-use cashu::nuts::nut11 as cdk11;
-use cashu::nuts::nut14 as cdk14;
-use cashu::Amount as cdk_Amount;
+use cashu::{
+    dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
+    nut14 as cdk14, Amount as cdk_Amount,
+};
 use cdk_common::mint as cdk_mint;
 use thiserror::Error;
 use uuid::Uuid;
@@ -93,7 +90,7 @@ pub fn verify_with_keys(
     // ref: https://docs.rs/cdk/latest/cdk/mint/struct.Mint.html#method.verify_proof
     if let Ok(secret) = <&cashu::secret::Secret as TryInto<cdk10::Secret>>::try_into(&proof.secret)
     {
-        match secret.kind {
+        match secret.kind() {
             cashu::nuts::Kind::P2PK => {
                 proof.verify_p2pk()?;
             }
@@ -182,13 +179,15 @@ pub mod test_utils {
             10,
             cdk00::CurrencyUnit::Sat,
             path.clone(),
+            None,
+            cdk02::KeySetVersion::Version00,
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             active: true,
             unit: cdk00::CurrencyUnit::Sat,
             valid_from: 0,
-            valid_to: None,
+            final_expiry: None,
             derivation_path_index: None,
             derivation_path: path,
             input_fee_ppk: 0,
@@ -206,13 +205,15 @@ pub mod test_utils {
             10,
             cdk00::CurrencyUnit::Sat,
             path.clone(),
+            None,
+            cdk02::KeySetVersion::Version00,
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             active: true,
             unit: cdk00::CurrencyUnit::Sat,
             valid_from: 0,
-            valid_to: None,
+            final_expiry: None,
             derivation_path_index: None,
             derivation_path: path,
             input_fee_ppk: 0,

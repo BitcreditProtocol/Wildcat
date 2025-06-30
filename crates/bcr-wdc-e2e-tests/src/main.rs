@@ -6,7 +6,7 @@ use bcr_wdc_webapi::quotes::EnquireReply;
 use bcr_wdc_webapi::quotes::{
     SignedEnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
 };
-use cashu::{MintBolt11Request, MintUrl};
+use cashu::{MintRequest, MintUrl};
 
 use cashu::nuts::nut02 as cdk02;
 use reqwest::Url;
@@ -238,7 +238,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let blinded_messages = blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
 
     info!("Signing NUT20 mint request");
-    let mut req = MintBolt11Request {
+    let mut req = MintRequest {
         quote: quote_id,
         outputs: blinded_messages,
         signature: None,

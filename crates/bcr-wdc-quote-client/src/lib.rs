@@ -77,7 +77,7 @@ impl QuoteClient {
 
         let url = self
             .base
-            .join("/v1/mint/credit/quote")
+            .join("/v1/mint/quote/credit")
             .expect("enquire relative path");
         let res = self.cl.post(url).json(&signed).send().await?;
         let reply = res.json::<web_quotes::EnquireReply>().await?;
@@ -87,7 +87,7 @@ impl QuoteClient {
     pub async fn lookup(&self, qid: Uuid) -> Result<web_quotes::StatusReply> {
         let url = self
             .base
-            .join(&format!("/v1/mint/credit/quote/{qid}"))
+            .join(&format!("/v1/mint/quote/credit/{qid}"))
             .expect("lookup relative path");
         let res = self.cl.get(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -146,7 +146,7 @@ impl QuoteClient {
     pub async fn resolve(&self, qid: Uuid, action: web_quotes::ResolveOffer) -> Result<()> {
         let url = self
             .base
-            .join(&format!("/v1/mint/credit/quote/{qid}"))
+            .join(&format!("/v1/mint/quote/credit/{qid}"))
             .expect("resolve relative path");
         let res = self.cl.post(url).json(&action).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
@@ -158,7 +158,7 @@ impl QuoteClient {
     pub async fn cancel(&self, qid: Uuid) -> Result<()> {
         let url = self
             .base
-            .join(&format!("/v1/mint/credit/quote/{qid}"))
+            .join(&format!("/v1/mint/quote/credit/{qid}"))
             .expect("resolve relative path");
         let res = self.cl.delete(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
