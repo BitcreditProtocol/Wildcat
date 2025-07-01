@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ${{ env.DEPLOY_PATH }}
-          rsync -a --chown=gh-runner:gh-runner --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
+          rsync -a --no-owner --no-group --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
 
       
       - name: Authenticate to GCP
