@@ -28,11 +28,12 @@ env:
 jobs:
 
   deploy-dev:
-    name: Run Tests on Self-Hosted Runner
+    name: Deploy to Dev Environment
 
     permissions:
       contents: read
       deployments: write
+      id-token: write
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true

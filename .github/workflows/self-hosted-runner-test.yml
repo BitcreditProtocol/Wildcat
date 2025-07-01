@@ -1,9 +1,9 @@
 name: 'Self-Hosted Runner Test'
 
 on:
-  push:
-    branches:
-      - 'cleot/self-hosted-runner-setup'
+  # push:
+  #   branches:
+  #     - 'cleot/self-hosted-runner-setup'
   workflow_dispatch:
 
 jobs:
