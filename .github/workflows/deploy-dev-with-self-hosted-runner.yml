@@ -68,8 +68,9 @@ jobs:
 
       - name: Mirror repo to ${{ env.DEPLOY_PATH }}
         run: |
+          set -euo pipefail
           mkdir -p ${{ env.DEPLOY_PATH }}
-          rsync -a --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
+          rsync -a --chown=gh-runner:gh-runner --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
 
       
       - name: Authenticate to GCP
