@@ -35,7 +35,7 @@ services:
       file: common-services.yml
       service: surrealdb
 
-  cdk_mintd:
+  cdk-mintd:
     extends:
       file: common-services.yml
       service: cdk-mintd
