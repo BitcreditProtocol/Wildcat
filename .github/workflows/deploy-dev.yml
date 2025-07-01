@@ -16,7 +16,7 @@ jobs:
       deployments: write
       id-token: write
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
+      group: ${{ github.workflow }}-${{ github.ref_name }}
       cancel-in-progress: true
 
     ##############################################################
@@ -86,15 +86,15 @@ jobs:
           DATA_PATH=${{ env.DATA_PATH }}
 
           # Dashboard
-          WDC_DASHBOARD_URL=${{ secrets.WDC_DASHBOARD_URL }}
+          WDC_DASHBOARD_URL="${{ secrets.WDC_DASHBOARD_URL }}
 
           # Keycloak
           KEYCLOAK_HOSTNAME=${{ secrets.KEYCLOAK_HOSTNAME }}
           KEYCLOAK_ADMIN_USER=${{ secrets.KEYCLOAK_ADMIN_USER }}
-          KEYCLOAK_ADMIN_SECRET=${{ secrets.KEYCLOAK_ADMIN_SECRET }}
-          KEYCLOAK_BFF_DASHBOARD_SECRET=${{ secrets.KEYCLOAK_BFF_DASHBOARD_SECRET }}
-          KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS=${{ secrets.KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS }}
-          KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS=${{ secrets.KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS }}
+          KEYCLOAK_ADMIN_SECRET="${{ secrets.KEYCLOAK_ADMIN_SECRET }}"
+          KEYCLOAK_BFF_DASHBOARD_SECRET="${{ secrets.KEYCLOAK_BFF_DASHBOARD_SECRET }}"
+          KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS="${{ secrets.KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS }}"
+          KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS="${{ secrets.KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS }}
 
           # Testnet Configuration
           BITCOIN_NETWORK=${{ vars.BITCOIN_NETWORK }}
@@ -104,7 +104,6 @@ jobs:
           ELECTRS_DAEMON_RPC_ADDR=${{ vars.ELECTRS_DAEMON_RPC_ADDR }}
           ELECTRS_DAEMON_P2P_ADDR=${{ vars.ELECTRS_DAEMON_P2P_ADDR }}
 
-          # Set User and Group ID for docker containers
           UID=1000
           GID=1000
 
@@ -145,12 +144,20 @@ jobs:
             up -d --force-recreate
         working-directory: ${{ env.DEPLOY_PATH }}
 
-      - name: 'Restart nginx reverse proxy'
-        run: |
-          docker compose up -d --force-recreate --remove-orphans
-        working-directory: ${{ env.NGINX_PATH }}
-
       - name: Check running services
         run: |
           docker compose ps --services --filter "status=running"
           docker compose ps --services --filter "status=healthy"
+          docker compose logs --tail=100
+        working-directory: ${{ env.DEPLOY_PATH }}
+
+      - name: Docker system prune
+        run: |
+          docker system prune -f --filter "until=24h"
+
+          
+    
+      - name: 'Restart nginx reverse proxy'
+        run: |
+          docker compose up -d --force-recreate --remove-orphans
+        working-directory: ${{ env.NGINX_PATH }}
