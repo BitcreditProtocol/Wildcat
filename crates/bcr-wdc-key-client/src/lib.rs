@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::keys as web_keys;
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut09 as cdk09, nut20 as cdk20,
@@ -31,7 +30,8 @@ pub enum Error {
 pub struct KeyClient {
     cl: reqwest::Client,
     base: reqwest::Url,
-    auth: AuthorizationPlugin,
+    #[cfg(feature = "authorized")]
+    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl KeyClient {
@@ -39,10 +39,12 @@ impl KeyClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            #[cfg(feature = "authorized")]
             auth: Default::default(),
         }
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn authenticate(
         &mut self,
         token_url: Url,
@@ -104,6 +106,7 @@ impl KeyClient {
         Ok(ks.keysets)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn sign(&self, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
         let url = self
             .base
@@ -121,6 +124,7 @@ impl KeyClient {
         Ok(sig)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn verify(&self, proof: &cdk00::Proof) -> Result<()> {
         let url = self
             .base
@@ -138,6 +142,7 @@ impl KeyClient {
         Ok(())
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn pre_sign(
         &self,
         qid: uuid::Uuid,
@@ -160,6 +165,7 @@ impl KeyClient {
         Ok(sig)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn generate_keyset(
         &self,
         qid: uuid::Uuid,
@@ -185,6 +191,7 @@ impl KeyClient {
         Ok(kid)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn enable_keyset(&self, qid: uuid::Uuid) -> Result<cdk02::Id> {
         let url = self
             .base
@@ -244,6 +251,7 @@ impl KeyClient {
         Ok(ret_val)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn deactivate_keyset(&self, kid: cdk02::Id) -> Result<cdk02::Id> {
         let url = self
             .base

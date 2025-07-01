@@ -6,6 +6,7 @@ license.workspace = true
 
 [features]
 test-utils = ["bcr-wdc-key-service", "bcr-wdc-key-service/test-utils"]
+authorized = []
 
 [dependencies]
 bcr-wdc-key-service = {workspace = true, optional = true}

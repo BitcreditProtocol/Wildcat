@@ -7,9 +7,9 @@ license.workspace = true
 [dependencies]
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
-bcr-wdc-eiou-client = {workspace = true}
-bcr-wdc-ebpp-client = {workspace = true}
-bcr-wdc-treasury-client = {workspace = true}
+bcr-wdc-eiou-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-ebpp-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-webapi = {workspace = true}
 bdk_wallet = {workspace = true}
 cashu = {workspace = true}

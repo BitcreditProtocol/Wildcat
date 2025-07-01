@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::wallet as web_wallet;
 use thiserror::Error;
 // ----- local imports
@@ -19,7 +18,8 @@ pub enum Error {
 pub struct EBPPClient {
     cl: reqwest::Client,
     base: reqwest::Url,
-    auth: AuthorizationPlugin,
+    #[cfg(feature = "authorized")]
+    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl EBPPClient {
@@ -27,10 +27,12 @@ impl EBPPClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            #[cfg(feature = "authorized")]
             auth: Default::default(),
         }
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn authenticate(
         &mut self,
         token_url: Url,
@@ -52,6 +54,7 @@ impl EBPPClient {
         Ok(())
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
         let url = self
             .base

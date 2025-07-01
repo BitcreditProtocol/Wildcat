@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::swap as web_swap;
 use cashu::{nut00 as cdk00, nut03 as cdk03, nut07 as cdk07};
 use thiserror::Error;
@@ -19,7 +18,8 @@ pub enum Error {
 pub struct SwapClient {
     cl: reqwest::Client,
     base: reqwest::Url,
-    auth: AuthorizationPlugin,
+    #[cfg(feature = "authorized")]
+    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl SwapClient {
@@ -27,10 +27,12 @@ impl SwapClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            #[cfg(feature = "authorized")]
             auth: Default::default(),
         }
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn authenticate(
         &mut self,
         token_url: Url,
@@ -72,6 +74,7 @@ impl SwapClient {
         Ok(burn_resp.ys)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::RecoverResponse> {
         let url = self
             .base

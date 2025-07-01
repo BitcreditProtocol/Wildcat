@@ -12,7 +12,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-wdc-key-client = {workspace = true}
+bcr-wdc-key-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true

@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_utils::client::AuthorizationPlugin;
 use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
 use cashu::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03, Amount};
 use thiserror::Error;
@@ -20,7 +19,8 @@ pub enum Error {
 pub struct TreasuryClient {
     cl: reqwest::Client,
     base: reqwest::Url,
-    auth: AuthorizationPlugin,
+    #[cfg(feature = "authorized")]
+    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl TreasuryClient {
@@ -28,10 +28,12 @@ impl TreasuryClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            #[cfg(feature = "authorized")]
             auth: Default::default(),
         }
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn authenticate(
         &mut self,
         token_url: Url,
@@ -53,6 +55,7 @@ impl TreasuryClient {
         Ok(())
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn generate_blinds(
         &self,
         kid: cdk02::Id,
@@ -69,6 +72,7 @@ impl TreasuryClient {
         Ok((response.request_id, response.messages))
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn store_signatures(
         &self,
         rid: uuid::Uuid,
@@ -101,11 +105,11 @@ impl TreasuryClient {
             .join("/v1/admin/treasury/debit/redeem")
             .expect("redeem relative path");
         let request = self.cl.post(url).json(&msg);
-        let response: cdk03::SwapResponse =
-            self.auth.authorize(request).send().await?.json().await?;
+        let response: cdk03::SwapResponse = request.send().await?.json().await?;
         Ok(response.signatures)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn crsat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
@@ -117,6 +121,7 @@ impl TreasuryClient {
         Ok(response)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn sat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
