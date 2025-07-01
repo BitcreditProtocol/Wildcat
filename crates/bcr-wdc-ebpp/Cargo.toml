@@ -12,8 +12,8 @@ axum = { workspace = true, features = ["macros"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bcr-wdc-ebill-client = {path = "../bcr-wdc-ebill-client"}
-bdk_core = {version = "0.4"}
-bdk_electrum = {version = "0.21"}
+bdk_core = {workspace = true}
+bdk_electrum = {workspace = true}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
 bip21 = {version = "0.5"}
 bip39 = {workspace = true}

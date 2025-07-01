@@ -423,7 +423,7 @@ fn wallet_full_scan<ElectrumApi>(
         let request = {
             let mut locked = wlt.lock().unwrap();
             let (wallet, _) = &mut *locked;
-            wallet.start_full_scan()
+            wallet.start_full_scan().build()
         };
         let result = electrum_client.full_scan(request, stop_gap, 1, false);
         if result.is_err() {
