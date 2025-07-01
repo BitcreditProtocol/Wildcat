@@ -30,4 +30,4 @@ quote_service_url = "http://quote-service:3338"
 key_service_url = "http://key-service:3338"
 
 [appcfg]
-monitor_interval_sec = 120
+monitor_interval_sec = 30

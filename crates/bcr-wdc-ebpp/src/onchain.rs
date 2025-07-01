@@ -608,7 +608,7 @@ where
         let result = f();
         let end = std::time::Instant::now();
         let elapsed = end - start;
-        tracing::trace!("{note} took: {elapsed:?}");
+        tracing::debug!("{} took: {} milliseconds", note, elapsed.as_millis());
         Ok(result)
     });
     hndl.await?
