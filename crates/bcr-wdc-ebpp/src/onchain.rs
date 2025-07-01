@@ -92,6 +92,7 @@ where
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
     const MIN_FEE_RATE_BTC_PER_KBYTE: f64 = 0.000005; // minimum fee rate in btc/KByte
+    const BATCH_SIZE: usize = 15;
 
     pub async fn new(
         seed: &[u8],
@@ -112,8 +113,15 @@ where
         let cloned_main = main.clone();
         let cloned_electrum_client = electrum_client.clone();
         let stop_gap = cfg.stop_gap;
+        let batch_size = Self::BATCH_SIZE;
         timed_spawn_blocking("Wallet::new, full scan for main wallet", move || {
-            wallet_full_scan(cloned_main, age, cloned_electrum_client, stop_gap);
+            wallet_full_scan(
+                cloned_main,
+                age,
+                cloned_electrum_client,
+                stop_gap,
+                batch_size,
+            );
         })
         .await?;
 
@@ -125,8 +133,15 @@ where
             let cloned_wlt = main.clone();
             let cloned_electrum_client = electrum_client.clone();
             let stop_gap = cfg.stop_gap;
+            let batch_size = Self::BATCH_SIZE;
             timed_spawn_blocking("Wallet::new, full scan for single-use wallet", move || {
-                wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
+                wallet_full_scan(
+                    cloned_wlt,
+                    age,
+                    cloned_electrum_client,
+                    stop_gap,
+                    batch_size,
+                );
             })
             .await?;
             singles.push(wlt);
@@ -206,8 +221,15 @@ where
         let cloned_wlt = wlt.clone();
         let cloned_electrum_client = self.electrum_client.clone();
         let stop_gap = self.stop_gap;
+        let batch_size = Self::BATCH_SIZE;
         timed_spawn_blocking("Wallet::add_descriptor, new single full_scan", move || {
-            wallet_full_scan(cloned_wlt, age, cloned_electrum_client, stop_gap);
+            wallet_full_scan(
+                cloned_wlt,
+                age,
+                cloned_electrum_client,
+                stop_gap,
+                batch_size,
+            );
         })
         .await?;
         let mut locked = self.singles.lock().unwrap();
@@ -416,6 +438,7 @@ fn wallet_full_scan<ElectrumApi>(
     age: WalletAge,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     stop_gap: usize,
+    batch_size: usize,
 ) where
     ElectrumApi: electrum_client::ElectrumApi,
 {
@@ -425,7 +448,7 @@ fn wallet_full_scan<ElectrumApi>(
             let (wallet, _) = &mut *locked;
             wallet.start_full_scan().build()
         };
-        let result = electrum_client.full_scan(request, stop_gap, 1, false);
+        let result = electrum_client.full_scan(request, stop_gap, batch_size, false);
         if result.is_err() {
             tracing::error!("full scan error: {}", result.unwrap_err());
         }
