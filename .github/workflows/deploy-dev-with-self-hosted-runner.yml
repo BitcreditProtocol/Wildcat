@@ -130,8 +130,6 @@ jobs:
           -f docker-compose.yml \
           -f deployment-configuration.yml \
           config --quiet
-        env:
-            IMAGE_TAG: nightly
         working-directory: ${{ env.DEPLOY_PATH }}
 
       - name: 'Pull Latest Images'
@@ -141,6 +139,8 @@ jobs:
             -f docker-compose.yml \
             -f deployment-configuration.yml \
             pull
+        env:
+            IMAGE_TAG: nightly
         working-directory: ${{ env.DEPLOY_PATH }}
 
       - name: 'Tear Down Previous Deployment'
