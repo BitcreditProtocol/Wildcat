@@ -3,7 +3,7 @@ name: 'Self-Hosted Runner Test: Deploy to Dev'
 on:
   push:
     branches:
-      - 'cleot/self-hosted-deployment-wokflow-2'
+      - 'cleot/self-hosted-deployment-workflow-2'
     # tags:
     #   - 'v*'
   # workflow_dispatch:
