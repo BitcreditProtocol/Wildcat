@@ -32,7 +32,7 @@ static_resources:
                         - match: { prefix: "/v1/admin/credit" }
                           route: { cluster: quote_service }
                         - match: { prefix: "/v1/admin/treasury" }
-                          route: {cluster: treasury_service}
+                          route: { cluster: treasury_service }
                         - match: { prefix: "/v1/admin/keysets" }
                           route:
                             cluster: key_service
@@ -42,9 +42,13 @@ static_resources:
                         - match: { prefix: "/v1/admin/eiou" }
                           route: { cluster: eiou_service }
                         - match: { prefix: "/v1/admin/ebpp" }
-                          route: { cluster: ebpp_service}
+                          route: { cluster: ebpp_service }
                         - match: { prefix: "/v1/admin/ebill" }
-                          route: { cluster: ebill_service}
+                          route: { cluster: ebill_service }
+                        - match: { prefix: "/v1/admin/identity/detail" }
+                          route:
+                            cluster: ebill_service
+                            prefix_rewrite: "/v1/identity/detail"
                 http_filters:
                   - name: envoy.filters.http.cors
                     typed_config:
