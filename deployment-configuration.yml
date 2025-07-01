@@ -6,7 +6,7 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebpp:${IMAGE_TAG:-latest}
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
-      - $HOME/deployment/wildcat_data/ebpp/:/data/
+      - ${DATA_PATH}/ebpp/:/data/
 
   key-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
@@ -18,7 +18,7 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-treasury-service:${IMAGE_TAG:-latest}
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
-      - $HOME/deployment/wildcat_data/treasury-service/:/data/
+      - ${DATA_PATH}/treasury-service/:/data/
 
   quote-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-quote-service:${IMAGE_TAG:-latest}
@@ -42,13 +42,13 @@ services:
 
   surrealdb:
     volumes:
-      - $HOME/deployment/wildcat_data/surrealdb:/data
+      - ${DATA_PATH}/surrealdb:/data
 
   bitcoin-core:
     volumes:
       - ./docker/bitcoin-core/bitcoin.conf:/root/.bitcoin/bitcoin.conf
       - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
-      - $HOME/deployment/wildcat_data/bitcoin-core/:/home/bitcoin/data
+      - ${DATA_PATH}/bitcoin-core/:/home/bitcoin/data
 
 networks:
   default:
