@@ -140,7 +140,7 @@ jobs:
             docker compose \
             -f docker-compose.yml \
             -f deployment-configuration.yml \
-            pull --parallel 4
+            pull
         working-directory: ${{ env.DEPLOY_PATH }}
 
       - name: 'Tear Down Previous Deployment'
