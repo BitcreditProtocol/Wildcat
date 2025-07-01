@@ -33,6 +33,7 @@ bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
 bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
+bcr-wdc-quote-client = {path = "./crates/bcr-wdc-quote-client"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-client = {path = "./crates/bcr-wdc-swap-client"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}

@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+authorized = ["bcr-wdc-utils/auth"]
+
 [dependencies]
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}

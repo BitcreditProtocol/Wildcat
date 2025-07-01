@@ -2,11 +2,13 @@
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
-use cashu::{self as cdk, nut03 as cdk03};
+use cashu::{self as cdk};
 // ----- local imports
 use crate::credit;
 use crate::debit;
 use crate::error::Result;
+
+// ----- end imports
 
 // ----- crsat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -79,22 +81,6 @@ where
         request_id: quote.id,
         request: quote.request,
     };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn redeem<Wlt, WdcSrvc, Repo>(
-    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
-    Json(request): Json<cdk03::SwapRequest>,
-) -> Result<Json<cdk03::SwapResponse>>
-where
-    Wlt: debit::Wallet,
-    WdcSrvc: debit::WildcatService,
-{
-    tracing::debug!("Received request to redeem");
-
-    let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
-    let response = cdk03::SwapResponse { signatures };
     Ok(Json(response))
 }
 
