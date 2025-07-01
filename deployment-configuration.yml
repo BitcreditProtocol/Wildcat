@@ -1,0 +1,56 @@
+services:
+
+  ######################################################################################## bcr-wdc
+
+  ebpp:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebpp:${IMAGE_TAG:-latest}
+    volumes:
+      - ./docker/ebpp/config.toml:/ebpp/config.toml
+      - $HOME/deployment/wildcat_data/ebpp/:/data/
+
+  key-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
+
+  swap-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-swap-service:${IMAGE_TAG:-latest}
+
+  treasury-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-treasury-service:${IMAGE_TAG:-latest}
+    volumes:
+      - ./docker/treasury-service/config.toml:/treasury-service/config.toml
+      - $HOME/deployment/wildcat_data/treasury-service/:/data/
+
+  quote-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-quote-service:${IMAGE_TAG:-latest}
+
+  eiou-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eiou-service:${IMAGE_TAG:-latest}
+
+  wallet-aggregator:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-wallet-aggregator:${IMAGE_TAG:-latest}
+
+  ebill-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
+    ports:
+      - "3338:3338"  
+
+  balance-collector:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
+
+
+ ######################################################################################## 3rd parties
+
+  surrealdb:
+    volumes:
+      - $HOME/deployment/wildcat_data/surrealdb:/data
+
+  bitcoin-core:
+    volumes:
+      - ./docker/bitcoin-core/bitcoin.conf:/root/.bitcoin/bitcoin.conf
+      - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
+      - $HOME/deployment/wildcat_data/bitcoin-core/:/home/bitcoin/data
+
+networks:
+  default:
+    external: true
+    name: wildcat_default
