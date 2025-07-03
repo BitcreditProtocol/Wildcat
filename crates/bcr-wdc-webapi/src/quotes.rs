@@ -1,4 +1,4 @@
-use bcr_ebill_core::{bill::BillId, NodeId};
+use bcr_ebill_core::{bill::BillId, NodeId, PublicKey};
 // ----- standard library imports
 use chrono::{DateTime, Utc};
 // ----- extra library imports
@@ -13,6 +13,53 @@ use crate::bill::{BillIdentParticipant, BillParticipant};
 // ----- end imports
 
 ///--------------------------- Enquire mint quote
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, ToSchema)]
+pub struct SharedBill {
+    #[schema(value_type = String)]
+    pub bill_id: BillId,
+    pub data: String, // The base58 encoded, encrypted, borshed BillBlockPlaintextWrappers of the bill
+    #[borsh(
+        serialize_with = "bcr_ebill_core::util::borsh::serialize_vec_url",
+        deserialize_with = "bcr_ebill_core::util::borsh::deserialize_vec_url"
+    )]
+    #[schema(value_type = Vec<String>)]
+    pub file_urls: Vec<url::Url>,
+    pub hash: String,
+    pub signature: String,
+    #[borsh(
+        serialize_with = "bcr_ebill_core::util::borsh::serialize_pubkey",
+        deserialize_with = "bcr_ebill_core::util::borsh::deserialize_pubkey"
+    )]
+    #[schema(value_type = String)]
+    pub receiver: PublicKey,
+}
+
+impl From<SharedBill> for bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty {
+    fn from(value: SharedBill) -> Self {
+        Self {
+            bill_id: value.bill_id,
+            data: value.data,
+            file_urls: value.file_urls,
+            hash: value.hash,
+            signature: value.signature,
+            receiver: value.receiver,
+        }
+    }
+}
+
+impl From<bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty> for SharedBill {
+    fn from(value: bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty) -> Self {
+        Self {
+            bill_id: value.bill_id,
+            data: value.data,
+            file_urls: value.file_urls,
+            hash: value.hash,
+            signature: value.signature,
+            receiver: value.receiver,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillInfo {
     #[schema(value_type=String)]
@@ -34,7 +81,7 @@ pub struct BillInfo {
 ///--------------------------- Enquire mint quote
 #[derive(Debug, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize)]
 pub struct EnquireRequest {
-    pub content: BillInfo,
+    pub content: SharedBill,
     #[borsh(
         serialize_with = "bcr_wdc_utils::borsh::serialize_cdk_pubkey",
         deserialize_with = "bcr_wdc_utils::borsh::deserialize_cdk_pubkey"

@@ -10,7 +10,17 @@ use axum::{
 use bcr_ebill_api::{
     constants::MAX_FILE_SIZE_BYTES,
     data::{self, bill, contact, identity},
-    util::{self, file::detect_content_type_for_bytes, ValidationError},
+    util::{self, file::detect_content_type_for_bytes, BcrKeys, ValidationError},
+};
+use bcr_ebill_core::{
+    blockchain::bill::{
+        chain::{
+            get_bill_parties_from_chain_with_plaintext, get_endorsees_from_chain_with_plaintext,
+            BillBlockPlaintextWrapper,
+        },
+        BillBlock, BillBlockchain,
+    },
+    SecretKey,
 };
 use bcr_wdc_webapi::{
     bill::{
@@ -45,6 +55,139 @@ impl SuccessResponse {
 pub struct SimplifiedBillPaymentStatus {
     payment_status: BillPaymentStatus,
     payment_details: Option<BillWaitingForPaymentState>,
+}
+
+// decrypt and validate hashes to get bill chain with plaintext
+pub fn get_chain_with_plaintext_from_shared_bill(
+    shared_bill: &bcr_wdc_webapi::quotes::SharedBill,
+    private_key: &SecretKey,
+) -> Result<Vec<BillBlockPlaintextWrapper>> {
+    let decoded = util::base58_decode(&shared_bill.data)
+        .map_err(|e| Error::SharedBill(format!("base58 decode: {e}")))?;
+    let decrypted = util::crypto::decrypt_ecies(&decoded, private_key)
+        .map_err(|e| Error::SharedBill(format!("decryption: {e}")))?;
+
+    // check that hash matches
+    if shared_bill.hash != util::sha256_hash(&decrypted) {
+        return Err(Error::SharedBill("Invalid Hash".to_string()));
+    }
+
+    let deserialized: Vec<BillBlockPlaintextWrapper> = borsh::from_slice(&decrypted)
+        .map_err(|e| Error::SharedBill(format!("deserialization: {e}")))?;
+    Ok(deserialized)
+}
+
+/// Validates and decrypts a shared bill.
+/// The following checks are made:
+/// 1. The receiver needs to be the current E-Bill node
+/// 2. Decryption needs to work, and the hash needs to match the unencrypted data
+/// 3. A valid Bill chain can be built from the data
+/// 4. The plaintext hashes of the blocks match the plaintext
+/// 5. The signature needs to match
+/// 6. All shared files need to match the file hashes
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, payload))]
+pub async fn validate_and_decrypt_shared_bill(
+    State(ctrl): State<AppController>,
+    Json(payload): Json<bcr_wdc_webapi::quotes::SharedBill>,
+) -> Result<Json<bcr_wdc_webapi::quotes::BillInfo>> {
+    tracing::debug!("Received validate and decrypt shared bill request");
+    let identity::IdentityWithAll { identity, key_pair } =
+        ctrl.identity_service.get_full_identity().await?;
+
+    // check that our pub key is the receiver pub key
+    if identity.node_id.pub_key() != payload.receiver {
+        return Err(Error::SharedBill("Public keys don't match".into()));
+    }
+
+    // decrypt data
+    let chain_with_plaintext =
+        get_chain_with_plaintext_from_shared_bill(&payload, &key_pair.get_private_key())
+            .map_err(|e| Error::SharedBill(e.to_string()))?;
+
+    // validate chain
+    BillBlockchain::new_from_blocks(
+        chain_with_plaintext
+            .iter()
+            .map(|wrapper| wrapper.block.to_owned())
+            .collect::<Vec<BillBlock>>(),
+    )
+    .map_err(|e| Error::SharedBill(format!("invalid chain: {e}")))?;
+
+    // validate plaintext hash
+    for block_wrapper in chain_with_plaintext.iter() {
+        if block_wrapper.block.plaintext_hash
+            != util::sha256_hash(&block_wrapper.plaintext_data_bytes)
+        {
+            return Err(Error::SharedBill("Plaintext hash mismatch".into()));
+        }
+    }
+
+    // get data
+    let bill_data = match chain_with_plaintext.first() {
+        Some(issue_block) => issue_block
+            .get_bill_data()
+            .map_err(|e| Error::SharedBill(e.to_string()))?,
+        None => {
+            return Err(Error::SharedBill("Empty chain".into()));
+        }
+    };
+
+    // get participants
+    let bill_parties = get_bill_parties_from_chain_with_plaintext(&chain_with_plaintext)
+        .map_err(|e| Error::SharedBill(e.to_string()))?;
+    let endorsees = get_endorsees_from_chain_with_plaintext(&chain_with_plaintext);
+    let holder = bill_parties.endorsee.unwrap_or(bill_parties.payee.clone());
+
+    // verify signature
+    match util::crypto::verify(
+        &payload.hash,
+        &payload.signature,
+        &holder.node_id().pub_key(),
+    ) {
+        Ok(res) => {
+            if !res {
+                return Err(Error::SharedBill("Invalid signature".into()));
+            }
+        }
+        Err(e) => return Err(Error::SharedBill(e.to_string())),
+    };
+
+    // validate files by downloading, encrypting and checking hashes
+    if !payload.file_urls.is_empty() {
+        let bill_file_hashes: Vec<String> =
+            bill_data.files.iter().map(|f| f.hash.clone()).collect();
+        let mut file_hashes = Vec::with_capacity(bill_file_hashes.len());
+        for file_url in payload.file_urls.iter() {
+            let (_, decrypted) =
+                do_get_encrypted_bill_file_from_request_to_mint(&key_pair, file_url).await?;
+            file_hashes.push(util::sha256_hash(&decrypted));
+        }
+        // all of the shared file hashes have to be present on the bill
+        if file_hashes.len() != bill_file_hashes.len()
+            || !file_hashes.iter().all(|f| bill_file_hashes.contains(f))
+        {
+            return Err(Error::SharedBill("File hashes don't match".into()));
+        }
+    }
+
+    let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = bill_parties.drawer.into();
+    let core_drawee: bcr_ebill_core::contact::BillIdentParticipant = bill_parties.drawee.into();
+    let core_payee: bcr_ebill_core::contact::BillParticipant = bill_parties.payee.into();
+    let core_endorsees: Vec<bcr_wdc_webapi::bill::BillParticipant> =
+        endorsees.into_iter().map(|e| e.into()).collect();
+
+    // create result
+    Ok(Json(bcr_wdc_webapi::quotes::BillInfo {
+        id: bill_data.id,
+        drawee: core_drawee.into(),
+        drawer: core_drawer.into(),
+        payee: core_payee.into(),
+        endorsees: core_endorsees,
+        sum: bill_data.sum,
+        maturity_date: util::date::date_string_to_rfc3339(&bill_data.maturity_date)
+            .map_err(|e| Error::SharedBill(format!("invalid date format: {e}")))?,
+        file_urls: payload.file_urls,
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -229,21 +372,31 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
         bill_file_url_req.file_url
     );
 
-    if bill_file_url_req.file_url.scheme() != "https" {
+    let keys = ctrl.identity_service.get_full_identity().await?.key_pair;
+    let (content_type, decrypted) =
+        do_get_encrypted_bill_file_from_request_to_mint(&keys, &bill_file_url_req.file_url).await?;
+    let parsed_content_type: HeaderValue = content_type.parse().map_err(|_| {
+        bcr_ebill_api::service::Error::Validation(ValidationError::InvalidContentType)
+    })?;
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, parsed_content_type);
+
+    Ok((headers, decrypted))
+}
+
+async fn do_get_encrypted_bill_file_from_request_to_mint(
+    keys: &BcrKeys,
+    file_url: &url::Url,
+) -> Result<(String, Vec<u8>)> {
+    if file_url.scheme() != "https" {
         return Err(Error::FileDownload("Only HTTPS urls are allowed".into()));
     }
 
-    let keys = ctrl.identity_service.get_full_identity().await?.key_pair;
     // fetch the file by URL
-    let resp = reqwest::get(bill_file_url_req.file_url.clone())
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                "Error downloading file from {}: {e}",
-                bill_file_url_req.file_url.to_string()
-            );
-            Error::FileDownload("Could not download file".into())
-        })?;
+    let resp = reqwest::get(file_url.clone()).await.map_err(|e| {
+        tracing::error!("Error downloading file from {}: {e}", file_url.to_string());
+        Error::FileDownload("Could not download file".into())
+    })?;
 
     // check status code
     if resp.status() != StatusCode::OK {
@@ -268,10 +421,7 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| {
-            tracing::error!(
-                "Error downloading file from {}: {e}",
-                bill_file_url_req.file_url.to_string()
-            );
+            tracing::error!("Error downloading file from {}: {e}", file_url.to_string());
             Error::FileDownload("Could not download file".into())
         })?;
         total += chunk.len();
@@ -284,10 +434,7 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
     // decrypt file with private key
     let decrypted =
         util::crypto::decrypt_ecies(&file_bytes, &keys.get_private_key()).map_err(|e| {
-            tracing::error!(
-                "Error decrypting file from {}: {e}",
-                bill_file_url_req.file_url.to_string()
-            );
+            tracing::error!("Error decrypting file from {}: {e}", file_url.to_string());
             Error::FileDownload("Decryption Error".into())
         })?;
 
@@ -295,13 +442,8 @@ pub async fn get_encrypted_bill_file_from_request_to_mint(
     let content_type = detect_content_type_for_bytes(&decrypted).ok_or(
         bcr_ebill_api::service::Error::Validation(ValidationError::InvalidContentType),
     )?;
-    let parsed_content_type: HeaderValue = content_type.parse().map_err(|_| {
-        bcr_ebill_api::service::Error::Validation(ValidationError::InvalidContentType)
-    })?;
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, parsed_content_type);
 
-    Ok((headers, decrypted))
+    Ok((content_type, decrypted))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]

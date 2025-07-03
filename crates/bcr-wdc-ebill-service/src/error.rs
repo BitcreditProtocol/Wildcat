@@ -42,6 +42,10 @@ pub enum Error {
     /// all errors originating from File Downloading
     #[error("File Download Error: {0}")]
     FileDownload(String),
+
+    /// all errors originating from validating and decrypting a shared bill
+    #[error("Shared Bill Error: {0}")]
+    SharedBill(String),
 }
 
 impl axum::response::IntoResponse for Error {
@@ -63,6 +67,7 @@ impl axum::response::IntoResponse for Error {
                 String::from("invalid bip39 mnemonic"),
             )
                 .into_response(),
+            Error::SharedBill(e) => (StatusCode::BAD_REQUEST, e).into_response(),
             Error::IdentityAlreadyExists => (
                 StatusCode::BAD_REQUEST,
                 String::from("Identity already exists"),
