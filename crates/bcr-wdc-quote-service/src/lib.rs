@@ -11,6 +11,7 @@ use cashu::nuts::nut14 as cdk14;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
+mod ebill;
 mod error;
 mod keys;
 mod persistence;
@@ -26,13 +27,15 @@ pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
 
 pub type ProdKeysHandler = keys::KeysRestHandler;
 pub type ProdWallet = wallet::Client;
-pub type ProdQuotingService = service::Service<ProdKeysHandler, ProdWallet, ProdQuoteRepository>;
+pub type ProdQuotingService =
+    service::Service<ProdKeysHandler, ProdWallet, ProdQuoteRepository, ebill::EBillClient>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     quotes: persistence::surreal::ConnectionConfig,
     keys: keys::KeysRestConfig,
     wallet: wallet::WalletConfig,
+    ebill_client: ebill::EBillClientConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -46,6 +49,7 @@ impl AppController {
             quotes,
             keys,
             wallet,
+            ebill_client,
         } = cfg;
         let quotes_repository = ProdQuoteRepository::new(quotes)
             .await
@@ -53,10 +57,12 @@ impl AppController {
 
         let keys_hndlr = ProdKeysHandler::new(keys);
         let wallet = ProdWallet::new(wallet);
+        let ebill = ebill::EBillClient::new(ebill_client);
         let quoting_service = ProdQuotingService {
             keys_hndlr,
             wallet,
             quotes: quotes_repository,
+            ebill,
         };
 
         Self {
@@ -64,12 +70,13 @@ impl AppController {
         }
     }
 }
-pub fn routes<Cntrlr, KeysHndlr, Wlt, QuotesRepo>(ctrl: Cntrlr) -> Router
+pub fn routes<Cntrlr, KeysHndlr, Wlt, QuotesRepo, EBillCl>(ctrl: Cntrlr) -> Router
 where
     QuotesRepo: service::Repository + Send + Sync + 'static,
     Wlt: service::Wallet + Send + Sync + 'static,
     KeysHndlr: service::KeysHandler + Send + Sync + 'static,
-    service::Service<KeysHndlr, Wlt, QuotesRepo>: FromRef<Cntrlr> + Send + Sync + 'static,
+    EBillCl: service::EBillNode + Send + Sync + 'static,
+    service::Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/v1/admin/credit/swagger-ui")
@@ -161,7 +168,9 @@ pub mod test_utils {
     type TestKeysHandler = keys::test_utils::DummyKeysHandler;
     type TestQuoteRepository = persistence::inmemory::QuotesIDMap;
     type TestWallet = wallet::test_utils::DummyWallet;
-    type TestQuotingService = service::Service<TestKeysHandler, TestWallet, TestQuoteRepository>;
+    type TestEBillNode = ebill::test_utils::DummyEbillNode;
+    type TestQuotingService =
+        service::Service<TestKeysHandler, TestWallet, TestQuoteRepository, TestEBillNode>;
 
     #[derive(Clone, FromRef)]
     pub struct AppController {
@@ -175,6 +184,7 @@ pub mod test_utils {
                     keys_hndlr: TestKeysHandler::default(),
                     wallet: TestWallet::default(),
                     quotes: TestQuoteRepository::default(),
+                    ebill: TestEBillNode::default(),
                 },
             }
         }

@@ -11,7 +11,7 @@ async-trait = { workspace = true}
 axum = { workspace = true, features = ["macros"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
-bcr-wdc-ebill-client = {path = "../bcr-wdc-ebill-client"}
+bcr-wdc-ebill-client = {workspace = true}
 bdk_core = {workspace = true}
 bdk_electrum = {workspace = true}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
