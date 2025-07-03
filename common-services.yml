@@ -19,6 +19,8 @@ services:
   key-service:
     image: wildcat/key-service
     pull_policy: never
+    ports:
+      - "8042:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -60,6 +62,8 @@ services:
   quote-service:
     image: wildcat/quote-service
     pull_policy: never
+    ports:
+      - "8043:3338"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -111,6 +115,8 @@ services:
   ebill-service:
     image: wildcat/ebill-service
     pull_policy: never
+    ports:
+      - "4848:3338"
     depends_on:
       surrealdb:
         condition: service_healthy

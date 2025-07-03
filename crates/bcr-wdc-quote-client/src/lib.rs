@@ -64,7 +64,7 @@ impl QuoteClient {
 
     pub async fn enquire(
         &self,
-        bill: web_quotes::BillInfo,
+        bill: web_quotes::SharedBill,
         mint_pubkey: cashu::PublicKey,
         signing_key: &bitcoin::secp256k1::Keypair,
     ) -> Result<Uuid> {

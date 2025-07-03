@@ -12,8 +12,8 @@ axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
 mockall = {workspace = true, optional = true}
 bcr-ebill-core = {workspace = true, optional = true}
-bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.0"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.0"}
+bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "c002222bc32cca169542b519fb4782887a856f43"}
+bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "c002222bc32cca169542b519fb4782887a856f43"}
 bcr-wdc-webapi.workspace = true
 config.workspace = true
 serde.workspace = true

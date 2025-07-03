@@ -28,7 +28,7 @@ where
 {
     tracing::debug!(
         "Received mint quote request for bill: {}",
-        req.request.content.id,
+        req.request.content.bill_id,
     );
 
     verify_signature(&req)?;

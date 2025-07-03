@@ -1,4 +1,11 @@
-use bcr_ebill_core::{bill::BillId, NodeId, PublicKey};
+use bcr_ebill_core::{
+    bill::BillId,
+    blockchain::bill::{
+        block::BillIssueBlockData, create_bill_to_share_with_external_party, BillBlockchain,
+    },
+    util::BcrKeys,
+    NodeId, PublicKey,
+};
 // ----- standard library imports
 use chrono::NaiveTime;
 // ----- extra library imports
@@ -10,17 +17,21 @@ use crate::{
     bill::{BillIdentParticipant, BillParticipant},
     contact::ContactType,
     identity::PostalAddress,
-    quotes::{BillInfo, EnquireRequest},
+    quotes::{EnquireRequest, SharedBill},
 };
 // ----- end imports
 
 // returns a random `EnquireRequest` with the bill's holder signing keys
 pub fn generate_random_bill_enquire_request(
 ) -> (crate::quotes::EnquireRequest, bitcoin::secp256k1::Keypair) {
-    let bill_id = random_bill_id();
+    let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key())
+        .expect("valid key");
+    let bill_id = BillId::new(bill_keys.pub_key(), bitcoin::Network::Testnet);
+
     let (_, drawee) = random_identity_public_data();
-    let (_, drawer) = random_identity_public_data();
+    let (drawer_key_pair, drawer) = random_identity_public_data();
     let (mut signing_key, payee) = random_identity_public_data();
+    let (sharer_keys, _) = random_identity_public_data();
 
     let endorsees_size = rand::thread_rng().gen_range(0..3);
     let mut endorsees: Vec<BillParticipant> = Vec::with_capacity(endorsees_size);
@@ -33,19 +44,59 @@ pub fn generate_random_bill_enquire_request(
     let public_key = keys_test::publics()[0];
     let amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
 
-    let bill = BillInfo {
-        id: bill_id,
-        maturity_date: random_date(),
-        drawee,
-        drawer,
-        payee: BillParticipant::Ident(payee),
-        endorsees,
-        sum: amount.to_sat(),
-        file_urls: vec![],
-    };
+    let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = drawer.into();
+    let core_drawee: bcr_ebill_core::contact::BillIdentParticipant = drawee.into();
+    let core_payee: bcr_ebill_core::contact::BillIdentParticipant = payee.into();
+
+    let now = chrono::Utc::now().timestamp() as u64;
+    let bill_chain = BillBlockchain::new(
+        &BillIssueBlockData {
+            id: bill_id.clone(),
+            country_of_issuing: "AT".to_string(),
+            city_of_issuing: "Vienna".to_string(),
+            drawee: core_drawee.into(),
+            drawer: core_drawer.into(),
+            payee: bcr_ebill_core::contact::BillParticipant::Ident(core_payee).into(),
+            currency: "sat".to_string(),
+            sum: amount.to_sat(),
+            maturity_date: random_date(),
+            issue_date: random_date(),
+            country_of_payment: "AT".to_string(),
+            city_of_payment: "Vienna".to_string(),
+            language: "en".to_string(),
+            files: vec![],
+            signatory: None,
+            signing_timestamp: now,
+            signing_address: bcr_ebill_core::PostalAddress {
+                country: "AT".to_string(),
+                city: "Vienna".to_string(),
+                zip: None,
+                address: "Address".to_string(),
+            },
+        },
+        BcrKeys::from_private_key(&drawer_key_pair.secret_key()).expect("valid key"),
+        None,
+        bill_keys.clone(),
+        now,
+    )
+    .expect("can create bill chain");
+    let bill_to_share = create_bill_to_share_with_external_party(
+        &bill_id,
+        &bill_chain,
+        &bcr_ebill_core::bill::BillKeys {
+            private_key: bill_keys.get_private_key(),
+            public_key: bill_keys.pub_key(),
+        },
+        &public_key,
+        &BcrKeys::from_private_key(&sharer_keys.secret_key()).expect("valid_key"),
+        &[],
+    )
+    .expect("can create sharable bill");
+
+    let shared_bill: SharedBill = bill_to_share.into();
 
     let request = EnquireRequest {
-        content: bill,
+        content: shared_bill,
         public_key,
     };
     (request, signing_key)
