@@ -135,6 +135,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route("/v1/bill/list", get(web::get_bills))
         .route("/v1/bill/detail/{bill_id}", get(web::get_bill_detail))
         .route(
+            "/v1/bill/payment_status/{bill_id}",
+            get(web::get_bill_payment_status),
+        )
+        .route(
             "/v1/bill/endorsements/{bill_id}",
             get(web::get_bill_endorsements),
         )

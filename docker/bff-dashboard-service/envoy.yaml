@@ -49,6 +49,11 @@ static_resources:
                           route:
                             cluster: ebill_service
                             prefix_rewrite: "/v1/identity/detail"
+                        - match: { prefix: "/v1/admin/bill/payment_status" }
+                          route:
+                            cluster: ebill_service
+                            prefix_rewrite: "/v1/bill/payment_status"
+
                 http_filters:
                   - name: envoy.filters.http.cors
                     typed_config:
