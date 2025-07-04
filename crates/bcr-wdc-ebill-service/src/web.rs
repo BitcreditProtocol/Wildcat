@@ -160,7 +160,7 @@ pub async fn get_bill_payment_status(
 
     Ok(Json(SimplifiedBillPaymentStatus {
         payment_status: payment_status.into(),
-        payment_details: payment_details,
+        payment_details,
     }))
 }
 
