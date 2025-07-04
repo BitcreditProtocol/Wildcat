@@ -34,6 +34,19 @@ pub struct SharedBill {
     pub receiver: PublicKey,
 }
 
+impl From<SharedBill> for bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty {
+    fn from(value: SharedBill) -> Self {
+        Self {
+            bill_id: value.bill_id,
+            data: value.data,
+            file_urls: value.file_urls,
+            hash: value.hash,
+            signature: value.signature,
+            receiver: value.receiver,
+        }
+    }
+}
+
 impl From<bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty> for SharedBill {
     fn from(value: bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty) -> Self {
         Self {

@@ -149,12 +149,22 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     // Create Ebill
     let (owner_key, request, signature) = random_ebill_request();
     let signed_request = SignedEnquireRequest { request, signature };
+    let shared_bill: bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty =
+        signed_request.request.content.clone().into();
+    let bill_blocks = shared_bill
+        .get_unencrypted_data(&owner_key.secret_key())
+        .expect("is valid bill");
+    let bill_data = bill_blocks
+        .first()
+        .expect("has blocks")
+        .get_bill_data()
+        .expect("has bill data");
 
-    let bill_amount = signed_request.request.content.sum;
+    let bill_amount = bill_data.sum;
 
     info!(
         bill_amount = bill_amount,
-        bill_id = signed_request.request.content.id.to_string(),
+        bill_id = signed_request.request.content.bill_id.to_string(),
         "Bill created"
     );
 

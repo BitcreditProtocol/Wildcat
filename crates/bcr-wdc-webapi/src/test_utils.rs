@@ -14,7 +14,7 @@ use bitcoin::Amount;
 use rand::Rng;
 // ----- local imports
 use crate::{
-    bill::{BillIdentParticipant, BillParticipant},
+    bill::BillIdentParticipant,
     contact::ContactType,
     identity::PostalAddress,
     quotes::{EnquireRequest, SharedBill},
@@ -23,6 +23,7 @@ use crate::{
 
 // returns a random `EnquireRequest` with the bill's holder signing keys
 pub fn generate_random_bill_enquire_request(
+    owner_kp: bitcoin::secp256k1::Keypair,
 ) -> (crate::quotes::EnquireRequest, bitcoin::secp256k1::Keypair) {
     let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key())
         .expect("valid key");
@@ -30,18 +31,10 @@ pub fn generate_random_bill_enquire_request(
 
     let (_, drawee) = random_identity_public_data();
     let (drawer_key_pair, drawer) = random_identity_public_data();
-    let (mut signing_key, payee) = random_identity_public_data();
+    let (signing_key, payee) = random_identity_public_data();
     let (sharer_keys, _) = random_identity_public_data();
 
-    let endorsees_size = rand::thread_rng().gen_range(0..3);
-    let mut endorsees: Vec<BillParticipant> = Vec::with_capacity(endorsees_size);
-    for _ in 0..endorsees_size {
-        let (keypair, endorse) = random_identity_public_data();
-        endorsees.push(BillParticipant::Ident(endorse));
-        signing_key = keypair;
-    }
-
-    let public_key = keys_test::publics()[0];
+    let public_key = owner_kp.public_key();
     let amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
 
     let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = drawer.into();
@@ -97,7 +90,7 @@ pub fn generate_random_bill_enquire_request(
 
     let request = EnquireRequest {
         content: shared_bill,
-        public_key,
+        public_key: public_key.into(),
     };
     (request, signing_key)
 }

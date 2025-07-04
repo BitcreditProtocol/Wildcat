@@ -30,6 +30,13 @@ where
         "Received mint quote request for bill: {}",
         req.request.content.bill_id,
     );
+    // TODO: check that our pub key is receiver pub key
+    // TODO: decrypt data
+    // TODO: check if hash matches unencrypted data
+    // TODO: get parties on data, get pub key of holder
+    // TODO: verify shared bill request signature with holder pub key
+    // TODO: get data for sum, date etc.
+    // TODO: create BillInfo (put data into BillInfo as string
 
     verify_signature(&req)?;
 
