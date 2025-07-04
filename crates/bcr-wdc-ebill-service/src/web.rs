@@ -14,8 +14,8 @@ use bcr_ebill_api::{
 };
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
-        RequestToPayBitcreditBillPayload,
+        BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
+        BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
     },
     identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
     quotes::RequestEncryptedFileUrlPayload,
@@ -39,6 +39,12 @@ impl SuccessResponse {
     pub fn new() -> Self {
         Self { success: true }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SimplifiedBillPaymentStatus {
+    payment_status: BillPaymentStatus,
+    payment_details: Option<BillWaitingForPaymentState>,
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -130,6 +136,32 @@ pub async fn get_bill_detail(
         .get_detail(&bill_id, &identity, &identity.node_id, current_timestamp)
         .await?;
     Ok(Json(bill_detail.into()))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_bill_payment_status(
+    State(ctrl): State<AppController>,
+    Path(bill_id): Path<BillId>,
+) -> Result<Json<SimplifiedBillPaymentStatus>> {
+    tracing::debug!("Received get bill payment status request");
+    let current_timestamp = util::date::now().timestamp() as u64;
+    let identity = ctrl.identity_service.get_identity().await?;
+    let bill_detail = ctrl
+        .bill_service
+        .get_detail(&bill_id, &identity, &identity.node_id, current_timestamp)
+        .await?;
+    let payment_status = bill_detail.status.payment;
+    let payment_details = match bill_detail.current_waiting_state {
+        Some(bcr_ebill_api::data::bill::BillCurrentWaitingState::Payment(payment)) => {
+            Some(payment.into())
+        }
+        _ => None,
+    };
+
+    Ok(Json(SimplifiedBillPaymentStatus {
+        payment_status: payment_status.into(),
+        payment_details,
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
