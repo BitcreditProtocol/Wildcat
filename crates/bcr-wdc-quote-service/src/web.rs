@@ -30,20 +30,21 @@ where
         "Received mint quote request for bill: {}",
         req.request.content.bill_id,
     );
-    // TODO: check that our pub key is receiver pub key
-    // TODO: decrypt data
-    // TODO: check if hash matches unencrypted data
-    // TODO: get parties on data, get pub key of holder
-    // TODO: verify shared bill request signature with holder pub key
-    // TODO: get data for sum, date etc.
-    // TODO: create BillInfo (put data into BillInfo as string
-
-    verify_signature(&req)?;
-
     let bcr_wdc_webapi::quotes::EnquireRequest {
         content,
         public_key,
     } = req.request;
+    // TODO: -> in ebill-service(+client) - validate and decrypt shared bill
+    //      check that our pub key is receiver pub key
+    //      decrypt data
+    //      check if hash matches unencrypted data
+    //      get parties on data, get pub key of holder
+    //      verify shared bill request signature with holder pub key
+    //      get data for sum, date etc.
+    // TODO: create BillInfo (put data into BillInfo as string
+
+    verify_signature(&req)?; // after verifying bill
+
     let bill = quotes::BillInfo::try_from(content)?;
     let id = ctrl.enquire(bill, public_key, chrono::Utc::now()).await?;
     Ok(Json(web_quotes::EnquireReply { id }))
