@@ -6,17 +6,36 @@ on:
     branches: [dev]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      delete_ebpp_data:
+        description: "Remove ebpp data?"
+        type: boolean
+        default: false
+      delete_treasury_data:
+        description: "Remove treasury-service data?"
+        type: boolean
+        default: false
+      delete_surrealdb_data:
+        description: "Remove surrealdb data?"
+        type: boolean
+        default: false
+      delete_all_data:
+        description: "Remove all data?"
+        type: boolean
+        default: false
 
 jobs:
   deploy-dev:
     name: Deploy to dev
+    if: github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
 
     permissions:
       contents: read
       deployments: write
       id-token: write
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref_name }}
+      group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
       cancel-in-progress: true
 
     ##############################################################
@@ -29,6 +48,8 @@ jobs:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
       DATA_PATH: ${{ vars.DATA_PATH }}
       NGINX_PATH: ${{ vars.NGINX_PATH }}
+      MINT_SEED_PHRASE: ${{ secrets.MINT_SEED_PHRASE }}
+      MINT_IDENTITY: ${{ secrets.MINT_IDENTITY }}
 
     
     steps:
@@ -47,10 +68,10 @@ jobs:
           echo "Verifying user ID and group memberships..."
           id
 
-      - name: Checkout ${{ github.ref_name }}
+      - name: "Checkout ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || 'dev' }}"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'dev' }}
           fetch-depth: 0
 
       - name: Mirror repo to ${{ env.DEPLOY_PATH }}
@@ -134,7 +155,26 @@ jobs:
             -f deployment-configuration.yml \
             down --remove-orphans --timeout 30
         working-directory: ${{ env.DEPLOY_PATH }}
-        continue-on-error: true 
+        continue-on-error: true
+
+      - name: Remove ebpp data
+        if: inputs.delete_ebpp_data || inputs.delete_all_data
+        run: |
+          echo "Removing ebpp data..."
+          rm -rf ${{ env.DATA_PATH }}/ebpp/regtest/*
+          rm -rf ${{ env.DATA_PATH }}/ebpp/testnet/*
+
+      - name: Remove treasury-service data
+        if: inputs.delete_treasury_data || inputs.delete_all_data
+        run: |
+          echo "Removing treasury-service data..."
+          rm -rf ${{ env.DATA_PATH }}/treasury-service/*
+
+      - name: Remove surrealdb data
+        if: inputs.delete_surrealdb_data || inputs.delete_all_data
+        run: |
+          echo "Removing surrealdb data..."
+          rm -rf ${{ env.DATA_PATH }}/surrealdb/*
 
       - name: 'Deploy'
         run: |

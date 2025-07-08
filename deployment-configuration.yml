@@ -37,6 +37,34 @@ services:
   balance-collector:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
 
+  ######################################################################################## bcr-wdc-bootstrap
+
+  ebill-service-bootstrap:
+    image: alpine/curl:8.14.1
+    depends_on:
+      ebill-service:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      MINT_SEED_PHRASE: ${MINT_SEED_PHRASE}
+      MINT_IDENTITY: ${MINT_IDENTITY}
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        echo "========== Configuring Node ID =========="
+        echo -e "========== Setting Seed Phrase =========="
+        curl -sSf \
+            -X PUT http://ebill-service:3338/v1/identity/seed/recover \
+            -H "Content-Type: application/json" \
+            -d '{"seed_phrase":"$MINT_SEED_PHRASE"}'
+        echo -e "\n========== Creating Node ID =========="
+        curl -s \
+            -X POST http://ebill-service:3338/v1/identity/create \
+            -H "Content-Type: application/json" \
+            -d '$MINT_IDENTITY'
+        echo -e "\n========== Finish Node ID Config ==========\n"
 
  ######################################################################################## 3rd parties
 
