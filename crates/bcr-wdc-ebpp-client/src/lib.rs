@@ -65,4 +65,14 @@ impl EBPPClient {
             self.auth.authorize(request).send().await?.json().await?;
         Ok(bdk_wallet::Balance::from(response))
     }
+
+    pub async fn network(&self) -> Result<bdk_wallet::bitcoin::Network> {
+        let url = self
+            .base
+            .join("/v1/ebpp/onchain/network")
+            .expect("network relative path");
+        let request = self.cl.get(url);
+        let response: web_wallet::Network = request.send().await?.json().await?;
+        Ok(response.network)
+    }
 }
