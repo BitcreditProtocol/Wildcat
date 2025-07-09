@@ -3,13 +3,13 @@ use axum::extract::{Json, Path, State};
 use bcr_wdc_key_client::KeyClient;
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut06 as cdk06, nut07 as cdk07,
-    nut09 as cdk09,
+    nut09 as cdk09, MintVersion,
 };
-use cdk::wallet::{HttpClient as CDKClient, MintConnector};
+use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
 // ----- local imports
 use crate::error::{Error, Result};
-use crate::AppController;
+use crate::{built_info, AppController};
 
 // ----- end imports
 
@@ -31,14 +31,40 @@ pub async fn health() -> Result<&'static str> {
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
 )]
-pub async fn get_mint_info(State(ctrl): State<CDKClient>) -> Result<Json<cdk06::MintInfo>> {
+pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cdk06::MintInfo>> {
     tracing::debug!("Requested /v1/info");
-
-    let info = ctrl.get_mint_info().await?;
+    let network = ctrl.ebpp_client.network().await?;
+    let info = ctrl.cdk_client.get_mint_info().await?;
+    let mut long_description = format!(
+        r#"[ebpp]
+network = "{network}"
+"#
+    );
+    if !built_info::PKG_VERSION_PRE.is_empty() {
+        let ebill_core = built::util::parse_versions(&built_info::DEPENDENCIES)
+            .find_map(|(n, v)| if n == "bcr-ebill-core" { Some(v) } else { None })
+            .unwrap_or(built::semver::Version::new(0, 0, 0));
+        let cdk_mintd = info
+            .version
+            .as_ref()
+            .map(|v| v.version.clone())
+            .unwrap_or(String::from("0.0.0"));
+        long_description += &format!(
+            r#"
+[versions]
+bcr-ebill-core = {ebill_core}
+cdk-mintd = {cdk_mintd}"#,
+        );
+    }
+    let version = MintVersion {
+        name: String::from("BitcreditProtocol/wildcat"),
+        version: String::from(built_info::PKG_VERSION),
+    };
     let info = info
         .name("bcr-wdc-bff")
-        .description("Bitcredit Wildcat Mint BFF")
-        .long_description("Bitcredit Wildcat Mint Backend-For-Frontend");
+        .description("Bitcredit Wildcat")
+        .long_description(long_description)
+        .version(version);
     Ok(Json(info))
 }
 

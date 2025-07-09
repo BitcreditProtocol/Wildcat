@@ -3,6 +3,7 @@ name = "bcr-wdc-wallet-aggregator"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [features]
 test-utils = ["axum-test"]
@@ -11,9 +12,11 @@ test-utils = ["axum-test"]
 async-trait.workspace = true
 axum-test = {workspace = true, optional = true}
 axum.workspace = true
+bcr-wdc-ebpp-client = {workspace = true}
 bcr-wdc-key-client = {workspace = true}
 bcr-wdc-swap-client = {workspace = true}
 bcr-wdc-treasury-client = {workspace = true}
+built = {workspace = true, features = ["semver"]}
 cashu.workspace = true
 cdk = {workspace = true, features = ["wallet"]}
 config = {workspace = true}
@@ -30,3 +33,6 @@ utoipa-swagger-ui.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+
+[build-dependencies]
+built = {workspace = true, features = ["dependency-tree"]}
