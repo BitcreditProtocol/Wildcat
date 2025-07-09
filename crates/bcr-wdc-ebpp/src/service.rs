@@ -109,6 +109,10 @@ impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl>
 where
     OnChainWlt: OnChainWallet,
 {
+    pub fn network(&self) -> btc::Network {
+        self.onchain.network()
+    }
+
     pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
         self.onchain.balance().await
     }
