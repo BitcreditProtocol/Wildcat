@@ -16,11 +16,11 @@ on:
         type: boolean
         default: false
       delete_surrealdb_data:
-        description: "Remove surrealdb data?"
+        description: "DANGER: Remove surrealdb data?"
         type: boolean
         default: false
       delete_all_data:
-        description: "Remove all data?"
+        description: "DANGER: Remove all data?"
         type: boolean
         default: false
 
