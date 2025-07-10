@@ -6,7 +6,7 @@ use bitcoin::{
 };
 use cashu::{
     dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
-    nut14 as cdk14, Amount as cdk_Amount,
+    nut12 as cdk12, nut14 as cdk14, Amount as cdk_Amount,
 };
 use cdk_common::mint as cdk_mint;
 use thiserror::Error;
@@ -52,6 +52,8 @@ pub enum SignWithKeysError {
     NoKeyForAmount(cdk_Amount),
     #[error("cdk::dhke error {0}")]
     CdkDHKE(#[from] cdk_dhke::Error),
+    #[error("cdk::nut12 error {0}")]
+    CdkNut12(#[from] cdk12::Error),
 }
 pub fn sign_with_keys(
     keyset: &cdk02::MintKeySet,
@@ -62,12 +64,13 @@ pub fn sign_with_keys(
         .get(&blind.amount)
         .ok_or(SignWithKeysError::NoKeyForAmount(blind.amount))?;
     let raw_signature = cdk_dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
-    let signature = cdk00::BlindSignature {
+    let mut signature = cdk00::BlindSignature {
         amount: blind.amount,
         c: raw_signature,
         keyset_id: keyset.id,
         dleq: None,
     };
+    signature.add_dleq_proof(&blind.blinded_secret, &key.secret_key)?;
     Ok(signature)
 }
 
