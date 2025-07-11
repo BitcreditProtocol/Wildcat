@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use bcr_wdc_ebill_client::{EbillClient, Error};
-use bcr_wdc_webapi::bill::BillId;
+use bcr_wdc_webapi::{bill::BillId, test_utils::generate_random_bill_enquire_request};
 
 #[tokio::test]
 async fn bill_calls() {
@@ -40,4 +40,14 @@ async fn bill_calls() {
         .await;
     assert!(response.is_err());
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
+
+    let sample_req = generate_random_bill_enquire_request(
+        bcr_wdc_utils::keys::test_utils::generate_random_keypair(),
+        None,
+    )
+    .0;
+    let response = client
+        .validate_and_decrypt_shared_bill(&sample_req.content)
+        .await;
+    assert!(response.is_err());
 }

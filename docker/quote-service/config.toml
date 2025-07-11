@@ -14,3 +14,6 @@ base_url = "http://key-service:3338"
 
 [appcfg.wallet]
 base_url = "http://treasury-service:3338"
+
+[appcfg.ebill_client]
+base_url = "http://ebill-service:3338"

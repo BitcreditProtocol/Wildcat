@@ -4,6 +4,7 @@ use axum::extract::{Json, Path, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
+use crate::service::EBillNode;
 use crate::{
     quotes,
     service::{KeysHandler, Repository, Service, Wallet},
@@ -19,41 +20,41 @@ use crate::{
         (status = 404, description = "Quote request not accepted"),
     )
 )]
-pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Json(req): Json<web_quotes::SignedEnquireRequest>,
 ) -> Result<Json<web_quotes::EnquireReply>>
 where
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!(
         "Received mint quote request for bill: {}",
-        req.request.content.id,
+        req.request.content.bill_id,
     );
-
-    verify_signature(&req)?;
-
     let bcr_wdc_webapi::quotes::EnquireRequest {
-        content,
+        ref content,
         public_key,
     } = req.request;
-    let bill = quotes::BillInfo::try_from(content)?;
+    let bill_info = ctrl.validate_and_decrypt_shared_bill(content).await?;
+
+    // after validating bill, validate req using the calculated holder
+    let holder = bill_info.endorsees.last().unwrap_or(&bill_info.payee);
+    verify_signature(&req, &holder.node_id().pub_key())?;
+
+    let bill = quotes::BillInfo::try_from((bill_info, content.to_owned()))?;
     let id = ctrl.enquire(bill, public_key, chrono::Utc::now()).await?;
     Ok(Json(web_quotes::EnquireReply { id }))
 }
 
-fn verify_signature(req: &web_quotes::SignedEnquireRequest) -> Result<()> {
-    let holder = req
-        .request
-        .content
-        .endorsees
-        .last()
-        .unwrap_or(&req.request.content.payee);
-    let pub_key = holder.node_id().pub_key();
+fn verify_signature(
+    req: &web_quotes::SignedEnquireRequest,
+    holder_pub_key: &bcr_ebill_core::PublicKey,
+) -> Result<()> {
     bcr_wdc_utils::keys::schnorr_verify_borsh_msg_with_key(
         &req.request,
         &req.signature,
-        &pub_key.x_only_public_key().0,
+        &holder_pub_key.x_only_public_key().0,
     )?;
     Ok(())
 }
@@ -100,14 +101,15 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
-pub async fn lookup_quote<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn lookup_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::StatusReply>>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
@@ -130,8 +132,8 @@ where
         (status = 409, description = "Quote already resolved"),
     )
 )]
-pub async fn resolve_offer<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn resolve_offer<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveOffer>,
 ) -> Result<()>
@@ -139,6 +141,7 @@ where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received mint quote resolve request for id: {}", id);
 
@@ -163,14 +166,15 @@ where
         (status = 409, description = "Quote already resolved"),
     )
 )]
-pub async fn cancel<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn cancel<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::StatusReply>>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received mint quote cancel request for id: {}", id);
 
