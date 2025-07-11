@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
+use bcr_wdc_ebpp_client::Error as EbppClientError;
 use bcr_wdc_key_client::Error as KeyClientError;
 use bcr_wdc_swap_client::Error as SwapClientError;
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
@@ -23,6 +24,8 @@ pub enum Error {
     Swap(#[from] SwapClientError),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] TreasuryClientError),
+    #[error("EBPP Client error: {0}")]
+    Ebpp(#[from] EbppClientError),
 
     #[error("not yet implemented: {0}")]
     NotYet(String),
@@ -37,6 +40,7 @@ impl axum::response::IntoResponse for Error {
                 format!("{} not yet implemented", msg),
             ),
 
+            Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 

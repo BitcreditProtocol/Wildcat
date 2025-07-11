@@ -9,6 +9,10 @@ use cashu::mint_url::MintUrl;
 use cdk::HttpClient;
 use utoipa::OpenApi;
 // ----- local modules
+pub mod built_info {
+    // The file has been placed there by the build script.
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 mod error;
 mod web;
 // ----- local imports
@@ -21,6 +25,7 @@ pub struct AppConfig {
     keys_client_url: bcr_wdc_key_client::Url,
     swap_client_url: bcr_wdc_swap_client::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
+    ebpp_client_url: bcr_wdc_ebpp_client::Url,
 }
 
 #[derive(Clone, FromRef)]
@@ -29,6 +34,7 @@ pub struct AppController {
     keys_client: bcr_wdc_key_client::KeyClient,
     swap_client: bcr_wdc_swap_client::SwapClient,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
+    ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
 }
 
 impl AppController {
@@ -38,18 +44,21 @@ impl AppController {
             keys_client_url,
             swap_client_url,
             treasury_client_url,
+            ebpp_client_url,
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
         let keys_client = bcr_wdc_key_client::KeyClient::new(keys_client_url);
         let swap_client = bcr_wdc_swap_client::SwapClient::new(swap_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
+        let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
         Self {
             cdk_client,
             keys_client,
             swap_client,
             treasury_client,
+            ebpp_client,
         }
     }
 }

@@ -64,3 +64,10 @@ pub struct Candle {
 pub struct CandleChart {
     pub candles: Vec<Candle>,
 }
+
+///--------------------------- ebpp onchain network type
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct Network {
+    #[schema(value_type=String)]
+    pub network: bitcoin::Network,
+}

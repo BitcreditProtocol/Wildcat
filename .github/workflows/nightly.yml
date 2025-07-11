@@ -145,7 +145,7 @@ jobs:
       with:
         images: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
         tags: |
-          type=match,pattern=dev,value=nightly
+          type=raw,value=nightly
 
     - id: push
       name: Build & push ${{ matrix.service.name }}

@@ -7,4 +7,5 @@ cdk_mint_url = "http://cdk-mintd:8085"
 keys_client_url = "http://key-service:3338"
 swap_client_url = "http://swap-service:3338"
 treasury_client_url = "http://treasury-service:3338"
+ebpp_client_url = "http://ebpp:3338"
 

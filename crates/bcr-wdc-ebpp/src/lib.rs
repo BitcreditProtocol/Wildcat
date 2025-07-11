@@ -19,6 +19,7 @@ mod onchain;
 mod payment;
 mod persistence;
 mod service;
+mod web;
 
 // ----- end imports
 
@@ -108,11 +109,17 @@ pub fn routes(ctrl: AppController) -> Router {
         .url("/api-docs/openapi.json", ApiDoc::openapi());
     let admin = Router::new().nest(
         "/v1/admin/ebpp/",
-        Router::new()
-            .route("/onchain/balance", get(admin::balance))
-            .with_state(ctrl),
+        Router::new().route("/onchain/balance", get(admin::balance)),
     );
-    Router::new().merge(admin).merge(swagger)
+    let web = Router::new().nest(
+        "/v1/ebpp",
+        Router::new().route("/onchain/network", get(web::network)),
+    );
+    Router::new()
+        .merge(admin)
+        .merge(web)
+        .with_state(ctrl)
+        .merge(swagger)
 }
 
 #[derive(utoipa::OpenApi)]

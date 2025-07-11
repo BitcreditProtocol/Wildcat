@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.2.0"
+version = "0.2.0-alpha"
 edition = "2021"
 license = "MIT"
 
@@ -46,6 +46,7 @@ bdk_wallet = {version = "2.0"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
+built = {version = "0.8"}
 cashu = {version = "0.11", default-features = false}
 cdk = {version = "0.11"}
 cdk-common = {version = "0.11"}
