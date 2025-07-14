@@ -4,38 +4,47 @@ services:
 
   ebpp:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebpp:${IMAGE_TAG:-latest}
+    pull_policy: always
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ${DATA_PATH}/ebpp/:/data/
 
   key-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   swap-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-swap-service:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   treasury-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-treasury-service:${IMAGE_TAG:-latest}
+    pull_policy: always
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
       - ${DATA_PATH}/treasury-service/:/data/
 
   quote-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-quote-service:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   eiou-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eiou-service:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   wallet-aggregator:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-wallet-aggregator:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   ebill-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
+    pull_policy: always
     ports:
       - "3338:3338"  
 
   balance-collector:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
+    pull_policy: always
 
   ######################################################################################## bcr-wdc-bootstrap
 
