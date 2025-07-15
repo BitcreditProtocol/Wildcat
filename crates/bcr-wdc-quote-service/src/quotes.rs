@@ -22,10 +22,21 @@ pub struct BillInfo {
     pub sum: Amount,
     pub maturity_date: TStamp,
     pub file_urls: Vec<url::Url>,
+    pub shared_bill_data: String, // The base58 encoded, encrypted, borshed BillBlockPlaintextWrappers of the bill
 }
-impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
+impl
+    TryFrom<(
+        bcr_wdc_webapi::quotes::BillInfo,
+        bcr_wdc_webapi::quotes::SharedBill,
+    )> for BillInfo
+{
     type Error = Error;
-    fn try_from(bill: bcr_wdc_webapi::quotes::BillInfo) -> Result<Self> {
+    fn try_from(
+        (bill, shared_bill): (
+            bcr_wdc_webapi::quotes::BillInfo,
+            bcr_wdc_webapi::quotes::SharedBill,
+        ),
+    ) -> Result<Self> {
         let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
         let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
         Ok(Self {
@@ -38,6 +49,7 @@ impl TryFrom<bcr_wdc_webapi::quotes::BillInfo> for BillInfo {
             sum: Amount::from_sat(bill.sum),
             maturity_date,
             file_urls: bill.file_urls,
+            shared_bill_data: shared_bill.data,
         })
     }
 }

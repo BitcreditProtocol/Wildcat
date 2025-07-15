@@ -15,7 +15,10 @@ use bcr_ebill_api::{
         notification_service::{create_notification_service, NostrClient},
     },
 };
-use bcr_ebill_transport::{NotificationServiceApi, PushApi, PushService};
+use bcr_ebill_transport::{
+    event::company_events::CompanyChainEvent, event::identity_events::IdentityChainEvent,
+    NotificationServiceApi, PushApi, PushService,
+};
 // ----- local modules
 mod error;
 mod web;
@@ -109,6 +112,7 @@ impl AppController {
             db.file_upload_store.clone(),
             file_upload_client.clone(),
             db.identity_chain_store.clone(),
+            notification_service.clone(),
         );
 
         let push_service = Arc::new(PushService::new());
@@ -148,6 +152,10 @@ pub fn routes(ctrl: AppController) -> Router {
         )
         .route("/v1/bill/request_to_pay", put(web::request_to_pay_bill))
         .route("/v1/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
+        .route(
+            "/v1/bill/validate_and_decrypt_shared_bill",
+            post(web::validate_and_decrypt_shared_bill),
+        )
         .route(
             "/v1/admin/ebill/get_file_from_request_to_mint",
             get(web::get_encrypted_bill_file_from_request_to_mint),
@@ -454,6 +462,9 @@ pub mod test_utils {
 
         #[async_trait]
         impl NotificationServiceApi for NotificationServiceApi {
+            async fn add_company_transport(&self, company: &bcr_ebill_core::company::Company, keys: &BcrKeys) -> NotifResult<()>;
+            async fn send_identity_chain_events(&self, events: IdentityChainEvent) -> NotifResult<()>;
+            async fn send_company_chain_events(&self, events: CompanyChainEvent) -> NotifResult<()>;
             async fn resolve_contact(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<Option<NostrContactData>>;
             async fn send_bill_is_signed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
             async fn send_bill_is_accepted_event(&self, event: &BillChainEvent) -> NotifResult<()>;

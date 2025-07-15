@@ -2,6 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
+use bcr_wdc_ebill_client::Error as EbillClientError;
 use bcr_wdc_key_client::Error as KeysHandlerError;
 use bcr_wdc_treasury_client::Error as WalletError;
 use bcr_wdc_utils::keys::{SchnorrBorshMsgError, SignWithKeysError};
@@ -28,6 +29,8 @@ pub enum Error {
     KeysHandler(KeysHandlerError),
     #[error("wallet error {0}")]
     Wallet(WalletError),
+    #[error("ebill client error {0}")]
+    EbillClient(EbillClientError),
 
     #[error("Quote has been already resolved: {0}")]
     QuoteAlreadyResolved(uuid::Uuid),
@@ -66,6 +69,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (
