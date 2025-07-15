@@ -6,6 +6,7 @@ use bcr_wdc_webapi::{
         RequestToPayBitcreditBillPayload,
     },
     identity::{Identity, NewIdentityPayload, SeedPhrase},
+    quotes::{BillInfo, SharedBill},
 };
 use reqwest::header;
 pub use reqwest::Url;
@@ -40,6 +41,28 @@ impl EbillClient {
             cl: reqwest::Client::new(),
             base,
         }
+    }
+
+    pub async fn validate_and_decrypt_shared_bill(
+        &self,
+        shared_bill: &SharedBill,
+    ) -> Result<BillInfo> {
+        let url = self
+            .base
+            .join("/v1/bill/validate_and_decrypt_shared_bill")
+            .expect("validate and decrypt shared bill relative path");
+        let res = self
+            .cl
+            .post(url)
+            .json(shared_bill)
+            .send()
+            .await?
+            .error_for_status()?;
+        if res.status() == reqwest::StatusCode::BAD_REQUEST {
+            return Err(Error::InvalidRequest);
+        }
+        let bill_info = res.json::<BillInfo>().await?;
+        Ok(bill_info)
     }
 
     pub async fn backup_seed_phrase(&self) -> Result<SeedPhrase> {
