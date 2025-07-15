@@ -8,27 +8,27 @@ license.workspace = true
 test-utils = ["axum-test", "mockall"]
 
 [dependencies]
+async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-mockall = {workspace = true, optional = true}
+bcr-ebill-api.workspace = true
 bcr-ebill-core = {workspace = true}
-bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "6451953ae90a020a08c432f9075210f3ce444fb6"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "6451953ae90a020a08c432f9075210f3ce444fb6"}
+bcr-ebill-transport.workspace = true
 bcr-wdc-webapi.workspace = true
+bip39 = {workspace = true, features = ["serde"]}
+bitcoin = {workspace = true, features = ["serde"]}
+borsh.workspace = true
 config.workspace = true
-serde.workspace = true
 futures.workspace = true
+mockall = {workspace = true, optional = true}
+reqwest = {workspace = true, features = ["stream"]}
+rustls = "0.23"
+serde.workspace = true
 serde_json.workspace = true
+serde_repr.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal", "time"]}
 tracing = {workspace = true, features = ["log"]}
 tracing-log = {workspace = true}
-reqwest = {workspace = true, features = ["stream"]}
-bitcoin = {workspace = true, features = ["serde"]}
 tracing-subscriber = {workspace = true, features = ["serde"]}
 url = {workspace = true, features = ["serde"]}
-bip39 = {workspace = true, features = ["serde"]}
-serde_repr.workspace = true 
-rustls = "0.23"
-async-trait.workspace = true
-borsh.workspace = true
