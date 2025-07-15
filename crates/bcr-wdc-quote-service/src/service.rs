@@ -2,6 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_ebill_core::{bill::BillId, NodeId};
+use bcr_wdc_webapi::quotes::SharedBill;
 use bitcoin::Amount;
 use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use futures::future::JoinAll;
@@ -61,6 +62,15 @@ pub trait KeysHandler {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
+pub trait EBillNode: Sync {
+    async fn validate_and_decrypt_shared_bill(
+        &self,
+        shared_bill: &SharedBill,
+    ) -> Result<bcr_wdc_webapi::quotes::BillInfo>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait Wallet {
     async fn get_blinds(
         &self,
@@ -78,15 +88,17 @@ pub trait Wallet {
 
 // ---------- Service
 #[derive(Clone)]
-pub struct Service<KeysHndlr, Wlt, QuotesRepo> {
+pub struct Service<KeysHndlr, Wlt, QuotesRepo, EBillCl> {
     pub keys_hndlr: KeysHndlr,
     pub quotes: QuotesRepo,
     pub wallet: Wlt,
+    pub ebill: EBillCl,
 }
 
-impl<KeysHndlr, Wlt, QuotesRepo> Service<KeysHndlr, Wlt, QuotesRepo>
+impl<KeysHndlr, Wlt, QuotesRepo, EBillCl> Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>
 where
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
 
@@ -100,6 +112,15 @@ where
         let qid = quote.id;
         self.quotes.store(quote).await?;
         Ok(qid)
+    }
+
+    pub async fn validate_and_decrypt_shared_bill(
+        &self,
+        shared_bill: &SharedBill,
+    ) -> Result<bcr_wdc_webapi::quotes::BillInfo> {
+        self.ebill
+            .validate_and_decrypt_shared_bill(shared_bill)
+            .await
     }
 
     pub async fn enquire(
@@ -268,11 +289,12 @@ where
     }
 }
 
-impl<KeysHndlr, Wlt, QuotesRepo> Service<KeysHndlr, Wlt, QuotesRepo>
+impl<KeysHndlr, Wlt, QuotesRepo, EBillCl> Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     pub async fn offer(
         &self,
@@ -415,6 +437,7 @@ mod tests {
             sum: Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
             file_urls: Vec::default(),
+            shared_bill_data: String::default(),
         }
     }
 
@@ -425,12 +448,14 @@ mod tests {
         quotes.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let rnd_bill = generate_random_bill();
         let service = Service {
             quotes,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let test = service
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
@@ -461,11 +486,13 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let test_id = service
             .enquire(rnd_bill, public_key, chrono::Utc::now())
@@ -498,11 +525,13 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -537,11 +566,13 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -577,11 +608,13 @@ mod tests {
             .returning(|_, _| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let test_id = service
             .enquire(rnd_bill, public_key, now + chrono::Duration::seconds(1))
@@ -621,14 +654,16 @@ mod tests {
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
         let wallet = MockWallet::new();
+        let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: repo,
             keys_hndlr,
             wallet,
+            ebill,
         };
         let submitted = now
-            + Service::<MockKeysHandler, MockWallet, MockRepository>::USER_DECISION_RETENTION
+            + Service::<MockKeysHandler, MockWallet, MockRepository, MockEBillNode>::USER_DECISION_RETENTION
             + chrono::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, public_key, submitted).await;
         assert!(test_id.is_ok());
