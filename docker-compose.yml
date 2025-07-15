@@ -46,8 +46,8 @@ services:
       service: ebpp
     environment:
       - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
-      - EBPP_APPCFG_ONCHAIN_NETWORK=testnet
-      - EBPP_APPCFG_ONCHAIN_STORE_PATH=/data/testnet
+      - EBPP__APPCFG__ONCHAIN__NETWORK=testnet
+      - EBPP__APPCFG__ONCHAIN__STORE_PATH=/data/testnet
 
   ebill-service:
     extends:
