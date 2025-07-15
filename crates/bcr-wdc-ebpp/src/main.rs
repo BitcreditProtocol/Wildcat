@@ -18,7 +18,7 @@ struct SeedConfig {
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("EBPP"))
+        .add_source(config::Environment::with_prefix("EBPP").separator("__"))
         .build()
         .expect("Failed to build wildcat config");
 
