@@ -61,8 +61,8 @@ cdk-mintd = {cdk_mintd}"#,
         version: String::from(built_info::PKG_VERSION),
     };
     let info = info
-        .name("bcr-wdc-bff")
-        .description("Bitcredit Wildcat")
+        .name("bcr-wdc")
+        .description("Wildcat One")
         .long_description(long_description)
         .version(version);
     Ok(Json(info))
