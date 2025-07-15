@@ -1,10 +1,6 @@
 name: 'Deploy to DEV (wildcat-dev-docker)'
 
 on:
-  workflow_run:
-    workflows: ["build and push nightly Docker images"]
-    branches: [dev]
-    types: [completed]
   workflow_dispatch:
     inputs:
       delete_ebpp_data:
@@ -27,15 +23,14 @@ on:
 jobs:
   deploy-dev:
     name: Deploy to dev
-    if: github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch'
 
     permissions:
       contents: read
       deployments: write
       id-token: write
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+      group: ${{ github.workflow }}-${{ github.ref_name }}
       cancel-in-progress: true
 
     ##############################################################
@@ -68,10 +63,9 @@ jobs:
           echo "Verifying user ID and group memberships..."
           id
 
-      - name: "Checkout ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || 'dev' }}"
+      - name: Checkout ${{ github.sha }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'dev' }}
           fetch-depth: 0
 
       - name: Mirror repo to ${{ env.DEPLOY_PATH }}
@@ -193,7 +187,7 @@ jobs:
 
       - name: Docker system prune
         run: |
-          docker system prune -f --filter "until=24h"
+          docker system prune -f --filter "until=24h" --filter "dangling=true"
 
           
     
