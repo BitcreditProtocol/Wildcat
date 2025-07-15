@@ -5,7 +5,7 @@ use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
 use crate::error::Result;
 use crate::quotes;
-use crate::service::calculate_default_expiration_date_for_quote;
+use crate::service::{calculate_default_expiration_date_for_quote, EBillNode};
 use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
 
 /// --------------------------- List quotes
@@ -20,14 +20,15 @@ use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, W
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Query(req): Query<web_quotes::ListPendingQueryRequest>,
 ) -> Result<Json<web_quotes::ListReply>>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received request to list pending quotes");
 
@@ -117,14 +118,15 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     params: Query<web_quotes::ListParam>,
 ) -> Result<Json<web_quotes::ListReplyLight>>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received request to list quotes");
 
@@ -205,14 +207,15 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn admin_lookup_quote<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn admin_lookup_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<web_quotes::InfoReply>>
 where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received mint quote lookup request");
 
@@ -234,8 +237,8 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo>>,
+pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
+    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::UpdateQuoteRequest>,
 ) -> Result<Json<web_quotes::UpdateQuoteResponse>>
@@ -243,6 +246,7 @@ where
     KeysHndlr: KeysHandler,
     Wlt: Wallet,
     QuotesRepo: Repository,
+    EBillCl: EBillNode,
 {
     tracing::debug!("Received mint quote update request");
     let now = chrono::Utc::now();

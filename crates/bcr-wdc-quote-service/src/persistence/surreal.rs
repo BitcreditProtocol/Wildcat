@@ -353,6 +353,7 @@ mod tests {
                 sum: bitcoin::Amount::default(),
                 maturity_date: TStamp::default(),
                 file_urls: Vec::default(),
+                shared_bill_data: String::default(),
             }
         }
     }

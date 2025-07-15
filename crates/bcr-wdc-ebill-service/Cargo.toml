@@ -5,15 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-test-utils = ["axum-test", "mockall", "bcr-ebill-core"]
+test-utils = ["axum-test", "mockall"]
 
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
 mockall = {workspace = true, optional = true}
-bcr-ebill-core = {workspace = true, optional = true}
-bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.0"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.0"}
+bcr-ebill-core = {workspace = true}
+bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "6451953ae90a020a08c432f9075210f3ce444fb6"}
+bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "6451953ae90a020a08c432f9075210f3ce444fb6"}
 bcr-wdc-webapi.workspace = true
 config.workspace = true
 serde.workspace = true
@@ -31,3 +31,4 @@ bip39 = {workspace = true, features = ["serde"]}
 serde_repr.workspace = true 
 rustls = "0.23"
 async-trait.workspace = true
+borsh.workspace = true
