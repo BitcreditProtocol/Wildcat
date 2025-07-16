@@ -37,7 +37,7 @@ pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cdk
     let info = ctrl.cdk_client.get_mint_info().await?;
     let mut long_description = format!(
         r#"[ebpp]
-network = "{network}"
+network = {network}
 "#
     );
     if !built_info::PKG_VERSION_PRE.is_empty() {
