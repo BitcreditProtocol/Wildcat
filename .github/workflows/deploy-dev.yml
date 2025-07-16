@@ -185,12 +185,10 @@ jobs:
           docker compose logs --tail=100
         working-directory: ${{ env.DEPLOY_PATH }}
 
-      - name: Docker system prune
+      - name: Docker image prune
         run: |
-          docker system prune -f --filter "until=24h" --filter "dangling=true"
+          docker image prune -af --filter "until=72h"
 
-          
-    
       - name: 'Restart nginx reverse proxy'
         run: |
           docker compose up -d --force-recreate --remove-orphans
