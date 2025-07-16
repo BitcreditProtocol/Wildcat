@@ -217,6 +217,17 @@ where
         }
         let kid = unique_ids[0];
 
+        let info = self.keys.info(&kid).await?;
+        match info {
+            None => {
+                return Err(Error::UnknownKeyset(kid));
+            }
+            Some(MintKeySetInfo { active: false, .. }) => {
+                return Err(Error::InvalidMintRequest(String::from("keyset inactive")));
+            }
+            _ => {}
+        }
+
         let MintCondition {
             target, is_minted, ..
         } = self
@@ -276,7 +287,7 @@ mod tests {
     use crate::test_utils::{
         TestKeysRepository, TestKeysService, TestQuoteKeysRepository, TestSignaturesRepository,
     };
-    use bcr_wdc_utils::signatures::test_utils::generate_blinds;
+    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use std::str::FromStr;
     use uuid::Uuid;
 
@@ -316,7 +327,7 @@ mod tests {
     async fn test_mint_success() {
         let (service, kid, qid) = setup_test_service().await;
 
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64)]);
+        let outputs = signatures_test::generate_blinds(kid, &[Amount::from(128), Amount::from(64)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
 
         let signatures = service.mint(qid, blinds).await.unwrap();
@@ -332,7 +343,10 @@ mod tests {
     #[tokio::test]
     async fn test_mint_more() {
         let (service, kid, qid) = setup_test_service().await;
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64), Amount::from(1)]);
+        let outputs = signatures_test::generate_blinds(
+            kid,
+            &[Amount::from(128), Amount::from(64), Amount::from(1)],
+        );
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
 
         assert!(
@@ -344,12 +358,59 @@ mod tests {
     #[tokio::test]
     async fn test_mint_less() {
         let (service, kid, qid) = setup_test_service().await;
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
+        let outputs = signatures_test::generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
 
         assert!(
             service.mint(qid, blinds).await.is_err(),
             "Mint should fail with invalid amount"
         );
+    }
+
+    #[tokio::test]
+    async fn test_mint_inactive_keyset() {
+        let mut keys = MockKeysRepository::new();
+        let (mut info, keyset) = keys_test::generate_random_keyset();
+        info.active = false;
+        keys.expect_info()
+            .returning(move |_| Ok(Some(info.clone())));
+        let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+            .unwrap()
+            .to_seed("");
+        let factory = Factory::new(&seed, DerivationPath::default());
+        let service = Service {
+            quote_keys: MockQuoteKeysRepository::new(),
+            keygen: factory,
+            signatures: MockSignaturesRepository::new(),
+            keys,
+        };
+        let outputs =
+            signatures_test::generate_blinds(keyset.id, &[Amount::from(128), Amount::from(32)]);
+        let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
+        let qid = Uuid::new_v4();
+        let response = service.mint(qid, blinds).await;
+        assert!(response.is_err(),);
+    }
+
+    #[tokio::test]
+    async fn test_mint_unknown_keyset() {
+        let mut keys = MockKeysRepository::new();
+        let kid = keys_test::generate_random_keysetid();
+        keys.expect_info().returning(move |_| Ok(None));
+        let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+            .unwrap()
+            .to_seed("");
+        let factory = Factory::new(&seed, DerivationPath::default());
+        let service = Service {
+            quote_keys: MockQuoteKeysRepository::new(),
+            keygen: factory,
+            signatures: MockSignaturesRepository::new(),
+            keys,
+        };
+        let outputs = signatures_test::generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
+        let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
+        let qid = Uuid::new_v4();
+        let response = service.mint(qid, blinds).await;
+        assert!(response.is_err(),);
     }
 }
