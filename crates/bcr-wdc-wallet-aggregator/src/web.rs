@@ -57,7 +57,7 @@ cdk-mintd = {cdk_mintd}"#,
         );
     }
     let version = MintVersion {
-        name: String::from("BitcreditProtocol/wildcat"),
+        name: String::from("wildcat"),
         version: String::from(built_info::PKG_VERSION),
     };
     let info = info
