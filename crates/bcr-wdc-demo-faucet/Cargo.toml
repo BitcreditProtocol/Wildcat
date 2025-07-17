@@ -1,0 +1,21 @@
+[package]
+name = "bcr-wdc-demo-faucet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bcr-ebill-core.workspace = true
+bcr-wdc-ebill-client.workspace = true
+bcr-wdc-key-client.workspace = true
+bcr-wdc-quote-client = {workspace = true, features = ["authorized"]}
+bitcoin.workspace = true
+chrono.workspace = true
+config.workspace = true
+reqwest.workspace = true
+serde = {workspace = true, features = ["derive"]}
+tokio = {workspace = true, features = ["signal", "macros"]}
+tokio-util.workspace = true
+tracing = {workspace = true, features = ["log"]}
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true}
