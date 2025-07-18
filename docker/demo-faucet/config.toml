@@ -1,0 +1,13 @@
+
+log_level = "DEBUG"
+
+
+[appcfg]
+key_url = "http://key-service:3338"
+quote_url = "http://quote-service:3338"
+ebill_url = "http://ebill-service:3338"
+authorized_drawees = []
+sleep_secs = 1
+retention_period_min = 1
+discount = 1 #satoshis
+
