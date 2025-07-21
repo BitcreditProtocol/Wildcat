@@ -83,7 +83,7 @@ impl AppController {
 }
 
 pub fn routes(app: AppController) -> Router {
-    let web = Router::new().route("/v1/redeem", post(web::redeem));
+    let web = Router::new().route("/v1/treasury/redeem", post(web::redeem));
     Router::new().nest(
         "/v1/admin/treasury",
         Router::new()

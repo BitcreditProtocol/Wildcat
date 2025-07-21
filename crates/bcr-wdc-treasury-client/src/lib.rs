@@ -102,7 +102,7 @@ impl TreasuryClient {
         let msg = cdk03::SwapRequest::new(inputs, outputs);
         let url = self
             .base
-            .join("/v1/admin/treasury/debit/redeem")
+            .join("/v1/treasury/redeem")
             .expect("redeem relative path");
         let request = self.cl.post(url).json(&msg);
         let response: cdk03::SwapResponse = request.send().await?.json().await?;
