@@ -33,6 +33,7 @@ utoipa-swagger-ui.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 
 [build-dependencies]
 built = {workspace = true, features = ["dependency-tree"]}

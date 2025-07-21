@@ -1,4 +1,7 @@
+// ----- standard library imports
+use std::collections::HashSet;
 // ----- extra library imports
+use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_wdc_key_client::KeyClient;
 use cashu::{
@@ -325,33 +328,146 @@ enum SwapType {
 /// once proved that all outputs are found in crsat-key-service,
 /// then it's definitely a crsat2crsat swap
 /// it's not a responsibility of this service to deal with the case of mixed inputs/outputs
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+trait KeyClientT {
+    async fn keyset_info(
+        &self,
+        keyset_id: cdk02::Id,
+    ) -> bcr_wdc_key_client::Result<cdk02::KeySetInfo>;
+}
+#[async_trait]
+impl KeyClientT for KeyClient {
+    async fn keyset_info(
+        &self,
+        keyset_id: cdk02::Id,
+    ) -> bcr_wdc_key_client::Result<cdk02::KeySetInfo> {
+        self.keyset_info(keyset_id).await
+    }
+}
+
 async fn determine_swap_type(
-    key_cl: &KeyClient,
+    key_cl: &impl KeyClientT,
     inputs: &[cdk00::Proof],
     outputs: &[cdk00::BlindedMessage],
 ) -> Result<SwapType> {
-    let inputs_requests: JoinAll<_> = inputs
-        .iter()
-        .map(|proof| key_cl.keyset_info(proof.keyset_id))
+    let input_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
+    let input_responses: JoinAll<_> = input_kids
+        .into_iter()
+        .map(|kid| key_cl.keyset_info(kid))
         .collect();
-    for response in inputs_requests.await.into_iter() {
+    for response in input_responses.await.into_iter() {
         match response {
             Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
             Err(e) => return Err(Error::Keys(e)),
             Ok(_) => {}
         }
     }
-
-    let outputs_requests: JoinAll<_> = outputs
-        .iter()
-        .map(|blind| key_cl.keyset_info(blind.keyset_id))
+    let output_kids = outputs.iter().map(|b| b.keyset_id).collect::<HashSet<_>>();
+    let outputs_responses: JoinAll<_> = output_kids
+        .into_iter()
+        .map(|kid| key_cl.keyset_info(kid))
         .collect();
-    for response in outputs_requests.await.into_iter() {
+    for response in outputs_responses.await.into_iter() {
         match response {
             Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
             Err(e) => return Err(Error::Keys(e)),
             Ok(_) => {}
         }
     }
+
     Ok(SwapType::CrSat2CrSat)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+    use mockall::predicate::*;
+
+    #[tokio::test]
+    async fn determine_swap_type_sat2sat() {
+        let (_, sat_keyset) = keys_test::generate_random_keyset();
+        let (crsat_info, crsat_keyset) = keys_test::generate_random_keyset();
+        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
+        let inputs = [
+            signatures_test::generate_proofs(&crsat_keyset, &amounts[1..])[0].clone(),
+            signatures_test::generate_proofs(&sat_keyset, &amounts[..1])[0].clone(),
+        ];
+        let outputs: Vec<cdk00::BlindedMessage> =
+            signatures_test::generate_blinds(sat_keyset.id, &amounts)
+                .into_iter()
+                .map(|(b, _, _)| b)
+                .collect();
+        let mut client = MockKeyClientT::new();
+        let crsat_kid = crsat_keyset.id;
+        client
+            .expect_keyset_info()
+            .times(1)
+            .with(eq(crsat_kid))
+            .returning(move |_| Ok(cashu::KeySetInfo::from(crsat_info.clone())));
+        let sat_kid = sat_keyset.id;
+        client
+            .expect_keyset_info()
+            .times(1)
+            .with(eq(sat_kid))
+            .returning(|kid| Err(bcr_wdc_key_client::Error::ResourceNotFound(kid)));
+
+        let swaptype = determine_swap_type(&client, &inputs, &outputs)
+            .await
+            .unwrap();
+        assert!(matches!(swaptype, SwapType::Sat2Sat));
+    }
+
+    #[tokio::test]
+    async fn determine_swap_type_crsat2crsat() {
+        let (info, keyset) = keys_test::generate_random_keyset();
+        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
+        let inputs = signatures_test::generate_proofs(&keyset, &amounts);
+        let outputs: Vec<cdk00::BlindedMessage> =
+            signatures_test::generate_blinds(keyset.id, &amounts)
+                .into_iter()
+                .map(|(b, _, _)| b)
+                .collect();
+        let mut client = MockKeyClientT::new();
+        client
+            .expect_keyset_info()
+            .times(2)
+            .returning(move |_| Ok(cashu::KeySetInfo::from(info.clone())));
+        let swaptype = determine_swap_type(&client, &inputs, &outputs)
+            .await
+            .unwrap();
+        assert!(matches!(swaptype, SwapType::CrSat2CrSat));
+    }
+
+    #[tokio::test]
+    async fn determine_swap_type_crsat2sat() {
+        let (_, sat_keyset) = keys_test::generate_random_keyset();
+        let (crsat_info, crsat_keyset) = keys_test::generate_random_keyset();
+        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
+        let inputs = signatures_test::generate_proofs(&crsat_keyset, &amounts);
+        let outputs: Vec<cdk00::BlindedMessage> =
+            signatures_test::generate_blinds(sat_keyset.id, &amounts)
+                .into_iter()
+                .map(|(b, _, _)| b)
+                .collect();
+        let mut client = MockKeyClientT::new();
+        let crsat_kid = crsat_keyset.id;
+        client
+            .expect_keyset_info()
+            .times(1)
+            .with(eq(crsat_kid))
+            .returning(move |_| Ok(cashu::KeySetInfo::from(crsat_info.clone())));
+        let sat_kid = sat_keyset.id;
+        client
+            .expect_keyset_info()
+            .times(1)
+            .with(eq(sat_kid))
+            .returning(|kid| Err(bcr_wdc_key_client::Error::ResourceNotFound(kid)));
+
+        let swaptype = determine_swap_type(&client, &inputs, &outputs)
+            .await
+            .unwrap();
+        assert!(matches!(swaptype, SwapType::CrSat2Sat));
+    }
 }
