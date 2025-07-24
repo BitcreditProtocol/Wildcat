@@ -52,11 +52,7 @@ pub trait QuoteKeysRepository {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait SignaturesRepository {
-    async fn store(
-        &self,
-        blind: &cdk00::BlindedMessage,
-        signature: &cdk00::BlindSignature,
-    ) -> Result<()>;
+    async fn store(&self, y: cdk01::PublicKey, signature: cdk00::BlindSignature) -> Result<()>;
     async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>>;
 }
 
@@ -196,7 +192,9 @@ where
     pub async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
         let keyset = self.keys(blind.keyset_id).await?;
         let signature = keys_utils::sign_with_keys(&keyset, blind)?;
-        self.signatures.store(blind, &signature).await?;
+        self.signatures
+            .store(blind.blinded_secret, signature.clone())
+            .await?;
         Ok(signature)
     }
 
