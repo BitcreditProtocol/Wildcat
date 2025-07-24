@@ -3,7 +3,7 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_utils::keys as keys_utils;
-use cashu::nut02 as cdk02;
+use cashu::{nut01 as cdk01, nut02 as cdk02};
 use thiserror::Error;
 // ----- local imports
 
@@ -28,12 +28,18 @@ pub enum Error {
     InvalidMintRequest(String),
     #[error("invalid generate request {0}")]
     InvalidGenerateRequest(uuid::Uuid),
+    #[error("signature already exists {0}")]
+    SignatureAlreadyExists(cdk01::PublicKey),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::SignatureAlreadyExists(y) => (
+                StatusCode::CONFLICT,
+                format!("Signature {y} already exists"),
+            ),
             Error::InvalidGenerateRequest(_) => (
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid generate request"),

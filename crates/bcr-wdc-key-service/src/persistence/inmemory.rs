@@ -193,15 +193,12 @@ pub struct InMemorySignatureMap {
 
 #[async_trait]
 impl SignaturesRepository for InMemorySignatureMap {
-    async fn store(
-        &self,
-        blind: &cdk00::BlindedMessage,
-        signature: &cdk00::BlindSignature,
-    ) -> Result<()> {
-        self.signs
-            .write()
-            .unwrap()
-            .insert(blind.blinded_secret, signature.clone());
+    async fn store(&self, y: cdk01::PublicKey, signature: cdk00::BlindSignature) -> Result<()> {
+        let mut locked = self.signs.write().unwrap();
+        if locked.contains_key(&y) {
+            return Err(Error::SignatureAlreadyExists(y));
+        }
+        locked.insert(y, signature);
         Ok(())
     }
     async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>> {
