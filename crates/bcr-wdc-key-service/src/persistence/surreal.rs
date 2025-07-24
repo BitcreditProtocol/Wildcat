@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use bcr_wdc_utils::keys::KeysetEntry;
 use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut12 as cdk12, Amount, PublicKey};
 use cdk_common::mint::MintKeySetInfo;
-use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
+use surrealdb::{
+    engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
+    Result as SurrealResult, Surreal,
+};
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::{KeysRepository, MintCondition, QuoteKeysRepository, SignaturesRepository};
@@ -377,20 +380,17 @@ impl DBSignatures {
 
 #[async_trait]
 impl SignaturesRepository for DBSignatures {
-    async fn store(
-        &self,
-        blind: &cdk00::BlindedMessage,
-        signature: &cdk00::BlindSignature,
-    ) -> Result<()> {
-        let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
-        let entry = SignatureDBEntry::from(signature.clone());
-        let _r: Option<SignatureDBEntry> = self
-            .db
-            .insert(rid)
-            .content(entry)
-            .await
-            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
-        Ok(())
+    async fn store(&self, y: cdk01::PublicKey, signature: cdk00::BlindSignature) -> Result<()> {
+        let rid = RecordId::from_table_key(self.table.clone(), y.to_string());
+        let entry = SignatureDBEntry::from(signature);
+        let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
+        match r {
+            Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
+                Err(Error::SignatureAlreadyExists(y))
+            }
+            Err(e) => Err(Error::SignaturesRepository(anyhow!(e))),
+            Ok(..) => Ok(()),
+        }
     }
     async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>> {
         let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
@@ -406,7 +406,7 @@ impl SignaturesRepository for DBSignatures {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_utils::keys::test_utils as keys_test;
+    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 
     async fn init_mem_db() -> DB {
         let sdb = Surreal::<Any>::init();
@@ -609,5 +609,42 @@ mod tests {
         let dbk = DBKeys(db);
         let res = dbk.update_info(&kid, info).await;
         assert!(res.is_err());
+    }
+
+    async fn init_mem_dbsignatures() -> DBSignatures {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBSignatures {
+            db: sdb,
+            table: String::from("test"),
+        }
+    }
+
+    #[tokio::test]
+    async fn dbsignatures_store() {
+        let db = init_mem_dbsignatures().await;
+        let (_, keyset) = keys_test::generate_random_keyset();
+        let amounts = [Amount::from(8u64)];
+
+        let y = keys_test::publics()[0];
+        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
+
+        db.store(y, signature).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dbsignatures_store_same_signature_twice() {
+        let db = init_mem_dbsignatures().await;
+        let (_, keyset) = keys_test::generate_random_keyset();
+        let amounts = [Amount::from(8u64)];
+
+        let y = keys_test::publics()[0];
+        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
+
+        db.store(y, signature.clone()).await.unwrap();
+        let res = db.store(y, signature).await;
+        assert!(matches!(res, Err(Error::SignatureAlreadyExists(..))));
     }
 }

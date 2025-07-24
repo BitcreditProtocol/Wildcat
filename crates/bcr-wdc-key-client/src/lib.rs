@@ -117,6 +117,9 @@ impl KeyClient {
         if response.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
+        if response.status() == reqwest::StatusCode::CONFLICT {
+            return Err(Error::InvalidRequest);
+        }
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(msg.keyset_id));
         }
