@@ -84,18 +84,19 @@ impl AppController {
 
 pub fn routes(app: AppController) -> Router {
     let web = Router::new().route("/v1/treasury/redeem", post(web::redeem));
-    Router::new().nest(
-        "/v1/admin/treasury",
-        Router::new()
-            .route("/credit/generate_blinds", post(admin::generate_blinds))
-            .route("/credit/store_signatures", post(admin::store_signatures))
-            .route("/credit/balance", get(admin::crsat_balance))
-            .route("/debit/balance", get(admin::sat_balance))
-            .route(
-                "/debit/request_to_mint_from_ebill",
-                post(admin::request_mint_from_ebill),
-            )
-            .merge(web)
-            .with_state(app),
-    )
+    Router::new()
+        .nest(
+            "/v1/admin/treasury",
+            Router::new()
+                .route("/credit/generate_blinds", post(admin::generate_blinds))
+                .route("/credit/store_signatures", post(admin::store_signatures))
+                .route("/credit/balance", get(admin::crsat_balance))
+                .route("/debit/balance", get(admin::sat_balance))
+                .route(
+                    "/debit/request_to_mint_from_ebill",
+                    post(admin::request_mint_from_ebill),
+                ),
+        )
+        .merge(web)
+        .with_state(app)
 }

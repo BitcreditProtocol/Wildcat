@@ -44,6 +44,7 @@ network = {network}
 "#
     );
     if !built_info::PKG_VERSION_PRE.is_empty() {
+        let build_time = built::util::strptime(built_info::BUILT_TIME_UTC);
         let ebill_core = built::util::parse_versions(&built_info::DEPENDENCIES)
             .find_map(|(n, v)| if n == "bcr-ebill-core" { Some(v) } else { None })
             .unwrap_or(built::semver::Version::new(0, 0, 0));
@@ -54,6 +55,7 @@ network = {network}
             .unwrap_or(String::from("0.0.0"));
         long_description += &format!(
             r#"
+build-time = {build_time}
 [versions]
 bcr-ebill-core = {ebill_core}
 cdk-mintd = {cdk_mintd}"#,
