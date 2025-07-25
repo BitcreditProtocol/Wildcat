@@ -15,10 +15,7 @@ use bcr_ebill_api::{
         notification_service::{create_notification_service, NostrClient},
     },
 };
-use bcr_ebill_transport::{
-    event::company_events::CompanyChainEvent, event::identity_events::IdentityChainEvent,
-    NotificationServiceApi, PushApi, PushService,
-};
+use bcr_ebill_transport::{NotificationServiceApi, PushApi, PushService};
 // ----- local modules
 mod error;
 mod web;
@@ -189,6 +186,9 @@ pub mod test_utils {
     use bcr_ebill_core::{blockchain::bill::BillBlockchain, ServiceTraitBounds};
     use bcr_ebill_transport::{
         event::bill_events::BillChainEvent, transport::NostrContactData, Result as NotifResult,
+    };
+    use bcr_ebill_transport::{
+        event::company_events::CompanyChainEvent, event::identity_events::IdentityChainEvent,
     };
     use std::collections::HashMap;
 
