@@ -7,6 +7,7 @@ use uuid::Uuid;
 // ----- local imports
 
 // ----- end imports
+pub use bcr_wdc_webapi;
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
@@ -100,6 +101,17 @@ impl QuoteClient {
     }
 
     #[cfg(feature = "authorized")]
+    pub async fn info(&self, qid: Uuid) -> Result<web_quotes::InfoReply> {
+        let url = self
+            .base
+            .join(&format!("/v1/admin/credit/quote/{qid}"))
+            .expect("admin lookup relative path");
+        let request = self.cl.get(url);
+        let reply = self.auth.authorize(request).send().await?.json().await?;
+        Ok(reply)
+    }
+
+    #[cfg(feature = "authorized")]
     pub async fn list(&self, params: web_quotes::ListParam) -> Result<web_quotes::ListReplyLight> {
         let url = self
             .base
@@ -142,6 +154,21 @@ impl QuoteClient {
             request = request.query(&[("bill_holder_id", bill_holder_id)]);
         }
 
+        let reply = self.auth.authorize(request).send().await?.json().await?;
+        Ok(reply)
+    }
+
+    #[cfg(feature = "authorized")]
+    pub async fn update(
+        &self,
+        qid: Uuid,
+        action: web_quotes::UpdateQuoteRequest,
+    ) -> Result<web_quotes::UpdateQuoteResponse> {
+        let url = self
+            .base
+            .join(&format!("/v1/admin/credit/quote/{qid}"))
+            .expect("admin lookup relative path");
+        let request = self.cl.post(url).json(&action);
         let reply = self.auth.authorize(request).send().await?.json().await?;
         Ok(reply)
     }
