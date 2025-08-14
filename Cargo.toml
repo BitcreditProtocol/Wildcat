@@ -19,6 +19,7 @@ members = [
     "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-webapi",
+    "crates/bcr-wdc-demo-faucet",
 ]
 
 [workspace.dependencies]
