@@ -20,4 +20,7 @@ esplora_base_url = "https://esplora.minibill.tech"
 data_dir = "./"
 job_runner_initial_delay_seconds = 1
 job_runner_check_interval_seconds = 600
+url = "https://bitcredit-dev.minibill.tech"
 
+[appcfg.payment_config]
+num_confirmations_for_payment = 1

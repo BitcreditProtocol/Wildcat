@@ -18,6 +18,7 @@ use crate::{
 
 // ----- end imports
 
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
 pub struct InMemoryKeys {
     keys: Arc<Mutex<Vec<SingleSecretKeyDescriptor>>>,
@@ -37,6 +38,7 @@ impl PrivateKeysRepository for InMemoryKeys {
     }
 }
 
+#[allow(dead_code)]
 pub struct InMemoryPaymentRepo {
     incomings: Arc<Mutex<HashMap<Uuid, IncomingRequest>>>,
     outgoings: Arc<Mutex<HashMap<Uuid, OutgoingRequest>>>,

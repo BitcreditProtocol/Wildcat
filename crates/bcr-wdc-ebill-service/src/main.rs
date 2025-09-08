@@ -1,9 +1,8 @@
 // ----- standard library imports
-use bcr_ebill_api::{
-    service::notification_service::{create_nostr_clients, create_nostr_consumer},
-    MintConfig, NostrConfig,
+use bcr_ebill_api::{MintConfig, NostrConfig, PaymentConfig};
+use bcr_ebill_transport::{
+    chain_keys::ChainKeyService, create_nostr_clients, create_nostr_consumer,
 };
-use bcr_ebill_transport::chain_keys::ChainKeyService;
 use bcr_wdc_webapi::bill::NodeId;
 use std::str::FromStr;
 // ----- extra library imports
@@ -65,6 +64,13 @@ async fn main() {
             database: maincfg.appcfg.ebill_db.database.clone(),
         },
         data_dir: maincfg.appcfg.data_dir.clone(),
+        app_url: maincfg.appcfg.url.clone(),
+        payment_config: PaymentConfig {
+            num_confirmations_for_payment: maincfg
+                .appcfg
+                .payment_config
+                .num_confirmations_for_payment,
+        },
     };
     bcr_ebill_api::init(api_config.clone()).expect("Could not initialize E-Bill API");
 
@@ -118,14 +124,13 @@ async fn main() {
     let nostr_consumer = create_nostr_consumer(
         nostr_clients,
         app.contact_service.clone(),
-        db_clone.nostr_event_offset_store.clone(),
-        db_clone.notification_store.clone(),
         app.push_service.clone(),
-        db_clone.bill_blockchain_store.clone(),
-        db_clone.bill_store.clone(),
-        db_clone.nostr_contact_store.clone(),
-        std::sync::Arc::new(ChainKeyService::new(db_clone.bill_store.clone())),
-        db_clone.nostr_chain_event_store.clone(),
+        std::sync::Arc::new(ChainKeyService::new(
+            db_clone.bill_store.clone(),
+            db_clone.company_store.clone(),
+            db_clone.identity_store.clone(),
+        )),
+        db_clone.clone(),
     )
     .await
     .expect("Failed to create Nostr consumer");
