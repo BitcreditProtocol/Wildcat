@@ -22,7 +22,7 @@ cdk-common = {workspace = true}
 cdk-payment-processor = {workspace = true, features = ["fake"]}
 chrono = {workspace = true}
 config = {workspace = true}
-electrum-client = {version = "0.23"}
+electrum-client = {version = "0.24"}
 futures = {workspace = true}
 rand = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}

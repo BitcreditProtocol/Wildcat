@@ -8,7 +8,7 @@ use axum::{
     Json,
 };
 use bcr_ebill_api::{
-    constants::MAX_FILE_SIZE_BYTES,
+    constants::MAX_DOCUMENT_FILE_SIZE_BYTES,
     data::{self, bill, contact, identity},
     util::{self, file::detect_content_type_for_bytes, BcrKeys, ValidationError},
 };
@@ -406,7 +406,7 @@ async fn do_get_encrypted_bill_file_from_request_to_mint(
     // check content length
     match resp.content_length() {
         Some(len) => {
-            if len > MAX_FILE_SIZE_BYTES as u64 {
+            if len > MAX_DOCUMENT_FILE_SIZE_BYTES as u64 {
                 return Err(Error::FileDownload("File too large".into()));
             }
         }
@@ -425,7 +425,7 @@ async fn do_get_encrypted_bill_file_from_request_to_mint(
             Error::FileDownload("Could not download file".into())
         })?;
         total += chunk.len();
-        if total > MAX_FILE_SIZE_BYTES {
+        if total > MAX_DOCUMENT_FILE_SIZE_BYTES {
             return Err(Error::FileDownload("File too large".into()));
         }
         file_bytes.extend_from_slice(&chunk);

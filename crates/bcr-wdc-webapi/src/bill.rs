@@ -82,14 +82,14 @@ pub struct BillWaitingForSellState {
 impl From<bill::BillWaitingForSellState> for BillWaitingForSellState {
     fn from(val: bill::BillWaitingForSellState) -> Self {
         BillWaitingForSellState {
-            time_of_request: val.time_of_request,
+            time_of_request: val.payment_data.time_of_request,
             buyer: val.buyer.into(),
             seller: val.seller.into(),
-            currency: val.currency,
-            sum: val.sum,
-            link_to_pay: val.link_to_pay,
-            address_to_pay: val.address_to_pay,
-            mempool_link_for_address_to_pay: val.mempool_link_for_address_to_pay,
+            currency: val.payment_data.currency,
+            sum: val.payment_data.sum,
+            link_to_pay: val.payment_data.link_to_pay,
+            address_to_pay: val.payment_data.address_to_pay,
+            mempool_link_for_address_to_pay: val.payment_data.mempool_link_for_address_to_pay,
         }
     }
 }
@@ -109,14 +109,14 @@ pub struct BillWaitingForPaymentState {
 impl From<bill::BillWaitingForPaymentState> for BillWaitingForPaymentState {
     fn from(val: bill::BillWaitingForPaymentState) -> Self {
         BillWaitingForPaymentState {
-            time_of_request: val.time_of_request,
+            time_of_request: val.payment_data.time_of_request,
             payer: val.payer.into(),
             payee: val.payee.into(),
-            currency: val.currency,
-            sum: val.sum,
-            link_to_pay: val.link_to_pay,
-            address_to_pay: val.address_to_pay,
-            mempool_link_for_address_to_pay: val.mempool_link_for_address_to_pay,
+            currency: val.payment_data.currency,
+            sum: val.payment_data.sum,
+            link_to_pay: val.payment_data.link_to_pay,
+            address_to_pay: val.payment_data.address_to_pay,
+            mempool_link_for_address_to_pay: val.payment_data.mempool_link_for_address_to_pay,
         }
     }
 }
@@ -136,14 +136,14 @@ pub struct BillWaitingForRecourseState {
 impl From<bill::BillWaitingForRecourseState> for BillWaitingForRecourseState {
     fn from(val: bill::BillWaitingForRecourseState) -> Self {
         BillWaitingForRecourseState {
-            time_of_request: val.time_of_request,
+            time_of_request: val.payment_data.time_of_request,
             recourser: val.recourser.into(),
             recoursee: val.recoursee.into(),
-            currency: val.currency,
-            sum: val.sum,
-            link_to_pay: val.link_to_pay,
-            address_to_pay: val.address_to_pay,
-            mempool_link_for_address_to_pay: val.mempool_link_for_address_to_pay,
+            currency: val.payment_data.currency,
+            sum: val.payment_data.sum,
+            link_to_pay: val.payment_data.link_to_pay,
+            address_to_pay: val.payment_data.address_to_pay,
+            mempool_link_for_address_to_pay: val.payment_data.mempool_link_for_address_to_pay,
         }
     }
 }
@@ -516,7 +516,7 @@ impl From<bill::LightSignedBy> for LightSignedBy {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum LightBillParticipant {
     Anon(LightBillAnonParticipant),
-    Ident(LightBillIdentParticipant),
+    Ident(LightBillIdentParticipantWithAddress),
 }
 
 impl From<contact::LightBillParticipant> for LightBillParticipant {

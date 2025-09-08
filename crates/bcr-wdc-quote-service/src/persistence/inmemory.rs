@@ -16,6 +16,7 @@ use crate::{
     TStamp,
 };
 
+#[allow(dead_code)]
 #[derive(Default, Clone, Debug)]
 pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
