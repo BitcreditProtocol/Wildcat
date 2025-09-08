@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::credit::{self, PremintSignatures};
 use crate::error::{Error, Result};
 
+#[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryCreditRepository {
     counters: Arc<Mutex<HashMap<cdk02::Id, u32>>>,
