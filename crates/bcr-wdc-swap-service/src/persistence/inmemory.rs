@@ -9,6 +9,7 @@ use cashu::{nut00 as cdk00, nut01 as cdk01, nut07 as cdk07};
 use crate::error::{Error, Result};
 use crate::service::ProofRepository;
 
+#[allow(dead_code)]
 #[derive(Default, Clone)]
 pub struct ProofMap {
     proofs: Arc<Mutex<HashMap<cdk01::PublicKey, cdk00::Proof>>>,

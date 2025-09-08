@@ -217,6 +217,9 @@ impl axum::response::IntoResponse for ValidationError {
                 | bcr_ebill_api::util::ValidationError::DrawerIsNotBillIssuer
                 | bcr_ebill_api::util::ValidationError::CallerMustBeSignatory
                 | bcr_ebill_api::util::ValidationError::CallerIsNotHolder
+                | bcr_ebill_api::util::ValidationError::FileIsEmpty
+                | bcr_ebill_api::util::ValidationError::TooManyFiles
+                | bcr_ebill_api::util::ValidationError::InvalidRelayUrl
 
                 => {
                     (StatusCode::BAD_REQUEST, self.0.to_string())

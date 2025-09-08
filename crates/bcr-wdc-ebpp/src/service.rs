@@ -486,7 +486,7 @@ where
     }
 }
 
-fn parse_to_bip21_uri(input: &str, network: btc::Network) -> Result<bip21::Uri> {
+fn parse_to_bip21_uri(input: &str, network: btc::Network) -> Result<bip21::Uri<'_>> {
     bip21::Uri::from_str(input)
         .map_err(|e| Error::Bip21Parse(anyhow!(e)))?
         .require_network(network)
