@@ -23,7 +23,7 @@ jobs:
         run: sudo apt-get install -y protobuf-compiler
 
       - name: Activate cache
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           prefix-key: "wildcat-01-"
 
