@@ -1,11 +1,9 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use cashu::{nut01 as cdk01, nut02 as cdk02, nut04 as cdk04, nut09 as cdk09};
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::{KeysRepository, Service, SignaturesRepository};
+use crate::error::Result;
+use crate::service::Service;
 
 // ----- end imports
 
@@ -14,21 +12,18 @@ use crate::service::{KeysRepository, Service, SignaturesRepository};
     get,
     path = "/v1/keysets/{kid}",
     params(
-        ("kid" = cdk02::Id, Path, description = "The keyset id")
+        ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = cdk02::KeySetInfo, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::KeySetInfo, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn lookup_keyset<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Path(kid): Path<cdk02::Id>,
-) -> Result<Json<cdk02::KeySetInfo>>
-where
-    KeysRepo: KeysRepository,
-{
+pub async fn lookup_keyset(
+    State(ctrl): State<Service>,
+    Path(kid): Path<cashu::Id>,
+) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Received keyset lookup request");
 
     let info = ctrl.info(kid).await?;
@@ -41,25 +36,20 @@ where
     path = "/v1/keysets",
     params(),
     responses (
-        (status = 200, description = "Successful response", body = cdk02::KeysetResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::KeysetResponse, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_keysets<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-) -> Result<Json<cdk02::KeysetResponse>>
-where
-    KeysRepo: KeysRepository,
-{
+pub async fn list_keysets(State(ctrl): State<Service>) -> Result<Json<cashu::KeysetResponse>> {
     tracing::debug!("Received keysets list request");
 
     let infos = ctrl
         .list_info()
         .await?
         .into_iter()
-        .map(cdk02::KeySetInfo::from)
+        .map(cashu::KeySetInfo::from)
         .collect();
-    let response = cdk02::KeysetResponse { keysets: infos };
+    let response = cashu::KeysetResponse { keysets: infos };
     Ok(Json(response))
 }
 
@@ -68,21 +58,18 @@ where
     get,
     path = "/v1/keys/{kid}",
     params(
-        ("kid" = cdk02::Id, Path, description = "The keyset id")
+        ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = cdk02::KeySet, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::KeySet, content_type = "application/json"),
         (status = 404, description = "keyset id not  found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn lookup_keys<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Path(kid): Path<cdk02::Id>,
-) -> Result<Json<cdk02::KeySet>>
-where
-    KeysRepo: KeysRepository,
-{
+pub async fn lookup_keys(
+    State(ctrl): State<Service>,
+    Path(kid): Path<cashu::Id>,
+) -> Result<Json<cashu::KeySet>> {
     tracing::debug!("Received keyset lookup request");
 
     let keyset = ctrl.keys(kid).await?;
@@ -95,16 +82,11 @@ where
     path = "/v1/keys",
     params(),
     responses (
-        (status = 200, description = "Successful response", body = cdk01::KeysResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::KeysResponse, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_keys<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-) -> Result<Json<cdk01::KeysResponse>>
-where
-    KeysRepo: KeysRepository,
-{
+pub async fn list_keys(State(ctrl): State<Service>) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Received keys list request");
 
     let keysets = ctrl
@@ -113,7 +95,7 @@ where
         .into_iter()
         .map(cashu::KeySet::from)
         .collect();
-    let response = cdk01::KeysResponse { keysets };
+    let response = cashu::KeysResponse { keysets };
     Ok(Json(response))
 }
 
@@ -121,36 +103,18 @@ where
 #[utoipa::path(
     post,
     path = "/v1/mint/ebill",
-    request_body(content = cdk04::MintRequest<String>, content_type = "application/json"),
+    request_body(content = cashu::MintRequest<String>, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk04::MintResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::MintResponse, content_type = "application/json"),
     )
 )]
-pub async fn mint_ebill<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Json(req): Json<cdk04::MintRequest<String>>,
-) -> Result<Json<cdk04::MintResponse>>
-where
-    KeysRepo: KeysRepository,
-    SignsRepo: SignaturesRepository,
-{
+pub async fn mint_ebill(
+    State(ctrl): State<Service>,
+    Json(req): Json<cashu::MintRequest<uuid::Uuid>>,
+) -> Result<Json<cashu::MintResponse>> {
     tracing::debug!("Received mint request for");
 
-    let kid = req
-        .outputs
-        .first()
-        .ok_or(Error::InvalidMintRequest(String::from(
-            "output vector is empty",
-        )))?
-        .keyset_id;
-    let pk = ctrl.authorized_public_key_to_mint(kid).await?;
-    req.verify_signature(pk)
-        .map_err(|_| Error::InvalidMintRequest(String::from("Invalid signature")))?;
-
-    let qid =
-        uuid::Uuid::from_str(&req.quote).map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
-    let signatures = ctrl.mint(qid, req.outputs).await?;
-    let response = cdk04::MintResponse { signatures };
+    let response = ctrl.mint(&req).await?;
     Ok(Json(response))
 }
 
@@ -158,21 +122,19 @@ where
 #[utoipa::path(
     post,
     path = "/v1/restore",
-    request_body(content = cdk09::RestoreRequest, content_type = "application/json"),
+    request_body(content = cashu::RestoreRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = cdk09::RestoreResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = cashu::RestoreResponse, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn restore<QuotesKeysRepo, KeysRepo, SignsRepo>(
-    State(ctrl): State<Service<QuotesKeysRepo, KeysRepo, SignsRepo>>,
-    Json(req): Json<cdk09::RestoreRequest>,
-) -> Result<Json<cdk09::RestoreResponse>>
-where
-    SignsRepo: SignaturesRepository,
-{
+pub async fn restore(
+    State(ctrl): State<Service>,
+    Json(req): Json<cashu::RestoreRequest>,
+) -> Result<Json<cashu::RestoreResponse>> {
     tracing::debug!("Received wallet restore request");
-    let mut response = cdk09::RestoreResponse {
+
+    let mut response = cashu::RestoreResponse {
         outputs: Vec::new(),
         signatures: Vec::new(),
         promises: None,
@@ -184,6 +146,5 @@ where
             response.outputs.push(blind);
         }
     }
-
     Ok(Json(response))
 }

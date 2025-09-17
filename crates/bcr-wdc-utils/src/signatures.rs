@@ -29,8 +29,8 @@ pub fn basic_blinds_checks(blinds: &[cdk00::BlindedMessage]) -> ChecksResult<()>
         return Err(ChecksError::ZeroAmount);
     }
     // 3. unique blinds
-    let unique_proofs: Vec<_> = blinds.iter().map(|p| p.blinded_secret).unique().collect();
-    if unique_proofs.len() != blinds.len() {
+    let unique_blinds: Vec<_> = blinds.iter().map(|p| p.blinded_secret).unique().collect();
+    if unique_blinds.len() != blinds.len() {
         return Err(ChecksError::NonUnique);
     }
     Ok(())

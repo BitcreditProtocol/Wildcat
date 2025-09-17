@@ -1,10 +1,11 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::keys as keys_utils;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, Amount};
 use cdk_common::mint::MintKeySetInfo;
 use itertools::Itertools;
+use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::factory::Factory;
@@ -14,72 +15,71 @@ use crate::TStamp;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct MintCondition {
-    pub target: Amount,
-    pub pub_key: cdk01::PublicKey,
-    pub is_minted: bool,
+pub struct MintOperation {
+    pub uid: Uuid,
+    pub kid: cashu::Id,
+    pub pub_key: cashu::PublicKey,
+    pub target: cashu::Amount,
+    pub minted: cashu::Amount,
 }
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysRepository {
-    async fn info(&self, id: &cdk02::Id) -> Result<Option<MintKeySetInfo>>;
+pub trait KeysRepository: Send + Sync {
+    async fn store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
+    async fn info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
+    async fn keyset(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
     async fn list_info(&self) -> Result<Vec<MintKeySetInfo>>;
-    async fn update_info(&self, kid: &cdk02::Id, info: MintKeySetInfo) -> Result<()>;
-    async fn keyset(&self, id: &cdk02::Id) -> Result<Option<cdk02::MintKeySet>>;
-    async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>>;
-    async fn condition(&self, id: &cdk02::Id) -> Result<Option<MintCondition>>;
-    async fn store(&self, keys: keys_utils::KeysetEntry, condition: MintCondition) -> Result<()>;
-    // WARNING: it must fail if the keyset is already minted
-    async fn mark_as_minted(&self, id: &cdk02::Id) -> Result<()>;
+    async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
+    async fn update_info(&self, info: MintKeySetInfo) -> Result<()>;
+    async fn infos_for_expiration_date(&self, expire: TStamp) -> Result<Vec<MintKeySetInfo>>;
+    async fn store_mintop(&self, mint_operation: MintOperation) -> Result<()>;
+    async fn load_mintop(&self, uid: Uuid) -> Result<MintOperation>;
+    async fn list_mintops(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
+    async fn update_mintop(&self, uid: Uuid, minted: cashu::Amount) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait QuoteKeysRepository {
-    async fn entry(&self, qid: &uuid::Uuid) -> Result<Option<keys_utils::KeysetEntry>>;
-    async fn info(&self, qid: &uuid::Uuid) -> Result<Option<MintKeySetInfo>>;
-    async fn keyset(&self, qid: &uuid::Uuid) -> Result<Option<cdk02::MintKeySet>>;
-    async fn condition(&self, qid: &uuid::Uuid) -> Result<Option<MintCondition>>;
-    async fn store(
-        &self,
-        qid: &uuid::Uuid,
-        keys: keys_utils::KeysetEntry,
-        condition: MintCondition,
-    ) -> Result<()>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait SignaturesRepository {
-    async fn store(&self, y: cdk01::PublicKey, signature: cdk00::BlindSignature) -> Result<()>;
-    async fn load(&self, blind: &cdk00::BlindedMessage) -> Result<Option<cdk00::BlindSignature>>;
+pub trait SignaturesRepository: Send + Sync {
+    async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()>;
+    async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>>;
 }
 
 #[derive(Clone)]
-pub struct Service<QuoteKeysRepo, KeysRepo, SignsRepo> {
-    pub quote_keys: QuoteKeysRepo,
-    pub keys: KeysRepo,
-    pub signatures: SignsRepo,
+pub struct Service {
+    pub keys: Arc<dyn KeysRepository>,
+    pub signatures: Arc<dyn SignaturesRepository>,
     pub keygen: Factory,
 }
 
-impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
-where
-    KeysRepo: KeysRepository,
-{
-    pub async fn info(&self, kid: cdk02::Id) -> Result<MintKeySetInfo> {
-        self.keys.info(&kid).await?.ok_or(Error::UnknownKeyset(kid))
+impl Service {
+    pub async fn get_keyset_id_for_date(&self, date: TStamp) -> Result<cashu::Id> {
+        let mut infos = self.keys.infos_for_expiration_date(date).await?;
+        let tstamp = std::cmp::max(date.timestamp() as u64, 0);
+        infos.retain(|info| info.final_expiry.unwrap_or_default() > tstamp);
+        infos.sort_by_key(|info| info.final_expiry.expect("none is filtered out"));
+        if !infos.is_empty() {
+            return Ok(infos.first().expect("infos not empty").id);
+        }
+        let new_keyset = self.keygen.generate(date);
+        let kid = new_keyset.0.id;
+        self.keys.store(new_keyset).await?;
+        Ok(kid)
     }
 
-    pub async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::MintKeySet> {
+    pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
+        self.keys.info(kid).await?.ok_or(Error::UnknownKeyset(kid))
+    }
+
+    pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
-            .keyset(&kid)
+            .keyset(kid)
             .await?
             .ok_or(Error::UnknownKeyset(kid))
     }
 
-    pub async fn verify_proof(&self, proof: cdk00::Proof) -> Result<()> {
+    pub async fn verify_proof(&self, proof: cashu::Proof) -> Result<()> {
         let keyset = self.keys(proof.keyset_id).await?;
         keys_utils::verify_with_keys(&keyset, &proof)?;
         Ok(())
@@ -89,107 +89,29 @@ where
         self.keys.list_info().await
     }
 
-    pub async fn list_keyset(&self) -> Result<Vec<cdk02::MintKeySet>> {
+    pub async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
         self.keys.list_keyset().await
     }
 
-    pub async fn authorized_public_key_to_mint(&self, kid: cdk02::Id) -> Result<cdk01::PublicKey> {
-        let condition = self
-            .keys
-            .condition(&kid)
-            .await?
-            .ok_or(Error::UnknownKeyset(kid))?;
-        Ok(condition.pub_key)
-    }
-
-    pub async fn deactivate(&self, kid: cdk02::Id) -> Result<cdk02::Id> {
+    pub async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
         let mut info = self
             .keys
-            .info(&kid)
+            .info(kid)
             .await?
             .ok_or(Error::UnknownKeyset(kid))?;
         info.active = false;
-        self.keys.update_info(&kid, info.clone()).await?;
+        self.keys.update_info(info.clone()).await?;
         Ok(info.id)
     }
-}
 
-impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
-where
-    QuoteKeysRepo: QuoteKeysRepository,
-{
-    pub async fn pre_sign(
-        &self,
-        qid: uuid::Uuid,
-        msg: &cdk00::BlindedMessage,
-    ) -> Result<cdk00::BlindSignature> {
-        let keyset = self
-            .quote_keys
-            .keyset(&qid)
-            .await?
-            .ok_or(Error::UnknownKeysetFromId(qid))?;
-        let signature = keys_utils::sign_with_keys(&keyset, msg)?;
-        Ok(signature)
-    }
-
-    pub async fn generate_keyset(
-        &self,
-        qid: uuid::Uuid,
-        target: Amount,
-        pub_key: cdk01::PublicKey,
-        expire: TStamp,
-    ) -> Result<cdk02::Id> {
-        let mint_condition = MintCondition {
-            target,
-            pub_key,
-            is_minted: false,
-        };
-        let info = self.quote_keys.info(&qid).await?;
-        let id = match info {
-            Some(info) => {
-                let condition = self
-                    .quote_keys
-                    .condition(&qid)
-                    .await?
-                    .expect("info with not condition");
-                if condition.pub_key != mint_condition.pub_key
-                    || condition.target != mint_condition.target
-                {
-                    return Err(Error::InvalidGenerateRequest(qid));
-                }
-                info.id
-            }
-            None => {
-                let keys_entry = self.keygen.generate(qid, expire);
-                let id = keys_entry.1.id;
-                self.quote_keys
-                    .store(&qid, keys_entry, mint_condition)
-                    .await?;
-                id
-            }
-        };
-        Ok(id)
-    }
-}
-
-impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
-where
-    SignsRepo: SignaturesRepository,
-{
     pub async fn search_signature(
         &self,
-        blind: &cdk00::BlindedMessage,
-    ) -> Result<Option<cdk00::BlindSignature>> {
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
         self.signatures.load(blind).await
     }
-}
 
-impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
-where
-    KeysRepo: KeysRepository,
-    SignsRepo: SignaturesRepository,
-{
-    pub async fn sign_blind(&self, blind: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
+    pub async fn sign_blind(&self, blind: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
         let keyset = self.keys(blind.keyset_id).await?;
         let signature = keys_utils::sign_with_keys(&keyset, blind)?;
         self.signatures
@@ -198,72 +120,74 @@ where
         Ok(signature)
     }
 
-    pub async fn mint(
+    pub async fn new_minting_operation(
         &self,
-        _qid: uuid::Uuid,
-        outputs: Vec<cdk00::BlindedMessage>,
-    ) -> Result<Vec<cdk00::BlindSignature>> {
+        uid: Uuid,
+        kid: cashu::Id,
+        pub_key: cashu::PublicKey,
+        amount: cashu::Amount,
+    ) -> Result<()> {
+        let new = MintOperation {
+            uid,
+            kid,
+            pub_key,
+            target: amount,
+            minted: cashu::Amount::ZERO,
+        };
+        self.keys.store_mintop(new).await?;
+        Ok(())
+    }
+
+    pub async fn mint(&self, request: &cashu::MintRequest<Uuid>) -> Result<cashu::MintResponse> {
         // basic checks
-        bcr_wdc_utils::signatures::basic_blinds_checks(&outputs)
+        if request.signature.is_none() {
+            return Err(Error::InvalidMintRequest(String::from("signature missing")));
+        }
+        bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
             .map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
         //  check if the ids of the outputs are all the same
-        let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
+        let unique_ids: Vec<_> = request
+            .outputs
+            .iter()
+            .map(|p| p.keyset_id)
+            .unique()
+            .collect();
         if unique_ids.len() != 1 {
             return Err(Error::InvalidMintRequest(String::from(
                 "multiple keyset IDs",
             )));
         }
-        let kid = unique_ids[0];
-
-        let MintCondition {
-            target, is_minted, ..
-        } = self
-            .keys
-            .condition(&kid)
-            .await?
-            .ok_or(Error::UnknownKeyset(kid))?;
-        //  check if the keyset id has been minted already
-        if is_minted {
+        let output_amount = request
+            .outputs
+            .iter()
+            .fold(cashu::Amount::ZERO, |acc, blind| acc + blind.amount);
+        let kid = unique_ids.first().expect("unique_ids len should be 1");
+        let operation = self.keys.load_mintop(request.quote).await?;
+        let signature_verification = request.verify_signature(operation.pub_key);
+        if signature_verification.is_err() {
             return Err(Error::InvalidMintRequest(String::from(
-                "keyset already minted",
+                "signature verifaction failed",
             )));
         }
-        let blinds_sum = outputs.iter().fold(Amount::ZERO, |acc, b| acc + b.amount);
-        if blinds_sum != target {
-            return Err(Error::InvalidMintRequest(String::from("invalid amount")));
+        if operation.minted + output_amount > operation.target {
+            return Err(Error::InvalidMintRequest(String::from(
+                "outputs amount exceeds allowance",
+            )));
         }
-
-        let mut signatures = Vec::with_capacity(outputs.len());
-        for blind in &outputs {
-            let signature = self.sign_blind(blind).await?;
+        let keyset = self.keys(*kid).await?;
+        let mut signatures = Vec::with_capacity(request.outputs.len());
+        for blind in &request.outputs {
+            let signature = keys_utils::sign_with_keys(&keyset, blind)?;
+            self.signatures
+                .store(blind.blinded_secret, signature.clone())
+                .await?;
             signatures.push(signature);
         }
-        self.keys.mark_as_minted(&kid).await?;
-        Ok(signatures)
-    }
-}
-
-impl<QuoteKeysRepo, KeysRepo, SignsRepo> Service<QuoteKeysRepo, KeysRepo, SignsRepo>
-where
-    QuoteKeysRepo: QuoteKeysRepository,
-    KeysRepo: KeysRepository,
-{
-    pub async fn enable(&self, qid: &uuid::Uuid) -> Result<cdk02::Id> {
-        let mut entry = self
-            .quote_keys
-            .entry(qid)
-            .await?
-            .ok_or(Error::UnknownKeysetFromId(*qid))?;
-        entry.0.active = true;
-        let kid = entry.0.id;
-        let condition = self
-            .quote_keys
-            .condition(qid)
-            .await?
-            .ok_or(Error::UnknownKeysetFromId(*qid))?;
-
-        self.keys.store(entry, condition).await?;
-        Ok(kid)
+        self.keys
+            .update_mintop(operation.uid, operation.minted + output_amount)
+            .await?;
+        let response = cashu::MintResponse { signatures };
+        Ok(response)
     }
 }
 
@@ -271,15 +195,16 @@ where
 mod tests {
     use super::*;
     use crate::btc32::DerivationPath;
-    use crate::test_utils::{
-        TestKeysRepository, TestKeysService, TestQuoteKeysRepository, TestSignaturesRepository,
-    };
+    use crate::test_utils::{TestKeysRepository, TestKeysService, TestSignaturesRepository};
     use bcr_wdc_utils::signatures::test_utils::generate_blinds;
+    use cashu::Amount;
+    use secp256k1::Keypair;
     use std::str::FromStr;
-    use uuid::Uuid;
 
     // Helper function to set up test service
-    async fn setup_test_service() -> (TestKeysService, cdk02::Id, Uuid) {
+    async fn setup_test_service(
+        amount: cashu::Amount,
+    ) -> (TestKeysService, cashu::Id, Uuid, Keypair) {
         let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
             .unwrap()
             .to_seed("");
@@ -289,35 +214,34 @@ mod tests {
         let factory = Factory::new(&seed, DerivationPath::default());
 
         let service = TestKeysService {
-            quote_keys: TestQuoteKeysRepository::default(),
-            keys: TestKeysRepository::default(),
-            signatures: TestSignaturesRepository::default(),
+            keys: Arc::new(TestKeysRepository::default()),
+            signatures: Arc::new(TestSignaturesRepository::default()),
             keygen: factory,
         };
-
-        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-        let pub_key = kp.public_key();
-        let target = Amount::from(192);
-
         let qid = Uuid::new_v4();
-        let kid = service
-            .generate_keyset(qid, target, pub_key.into(), maturity)
+        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
+        let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
+        service
+            .new_minting_operation(qid, kid, kp.public_key().into(), amount)
             .await
             .unwrap();
-
-        service.enable(&qid).await.unwrap();
-
-        (service, kid, qid)
+        (service, kid, qid, kp)
     }
 
     #[tokio::test]
     async fn test_mint_success() {
-        let (service, kid, qid) = setup_test_service().await;
-
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64)]);
+        let amounts = [Amount::from(128), Amount::from(64)];
+        let total = amounts.iter().fold(Amount::ZERO, |acc, a| acc + *a);
+        let (service, kid, qid, kp) = setup_test_service(total).await;
+        let outputs = generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-
-        let signatures = service.mint(qid, blinds).await.unwrap();
+        let mut request = cashu::MintRequest {
+            quote: qid,
+            outputs: blinds,
+            signature: None,
+        };
+        request.sign(kp.secret_key().into()).unwrap();
+        let signatures = service.mint(&request).await.unwrap().signatures;
 
         assert_eq!(signatures.len(), 2, "Should have 2 signatures");
         assert_eq!(
@@ -329,25 +253,45 @@ mod tests {
 
     #[tokio::test]
     async fn test_mint_more() {
-        let (service, kid, qid) = setup_test_service().await;
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(64), Amount::from(1)]);
+        let amounts = [Amount::from(128), Amount::from(64)];
+        let total = amounts.iter().fold(Amount::ZERO, |acc, a| acc + *a);
+        let (service, kid, qid, kp) = setup_test_service(total).await;
+        let extra = [amounts[0], amounts[1], Amount::from(1)];
+        let outputs = generate_blinds(kid, &extra);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
+        let mut request = cashu::MintRequest {
+            quote: qid,
+            outputs: blinds,
+            signature: None,
+        };
+        request.sign(kp.secret_key().into()).unwrap();
 
         assert!(
-            service.mint(qid, blinds).await.is_err(),
+            service.mint(&request).await.is_err(),
             "Mint should fail with invalid amount"
         );
     }
 
     #[tokio::test]
     async fn test_mint_less() {
-        let (service, kid, qid) = setup_test_service().await;
-        let outputs = generate_blinds(kid, &[Amount::from(128), Amount::from(32)]);
+        let amounts = [Amount::from(128), Amount::from(32)];
+        let total = amounts.iter().fold(Amount::ZERO, |acc, a| acc + *a);
+        let (service, kid, qid, kp) = setup_test_service(total + total).await;
+        let outputs = generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|o| o.0.clone()).collect::<Vec<_>>();
-
-        assert!(
-            service.mint(qid, blinds).await.is_err(),
-            "Mint should fail with invalid amount"
-        );
+        let mut request = cashu::MintRequest {
+            quote: qid,
+            outputs: vec![blinds[0].clone()],
+            signature: None,
+        };
+        request.sign(kp.secret_key().into()).unwrap();
+        service.mint(&request).await.unwrap();
+        let mut request = cashu::MintRequest {
+            quote: qid,
+            outputs: vec![blinds[1].clone()],
+            signature: None,
+        };
+        request.sign(kp.secret_key().into()).unwrap();
+        service.mint(&request).await.unwrap();
     }
 }

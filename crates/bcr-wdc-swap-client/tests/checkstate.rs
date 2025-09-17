@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_key_service::MintCondition;
+use bcr_wdc_key_service::MintOperation;
 use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 use cashu::{dhke::hash_to_curve, nut07 as cdk07, Amount};
@@ -13,7 +13,7 @@ async fn checkstate() {
     let client = SwapClient::new(server_url);
 
     let mut keys_entry = keys_test::generate_keyset();
-    let condition = MintCondition {
+    let condition = MintOperation {
         target: Amount::ZERO,
         pub_key: keys_test::publics()[0],
         is_minted: true,

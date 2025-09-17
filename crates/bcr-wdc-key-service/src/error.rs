@@ -30,12 +30,16 @@ pub enum Error {
     InvalidGenerateRequest(uuid::Uuid),
     #[error("signature already exists {0}")]
     SignatureAlreadyExists(cdk01::PublicKey),
+
+    #[error("internal error {0}")]
+    Internal(String),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SignatureAlreadyExists(y) => (
                 StatusCode::CONFLICT,
                 format!("Signature {y} already exists"),
