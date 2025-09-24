@@ -34,6 +34,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+    - name: Create GitHub App token
+      id: app-token
+      uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+      with:
+        app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
+        private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
+        owner: BitcreditProtocol
+
+    - name: Git auth with app token
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      run: |
+        git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
     - name: Authenticate to GCP
       id: auth
       uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
@@ -49,22 +63,28 @@ jobs:
         username: oauth2accesstoken
         password: ${{ steps.auth.outputs.access_token }}
 
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-    - name: Build base image (remote cache, local load)
-      run: |
-        CACHE_TAG="${GITHUB_REF_NAME//\//-}"
-        DOCKER_BUILDKIT=1 docker buildx build \
-          --platform linux/amd64 \
-          --file docker/base-image/Dockerfile \
-          --tag "${BASE_IMAGE_NAME}" \
-          --cache-from=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}" \
-          --cache-to=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}",mode=max \
-          --output type=docker,dest="${BASE_TAR}",name="${BASE_IMAGE_NAME}" \
-          .
-
+    - name: Build base image (cache + local tar)
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: .
+        file: docker/base-image/Dockerfile
+        push: false
+        platforms: linux/amd64
+        tags: ${{ env.BASE_IMAGE_NAME }}
+        build-args: |
+          CARGO_NET_GIT_FETCH_WITH_CLI=true
+        secrets: |
+          "gh_token=${{ steps.app-token.outputs.token }}"
+        cache-from: |
+          type=registry,ref=${{ env.BASE_IMAGE_CACHE }}:buildcache
+        cache-to: |
+          type=registry,ref=${{ env.BASE_IMAGE_CACHE }}:buildcache,mode=max
+        outputs: |
+          type=docker,dest=${{ env.BASE_TAR }},name=${{ env.BASE_IMAGE_NAME }}
+      
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: base-image
