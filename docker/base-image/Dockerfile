@@ -11,7 +11,7 @@ ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=${CARGO_NET_GIT_FETCH_WITH_CLI}
 
 RUN --mount=type=secret,id=gh_token,required=false \
-    sh -euxc 'if [ -f /run/secrets/gh_token ]; then \
+    sh -eu -c 'if [ -f /run/secrets/gh_token ]; then \
       GH_TOKEN="$(cat /run/secrets/gh_token)"; \
       git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"; \
     else \

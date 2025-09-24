@@ -67,18 +67,6 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-    - name: Build base image (remote cache, local load)
-      run: |
-        CACHE_TAG="${GITHUB_REF_NAME//\//-}"
-        DOCKER_BUILDKIT=1 docker buildx build \
-          --platform linux/amd64 \
-          --file docker/base-image/Dockerfile \
-          --tag "${BASE_IMAGE_NAME}" \
-          --cache-from=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}" \
-          --cache-to=type=registry,ref="${BASE_IMAGE_CACHE}:${CACHE_TAG}",mode=max \
-          --output type=docker,dest="${BASE_TAR}",name="${BASE_IMAGE_NAME}" \
-          .
-
     - name: Build base image (remote cache + local tar)
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
