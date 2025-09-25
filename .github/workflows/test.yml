@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      
+
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
@@ -31,7 +31,7 @@ jobs:
           app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
           private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
           owner: BitcreditProtocol
-      
+
       - name: Git auth with app token
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -56,12 +56,6 @@ jobs:
       - name: Update rust
         run: rustup update stable
 
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
-
-      - name: Install grcov
-        run: cargo install grcov
-
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
 
@@ -69,6 +63,12 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           prefix-key: "wildcat-01"
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Install grcov
+        run: cargo install grcov
 
       - name: Run tests
         run: cargo test --workspace --verbose
