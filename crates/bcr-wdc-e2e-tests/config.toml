@@ -1,0 +1,10 @@
+
+user_service = "http://localhost:4343"
+admin_service = "http://localhost:4242"
+
+[keycloak]
+url = "http://localhost:8080/realms/dev/protocol/openid-connect/token"
+client_id = "bff-dashboard"
+client_secret = "cute-kitties"
+username = "democat"
+password = "bitcredit"

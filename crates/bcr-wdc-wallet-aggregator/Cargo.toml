@@ -14,6 +14,7 @@ axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
 bcr-wdc-ebpp-client = {workspace = true}
 bcr-wdc-key-client = {workspace = true}
+clwdr-client = {workspace = true}
 bcr-wdc-swap-client = {workspace = true}
 bcr-wdc-treasury-client = {workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}

@@ -203,15 +203,17 @@ pub async fn post_swap(
         request.outputs().as_slice(),
     )
     .await?;
+    let proofs = request.inputs();
+    let blinded_messages = request.outputs();
     let signatures = match swap_type {
         SwapType::CrSat2CrSat => {
             ctrl.swap_client
-                .swap(request.inputs().to_vec(), request.outputs().to_vec())
+                .swap(proofs.clone(), blinded_messages.clone())
                 .await?
         }
         SwapType::CrSat2Sat => {
             ctrl.treasury_client
-                .redeem(request.inputs().to_vec(), request.outputs().to_vec())
+                .redeem(proofs.clone(), blinded_messages.clone())
                 .await?
         }
         SwapType::Sat2Sat => ctrl
@@ -221,7 +223,12 @@ pub async fn post_swap(
             .map(|resp| resp.signatures)?,
     };
 
+    ctrl.clwdr_client
+        .mint_swap(proofs, signatures.clone())
+        .await?;
+
     let response = cdk03::SwapResponse { signatures };
+
     Ok(Json(response))
 }
 
