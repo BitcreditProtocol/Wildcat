@@ -25,11 +25,13 @@ services:
         file: common-services.yml
         service: wallet-aggregator
 
-
   surrealdb:
     extends:
         file: common-services.yml
         service: surrealdb
+    ports:
+      - "8000:8000"
+
 
   cdk-mintd:
     extends:
@@ -93,24 +95,16 @@ services:
       - start-dev
       - --import-realm
       - --http-port=8080
+    ports:
+      - "8080:8080"
 
   e2e-tests:
     image: wildcat/e2e-tests
     depends_on:
-      swap-service:
-        condition: service_started
-      quote-service:
-        condition: service_started
-      wallet-aggregator:
-        condition: service_healthy
       bff-wallet-service:
         condition: service_started
       bff-dashboard-service:
         condition: service_started
-      key-service:
-        condition: service_healthy
-      surrealdb:
-        condition: service_healthy
       keycloak:
         condition: service_healthy
     volumes:

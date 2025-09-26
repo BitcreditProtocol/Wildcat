@@ -16,7 +16,7 @@ services:
   swap-service:
     extends:
         file: common-services.yml
-        service: swap-service
+        service: swap-service0
 
   treasury-service:
     extends:
@@ -67,6 +67,8 @@ services:
       - --http-port=8080
       - --proxy-headers=xforwarded
       - --hostname=localhost
+    ports:
+      - "8000:8000"
 
 
   surrealdb:
@@ -103,8 +105,12 @@ services:
     extends:
         file: common-services.yml
         service: bff-dashboard-service
+    ports:
+      - "4242:4242"  
 
   bff-wallet-service:
     extends:
         file: common-services.yml
         service: bff-wallet-service
+    ports:
+      - "4343:4242"
