@@ -65,12 +65,12 @@ impl QuoteClient {
     pub async fn enquire(
         &self,
         bill: web_quotes::SharedBill,
-        mint_pubkey: cashu::PublicKey,
+        minting_pubkey: cashu::PublicKey,
         signing_key: &bitcoin::secp256k1::Keypair,
     ) -> Result<Uuid> {
         let request = bcr_wdc_webapi::quotes::EnquireRequest {
             content: bill,
-            public_key: mint_pubkey,
+            minting_pubkey,
         };
         let signature = bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, signing_key)
             .map_err(Error::Signing)?;
@@ -146,27 +146,90 @@ impl QuoteClient {
         Ok(reply)
     }
 
-    pub async fn resolve(&self, qid: Uuid, action: web_quotes::ResolveOffer) -> Result<()> {
+    #[cfg(feature = "authorized")]
+    pub async fn deny(&self, qid: Uuid) -> Result<web_quotes::UpdateQuoteResponse> {
+        let url = self
+            .base
+            .join(&format!("/v1/admin/credit/quote/{qid}"))
+            .expect("deny quote relative path");
+        let body = web_quotes::UpdateQuoteRequest::Deny;
+        let request = self.cl.post(url).json(&body);
+        let reply = self.auth.authorize(request).send().await?.json().await?;
+        Ok(reply)
+    }
+
+    #[cfg(feature = "authorized")]
+    pub async fn offer(
+        &self,
+        qid: Uuid,
+        discounted: bitcoin::Amount,
+        ttl: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<web_quotes::UpdateQuoteResponse> {
+        let url = self
+            .base
+            .join(&format!("/v1/admin/credit/quote/{qid}"))
+            .expect("offer quote relative path");
+        let body = web_quotes::UpdateQuoteRequest::Offer { discounted, ttl };
+        let request = self.cl.post(url).json(&body);
+        let reply = self.auth.authorize(request).send().await?.json().await?;
+        Ok(reply)
+    }
+
+    pub async fn accept_offer(&self, qid: Uuid) -> Result<()> {
         let url = self
             .base
             .join(&format!("/v1/mint/quote/credit/{qid}"))
-            .expect("resolve relative path");
-        let res = self.cl.post(url).json(&action).send().await?;
+            .expect("accept offer relative path");
+        let res = self
+            .cl
+            .post(url)
+            .json(&web_quotes::ResolveOffer::Accept)
+            .send()
+            .await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(qid));
         }
         Ok(())
     }
 
-    pub async fn cancel(&self, qid: Uuid) -> Result<()> {
+    pub async fn reject_offer(&self, qid: Uuid) -> Result<()> {
         let url = self
             .base
             .join(&format!("/v1/mint/quote/credit/{qid}"))
-            .expect("resolve relative path");
+            .expect("reject offer relative path");
+        let res = self
+            .cl
+            .post(url)
+            .json(&web_quotes::ResolveOffer::Reject)
+            .send()
+            .await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::ResourceNotFound(qid));
+        }
+        Ok(())
+    }
+
+    pub async fn cancel_enquiry(&self, qid: Uuid) -> Result<()> {
+        let url = self
+            .base
+            .join(&format!("/v1/mint/quote/credit/{qid}"))
+            .expect("cance enquiry relative path");
         let res = self.cl.delete(url).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(qid));
         }
         Ok(())
+    }
+
+    #[cfg(feature = "authorized")]
+    pub async fn enable_minting(&self, qid: Uuid) -> Result<web_quotes::EnableMintingResponse> {
+        let url = self
+            .base
+            .join(&format!("/v1/admin/credit/quote/enable_mint/{qid}"))
+            .expect("enable minting relative path");
+        let body = web_quotes::EnableMintingRequest {};
+        let request = self.cl.post(url).json(&body);
+        let reply = self.auth.authorize(request).send().await?.json().await?;
+        Ok(reply)
     }
 }
