@@ -14,8 +14,11 @@ async fn list_all() {
     let client = QuoteClient::new(server_url);
 
     let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-    let (request, signing_key) =
-        generate_random_bill_enquire_request(owner_key.clone(), Some(holder_key_pair()));
+    let (request, signing_key) = generate_random_bill_enquire_request(
+        owner_key.public_key().into(),
+        Some(holder_key_pair()),
+        None,
+    );
     let qid = client
         .enquire(request.content, keys_test::publics()[0], &signing_key)
         .await
@@ -32,23 +35,24 @@ async fn list_filter_bill_id() {
     let server_url = server.server_address().expect("address");
     let client = QuoteClient::new(server_url);
     let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-    let (request, signing_key) =
-        generate_random_bill_enquire_request(owner_key.clone(), Some(holder_key_pair()));
+    let (request, signing_key) = generate_random_bill_enquire_request(
+        owner_key.public_key().into(),
+        Some(holder_key_pair()),
+        None,
+    );
     let ebill_id = request.content.bill_id.clone();
     let qid = client
-        .enquire(request.content, owner_key.public_key().into(), &signing_key)
+        .enquire(request.content, keys_test::publics()[0], &signing_key)
         .await
         .expect("enquire request");
 
-    let owner_key_2 = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-    let (request, signing_key) =
-        generate_random_bill_enquire_request(owner_key_2.clone(), Some(holder_key_pair()));
+    let (request, signing_key) = generate_random_bill_enquire_request(
+        owner_key.public_key().into(),
+        Some(holder_key_pair()),
+        None,
+    );
     client
-        .enquire(
-            request.content,
-            owner_key_2.public_key().into(),
-            &signing_key,
-        )
+        .enquire(request.content, keys_test::publics()[0], &signing_key)
         .await
         .expect("enquire request");
 
