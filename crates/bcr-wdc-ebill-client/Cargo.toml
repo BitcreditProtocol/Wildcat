@@ -4,13 +4,20 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+authorized = ["bcr-wdc-utils/auth"]
+
 [dependencies]
+bcr-wdc-utils = {workspace = true, optional = true}
 bcr-wdc-webapi.workspace = true
 bip39.workspace = true
 reqwest = {workspace = true, features = ["json"]}
 thiserror.workspace = true
 
 [dev-dependencies]
+bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-ebill-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
+bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
 tokio.workspace = true

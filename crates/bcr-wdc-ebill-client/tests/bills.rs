@@ -42,7 +42,10 @@ async fn bill_calls() {
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
 
     let sample_req = generate_random_bill_enquire_request(
-        bcr_wdc_utils::keys::test_utils::generate_random_keypair(),
+        bcr_wdc_utils::keys::test_utils::generate_random_keypair()
+            .public_key()
+            .into(),
+        None,
         None,
     )
     .0;

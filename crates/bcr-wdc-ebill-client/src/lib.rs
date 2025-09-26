@@ -33,6 +33,8 @@ pub enum Error {
 pub struct EbillClient {
     cl: reqwest::Client,
     base: reqwest::Url,
+    #[cfg(feature = "authorized")]
+    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl EbillClient {
@@ -40,24 +42,44 @@ impl EbillClient {
         Self {
             cl: reqwest::Client::new(),
             base,
+            #[cfg(feature = "authorized")]
+            auth: Default::default(),
         }
     }
 
+    #[cfg(feature = "authorized")]
+    pub async fn authenticate(
+        &mut self,
+        token_url: Url,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.auth
+            .authenticate(
+                self.cl.clone(),
+                token_url,
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "authorized")]
     pub async fn validate_and_decrypt_shared_bill(
         &self,
         shared_bill: &SharedBill,
     ) -> Result<BillInfo> {
         let url = self
             .base
-            .join("/v1/bill/validate_and_decrypt_shared_bill")
+            .join("/v1/admin/bill/validate_and_decrypt_shared_bill")
             .expect("validate and decrypt shared bill relative path");
-        let res = self
-            .cl
-            .post(url)
-            .json(shared_bill)
-            .send()
-            .await?
-            .error_for_status()?;
+        let request = self.cl.post(url).json(shared_bill);
+        let res = self.auth.authorize(request).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
@@ -65,22 +87,26 @@ impl EbillClient {
         Ok(bill_info)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn backup_seed_phrase(&self) -> Result<SeedPhrase> {
         let url = self
             .base
-            .join("/v1/identity/seed/backup")
+            .join("/v1/admin/identity/seed/backup")
             .expect("seed phrase relative path");
-        let res = self.cl.get(url).send().await?;
+        let request = self.cl.get(url);
+        let res = self.auth.authorize(request).send().await?;
         let seed_phrase = res.json::<SeedPhrase>().await?;
         Ok(seed_phrase)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn restore_from_seed_phrase(&self, seed_phrase: &SeedPhrase) -> Result<()> {
         let url = self
             .base
-            .join("/v1/identity/seed/recover")
+            .join("/v1/admin/identity/seed/recover")
             .expect("seed phrase backup relative path");
-        let res = self.cl.put(url).json(seed_phrase).send().await?;
+        let req = self.cl.put(url).json(seed_phrase);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
@@ -88,12 +114,14 @@ impl EbillClient {
         Ok(())
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn get_identity(&self) -> Result<Identity> {
         let url = self
             .base
-            .join("/v1/identity/detail")
+            .join("/v1/admin/identity/detail")
             .expect("identity detail relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound("identity".into()));
         }
@@ -101,12 +129,14 @@ impl EbillClient {
         Ok(identity)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn create_identity(&self, payload: &NewIdentityPayload) -> Result<()> {
         let url = self
             .base
-            .join("/v1/identity/create")
+            .join("/v1/admin/identity/create")
             .expect("create identity relative path");
-        let res = self.cl.post(url).json(payload).send().await?;
+        let req = self.cl.post(url).json(payload);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
@@ -114,12 +144,14 @@ impl EbillClient {
         Ok(())
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn get_bills(&self) -> Result<Vec<BitcreditBill>> {
         let url = self
             .base
-            .join("/v1/bill/list")
+            .join("/v1/admin/bill/list")
             .expect("bill list relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound("identity".into()));
         }
@@ -127,12 +159,14 @@ impl EbillClient {
         Ok(bills.bills)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn get_bill(&self, bill_id: &BillId) -> Result<BitcreditBill> {
         let url = self
             .base
-            .join(&format!("/v1/bill/detail/{bill_id}"))
+            .join(&format!("/v1/admin/bill/detail/{bill_id}"))
             .expect("bill detail relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
@@ -140,12 +174,14 @@ impl EbillClient {
         Ok(bill)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn get_bill_endorsements(&self, bill_id: &BillId) -> Result<Vec<Endorsement>> {
         let url = self
             .base
-            .join(&format!("/v1/bill/endorsements/{bill_id}"))
+            .join(&format!("/v1/admin/bill/endorsements/{bill_id}"))
             .expect("bill detail relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
@@ -154,6 +190,7 @@ impl EbillClient {
     }
 
     /// Returns the content type and the bytes of the file
+    #[cfg(feature = "authorized")]
     pub async fn get_bill_attachment(
         &self,
         bill_id: &BillId,
@@ -161,9 +198,10 @@ impl EbillClient {
     ) -> Result<(String, Vec<u8>)> {
         let url = self
             .base
-            .join(&format!("/v1/bill/attachment/{bill_id}/{file_name}"))
+            .join(&format!("/v1/admin/bill/attachment/{bill_id}/{file_name}"))
             .expect("bill attachment relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(format!("{bill_id} - {file_name}",)));
         }
@@ -176,15 +214,17 @@ impl EbillClient {
         Ok((content_type, bytes.to_vec()))
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn get_bitcoin_private_descriptor_for_bill(
         &self,
         bill_id: &BillId,
     ) -> Result<BillCombinedBitcoinKey> {
         let url = self
             .base
-            .join(&format!("/v1/bill/bitcoin_key/{bill_id}"))
+            .join(&format!("/v1/admin/bill/bitcoin_key/{bill_id}"))
             .expect("bill bitcoin key relative path");
-        let res = self.cl.get(url).send().await?;
+        let req = self.cl.get(url);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
@@ -192,15 +232,17 @@ impl EbillClient {
         Ok(btc_key)
     }
 
+    #[cfg(feature = "authorized")]
     pub async fn request_to_pay_bill(
         &self,
         payload: &RequestToPayBitcreditBillPayload,
     ) -> Result<()> {
         let url = self
             .base
-            .join("/v1/bill/request_to_pay")
+            .join("/v1/admin/bill/request_to_pay")
             .expect("req to pay bill relative path");
-        let res = self.cl.put(url).json(payload).send().await?;
+        let req = self.cl.put(url).json(payload);
+        let res = self.auth.authorize(req).send().await?;
         if res.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(Error::InvalidRequest);
         }
