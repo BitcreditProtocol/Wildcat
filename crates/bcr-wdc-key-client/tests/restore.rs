@@ -8,7 +8,7 @@ use cashu::{nut00 as cdk00, Amount};
 #[tokio::test]
 async fn restore() {
     let entry = keys_test::generate_random_keyset();
-    let server = bcr_wdc_key_service::test_utils::build_test_server(Some(entry.clone()));
+    let server = bcr_wdc_key_service::test_utils::build_test_server(Some(entry.clone())).await;
     let server_url = server.server_address().expect("address");
     let client = KeyClient::new(server_url);
 
