@@ -46,13 +46,9 @@ static_resources:
                         - match: { prefix: "/v1/admin/ebill" }
                           route: { cluster: ebill_service }
                         - match: { prefix: "/v1/admin/identity/detail" }
-                          route:
-                            cluster: ebill_service
-                            prefix_rewrite: "/v1/identity/detail"
+                          route: {cluster: ebill_service}
                         - match: { prefix: "/v1/admin/bill/payment_status" }
-                          route:
-                            cluster: ebill_service
-                            prefix_rewrite: "/v1/bill/payment_status"
+                          route: {cluster: ebill_service}
                         - match: { prefix: "/v1/admin/info" }
                           route:
                             cluster: wallet_aggregator
