@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_key_service::MintCondition;
+use bcr_wdc_key_service::KeysRepository;
 use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 use cashu::{
@@ -16,15 +16,11 @@ async fn swap() {
     let client = SwapClient::new(server_url);
 
     let keys_entry = keys_test::generate_keyset();
-    let condition = MintCondition {
-        target: Amount::ZERO,
-        pub_key: keys_test::publics()[0],
-        is_minted: true,
-    };
     keys_service
         .keys
         .keys
-        .store(keys_entry.clone(), condition)
+        .store(keys_entry.clone())
+        .await
         .expect("store");
 
     let amounts = vec![Amount::from(8_u64)];
@@ -46,16 +42,11 @@ async fn swap_p2pk() {
     let keys_entry = keys_test::generate_keyset();
     let kid = keys_entry.0.id;
 
-    let condition = MintCondition {
-        target: Amount::ZERO,
-        pub_key: keys_test::publics()[0],
-        is_minted: true,
-    };
-
     keys_service
         .keys
         .keys
-        .store(keys_entry.clone(), condition)
+        .store(keys_entry.clone())
+        .await
         .expect("store");
 
     let p2pk_secret = cashu::SecretKey::generate();
