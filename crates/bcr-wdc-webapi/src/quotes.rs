@@ -86,7 +86,8 @@ pub struct EnquireRequest {
         serialize_with = "bcr_wdc_utils::borsh::serialize_cdk_pubkey",
         deserialize_with = "bcr_wdc_utils::borsh::deserialize_cdk_pubkey"
     )]
-    pub public_key: cdk01::PublicKey,
+    /// corresponding secret key must be used later in key_client::mint request
+    pub minting_pubkey: cdk01::PublicKey,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -118,6 +119,7 @@ pub enum StatusReply {
         expiration_date: DateTime<Utc>,
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
+        minting_pubkey: cashu::PublicKey,
     },
     OfferExpired {
         tstamp: DateTime<Utc>,
@@ -128,6 +130,7 @@ pub enum StatusReply {
         keyset_id: cdk02::Id,
         #[schema(value_type = u64)]
         discounted: bitcoin::Amount,
+        minting_pubkey: cashu::PublicKey,
     },
     Rejected {
         tstamp: DateTime<Utc>,
@@ -272,3 +275,10 @@ pub struct RequestEncryptedFileUrlPayload {
     #[schema(value_type = String)]
     pub file_url: url::Url,
 }
+
+/// --------------------------- Enable minting of accepted quote
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EnableMintingRequest {}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EnableMintingResponse {}
