@@ -1,5 +1,6 @@
+// ----- standard library imports
 use std::str::FromStr;
-
+// ----- extra library imports
 use bcr_ebill_core::{
     bill::BillId,
     blockchain::bill::{
@@ -8,11 +9,9 @@ use bcr_ebill_core::{
     util::BcrKeys,
     NodeId, PublicKey,
 };
-// ----- standard library imports
-use chrono::NaiveTime;
-// ----- extra library imports
 use bcr_wdc_utils::keys::test_utils as keys_test;
-use bitcoin::Amount;
+use bitcoin::{self as btc, secp256k1 as secp, Amount};
+use chrono::NaiveTime;
 use rand::Rng;
 // ----- local imports
 use crate::{
@@ -25,12 +24,13 @@ use crate::{
 
 // returns a random `EnquireRequest` with the bill's holder signing keys
 pub fn generate_random_bill_enquire_request(
-    owner_kp: bitcoin::secp256k1::Keypair,
-    payee_kp: Option<bitcoin::secp256k1::Keypair>,
-) -> (crate::quotes::EnquireRequest, bitcoin::secp256k1::Keypair) {
+    receiver_pk: btc::PublicKey,
+    payee_kp: Option<secp::Keypair>,
+    amount: Option<btc::Amount>,
+) -> (crate::quotes::EnquireRequest, secp::Keypair) {
     let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key())
         .expect("valid key");
-    let bill_id = BillId::new(bill_keys.pub_key(), bitcoin::Network::Testnet);
+    let bill_id = BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
 
     let (_, drawee) = random_identity_public_data();
     let (drawer_key_pair, drawer) = random_identity_public_data();
@@ -42,10 +42,8 @@ pub fn generate_random_bill_enquire_request(
         }
         None => random_identity_public_data(),
     };
-    let (sharer_keys, _) = random_identity_public_data();
-
-    let public_key = owner_kp.public_key();
-    let amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
+    let default_amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
+    let amount = amount.unwrap_or(default_amount);
 
     let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = drawer.into();
     let core_drawee: bcr_ebill_core::contact::BillIdentParticipant = drawee.into();
@@ -62,8 +60,8 @@ pub fn generate_random_bill_enquire_request(
             payee: bcr_ebill_core::contact::BillParticipant::Ident(core_payee).into(),
             currency: "sat".to_string(),
             sum: amount.to_sat(),
-            maturity_date: random_date(),
-            issue_date: random_date(),
+            maturity_date: random_datetime(),
+            issue_date: random_datetime(),
             country_of_payment: "AT".to_string(),
             city_of_payment: "Vienna".to_string(),
             language: "en".to_string(),
@@ -90,8 +88,8 @@ pub fn generate_random_bill_enquire_request(
             private_key: bill_keys.get_private_key(),
             public_key: bill_keys.pub_key(),
         },
-        &public_key,
-        &BcrKeys::from_private_key(&sharer_keys.secret_key()).expect("valid_key"),
+        &receiver_pk.inner,
+        &BcrKeys::from_private_key(&signing_key.secret_key()).expect("valid_key"),
         &[],
     )
     .expect("can create sharable bill");
@@ -100,16 +98,16 @@ pub fn generate_random_bill_enquire_request(
 
     let request = EnquireRequest {
         content: shared_bill,
-        public_key: public_key.into(),
+        minting_pubkey: receiver_pk.inner.into(),
     };
     (request, signing_key)
 }
 
 // a hard-coded holder key pair, so both sides (client/server) use the same
-pub fn holder_key_pair() -> bitcoin::secp256k1::Keypair {
-    bitcoin::secp256k1::Keypair::from_secret_key(
-        bitcoin::secp256k1::SECP256K1,
-        &bitcoin::secp256k1::SecretKey::from_str(
+pub fn holder_key_pair() -> secp::Keypair {
+    secp::Keypair::from_secret_key(
+        secp::SECP256K1,
+        &secp::SecretKey::from_str(
             "b2f133f2656effb8e807b7d60d9065c269c5e98f5269f7baf05ed8f71eda7e6f",
         )
         .expect("valid key"),
@@ -118,19 +116,19 @@ pub fn holder_key_pair() -> bitcoin::secp256k1::Keypair {
 
 pub fn random_bill_id() -> BillId {
     let keypair = keys_test::generate_random_keypair();
-    BillId::new(keypair.public_key(), bitcoin::Network::Testnet)
+    BillId::new(keypair.public_key(), btc::Network::Testnet)
 }
 
 pub fn random_node_id() -> NodeId {
     let keypair = keys_test::generate_random_keypair();
-    NodeId::new(keypair.public_key(), bitcoin::Network::Testnet)
+    NodeId::new(keypair.public_key(), btc::Network::Testnet)
 }
 
 pub fn node_id_from_pub_key(pub_key: PublicKey) -> NodeId {
-    NodeId::new(pub_key, bitcoin::Network::Testnet)
+    NodeId::new(pub_key, btc::Network::Testnet)
 }
 
-pub fn random_date() -> String {
+pub fn random_datetime() -> String {
     let start = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
         .expect("naivedate")
         .and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("NaiveTime"))
@@ -141,7 +139,7 @@ pub fn random_date() -> String {
     random_date.to_rfc3339()
 }
 
-pub fn random_identity_public_data() -> (bitcoin::secp256k1::Keypair, BillIdentParticipant) {
+pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
     let keypair = keys_test::generate_random_keypair();
     let sample = [
         BillIdentParticipant {

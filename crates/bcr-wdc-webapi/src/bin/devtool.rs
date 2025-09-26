@@ -8,7 +8,8 @@ use bdk_wallet::serde_json;
 
 fn main() -> std::io::Result<()> {
     let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
-    let (request, signing_key) = generate_random_bill_enquire_request(owner_key, None);
+    let owner_pk = bitcoin::PublicKey::new(owner_key.public_key());
+    let (request, signing_key) = generate_random_bill_enquire_request(owner_pk, None, None);
     let signature = keys_utils::schnorr_sign_borsh_msg_with_key(&request, &signing_key)
         .expect("schnorr_sign_borsh_msg_with_key");
     let signed_request = bcr_wdc_webapi::quotes::SignedEnquireRequest { request, signature };
