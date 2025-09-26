@@ -25,7 +25,6 @@ pub struct GenerateBlindedMessagesResponse {
 pub struct StoreBlindSignaturesRequest {
     pub rid: uuid::Uuid,
     pub signatures: Vec<cdk00::BlindSignature>,
-    pub expiration: chrono::DateTime<chrono::Utc>,
 }
 
 /// --------------------------- request to mint from ebill description
