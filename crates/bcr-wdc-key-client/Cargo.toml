@@ -6,7 +6,7 @@ license.workspace = true
 
 [features]
 test-utils = ["bcr-wdc-key-service", "bcr-wdc-key-service/test-utils"]
-authorized = []
+authorized = ["bcr-wdc-utils/auth"]
 
 [dependencies]
 bcr-wdc-key-service = {workspace = true, optional = true}
@@ -20,6 +20,7 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+bcr-wdc-key-client = { workspace = true, features = ["test-utils", "authorized"] }
 bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 tokio.workspace = true
