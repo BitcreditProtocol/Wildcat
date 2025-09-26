@@ -1,49 +1,17 @@
 // ----- standard library imports
 // ----- extra library imports
-use bitcoin::{
-    bip32 as btc32,
-    hashes::{sha256::Hash as Sha256, Hash},
-};
+use bitcoin::hashes::{sha256::Hash as Sha256, Hash};
 use cashu::{
     dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
     nut12 as cdk12, nut14 as cdk14, Amount as cdk_Amount,
 };
 use cdk_common::mint as cdk_mint;
 use thiserror::Error;
-use uuid::Uuid;
 // ----- local imports
 
 // ----- end imports
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
-
-pub fn extend_path_from_uuid(id: Uuid, parent: &btc32::DerivationPath) -> btc32::DerivationPath {
-    const MAX_INDEX: u32 = 2_u32.pow(31) - 1;
-    let (half_1, half_2) = id.as_u64_pair();
-    let half_1 = half_1.to_be_bytes();
-    let half_2 = half_2.to_be_bytes();
-    let b_1: [u8; 4] = std::convert::TryFrom::try_from(&half_1[0..4]).expect("half_1/1 is 4 bytes");
-    let b_2: [u8; 4] = std::convert::TryFrom::try_from(&half_1[4..]).expect("half_1/2 is 4 bytes");
-    let b_3: [u8; 4] = std::convert::TryFrom::try_from(&half_2[0..4]).expect("half_2/1 is 4 bytes");
-    let b_4: [u8; 4] = std::convert::TryFrom::try_from(&half_2[4..]).expect("half_2/2 is 4 bytes");
-
-    let child_1 = u32::from_be_bytes(b_1);
-    let child_1 = std::cmp::min(MAX_INDEX, child_1);
-    let child_2 = u32::from_be_bytes(b_2);
-    let child_2 = std::cmp::min(MAX_INDEX, child_2);
-    let child_3 = u32::from_be_bytes(b_3);
-    let child_3 = std::cmp::min(MAX_INDEX, child_3);
-    let child_4 = u32::from_be_bytes(b_4);
-    let child_4 = std::cmp::min(MAX_INDEX, child_4);
-
-    let relative_path = [
-        btc32::ChildNumber::from_normal_idx(child_1).expect("child_1 is a valid index"),
-        btc32::ChildNumber::from_normal_idx(child_2).expect("child_2 is a valid index"),
-        btc32::ChildNumber::from_normal_idx(child_3).expect("child_3 is a valid index"),
-        btc32::ChildNumber::from_normal_idx(child_4).expect("child_4 is a valid index"),
-    ];
-    parent.extend(relative_path)
-}
 
 pub type SignWithKeysResult<T> = std::result::Result<T, SignWithKeysError>;
 #[derive(Debug, Error)]
