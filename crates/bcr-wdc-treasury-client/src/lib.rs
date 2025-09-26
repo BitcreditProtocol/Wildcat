@@ -76,14 +76,9 @@ impl TreasuryClient {
     pub async fn store_signatures(
         &self,
         rid: uuid::Uuid,
-        expiration: chrono::DateTime<chrono::Utc>,
         signatures: Vec<cdk00::BlindSignature>,
     ) -> Result<()> {
-        let msg = web_signatures::StoreBlindSignaturesRequest {
-            rid,
-            expiration,
-            signatures,
-        };
+        let msg = web_signatures::StoreBlindSignaturesRequest { rid, signatures };
         let url = self
             .base
             .join("/v1/admin/treasury/credit/store_signatures")
