@@ -3,10 +3,11 @@
 use axum::extract::{Json, Path, Query, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
-use crate::error::Result;
-use crate::quotes;
-use crate::service::{calculate_default_expiration_date_for_quote, EBillNode};
-use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, Wallet};
+use crate::{
+    error::Result,
+    quotes,
+    service::{calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
+};
 
 /// --------------------------- List quotes
 #[utoipa::path(
@@ -20,16 +21,10 @@ use crate::service::{KeysHandler, ListFilters, Repository, Service, SortOrder, W
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_pending_quotes<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn list_pending_quotes(
+    State(ctrl): State<Service>,
     Query(req): Query<web_quotes::ListPendingQueryRequest>,
-) -> Result<Json<web_quotes::ListReply>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::ListReply>> {
     tracing::debug!("Received request to list pending quotes");
 
     let quotes = ctrl.list_pendings(req.since).await?;
@@ -118,16 +113,10 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_quotes<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn list_quotes(
+    State(ctrl): State<Service>,
     params: Query<web_quotes::ListParam>,
-) -> Result<Json<web_quotes::ListReplyLight>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
 
     let now = chrono::Utc::now();
@@ -157,6 +146,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             keyset_id,
             ttl,
             discounted,
+            ..
         } => web_quotes::InfoReply::Offered {
             id: quote.id,
             bill: quote.bill.into(),
@@ -180,6 +170,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         quotes::Status::Accepted {
             keyset_id,
             discounted,
+            ..
         } => web_quotes::InfoReply::Accepted {
             id: quote.id,
             bill: quote.bill.into(),
@@ -207,16 +198,10 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn admin_lookup_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn lookup_quote(
+    State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<web_quotes::InfoReply>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::InfoReply>> {
     tracing::debug!("Received mint quote lookup request");
 
     let now = chrono::Utc::now();
@@ -237,18 +222,13 @@ where
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn admin_update_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn update_quote(
+    State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::UpdateQuoteRequest>,
-) -> Result<Json<web_quotes::UpdateQuoteResponse>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::UpdateQuoteResponse>> {
     tracing::debug!("Received mint quote update request");
+
     let now = chrono::Utc::now();
     let response = match req {
         web_quotes::UpdateQuoteRequest::Deny => {
@@ -260,5 +240,29 @@ where
             web_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
         }
     };
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/admin/credit/quote/enable_mint/{id}",
+    params(
+        ("id" = String, Path, description = "The quote id")
+    ),
+    request_body(content =web_quotes::EnableMintingRequest , content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = web_quotes::EnableMintingResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn enable_minting(
+    State(ctrl): State<Service>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<web_quotes::EnableMintingRequest>,
+) -> Result<Json<web_quotes::EnableMintingResponse>> {
+    tracing::debug!("Received enable mint for quote request");
+
+    ctrl.enable_minting(id).await?;
+    let response = web_quotes::EnableMintingResponse {};
     Ok(Json(response))
 }

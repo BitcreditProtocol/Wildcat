@@ -2,12 +2,10 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_treasury_client::TreasuryClient;
-use cashu::nuts::{nut00 as cdk00, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::Wallet;
-use crate::TStamp;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct WalletConfig {
@@ -30,9 +28,9 @@ impl Client {
 impl Wallet for Client {
     async fn get_blinds(
         &self,
-        kid: cdk02::Id,
+        kid: cashu::Id,
         amount: bitcoin::Amount,
-    ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
+    ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)> {
         let amount = cashu::Amount::from(amount.to_sat());
         self.cl
             .generate_blinds(kid, amount)
@@ -43,11 +41,10 @@ impl Wallet for Client {
     async fn store_signatures(
         &self,
         rid: Uuid,
-        expiration: TStamp,
-        signatures: Vec<cdk00::BlindSignature>,
+        signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()> {
         self.cl
-            .store_signatures(rid, expiration, signatures)
+            .store_signatures(rid, signatures)
             .await
             .map_err(Error::Wallet)
     }
@@ -64,9 +61,9 @@ pub mod test_utils {
     impl Wallet for DummyWallet {
         async fn get_blinds(
             &self,
-            kid: cdk02::Id,
+            kid: cashu::Id,
             amount: bitcoin::Amount,
-        ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
+        ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)> {
             let amount = cashu::Amount::from(amount.to_sat());
             let amounts = amount.split();
             let blinds = bcr_wdc_utils::signatures::test_utils::generate_blinds(kid, &amounts)
@@ -79,8 +76,7 @@ pub mod test_utils {
         async fn store_signatures(
             &self,
             _rid: Uuid,
-            _expiration: TStamp,
-            _signatures: Vec<cdk00::BlindSignature>,
+            _signatures: Vec<cashu::BlindSignature>,
         ) -> Result<()> {
             Ok(())
         }

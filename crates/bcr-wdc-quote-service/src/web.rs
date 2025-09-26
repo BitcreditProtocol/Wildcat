@@ -3,12 +3,7 @@
 use axum::extract::{Json, Path, State};
 use bcr_wdc_webapi::quotes as web_quotes;
 // ----- local imports
-use crate::error::Result;
-use crate::service::EBillNode;
-use crate::{
-    quotes,
-    service::{KeysHandler, Repository, Service, Wallet},
-};
+use crate::{error::Result, quotes, service::Service};
 
 ///--------------------------- Enquire mint quote
 #[utoipa::path(
@@ -20,30 +15,27 @@ use crate::{
         (status = 404, description = "Quote request not accepted"),
     )
 )]
-pub async fn enquire_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn enquire_quote(
+    State(ctrl): State<Service>,
     Json(req): Json<web_quotes::SignedEnquireRequest>,
-) -> Result<Json<web_quotes::EnquireReply>>
-where
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::EnquireReply>> {
     tracing::debug!(
         "Received mint quote request for bill: {}",
         req.request.content.bill_id,
     );
+
     let bcr_wdc_webapi::quotes::EnquireRequest {
         ref content,
-        public_key,
+        minting_pubkey,
     } = req.request;
     let bill_info = ctrl.validate_and_decrypt_shared_bill(content).await?;
-
     // after validating bill, validate req using the calculated holder
     let holder = bill_info.endorsees.last().unwrap_or(&bill_info.payee);
     verify_signature(&req, &holder.node_id().pub_key())?;
-
-    let bill = quotes::BillInfo::try_from((bill_info, content.to_owned()))?;
-    let id = ctrl.enquire(bill, public_key, chrono::Utc::now()).await?;
+    let bill = quotes::convert_to_billinfo(bill_info, content.to_owned())?;
+    let id = ctrl
+        .enquire(bill, minting_pubkey, chrono::Utc::now())
+        .await?;
     Ok(Json(web_quotes::EnquireReply { id }))
 }
 
@@ -69,10 +61,12 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
             keyset_id,
             ttl,
             discounted,
+            minting_pubkey,
         } => web_quotes::StatusReply::Offered {
             keyset_id,
             expiration_date: ttl,
             discounted,
+            minting_pubkey,
         },
         quotes::Status::OfferExpired { tstamp, discounted } => {
             web_quotes::StatusReply::OfferExpired { tstamp, discounted }
@@ -83,9 +77,11 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         quotes::Status::Accepted {
             keyset_id,
             discounted,
+            minting_pubkey,
         } => web_quotes::StatusReply::Accepted {
             keyset_id,
             discounted,
+            minting_pubkey,
         },
     }
 }
@@ -101,16 +97,10 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> web_quotes::StatusReply {
         (status = 404, description = "Quote id not  found"),
     )
 )]
-pub async fn lookup_quote<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn lookup_quote(
+    State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<web_quotes::StatusReply>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::StatusReply>> {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
     let now = chrono::Utc::now();
@@ -132,17 +122,11 @@ where
         (status = 409, description = "Quote already resolved"),
     )
 )]
-pub async fn resolve_offer<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn resolve_offer(
+    State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<web_quotes::ResolveOffer>,
-) -> Result<()>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<()> {
     tracing::debug!("Received mint quote resolve request for id: {}", id);
 
     let now = chrono::Utc::now();
@@ -166,16 +150,10 @@ where
         (status = 409, description = "Quote already resolved"),
     )
 )]
-pub async fn cancel<KeysHndlr, Wlt, QuotesRepo, EBillCl>(
-    State(ctrl): State<Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>>,
+pub async fn cancel(
+    State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<web_quotes::StatusReply>>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+) -> Result<Json<web_quotes::StatusReply>> {
     tracing::debug!("Received mint quote cancel request for id: {}", id);
 
     let now = chrono::Utc::now();

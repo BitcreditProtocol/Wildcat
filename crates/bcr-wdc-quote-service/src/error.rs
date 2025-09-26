@@ -32,8 +32,12 @@ pub enum Error {
     #[error("ebill client error {0}")]
     EbillClient(EbillClientError),
 
-    #[error("Quote has been already resolved: {0}")]
-    QuoteAlreadyResolved(uuid::Uuid),
+    #[error("quote {0} incorrect status, expected {1}, found {2}")]
+    InvalidQuoteStatus(
+        uuid::Uuid,
+        crate::quotes::StatusDiscriminants,
+        crate::quotes::StatusDiscriminants,
+    ),
     #[error("unknown quote id {0}")]
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
@@ -54,10 +58,9 @@ impl axum::response::IntoResponse for Error {
             }
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
             Error::UnknownQuoteID(_) => (StatusCode::NOT_FOUND, String::from("Quote ID not found")),
-            Error::QuoteAlreadyResolved(_) => (
-                StatusCode::CONFLICT,
-                String::from("Quote has been already resolved"),
-            ),
+            Error::InvalidQuoteStatus(_, _, _) => {
+                (StatusCode::CONFLICT, String::from("Quote invalid status"))
+            }
 
             Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
 
