@@ -1,10 +1,10 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_ebill_core::{bill::BillId, NodeId};
 use bcr_wdc_webapi::quotes::SharedBill;
 use bitcoin::Amount;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
@@ -50,14 +50,18 @@ pub trait Repository {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysHandler {
-    async fn generate(
+    async fn get_keyset_with_redemption_date(
+        &self,
+        redemption_date: chrono::NaiveDate,
+    ) -> Result<cashu::Id>;
+    async fn add_new_mint_operation(
         &self,
         qid: Uuid,
-        amount: Amount,
-        pk: cdk01::PublicKey,
-        maturity_date: TStamp,
-    ) -> Result<cdk02::Id>;
-    async fn sign(&self, qid: Uuid, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature>;
+        kid: cashu::Id,
+        pk: cashu::PublicKey,
+        target: cashu::Amount,
+    ) -> Result<()>;
+    async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -74,41 +78,36 @@ pub trait EBillNode: Sync {
 pub trait Wallet {
     async fn get_blinds(
         &self,
-        kid: cdk02::Id,
+        kid: cashu::Id,
         amount: Amount,
-    ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)>;
+    ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)>;
 
     async fn store_signatures(
         &self,
         rid: Uuid,
-        expire: TStamp,
-        signatures: Vec<cdk00::BlindSignature>,
+        signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()>;
 }
 
 // ---------- Service
 #[derive(Clone)]
-pub struct Service<KeysHndlr, Wlt, QuotesRepo, EBillCl> {
-    pub keys_hndlr: KeysHndlr,
-    pub quotes: QuotesRepo,
-    pub wallet: Wlt,
-    pub ebill: EBillCl,
+pub struct Service {
+    pub keys_hndlr: Arc<dyn KeysHandler + Send + Sync>,
+    pub quotes: Arc<dyn Repository + Send + Sync>,
+    pub wallet: Arc<dyn Wallet + Send + Sync>,
+    pub ebill: Arc<dyn EBillNode + Send + Sync>,
 }
 
-impl<KeysHndlr, Wlt, QuotesRepo, EBillCl> Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>
-where
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
+impl Service {
     pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
 
     pub async fn new_quote(
         &self,
         bill: BillInfo,
-        pub_key: cdk01::PublicKey,
+        minting_pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<Uuid> {
-        let quote = Quote::new(bill, pub_key, submitted);
+        let quote = Quote::new(bill, minting_pub_key, submitted);
         let qid = quote.id;
         self.quotes.store(quote).await?;
         Ok(qid)
@@ -126,7 +125,7 @@ where
     pub async fn enquire(
         &self,
         bill: BillInfo,
-        pub_key: cdk01::PublicKey,
+        pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
@@ -287,15 +286,7 @@ where
         }
         Ok(lights)
     }
-}
 
-impl<KeysHndlr, Wlt, QuotesRepo, EBillCl> Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>
-where
-    KeysHndlr: KeysHandler,
-    Wlt: Wallet,
-    QuotesRepo: Repository,
-    EBillCl: EBillNode,
-{
     pub async fn offer(
         &self,
         qid: uuid::Uuid,
@@ -304,37 +295,60 @@ where
         ttl: Option<TStamp>,
     ) -> Result<(Amount, TStamp)> {
         let mut quote = self.lookup(qid, submitted).await?;
-        let Status::Pending { public_key } = quote.status else {
-            return Err(Error::QuoteAlreadyResolved(qid));
+        let Status::Pending { .. } = quote.status else {
+            return Err(Error::InvalidQuoteStatus(
+                qid,
+                StatusDiscriminants::Pending,
+                StatusDiscriminants::from(quote.status.clone()),
+            ));
         };
-
-        let fees = quote.bill.sum - discounted;
         let maturity_date = quote.bill.maturity_date;
         let kid = self
             .keys_hndlr
-            .generate(qid, discounted, public_key, maturity_date)
+            .get_keyset_with_redemption_date(maturity_date.date_naive())
             .await?;
-
-        let (request_id, fees_blinds) = self.wallet.get_blinds(kid, fees).await?;
-        let joined: JoinAll<_> = fees_blinds
-            .iter()
-            .map(|blind| self.keys_hndlr.sign(qid, blind))
-            .collect();
-        let signatures_fees: Vec<cdk00::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
-
         let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
-
-        self.wallet
-            .store_signatures(request_id, expiration, signatures_fees)
-            .await?;
-
         quote.offer(kid, expiration, discounted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
             .await?;
-
         Ok((discounted, expiration))
+    }
+
+    pub async fn enable_minting(&self, qid: uuid::Uuid) -> Result<()> {
+        let quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or(Error::UnknownQuoteID(qid))?;
+        let Status::Accepted {
+            keyset_id,
+            discounted,
+            minting_pubkey,
+        } = quote.status
+        else {
+            return Err(Error::InvalidQuoteStatus(
+                qid,
+                StatusDiscriminants::Accepted,
+                StatusDiscriminants::from(quote.status.clone()),
+            ));
+        };
+        let fees = quote.bill.sum - discounted;
+        let (fees_blinds_id, fees_blinds) = self.wallet.get_blinds(keyset_id, fees).await?;
+        let joined: JoinAll<_> = fees_blinds
+            .iter()
+            .map(|blind| self.keys_hndlr.sign(blind))
+            .collect();
+        let signatures_fees: Vec<cashu::BlindSignature> =
+            joined.await.into_iter().collect::<Result<_>>()?;
+        self.wallet
+            .store_signatures(fees_blinds_id, signatures_fees)
+            .await?;
+        let discounted_amount = cashu::Amount::from(discounted.to_sat());
+        self.keys_hndlr
+            .add_new_mint_operation(qid, keyset_id, minting_pubkey, discounted_amount)
+            .await?;
+        Ok(())
     }
 }
 
@@ -452,10 +466,10 @@ mod tests {
 
         let rnd_bill = generate_random_bill();
         let service = Service {
-            quotes,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(quotes),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
         let test = service
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
@@ -467,7 +481,7 @@ mod tests {
     async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let public_key = keys_utils::publics()[0];
+        let minting_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
@@ -477,7 +491,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: Status::Pending { public_key },
+                    status: Status::Pending { minting_pubkey },
                     id,
                     bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
@@ -489,13 +503,13 @@ mod tests {
         let ebill = MockEBillNode::new();
 
         let service = Service {
-            quotes: repo,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(repo),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
         let test_id = service
-            .enquire(rnd_bill, public_key, chrono::Utc::now())
+            .enquire(rnd_bill, minting_pubkey, chrono::Utc::now())
             .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
@@ -528,10 +542,10 @@ mod tests {
         let ebill = MockEBillNode::new();
 
         let service = Service {
-            quotes: repo,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(repo),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -542,7 +556,7 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let public_key = keys_utils::publics()[0];
+        let minting_pubkey = keys_utils::publics()[0];
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
@@ -557,6 +571,7 @@ mod tests {
                         keyset_id,
                         ttl: now + chrono::Duration::days(1),
                         discounted: rnd_bill.sum,
+                        minting_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -569,12 +584,15 @@ mod tests {
         let ebill = MockEBillNode::new();
 
         let service = Service {
-            quotes: repo,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(repo),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
-        let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
+        let test_id = service
+            .enquire(rnd_bill, minting_pubkey, now)
+            .await
+            .unwrap();
         assert_eq!(id, test_id);
     }
 
@@ -584,7 +602,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let public_key = keys_utils::publics()[0];
+        let minting_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         repo.expect_search_by_bill()
@@ -598,6 +616,7 @@ mod tests {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
+                        minting_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -611,13 +630,13 @@ mod tests {
         let ebill = MockEBillNode::new();
 
         let service = Service {
-            quotes: repo,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(repo),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
         let test_id = service
-            .enquire(rnd_bill, public_key, now + chrono::Duration::seconds(1))
+            .enquire(rnd_bill, minting_pubkey, now + chrono::Duration::seconds(1))
             .await
             .unwrap();
         assert_eq!(id, test_id);
@@ -629,7 +648,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let public_key = keys_utils::publics()[0];
+        let minting_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         repo.expect_search_by_bill()
@@ -643,6 +662,7 @@ mod tests {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
+                        minting_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -657,15 +677,13 @@ mod tests {
         let ebill = MockEBillNode::new();
 
         let service = Service {
-            quotes: repo,
-            keys_hndlr,
-            wallet,
-            ebill,
+            quotes: Arc::new(repo),
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            ebill: Arc::new(ebill),
         };
-        let submitted = now
-            + Service::<MockKeysHandler, MockWallet, MockRepository, MockEBillNode>::USER_DECISION_RETENTION
-            + chrono::Duration::seconds(1);
-        let test_id = service.enquire(rnd_bill, public_key, submitted).await;
+        let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let test_id = service.enquire(rnd_bill, minting_pubkey, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
     }

@@ -1,10 +1,11 @@
 // ----- standard library imports
 use bcr_ebill_core::bill::BillId;
 use std::str::FromStr;
+use strum::Display;
 // ----- extra library imports
 use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
+use bcr_wdc_webapi::quotes as web_quotes;
 use bitcoin::Amount;
-use cashu::{nut01 as cdk01, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -24,34 +25,24 @@ pub struct BillInfo {
     pub file_urls: Vec<url::Url>,
     pub shared_bill_data: String, // The base58 encoded, encrypted, borshed BillBlockPlaintextWrappers of the bill
 }
-impl
-    TryFrom<(
-        bcr_wdc_webapi::quotes::BillInfo,
-        bcr_wdc_webapi::quotes::SharedBill,
-    )> for BillInfo
-{
-    type Error = Error;
-    fn try_from(
-        (bill, shared_bill): (
-            bcr_wdc_webapi::quotes::BillInfo,
-            bcr_wdc_webapi::quotes::SharedBill,
-        ),
-    ) -> Result<Self> {
-        let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
-        let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
-        Ok(Self {
-            id: bill.id,
-            drawee: bill.drawee.into(),
-            drawer: bill.drawer.into(),
-            payee: bill.payee.into(),
-            endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
-            current_holder: current_holder.into(),
-            sum: Amount::from_sat(bill.sum),
-            maturity_date,
-            file_urls: bill.file_urls,
-            shared_bill_data: shared_bill.data,
-        })
-    }
+pub fn convert_to_billinfo(
+    bill: web_quotes::BillInfo,
+    shared_bill: web_quotes::SharedBill,
+) -> Result<BillInfo> {
+    let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
+    let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
+    Ok(BillInfo {
+        id: bill.id,
+        drawee: bill.drawee.into(),
+        drawer: bill.drawer.into(),
+        payee: bill.payee.into(),
+        endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
+        current_holder: current_holder.into(),
+        sum: Amount::from_sat(bill.sum),
+        maturity_date,
+        file_urls: bill.file_urls,
+        shared_bill_data: shared_bill.data,
+    })
 }
 impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
     fn from(bill: BillInfo) -> Self {
@@ -70,11 +61,11 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize))]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, Display))]
 #[serde(tag = "status")]
 pub enum Status {
     Pending {
-        public_key: cdk01::PublicKey,
+        minting_pubkey: cashu::PublicKey,
     },
     Canceled {
         tstamp: TStamp,
@@ -83,9 +74,10 @@ pub enum Status {
         tstamp: TStamp,
     },
     Offered {
-        keyset_id: cdk02::Id,
+        keyset_id: cashu::Id,
         ttl: TStamp,
         discounted: bitcoin::Amount,
+        minting_pubkey: cashu::PublicKey,
     },
     OfferExpired {
         discounted: bitcoin::Amount,
@@ -97,7 +89,8 @@ pub enum Status {
     },
     Accepted {
         discounted: bitcoin::Amount,
-        keyset_id: cdk02::Id,
+        keyset_id: cashu::Id,
+        minting_pubkey: cashu::PublicKey,
     },
 }
 
@@ -117,9 +110,9 @@ pub struct LightQuote {
 }
 
 impl Quote {
-    pub fn new(bill: BillInfo, public_key: cdk01::PublicKey, submitted: TStamp) -> Self {
+    pub fn new(bill: BillInfo, minting_pubkey: cashu::PublicKey, submitted: TStamp) -> Self {
         Self {
-            status: Status::Pending { public_key },
+            status: Status::Pending { minting_pubkey },
             id: Uuid::new_v4(),
             bill,
             submitted,
@@ -131,7 +124,11 @@ impl Quote {
             self.status = Status::Canceled { tstamp };
             Ok(())
         } else {
-            Err(Error::QuoteAlreadyResolved(self.id))
+            Err(Error::InvalidQuoteStatus(
+                self.id,
+                StatusDiscriminants::Pending,
+                StatusDiscriminants::from(self.status.clone()),
+            ))
         }
     }
 
@@ -140,24 +137,33 @@ impl Quote {
             self.status = Status::Denied { tstamp };
             Ok(())
         } else {
-            Err(Error::QuoteAlreadyResolved(self.id))
+            Err(Error::InvalidQuoteStatus(
+                self.id,
+                StatusDiscriminants::Pending,
+                StatusDiscriminants::from(self.status.clone()),
+            ))
         }
     }
 
     pub fn offer(
         &mut self,
-        keyset_id: cdk02::Id,
+        keyset_id: cashu::Id,
         ttl: TStamp,
         discounted: bitcoin::Amount,
     ) -> Result<()> {
-        let Status::Pending { .. } = self.status else {
-            return Err(Error::QuoteAlreadyResolved(self.id));
+        let Status::Pending { minting_pubkey, .. } = self.status else {
+            return Err(Error::InvalidQuoteStatus(
+                self.id,
+                StatusDiscriminants::Pending,
+                StatusDiscriminants::from(self.status.clone()),
+            ));
         };
 
         self.status = Status::Offered {
             keyset_id,
             ttl,
             discounted,
+            minting_pubkey,
         };
         Ok(())
     }
@@ -183,7 +189,11 @@ impl Quote {
             self.status = Status::Rejected { tstamp, discounted };
             Ok(())
         } else {
-            Err(Error::QuoteAlreadyResolved(self.id))
+            Err(Error::InvalidQuoteStatus(
+                self.id,
+                StatusDiscriminants::Offered,
+                StatusDiscriminants::from(self.status.clone()),
+            ))
         }
     }
 
@@ -193,14 +203,22 @@ impl Quote {
             Status::Offered {
                 keyset_id,
                 discounted,
+                minting_pubkey,
                 ..
             } => {
                 self.status = Status::Accepted {
                     keyset_id,
                     discounted,
+                    minting_pubkey,
                 }
             }
-            _ => return Err(Error::QuoteAlreadyResolved(self.id)),
+            _ => {
+                return Err(Error::InvalidQuoteStatus(
+                    self.id,
+                    StatusDiscriminants::Offered,
+                    StatusDiscriminants::from(self.status.clone()),
+                ))
+            }
         };
         Ok(())
     }

@@ -1,13 +1,10 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::FromRef;
 use axum::routing::{delete, get, post};
 use axum::Router;
-use cashu::nuts::nut00 as cdk00;
-use cashu::nuts::nut02 as cdk02;
-use cashu::nuts::nut11 as cdk11;
-use cashu::nuts::nut12 as cdk12;
-use cashu::nuts::nut14 as cdk14;
+use cashu::{nut00 as cdk00, nut02 as cdk02, nut11 as cdk11, nut12 as cdk12, nut14 as cdk14};
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -21,14 +18,15 @@ mod wallet;
 mod web;
 // ----- local imports
 
+// ----- end imports
+
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
 
 pub type ProdKeysHandler = keys::KeysRestHandler;
 pub type ProdWallet = wallet::Client;
-pub type ProdQuotingService =
-    service::Service<ProdKeysHandler, ProdWallet, ProdQuoteRepository, ebill::EBillClient>;
+pub type ProdQuotingService = service::Service;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -59,10 +57,10 @@ impl AppController {
         let wallet = ProdWallet::new(wallet);
         let ebill = ebill::EBillClient::new(ebill_client);
         let quoting_service = ProdQuotingService {
-            keys_hndlr,
-            wallet,
-            quotes: quotes_repository,
-            ebill,
+            keys_hndlr: Arc::new(keys_hndlr),
+            wallet: Arc::new(wallet),
+            quotes: Arc::new(quotes_repository),
+            ebill: Arc::new(ebill),
         };
 
         Self {
@@ -70,17 +68,13 @@ impl AppController {
         }
     }
 }
-pub fn routes<Cntrlr, KeysHndlr, Wlt, QuotesRepo, EBillCl>(ctrl: Cntrlr) -> Router
+pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
 where
-    QuotesRepo: service::Repository + Send + Sync + 'static,
-    Wlt: service::Wallet + Send + Sync + 'static,
-    KeysHndlr: service::KeysHandler + Send + Sync + 'static,
-    EBillCl: service::EBillNode + Send + Sync + 'static,
-    service::Service<KeysHndlr, Wlt, QuotesRepo, EBillCl>: FromRef<Cntrlr> + Send + Sync + 'static,
+    service::Service: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/v1/admin/credit/swagger-ui")
-        .url("/v1/admin/credit/api-docs/openapi.json", ApiDoc::openapi());
+    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let user_routes = Router::new()
         .route("/v1/mint/quote/credit", post(web::enquire_quote))
@@ -94,13 +88,11 @@ where
             get(admin::list_pending_quotes),
         )
         .route("/v1/admin/credit/quote", get(admin::list_quotes))
+        .route("/v1/admin/credit/quote/{id}", get(admin::lookup_quote))
+        .route("/v1/admin/credit/quote/{id}", post(admin::update_quote))
         .route(
-            "/v1/admin/credit/quote/{id}",
-            get(admin::admin_lookup_quote),
-        )
-        .route(
-            "/v1/admin/credit/quote/{id}",
-            post(admin::admin_update_quote),
+            "/v1/admin/credit/quote/enable_mint/{id}",
+            post(admin::enable_minting),
         );
 
     Router::new()
@@ -118,14 +110,16 @@ where
         bcr_wdc_webapi::bill::BillParticipant,
         bcr_wdc_webapi::identity::PostalAddress,
         bcr_wdc_webapi::quotes::BillInfo,
+        bcr_wdc_webapi::quotes::EnableMintingRequest,
+        bcr_wdc_webapi::quotes::EnableMintingResponse,
         bcr_wdc_webapi::quotes::EnquireReply,
-        bcr_wdc_webapi::quotes::SignedEnquireRequest,
         bcr_wdc_webapi::quotes::InfoReply,
         bcr_wdc_webapi::quotes::LightInfo,
         bcr_wdc_webapi::quotes::ListReply,
         bcr_wdc_webapi::quotes::ListReplyLight,
         bcr_wdc_webapi::quotes::ListSort,
         bcr_wdc_webapi::quotes::ResolveOffer,
+        bcr_wdc_webapi::quotes::SignedEnquireRequest,
         bcr_wdc_webapi::quotes::StatusReply,
         bcr_wdc_webapi::quotes::StatusReplyDiscriminants,
         bcr_wdc_webapi::quotes::UpdateQuoteRequest,
@@ -140,10 +134,11 @@ where
         cdk14::HTLCWitness,
     ),),
     paths(
-        crate::admin::admin_lookup_quote,
-        crate::admin::admin_update_quote,
+        crate::admin::enable_minting,
         crate::admin::list_pending_quotes,
         crate::admin::list_quotes,
+        crate::admin::lookup_quote,
+        crate::admin::update_quote,
         crate::web::cancel,
         crate::web::enquire_quote,
         crate::web::lookup_quote,
@@ -169,8 +164,7 @@ pub mod test_utils {
     type TestQuoteRepository = persistence::inmemory::QuotesIDMap;
     type TestWallet = wallet::test_utils::DummyWallet;
     type TestEBillNode = ebill::test_utils::DummyEbillNode;
-    type TestQuotingService =
-        service::Service<TestKeysHandler, TestWallet, TestQuoteRepository, TestEBillNode>;
+    type TestQuotingService = service::Service;
 
     #[derive(Clone, FromRef)]
     pub struct AppController {
@@ -181,10 +175,10 @@ pub mod test_utils {
         fn default() -> Self {
             AppController {
                 quotes: TestQuotingService {
-                    keys_hndlr: TestKeysHandler::default(),
-                    wallet: TestWallet::default(),
-                    quotes: TestQuoteRepository::default(),
-                    ebill: TestEBillNode::default(),
+                    keys_hndlr: Arc::new(TestKeysHandler::default()),
+                    wallet: Arc::new(TestWallet::default()),
+                    quotes: Arc::new(TestQuoteRepository::default()),
+                    ebill: Arc::new(TestEBillNode::default()),
                 },
             }
         }
