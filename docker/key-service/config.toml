@@ -7,13 +7,8 @@ log_level = "DEBUG"
 connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "key"
-table = "keys"
-
-[appcfg.quotekeys]
-connection = "ws://surrealdb:8000"
-namespace = "test"
-database = "key"
-table = "quotes"
+keys_table = "keys"
+mints_table = "mints"
 
 [appcfg.signatures]
 connection = "ws://surrealdb:8000"
