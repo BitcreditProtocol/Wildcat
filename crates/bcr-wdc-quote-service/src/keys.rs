@@ -2,13 +2,13 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_key_client::KeyClient;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::KeysHandler;
-use crate::TStamp;
+use crate::{
+    error::{Error, Result},
+    service::KeysHandler,
+};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KeysRestConfig {
@@ -27,27 +27,36 @@ impl KeysRestHandler {
 
 #[async_trait]
 impl KeysHandler for KeysRestHandler {
-    async fn generate(
+    async fn get_keyset_with_redemption_date(
         &self,
-        qid: Uuid,
-        amount: bitcoin::Amount,
-        pk: cdk01::PublicKey,
-        maturity_date: TStamp,
-    ) -> Result<cdk02::Id> {
-        let amount = cashu::Amount::from(amount.to_sat());
+        redemption_date: chrono::NaiveDate,
+    ) -> Result<cashu::Id> {
         self.0
-            .generate_keyset(qid, amount, pk, maturity_date)
+            .keys_for_expiration(redemption_date)
             .await
             .map_err(Error::KeysHandler)
     }
-    async fn sign(&self, qid: Uuid, msg: &cdk00::BlindedMessage) -> Result<cdk00::BlindSignature> {
-        self.0.pre_sign(qid, msg).await.map_err(Error::KeysHandler)
+    async fn add_new_mint_operation(
+        &self,
+        qid: Uuid,
+        kid: cashu::Id,
+        pk: cashu::PublicKey,
+        target: cashu::Amount,
+    ) -> Result<()> {
+        self.0
+            .new_mint_operation(qid, kid, pk, target)
+            .await
+            .map_err(Error::KeysHandler)
+    }
+    async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
+        self.0.sign(msg).await.map_err(Error::KeysHandler)
     }
 }
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
+    use crate::TStamp;
     use bcr_wdc_utils::keys::KeysetEntry;
     use std::{
         collections::HashMap,
@@ -56,30 +65,46 @@ pub mod test_utils {
 
     #[derive(Clone, Debug, Default)]
     pub struct DummyKeysHandler {
-        keys: Arc<Mutex<HashMap<cdk02::Id, KeysetEntry>>>,
+        keys: Arc<Mutex<HashMap<cashu::Id, KeysetEntry>>>,
     }
 
     #[async_trait]
     impl KeysHandler for DummyKeysHandler {
-        async fn generate(
+        async fn get_keyset_with_redemption_date(
             &self,
-            _qid: Uuid,
-            _amount: bitcoin::Amount,
-            _pk: cdk01::PublicKey,
-            _maturity_date: TStamp,
-        ) -> Result<cdk02::Id> {
-            let keysentry = bcr_wdc_utils::keys::test_utils::generate_keyset();
-            let kid = keysentry.0.id;
+            redemption_date: chrono::NaiveDate,
+        ) -> Result<cashu::Id> {
             let mut locked = self.keys.lock().unwrap();
+            for (kid, (info, _)) in locked.iter() {
+                let key_expiry = info.final_expiry.unwrap_or_default() as i64;
+                let exp = TStamp::from_timestamp(key_expiry, 0).unwrap_or_default();
+                if exp.date_naive() == redemption_date {
+                    return Ok(*kid);
+                }
+            }
+            let mut keysentry = bcr_wdc_utils::keys::test_utils::generate_keyset();
+            let kid = keysentry.0.id;
+            keysentry.0.final_expiry = Some(
+                redemption_date
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .timestamp() as u64,
+            );
+            keysentry.1.final_expiry = keysentry.0.final_expiry;
             locked.insert(kid, keysentry.clone());
             Ok(kid)
         }
-
-        async fn sign(
+        async fn add_new_mint_operation(
             &self,
             _qid: Uuid,
-            msg: &cdk00::BlindedMessage,
-        ) -> Result<cdk00::BlindSignature> {
+            _kid: cashu::Id,
+            _pk: cashu::PublicKey,
+            _target: cashu::Amount,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
             let locked = self.keys.lock().unwrap();
             let (_, keyset) = locked.get(&msg.keyset_id).expect("Keyset not found");
             let sig = bcr_wdc_utils::keys::sign_with_keys(keyset, msg).expect("sign_with_keys");

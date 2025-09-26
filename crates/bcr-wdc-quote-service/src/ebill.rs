@@ -39,7 +39,7 @@ impl EBillNode for EBillClient {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use bcr_wdc_webapi::test_utils::{
-        holder_key_pair, node_id_from_pub_key, random_date, random_identity_public_data,
+        holder_key_pair, node_id_from_pub_key, random_datetime, random_identity_public_data,
     };
 
     use super::*;
@@ -63,7 +63,7 @@ pub mod test_utils {
                 payee: bcr_wdc_webapi::bill::BillParticipant::Ident(payee),
                 endorsees: vec![],
                 sum: 100,
-                maturity_date: random_date(),
+                maturity_date: random_datetime(),
                 file_urls: shared_bill.file_urls.clone(),
             })
         }
