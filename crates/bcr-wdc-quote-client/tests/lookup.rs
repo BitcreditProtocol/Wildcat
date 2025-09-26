@@ -26,11 +26,18 @@ async fn lookup_id_found() {
     let client = QuoteClient::new(server_url);
     let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
 
-    let (request, signing_key) =
-        generate_random_bill_enquire_request(owner_key.clone(), Some(holder_key_pair()));
+    let (request, signing_key) = generate_random_bill_enquire_request(
+        owner_key.public_key().into(),
+        Some(holder_key_pair()),
+        None,
+    );
 
     let qid = client
-        .enquire(request.content, owner_key.public_key().into(), &signing_key)
+        .enquire(
+            request.content,
+            signing_key.public_key().into(),
+            &signing_key,
+        )
         .await
         .expect("enquire request");
 
