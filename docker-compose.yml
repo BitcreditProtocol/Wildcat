@@ -58,11 +58,15 @@ services:
     extends:
         file: common-services.yml
         service: bff-wallet-service
+    ports:
+      - "4343:4242"
 
   bff-dashboard-service:
     extends:
         file: common-services.yml
         service: bff-dashboard-service
+    ports:
+      - "4242:4242"  
 
   bitcoin-core:
     extends:
@@ -93,6 +97,8 @@ services:
       - --http-port=8080
       - --proxy-headers=xforwarded
       - --hostname=${KEYCLOAK_HOSTNAME}
+    ports:
+      - "8080:8080"
 
   electrs:
     extends:
