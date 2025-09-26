@@ -137,31 +137,37 @@ impl AppController {
 
 pub fn routes(ctrl: AppController) -> Router {
     Router::new()
-        .route("/v1/identity/detail", get(web::get_identity))
-        .route("/v1/identity/create", post(web::create_identity))
-        .route("/v1/identity/seed/backup", get(web::get_seed_phrase))
+        .route("/v1/admin/identity/detail", get(web::get_identity))
+        .route("/v1/admin/identity/create", post(web::create_identity))
+        .route("/v1/admin/identity/seed/backup", get(web::get_seed_phrase))
         .route(
-            "/v1/identity/seed/recover",
+            "/v1/admin/identity/seed/recover",
             put(web::recover_from_seed_phrase),
         )
-        .route("/v1/bill/list", get(web::get_bills))
-        .route("/v1/bill/detail/{bill_id}", get(web::get_bill_detail))
+        .route("/v1/admin/bill/list", get(web::get_bills))
+        .route("/v1/admin/bill/detail/{bill_id}", get(web::get_bill_detail))
         .route(
-            "/v1/bill/payment_status/{bill_id}",
+            "/v1/admin/bill/payment_status/{bill_id}",
             get(web::get_bill_payment_status),
         )
         .route(
-            "/v1/bill/endorsements/{bill_id}",
+            "/v1/admin/bill/endorsements/{bill_id}",
             get(web::get_bill_endorsements),
         )
         .route(
-            "/v1/bill/attachment/{bill_id}/{file_name}",
+            "/v1/admin/bill/attachment/{bill_id}/{file_name}",
             get(web::get_bill_attachment),
         )
-        .route("/v1/bill/request_to_pay", put(web::request_to_pay_bill))
-        .route("/v1/bill/bitcoin_key/{bill_id}", get(web::bill_bitcoin_key))
         .route(
-            "/v1/bill/validate_and_decrypt_shared_bill",
+            "/v1/admin/bill/request_to_pay",
+            put(web::request_to_pay_bill),
+        )
+        .route(
+            "/v1/admin/bill/bitcoin_key/{bill_id}",
+            get(web::bill_bitcoin_key),
+        )
+        .route(
+            "/v1/admin/bill/validate_and_decrypt_shared_bill",
             post(web::validate_and_decrypt_shared_bill),
         )
         .route(
