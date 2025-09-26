@@ -38,7 +38,7 @@ where
 {
     tracing::debug!("Received request to store signatures",);
 
-    ctrl.store_signatures(request.rid, request.signatures, request.expiration)
+    ctrl.store_signatures(request.rid, request.signatures)
         .await?;
     Ok(())
 }
