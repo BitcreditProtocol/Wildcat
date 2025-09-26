@@ -78,7 +78,6 @@ where
         &self,
         rid: Uuid,
         signatures: Vec<cdk00::BlindSignature>,
-        _expiration: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
         self.repo
             .store_premint_signatures((rid, signatures))
