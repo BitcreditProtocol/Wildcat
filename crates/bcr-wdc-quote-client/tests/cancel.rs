@@ -11,7 +11,7 @@ async fn cancel_not_found() {
     let client = QuoteClient::new(server_url);
 
     let qid = Uuid::new_v4();
-    let response = client.cancel(qid).await;
+    let response = client.cancel_enquiry(qid).await;
     assert!(response.is_err());
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
 }
