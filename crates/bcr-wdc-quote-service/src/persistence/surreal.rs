@@ -367,7 +367,7 @@ mod tests {
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -378,6 +378,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
+            minting_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_ok());
@@ -410,6 +411,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
+            minting_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_err());
@@ -432,6 +434,7 @@ mod tests {
                 keyset_id: keys_test::generate_random_keysetid(),
                 ttl: TStamp::default(),
                 discounted: bitcoin::Amount::default(),
+                minting_pubkey: keys_test::publics()[0],
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -441,6 +444,7 @@ mod tests {
         quote.status = quotes::Status::Accepted {
             keyset_id: keys_test::generate_random_keysetid(),
             discounted: bitcoin::Amount::default(),
+            minting_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_ok());
@@ -471,6 +475,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
+            minting_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_err());
@@ -490,7 +495,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid,
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 drawee: random_identity_public_data().1.into(),
@@ -556,7 +561,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
@@ -571,7 +576,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid2,
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2020-01-01T00:00:00Z").unwrap(),
@@ -586,7 +591,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid3,
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2022-01-01T00:00:00Z").unwrap(),
@@ -626,7 +631,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::Status::Pending {
-                public_key: keys_test::publics()[0],
+                minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
