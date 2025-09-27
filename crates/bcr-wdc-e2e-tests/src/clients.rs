@@ -1,18 +1,17 @@
 // ----- standard library imports
 use std::marker::PhantomData;
 // ----- extra library imports
-use anyhow::Result;
-use bcr_wdc_webapi::keys::EnableKeysetRequest;
-use bcr_wdc_webapi::quotes::{
-    EnquireReply, ListReplyLight, SignedEnquireRequest, StatusReply, UpdateQuoteRequest,
-    UpdateQuoteResponse,
+use anyhow::{anyhow, Result};
+use bcr_wdc_ebill_client::EbillClient;
+use bcr_wdc_key_client::KeyClient;
+use bcr_wdc_quote_client::QuoteClient;
+use bcr_wdc_swap_client::SwapClient;
+use bcr_wdc_treasury_client::TreasuryClient;
+use bcr_wdc_webapi::{
+    identity::Identity,
+    quotes::{ListReplyLight, StatusReply, UpdateQuoteResponse},
 };
-use bcr_wdc_webapi::wallet::ECashBalance;
-use cashu::nuts::{
-    nut01 as cdk01, nut02 as cdk02, nut03 as cdk03,
-    nut04::{MintRequest, MintResponse},
-};
-use cashu::SwapResponse;
+use bcr_wdc_webapi::{quotes as web_quotes, wallet::ECashBalance};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Serialize};
@@ -115,16 +114,27 @@ impl Default for RestClient {
 
 pub struct Service<T> {
     base_url: String,
+    ebill_cl: EbillClient,
+    key_cl: KeyClient,
+    quote_cl: QuoteClient,
+    swap_cl: SwapClient,
+    treasury_cl: TreasuryClient,
     client: RestClient,
     _marker: PhantomData<T>,
 }
 
 impl<T> Service<T> {
     pub fn new(base_url: String) -> Self {
+        let url = reqwest::Url::parse(&base_url).unwrap();
         Self {
-            base_url,
+            ebill_cl: EbillClient::new(url.clone()),
+            key_cl: KeyClient::new(url.clone()),
+            quote_cl: QuoteClient::new(url.clone()),
+            swap_cl: SwapClient::new(url.clone()),
+            treasury_cl: TreasuryClient::new(url),
             client: RestClient::new(),
             _marker: PhantomData,
+            base_url,
         }
     }
     fn url(&self, path: &str) -> Url {
@@ -136,67 +146,84 @@ pub struct UserService {}
 pub struct AdminService {}
 
 impl Service<UserService> {
-    /// POST v1/mint/quote/credit
-    pub async fn mint_credit_quote(&self, req: SignedEnquireRequest) -> EnquireReply {
-        let url = self.url("v1/mint/quote/credit");
-        self.client.post(url, &req).await.unwrap()
+    pub async fn mint_credit_quote(
+        &self,
+        bill: web_quotes::SharedBill,
+        miniting_pubkey: cashu::PublicKey,
+        signing_key: &bitcoin::key::Keypair,
+    ) -> Uuid {
+        self.quote_cl
+            .enquire(bill, miniting_pubkey, signing_key)
+            .await
+            .unwrap()
     }
-    /// GET v1/mint/quote/credit/{quote_id}
+
     pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> StatusReply {
-        let url = self.url(&format!("v1/mint/quote/credit/{quote_id}"));
-        self.client.get(url).await.unwrap()
+        self.quote_cl.lookup(quote_id).await.unwrap()
     }
-    /// GET v1/keysets
-    pub async fn list_keysets(&self) -> cdk02::KeysetResponse {
-        let url = self.url("v1/keysets");
-        self.client.get(url).await.unwrap()
+
+    pub async fn list_keysets(&self) -> Vec<cashu::KeySetInfo> {
+        self.key_cl.list_keyset_info().await.unwrap()
     }
-    /// GET v1/keys/{kid}
-    pub async fn list_keys(&self, kid: cashu::Id) -> cdk01::KeysResponse {
-        let url = self.url(&format!("v1/keys/{kid}"));
-        self.client.get(url).await.unwrap()
+
+    pub async fn list_keys(&self, kid: cashu::Id) -> cashu::KeySet {
+        self.key_cl.keys(kid).await.unwrap()
     }
-    /// POST v1/mint/ebill
-    pub async fn mint_ebill(&self, req: MintRequest<Uuid>) -> MintResponse {
-        let url = self.url("v1/mint/ebill");
-        self.client.post(url, &req).await.unwrap()
+
+    pub async fn accept_quote(&self, qid: Uuid) {
+        self.quote_cl.accept_offer(qid).await.unwrap();
+    }
+
+    pub async fn mint_ebill(
+        &self,
+        qid: Uuid,
+        outputs: Vec<cashu::BlindedMessage>,
+        sk: cashu::SecretKey,
+    ) -> Vec<cashu::BlindSignature> {
+        self.key_cl.mint(qid, outputs, sk).await.unwrap()
     }
     /// GET v1/info
     pub async fn mint_info(&self) -> cashu::nut06::MintInfo {
         let url = self.url("v1/info");
         self.client.get(url).await.unwrap()
     }
-    /// POST v1/swap
-    pub async fn swap(&self, req: cdk03::SwapRequest) -> SwapResponse {
-        let url = self.url("v1/swap");
-        self.client.post(url, &req).await.unwrap()
+
+    pub async fn swap(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+    ) -> Vec<cashu::BlindSignature> {
+        self.swap_cl.swap(inputs, outputs).await.unwrap()
     }
 }
 
 impl Service<AdminService> {
-    /// POST v1/admin/keys/enable
-    pub async fn keys_activate(&self, req: EnableKeysetRequest) {
-        let url = self.url("v1/admin/keys/enable");
-        self.client.post_(url, &req).await.unwrap()
+    pub async fn enable_minting_for_quote_id(&self, qid: Uuid) {
+        self.quote_cl.enable_minting(qid).await.unwrap();
     }
-    /// POST v1/admin/credit/quote/{quote_id}
-    pub async fn admin_credit_quote(
+
+    pub async fn offer_quote(
         &self,
         quote_id: Uuid,
-        quote_req: UpdateQuoteRequest,
+        discounted: bitcoin::Amount,
     ) -> UpdateQuoteResponse {
-        let url = self.url(&format!("v1/admin/credit/quote/{quote_id}"));
-        self.client.post(url, &quote_req).await.unwrap()
+        self.quote_cl
+            .offer(quote_id, discounted, None)
+            .await
+            .unwrap()
     }
-    /// GET v1/admin/credit/quote
+
     pub async fn admin_credit_quote_list(&self) -> Result<ListReplyLight> {
-        let url = self.url("v1/admin/credit/quote");
-        self.client.get(url).await
+        self.quote_cl
+            .list(web_quotes::ListParam::default())
+            .await
+            .map_err(Into::into)
     }
-    /// GET v1/admin/balance/credit
     pub async fn admin_balance_credit(&self) -> Result<ECashBalance> {
-        let url = self.url("v1/admin/treasury/credit/balance");
-        self.client.get(url).await
+        self.treasury_cl.crsat_balance().await.map_err(Into::into)
+    }
+    pub async fn admin_ebill_identity_details(&self) -> Result<Identity> {
+        self.ebill_cl.get_identity().await.map_err(Into::into)
     }
     pub async fn authenticate(
         &mut self,
@@ -206,6 +233,36 @@ impl Service<AdminService> {
         username: &str,
         password: &str,
     ) -> Result<()> {
+        self.ebill_cl
+            .authenticate(
+                token_url.clone(),
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await
+            .map_err(|e| anyhow!(e))?;
+        self.quote_cl
+            .authenticate(
+                token_url.clone(),
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await
+            .map_err(|e| anyhow!(e))?;
+        self.treasury_cl
+            .authenticate(
+                token_url.clone(),
+                client_id,
+                client_secret,
+                username,
+                password,
+            )
+            .await
+            .map_err(|e| anyhow!(e))?;
         self.client
             .authenticate(token_url, client_id, client_secret, username, password)
             .await
