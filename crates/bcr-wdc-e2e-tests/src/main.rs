@@ -1,14 +1,9 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_wdc_webapi::keys::EnableKeysetRequest;
-use bcr_wdc_webapi::quotes::EnquireReply;
-use bcr_wdc_webapi::quotes::{
-    SignedEnquireRequest, StatusReply, UpdateQuoteRequest, UpdateQuoteResponse,
-};
-use cashu::{MintRequest, MintUrl};
+use bcr_wdc_webapi::quotes::{StatusReply, UpdateQuoteResponse};
+use cashu::MintUrl;
 
-use cashu::nuts::nut02 as cdk02;
 use reqwest::Url;
 use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
@@ -16,7 +11,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod clients;
 mod test_utils;
 use clients::*;
-use test_utils::{generate_blinds, get_amounts, random_ebill_request};
+use test_utils::{generate_blinds, random_ebill_request, EbillRequestComponents};
 // ----- end imports
 
 #[derive(Debug, serde::Deserialize)]
@@ -55,13 +50,12 @@ async fn test_auth(cfg: &MainConfig) {
         )
         .await
         .unwrap();
-    let _ = admin_service.admin_credit_quote_list().await.unwrap();
+    let _ = admin_service.admin_credit_quote_list().await;
 
     info!("Testing admin service without authorization");
     let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    if admin_service.admin_credit_quote_list().await.is_ok() {
-        panic!("Got ids from admin without authorization");
-    }
+    let resp = admin_service.admin_credit_quote_list().await;
+    assert!(resp.is_err());
 
     info!("Testing admin service with wrong credentials");
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
@@ -81,9 +75,8 @@ async fn test_auth(cfg: &MainConfig) {
 
     // Test auth on admin_balance_credit
     let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    if admin_service.admin_balance_credit().await.is_ok() {
-        panic!("Got balance from admin without authorization");
-    }
+    let res = admin_service.admin_balance_credit().await;
+    assert!(res.is_err());
     info!("Testing admin_balance_credit with authorization");
     let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
     admin_service
@@ -107,7 +100,7 @@ async fn test_auth(cfg: &MainConfig) {
         "v1/admin/keys",
         "v1/admin/onchain",
         // specific
-        "v1/admin/keys/activate/",
+        "v1/admin/credit/quote/enable_mint/0000",
         "v1/admin/credit/quote/0000",
     ];
     let http = reqwest::Client::builder().build().unwrap();
@@ -146,49 +139,37 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let mint_description = mint_info.description.unwrap();
     info!(name = mint_name, desc = mint_description, "Mint info");
 
+    let identity = admin_service.admin_ebill_identity_details().await.unwrap();
+    let bill_amount = bitcoin::Amount::from_btc(0.001).unwrap();
     // Create Ebill
-    let (owner_key, request, signature) = random_ebill_request();
-    let signed_request = SignedEnquireRequest { request, signature };
-    let shared_bill: bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty =
-        signed_request.request.content.clone().into();
-    let bill_blocks = shared_bill
-        .get_unencrypted_data(&owner_key.secret_key())
-        .expect("is valid bill");
-    let bill_data = bill_blocks
-        .first()
-        .expect("has blocks")
-        .get_bill_data()
-        .expect("has bill data");
-
-    let bill_amount = bill_data.sum;
+    let EbillRequestComponents {
+        bill, signing_key, ..
+    } = random_ebill_request(identity.bitcoin_public_key, Some(bill_amount));
 
     info!(
-        bill_amount = bill_amount,
-        bill_id = signed_request.request.content.bill_id.to_string(),
+        bill_amount = bill_amount.to_sat(),
+        bill_id = bill.bill_id.to_string(),
         "Bill created"
     );
 
     // Mint Ebill
     info!("Requesting to mint the bill");
-    let enquire_reply: EnquireReply = user_service.mint_credit_quote(signed_request).await;
-    let quote_id = enquire_reply.id;
+    // let quote_id = user_service.mint_credit_quote(bill, owner_key.public_key().into(), &signing_key).await;
+    let quote_id = user_service
+        .mint_credit_quote(bill, signing_key.public_key().into(), &signing_key)
+        .await;
 
     info!(quote_id = ?quote_id, "Mint Request Accepted, waiting for admin to process");
 
-    let one_year_from_now = chrono::Utc::now() + chrono::Duration::days(365);
     let admin_discounted_offer = bill_amount * 99 / 100;
-    let update_quote_request_payload = UpdateQuoteRequest::Offer {
-        discounted: bitcoin::Amount::from_sat(admin_discounted_offer),
-        ttl: Some(one_year_from_now),
-    };
 
     info!(
-        discounted = admin_discounted_offer,
+        discounted = admin_discounted_offer.to_sat(),
         "Admin sending discounted offer"
     );
 
     let update_quote_response: UpdateQuoteResponse = admin_service
-        .admin_credit_quote(quote_id, update_quote_request_payload)
+        .offer_quote(quote_id, admin_discounted_offer)
         .await;
 
     match update_quote_response {
@@ -208,6 +189,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         keyset_id,
         expiration_date,
         discounted,
+        ..
     } = mint_quote_status_reply
     {
         info!(keyset_id=?keyset_id, expiration_date=?expiration_date, "Quote is offered");
@@ -223,41 +205,25 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     }
     .unwrap();
 
-    // Activate keyset
-    let activate_request_payload = EnableKeysetRequest { qid: quote_id };
-    info!("Activating keyset for quote_id: {}", quote_id);
-    admin_service.keys_activate(activate_request_payload).await;
+    user_service.accept_quote(quote_id).await;
+    admin_service.enable_minting_for_quote_id(quote_id).await;
 
-    let keysets: cdk02::KeysetResponse = user_service.list_keysets().await;
-    assert!(keysets.keysets.iter().any(|ks| ks.id == keyset_id));
-    assert!(keysets.keysets.iter().any(|ks| ks.active));
-    let keyset_info = keysets
-        .keysets
-        .iter()
-        .find(|ks| ks.id == keyset_id)
-        .unwrap();
+    let keysets = user_service.list_keysets().await;
+    assert!(keysets.iter().any(|ks| ks.id == keyset_id));
+    assert!(keysets.iter().any(|ks| ks.active));
+    let keyset_info = keysets.iter().find(|ks| ks.id == keyset_id).unwrap();
     assert!(keyset_info.active);
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
 
-    let amounts = get_amounts(offered_discount.to_sat())
-        .iter()
-        .map(|a| cashu::Amount::from(*a))
-        .collect::<Vec<_>>();
-    let blinds = generate_blinds(keyset_info.id, &amounts);
+    let cashu_amounts = cashu::Amount::from(offered_discount.to_sat()).split();
+    let blinds = generate_blinds(keyset_info.id, &cashu_amounts);
     let blinded_messages = blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
 
-    info!("Signing NUT20 mint request");
-    let mut req = MintRequest {
-        quote: quote_id,
-        outputs: blinded_messages,
-        signature: None,
-    };
-    req.sign(owner_key.secret_key().into()).unwrap();
-
     info!("Sending NUT20 mint request");
-    let mint_response = user_service.mint_ebill(req).await;
-    let blinded_signatures = mint_response.signatures;
+    let blinded_signatures = user_service
+        .mint_ebill(quote_id, blinded_messages, signing_key.secret_key().into())
+        .await;
 
     let total_amount = blinded_signatures
         .iter()
@@ -268,7 +234,6 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     // Needed to unblind the signatures
     let keys = user_service.list_keys(keyset_id).await;
-    let keys = keys.keysets.first().unwrap();
 
     let secrets = blinds.iter().map(|b| b.1.clone()).collect::<Vec<_>>();
     let rs = blinds.iter().map(|b| b.2.clone()).collect::<Vec<_>>();
@@ -284,23 +249,17 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     // Test Swap
     info!("Swapping proofs");
-    let new_blinds = generate_blinds(keyset_info.id, &amounts);
+    let new_blinds = generate_blinds(keyset_info.id, &cashu_amounts);
     let bs = new_blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
-    let swap_request = cashu::nut03::SwapRequest::new(proofs, bs);
-    let swap_resp = user_service.swap(swap_request).await;
-    let total_swap = swap_resp
-        .signatures
-        .iter()
-        .map(|s| u64::from(s.amount))
-        .sum::<u64>();
+    let signatures = user_service.swap(proofs, bs).await;
+    let total_swap = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
     assert_eq!(
         total_swap, total_amount,
         "Total swap amount does not match total amount"
     );
     let secrets = new_blinds.iter().map(|b| b.1.clone()).collect::<Vec<_>>();
     let rs = new_blinds.iter().map(|b| b.2.clone()).collect::<Vec<_>>();
-    let proofs =
-        cashu::dhke::construct_proofs(swap_resp.signatures, rs, secrets, &keys.keys).unwrap();
+    let proofs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys).unwrap();
 
     let url = &cfg.user_service;
     let mint_url = MintUrl::from_str(url).unwrap();
