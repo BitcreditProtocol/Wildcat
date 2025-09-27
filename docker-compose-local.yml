@@ -16,7 +16,7 @@ services:
   swap-service:
     extends:
         file: common-services.yml
-        service: swap-service0
+        service: swap-service
 
   treasury-service:
     extends:

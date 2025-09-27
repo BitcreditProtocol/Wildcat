@@ -5,21 +5,26 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = {workspace = true}
+bcr-ebill-core.workspace = true
+bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-key-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-quote-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-swap-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
+bdk_wallet = {workspace = true}
+bitcoin.workspace = true
 cashu.workspace = true
 chrono.workspace = true
+config = {workspace = true}
+rand = {workspace = true}
 reqwest = {workspace = true, features = ["json"]}
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-uuid.workspace = true
 tracing = {workspace = true }
 tracing-subscriber = {workspace = true, features = ["serde"]}
-bcr-ebill-core.workspace = true
-bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
-bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
-bitcoin.workspace = true
-bdk_wallet = {workspace = true}
-rand = {workspace = true}
-serde.workspace = true
-config = {workspace = true}
-anyhow = {workspace = true}
+uuid.workspace = true
