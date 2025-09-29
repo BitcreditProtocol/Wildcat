@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::swap as web_swap;
+use bcr_common::wire::swap as wire_swap;
 use cashu::{nut00 as cdk00, nut03 as cdk03, nut07 as cdk07};
 use thiserror::Error;
 // ----- local modules
@@ -68,19 +68,19 @@ impl SwapClient {
 
     pub async fn burn(&self, proofs: Vec<cdk00::Proof>) -> Result<Vec<cashu::PublicKey>> {
         let url = self.base.join("/v1/burn").expect("burn relative path");
-        let request = web_swap::BurnRequest { proofs };
+        let request = wire_swap::BurnRequest { proofs };
         let res = self.cl.post(url).json(&request).send().await?;
-        let burn_resp: web_swap::BurnResponse = res.json().await?;
+        let burn_resp: wire_swap::BurnResponse = res.json().await?;
         Ok(burn_resp.ys)
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<web_swap::RecoverResponse> {
+    pub async fn recover(&self, proofs: Vec<cdk00::Proof>) -> Result<wire_swap::RecoverResponse> {
         let url = self
             .base
             .join("/v1/admin/swap/recover")
             .expect("recover relative path");
-        let msg = web_swap::RecoverRequest { proofs };
+        let msg = wire_swap::RecoverRequest { proofs };
         let request = self.cl.post(url).json(&msg);
         let response = self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
