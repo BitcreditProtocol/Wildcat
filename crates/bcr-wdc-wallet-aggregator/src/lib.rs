@@ -28,7 +28,7 @@ pub struct AppConfig {
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     // Temporary until it gets re-exported for consistency
-    clwdr_client_url: Option<bcr_wdc_ebpp_client::Url>,
+    clwdr_nats_url: Option<bcr_wdc_ebpp_client::Url>,
 }
 
 #[derive(Clone, FromRef)]
@@ -49,7 +49,7 @@ impl AppController {
             swap_client_url,
             treasury_client_url,
             ebpp_client_url,
-            clwdr_client_url,
+            clwdr_nats_url,
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
@@ -58,7 +58,7 @@ impl AppController {
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
-        let clwdr_client = if let Some(url) = clwdr_client_url {
+        let clwdr_client = if let Some(url) = clwdr_nats_url {
             Some(Arc::new(
                 clwdr_client::ClowderNatsClient::new(url, false).await?,
             ))

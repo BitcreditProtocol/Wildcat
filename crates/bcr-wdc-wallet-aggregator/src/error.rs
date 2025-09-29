@@ -45,7 +45,7 @@ impl axum::response::IntoResponse for Error {
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Clwdr(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
 
             Error::Keys(bcr_common::KeysError::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
