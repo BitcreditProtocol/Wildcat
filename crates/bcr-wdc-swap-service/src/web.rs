@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, State};
-use bcr_wdc_webapi::swap as web_swap;
+use bcr_common::wire::swap as wire_swap;
 use cashu::{nut03 as cdk03, nut07 as cdk07};
 // ----- local imports
 use crate::error::Result;
@@ -25,14 +25,14 @@ where
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn burn_tokens<KeysSrvc, ProofRepo>(
     State(ctrl): State<Service<KeysSrvc, ProofRepo>>,
-    Json(request): Json<web_swap::BurnRequest>,
-) -> Result<Json<web_swap::BurnResponse>>
+    Json(request): Json<wire_swap::BurnRequest>,
+) -> Result<Json<wire_swap::BurnResponse>>
 where
     KeysSrvc: KeysService,
     ProofRepo: ProofRepository,
 {
     let ys = ctrl.burn(&request.proofs).await?;
-    Ok(Json(web_swap::BurnResponse { ys }))
+    Ok(Json(wire_swap::BurnResponse { ys }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
