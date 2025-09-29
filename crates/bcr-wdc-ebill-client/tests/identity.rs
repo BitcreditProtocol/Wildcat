@@ -1,3 +1,4 @@
+use bcr_common::wire::identity as wire_identity;
 use bcr_wdc_ebill_client::{EbillClient, Error};
 
 #[tokio::test]
@@ -10,7 +11,7 @@ async fn identity_calls() {
     assert!(response.is_ok());
 
     let response = client
-        .restore_from_seed_phrase(&bcr_wdc_webapi::identity::SeedPhrase {
+        .restore_from_seed_phrase(&wire_identity::SeedPhrase {
             seed_phrase: bip39::Mnemonic::generate(12).unwrap(),
         })
         .await;

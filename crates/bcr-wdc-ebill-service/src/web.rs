@@ -7,6 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use bcr_common::wire::identity as wire_identity;
 use bcr_ebill_api::{
     constants::MAX_DOCUMENT_FILE_SIZE_BYTES,
     data::{self, bill, contact, identity},
@@ -27,7 +28,7 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
         BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
     },
-    identity::{Identity, IdentityType, NewIdentityPayload, SeedPhrase},
+    identity::{Identity, IdentityType, NewIdentityPayload},
     quotes::RequestEncryptedFileUrlPayload,
 };
 use futures::StreamExt;
@@ -191,10 +192,12 @@ pub async fn validate_and_decrypt_shared_bill(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_seed_phrase(State(ctrl): State<AppController>) -> Result<Json<SeedPhrase>> {
+pub async fn get_seed_phrase(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_identity::SeedPhrase>> {
     tracing::debug!("Received backup seed phrase request");
     let seed_phrase = ctrl.identity_service.get_seedphrase().await?;
-    Ok(Json(SeedPhrase {
+    Ok(Json(wire_identity::SeedPhrase {
         seed_phrase: bip39::Mnemonic::from_str(&seed_phrase)
             .map_err(|_| crate::error::Error::InvalidMnemonic)?,
     }))
@@ -203,7 +206,7 @@ pub async fn get_seed_phrase(State(ctrl): State<AppController>) -> Result<Json<S
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, payload))]
 pub async fn recover_from_seed_phrase(
     State(ctrl): State<AppController>,
-    Json(payload): Json<SeedPhrase>,
+    Json(payload): Json<wire_identity::SeedPhrase>,
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received restore from seed phrase request");
     ctrl.identity_service
