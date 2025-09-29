@@ -1,11 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::wire::identity as wire_identity;
 use bcr_wdc_webapi::{
     bill::{
         BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
-    identity::{Identity, NewIdentityPayload, SeedPhrase},
+    identity::{Identity, NewIdentityPayload},
     quotes::{BillInfo, SharedBill},
 };
 use reqwest::header;
@@ -88,19 +89,22 @@ impl EbillClient {
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn backup_seed_phrase(&self) -> Result<SeedPhrase> {
+    pub async fn backup_seed_phrase(&self) -> Result<wire_identity::SeedPhrase> {
         let url = self
             .base
             .join("/v1/admin/identity/seed/backup")
             .expect("seed phrase relative path");
         let request = self.cl.get(url);
         let res = self.auth.authorize(request).send().await?;
-        let seed_phrase = res.json::<SeedPhrase>().await?;
+        let seed_phrase = res.json::<wire_identity::SeedPhrase>().await?;
         Ok(seed_phrase)
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn restore_from_seed_phrase(&self, seed_phrase: &SeedPhrase) -> Result<()> {
+    pub async fn restore_from_seed_phrase(
+        &self,
+        seed_phrase: &wire_identity::SeedPhrase,
+    ) -> Result<()> {
         let url = self
             .base
             .join("/v1/admin/identity/seed/recover")
