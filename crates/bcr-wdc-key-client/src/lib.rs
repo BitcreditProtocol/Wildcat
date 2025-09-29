@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::keys as web_keys;
+use bcr_common::wire::keys as wire_keys;
 use thiserror::Error;
 // ----- local imports
 pub use reqwest::Url;
@@ -169,7 +169,7 @@ impl KeyClient {
             .base
             .join("/v1/admin/keys/mintop")
             .expect("mint operation relative path");
-        let msg = web_keys::NewMintOperationRequest {
+        let msg = wire_keys::NewMintOperationRequest {
             quote_id: qid,
             kid,
             pub_key: pk,
@@ -179,7 +179,7 @@ impl KeyClient {
         if result.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
         }
-        let _response = result.json::<web_keys::NewMintOperationResponse>().await?;
+        let _response = result.json::<wire_keys::NewMintOperationResponse>().await?;
         Ok(())
     }
 
@@ -233,13 +233,13 @@ impl KeyClient {
             .base
             .join("/v1/admin/keys/deactivate")
             .expect("deactivate relative path");
-        let msg = web_keys::DeactivateKeysetRequest { kid };
+        let msg = wire_keys::DeactivateKeysetRequest { kid };
         let request = self.cl.post(url).json(&msg);
         let response = self.auth.authorize(request).send().await?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(kid));
         }
-        let response: web_keys::DeactivateKeysetResponse = response.json().await?;
+        let response: wire_keys::DeactivateKeysetResponse = response.json().await?;
         Ok(response.kid)
     }
 }

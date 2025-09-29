@@ -5,7 +5,6 @@ pub mod bill;
 pub mod contact;
 pub mod eiou;
 pub mod identity;
-pub mod keys;
 pub mod quotes;
 pub mod signatures;
 #[cfg(feature = "test-utils")]
