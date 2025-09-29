@@ -5,6 +5,7 @@ use bcr_wdc_ebpp_client::Error as EbppClientError;
 use bcr_wdc_swap_client::Error as SwapClientError;
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use cdk::Error as CDKError;
+use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports
 
@@ -25,6 +26,8 @@ pub enum Error {
     Treasury(#[from] TreasuryClientError),
     #[error("EBPP Client error: {0}")]
     Ebpp(#[from] EbppClientError),
+    #[error("Clowder Client error: {0}")]
+    ClowderClient(#[from] ClowderClientError),
 
     #[error("not yet implemented: {0}")]
     NotYet(String),
@@ -42,6 +45,7 @@ impl axum::response::IntoResponse for Error {
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Clwdr(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
 
             Error::Keys(bcr_common::KeysError::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())

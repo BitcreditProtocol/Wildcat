@@ -28,7 +28,9 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg);
+    let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg)
+        .await
+        .expect("Initialization");
     let router = bcr_wdc_wallet_aggregator::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
