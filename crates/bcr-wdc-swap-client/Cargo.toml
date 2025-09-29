@@ -8,8 +8,8 @@ license.workspace = true
 authorized = []
 
 [dependencies]
+bcr-common = {workspace = true}
 bcr-wdc-utils = {workspace = true}
-bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
