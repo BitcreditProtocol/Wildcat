@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_wdc_webapi::keys as web_keys;
+use bcr_common::wire::keys as wire_keys;
 // ----- local imports
 use crate::error::Result;
 use crate::service::Service;
@@ -70,38 +70,38 @@ pub async fn get_keyset_for_date(
 #[utoipa::path(
     post,
     path = "/v1/admin/keys/deactivate/",
-    request_body(content = web_keys::DeactivateKeysetRequest, content_type = "application/json"),
+    request_body(content = wire_keys::DeactivateKeysetRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = web_keys::DeactivateKeysetResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_keys::DeactivateKeysetResponse, content_type = "application/json"),
         (status = 404, description = "keyset id not found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn deactivate(
     State(ctrl): State<Service>,
-    Json(request): Json<web_keys::DeactivateKeysetRequest>,
-) -> Result<Json<web_keys::DeactivateKeysetResponse>> {
+    Json(request): Json<wire_keys::DeactivateKeysetRequest>,
+) -> Result<Json<wire_keys::DeactivateKeysetResponse>> {
     tracing::debug!("Received deactivate request");
 
     let kid = ctrl.deactivate(request.kid).await?;
-    let response = web_keys::DeactivateKeysetResponse { kid };
+    let response = wire_keys::DeactivateKeysetResponse { kid };
     Ok(Json(response))
 }
 
 #[utoipa::path(
     post,
     path = "/v1/admin/keys/mintop",
-    request_body(content = web_keys::NewMintOperationRequest, content_type = "application/json"),
+    request_body(content = wire_keys::NewMintOperationRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = web_keys::NewMintOperationResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_keys::NewMintOperationResponse, content_type = "application/json"),
         (status = 404, description = "keyset id not found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn new_mintop(
     State(ctrl): State<Service>,
-    Json(request): Json<web_keys::NewMintOperationRequest>,
-) -> Result<Json<web_keys::NewMintOperationResponse>> {
+    Json(request): Json<wire_keys::NewMintOperationRequest>,
+) -> Result<Json<wire_keys::NewMintOperationResponse>> {
     tracing::debug!("Received new mint operation request");
 
     ctrl.new_minting_operation(
@@ -111,6 +111,6 @@ pub async fn new_mintop(
         request.target,
     )
     .await?;
-    let response = web_keys::NewMintOperationResponse {};
+    let response = wire_keys::NewMintOperationResponse {};
     Ok(Json(response))
 }
