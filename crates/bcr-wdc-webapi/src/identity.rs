@@ -63,11 +63,6 @@ impl From<IdentityType> for identity::IdentityType {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct SeedPhrase {
-    pub seed_phrase: bip39::Mnemonic,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub node_id: NodeId,
