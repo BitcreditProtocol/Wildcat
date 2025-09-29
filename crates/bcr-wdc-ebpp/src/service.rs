@@ -3,11 +3,12 @@ use std::{
     pin::Pin,
     str::FromStr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_wdc_webapi::signatures::{RequestToMintFromEBillDesc, SignedRequestToMintFromEBillDesc};
+use bcr_common::wire::signatures as wire_signatures;
 use bdk_wallet::bitcoin as btc;
 use cdk_common::mint::MeltQuote;
 use cdk_common::{
@@ -67,7 +68,7 @@ pub trait EBillNode: Sync {
     /// Returns a string representing the bitcoin descriptor where payment is expected
     async fn request_to_pay(
         &self,
-        bill: &bcr_wdc_webapi::bill::BillId,
+        bill: &bcr_ebill_core::bill::BillId,
         amount: btc::Amount,
     ) -> Result<String>;
 }
@@ -80,7 +81,7 @@ pub struct Service<OnChainWlt, PayRepo, EBillCl> {
     treasury_pubkey: btc::secp256k1::XOnlyPublicKey,
 
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<String>>>>,
-    interval: core::time::Duration,
+    interval: Duration,
     notif_cancel_token: Arc<Mutex<CancellationToken>>,
 }
 
@@ -89,7 +90,7 @@ impl<OnChainWlt, PayRepo, EBillCl> Service<OnChainWlt, PayRepo, EBillCl> {
         onchain: OnChainWlt,
         payrepo: PayRepo,
         ebill: EBillCl,
-        refresh_interval: core::time::Duration,
+        refresh_interval: Duration,
         treasury_pubkey: btc::secp256k1::XOnlyPublicKey,
     ) -> Self {
         let payment_notifier = Arc::new(Mutex::new(None));
@@ -159,7 +160,7 @@ where
 
         let amount = btc::Amount::from_sat(amount.into());
         let parsed_description =
-            serde_json::from_str::<SignedRequestToMintFromEBillDesc>(&description);
+            serde_json::from_str::<wire_signatures::SignedRequestToMintFromEBillDesc>(&description);
         let payment_type = match parsed_description {
             Ok(ebill_request_to_mint) => {
                 tracing::trace!(
@@ -170,7 +171,11 @@ where
                     &ebill_request_to_mint,
                     &self.treasury_pubkey,
                 )?;
-                let output = self.ebill.request_to_pay(&request.ebill_id, amount).await?;
+                //TODO! wait for bitcredit-core to integrate bcr-common
+                let ebill_id =
+                    bcr_ebill_core::bill::BillId::from_str(&request.ebill_id.to_string())
+                        .expect("compatible billID");
+                let output = self.ebill.request_to_pay(&ebill_id, amount).await?;
                 let recipient = self.onchain.add_descriptor(&output).await?;
                 payment::PaymentType::EBill(recipient)
             }
@@ -411,9 +416,9 @@ where
 }
 
 fn validate_ebill_request_signature<'a>(
-    signed: &'a SignedRequestToMintFromEBillDesc,
+    signed: &'a wire_signatures::SignedRequestToMintFromEBillDesc,
     pubkey: &btc::secp256k1::XOnlyPublicKey,
-) -> Result<&'a RequestToMintFromEBillDesc> {
+) -> Result<&'a wire_signatures::RequestToMintFromEBillDesc> {
     bcr_wdc_utils::keys::schnorr_verify_borsh_msg_with_key(&signed.data, &signed.signature, pubkey)
         .map_err(Error::SchnorrBorsh)?;
     Ok(&signed.data)
@@ -424,7 +429,7 @@ async fn notify_payment<OnChain>(
     recipient: btc::Address,
     expected: btc::Amount,
     sender: mpsc::Sender<String>,
-    pause: core::time::Duration,
+    pause: Duration,
     token: CancellationToken,
 ) where
     OnChain: OnChainWallet,
@@ -540,7 +545,7 @@ mod tests {
         let onchain = MockOnChainWallet::new();
         let payrepo = MockPaymentRepository::new();
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .create_incoming_payment_request(
@@ -564,7 +569,7 @@ mod tests {
         let mut payrepo = MockPaymentRepository::new();
         payrepo.expect_store_incoming().returning(|_| Ok(()));
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .create_incoming_payment_request(
@@ -587,7 +592,7 @@ mod tests {
         let onchain = MockOnChainWallet::new();
         let payrepo = MockPaymentRepository::new();
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .make_payment(
@@ -632,7 +637,7 @@ mod tests {
                 })
             });
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .make_payment(
@@ -680,7 +685,7 @@ mod tests {
                 })
             });
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .make_payment(
@@ -720,7 +725,7 @@ mod tests {
             .with(eq(reqid))
             .returning(move |_| Err(Error::PaymentRequestNotFound(reqid)));
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .make_payment(
@@ -766,7 +771,7 @@ mod tests {
                 })
             });
         let ebill = MockEBillNode::new();
-        let interval = core::time::Duration::from_secs(1);
+        let interval = Duration::from_secs(1);
         let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
         let result = srvc
             .make_payment(

@@ -3,7 +3,7 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_webapi as web;
+use bcr_common::wire::signatures as wire_signatures;
 use cashu::{
     mint_url::MintUrl,
     nuts::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03},
@@ -54,7 +54,7 @@ impl Wallet for CDKWallet {
     async fn mint_quote(
         &self,
         amount: Amount,
-        signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
+        signed_request: wire_signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote> {
         let description = serde_json::to_string(&signed_request).map_err(Error::SerdeJson)?;
         let quote = self.wlt.mint_quote(amount, Some(description)).await?;
