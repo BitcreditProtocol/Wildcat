@@ -1,8 +1,11 @@
 // ----- standard library imports
+use std::str::FromStr;
+use std::time::Duration;
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::core;
+use bcr_common::wire::signatures as wire_signatures;
 use bcr_wdc_utils::signatures as signatures_utils;
-use bcr_wdc_webapi as web;
 use bcr_wdc_webapi::bill::BillId;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
@@ -18,7 +21,7 @@ pub trait Wallet: Clone + Send {
     async fn mint_quote(
         &self,
         amount: Amount,
-        signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
+        signed_request: wire_signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote>;
     async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
     async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
@@ -94,13 +97,14 @@ where
         ebill_id: BillId,
         amount: Amount,
     ) -> Result<cdk::wallet::MintQuote> {
-        let request = web::signatures::RequestToMintFromEBillDesc {
-            ebill_id: ebill_id.clone(),
+        let request = wire_signatures::RequestToMintFromEBillDesc {
+            // TODO: wait for Bitcredit-Core to integrate bcr-common
+            ebill_id: core::BillId::from_str(&ebill_id.clone().to_string()).expect("valid bill id"),
         };
         let signature =
             bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
                 .map_err(Error::SchnorrBorshMsg)?;
-        let signed_request = web::signatures::SignedRequestToMintFromEBillDesc {
+        let signed_request = wire_signatures::SignedRequestToMintFromEBillDesc {
             data: request,
             signature,
         };
@@ -176,7 +180,7 @@ where
         let mut response = self.wallet.swap_to_messages(outputs).await;
         while response.is_err() && retries <= 3 {
             tracing::warn!("swap failed, attempt {retries}, retry in 1 second");
-            tokio::time::sleep(core::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             response = self.wallet.swap_to_messages(outputs).await;
             retries += 1;
         }
@@ -237,7 +241,7 @@ mod tests {
             async fn mint_quote(
                 &self,
                 amount: Amount,
-                signed_request: web::signatures::SignedRequestToMintFromEBillDesc,
+                signed_request: wire_signatures::SignedRequestToMintFromEBillDesc,
             ) -> Result<cdk::wallet::MintQuote>;
             async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
             async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>>;
@@ -276,7 +280,6 @@ mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use bcr_wdc_webapi as web;
     use cashu::{nut00 as cdk00, nut23 as cdk23, Amount};
     use mockall::predicate::*;
     use mockall::*;
@@ -293,8 +296,8 @@ mod tests {
         let mut wallet = MockWallet::new();
         let ebill_id_clone = ebill_id.clone();
         let signed_request_check = predicate::function(
-            move |req: &web::signatures::SignedRequestToMintFromEBillDesc| {
-                req.data.ebill_id == ebill_id_clone
+            move |req: &wire_signatures::SignedRequestToMintFromEBillDesc| {
+                req.data.ebill_id.to_string() == ebill_id_clone.to_string()
             },
         );
         let mint_quote = cdk::wallet::MintQuote {
