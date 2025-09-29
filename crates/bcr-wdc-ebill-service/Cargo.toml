@@ -11,6 +11,7 @@ test-utils = ["axum-test", "mockall"]
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
+bcr-common = {workspace = true}
 bcr-ebill-api.workspace = true
 bcr-ebill-core = {workspace = true}
 bcr-ebill-transport.workspace = true
