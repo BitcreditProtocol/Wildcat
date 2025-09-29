@@ -51,10 +51,18 @@ pub trait SignaturesRepository: Send + Sync {
     async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>>;
 }
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait ClowderClient: Send + Sync {
+    async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()>;
+    async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()>;
+}
+
 #[derive(Clone)]
 pub struct Service {
     pub keys: Arc<dyn KeysRepository>,
     pub signatures: Arc<dyn SignaturesRepository>,
+    pub clowder: Arc<dyn ClowderClient>,
     pub keygen: Factory,
 }
 
@@ -69,7 +77,9 @@ impl Service {
         }
         let new_keyset = self.keygen.generate(date);
         let kid = new_keyset.0.id;
+        let kset = new_keyset.1.clone();
         self.keys.store(new_keyset).await?;
+        self.clowder.new_keyset(cashu::KeySet::from(kset)).await?;
         Ok(kid)
     }
 
@@ -106,6 +116,7 @@ impl Service {
             .ok_or(Error::UnknownKeyset(kid))?;
         info.active = false;
         self.keys.update_info(info.clone()).await?;
+        self.clowder.keyset_deactivated(kid).await?;
         Ok(info.id)
     }
 
@@ -226,6 +237,7 @@ mod tests {
             keys: Arc::new(TestKeysRepository::default()),
             signatures: Arc::new(TestSignaturesRepository::default()),
             keygen: factory,
+            clowder: Arc::new(crate::clowder::DummyClowderClient),
         };
         let qid = Uuid::new_v4();
         let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();

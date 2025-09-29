@@ -17,8 +17,10 @@ pub enum Error {
     SignKeys(#[from] keys_utils::SignWithKeysError),
     #[error("verify with keys {0}")]
     VerifyKeys(#[from] keys_utils::VerifyWithKeysError),
-    #[error("signatures repository error {0}")]
+    #[error("signatures repository {0}")]
     SignaturesRepository(AnyError),
+    #[error("clowder client {0}")]
+    ClowderClient(AnyError),
 
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cdk02::Id),
@@ -58,6 +60,7 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
 
+            Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SignaturesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::VerifyKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::SignKeys(_) => (StatusCode::BAD_REQUEST, String::new()),

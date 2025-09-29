@@ -13,6 +13,7 @@ use utoipa::OpenApi;
 mod admin;
 #[cfg(feature = "test-utils")]
 pub mod client;
+mod clowder;
 mod error;
 mod factory;
 mod persistence;
@@ -32,6 +33,7 @@ pub type ProdKeysService = service::Service;
 pub struct AppConfig {
     keys: persistence::surreal::DBKeysConnectionConfig,
     signatures: persistence::surreal::DBSignaturesConnectionConfig,
+    clowder: clowder::ClowderClientConfig,
     starting_derivation_path: btc32::DerivationPath,
 }
 
@@ -45,6 +47,7 @@ impl AppController {
         let AppConfig {
             keys,
             signatures,
+            clowder,
             starting_derivation_path,
         } = cfg;
 
@@ -55,9 +58,13 @@ impl AppController {
             .await
             .expect("DB connection to signatures failed");
         let keygen = factory::Factory::new(seed, starting_derivation_path);
+        let clowder_cl = clowder::build_clowder_client(clowder)
+            .await
+            .expect("clowder client");
         let srv = ProdKeysService {
             keys: Arc::new(keys_repo),
             signatures: Arc::new(signatures_repo),
+            clowder: Arc::from(clowder_cl),
             keygen,
         };
         Self { keys: srv }
@@ -158,6 +165,7 @@ pub mod test_utils {
                 keys: Arc::new(keys_repo),
                 signatures: Arc::new(signatures_repo),
                 keygen,
+                clowder: Arc::new(clowder::DummyClowderClient),
             };
             Self { keys: srv }
         }
