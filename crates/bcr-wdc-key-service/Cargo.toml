@@ -13,8 +13,8 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
+bcr-common = {workspace = true}
 bcr-wdc-utils = {workspace = true}
-bcr-wdc-webapi = {workspace = true}
 bip39 = {workspace = true}
 bitcoin.workspace = true
 cashu = {workspace = true, features = ["swagger"]}

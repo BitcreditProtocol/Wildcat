@@ -1,9 +1,12 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::FromRef;
-use axum::routing::{get, post};
-use axum::Router;
+use axum::{
+    extract::FromRef,
+    routing::{get, post},
+    Router,
+};
+use bcr_common::wire::keys as wire_keys;
 use bitcoin::bip32 as btc32;
 use utoipa::OpenApi;
 // ----- local modules
@@ -92,9 +95,9 @@ where
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
-        bcr_wdc_webapi::keys::DeactivateKeysetRequest,
-        bcr_wdc_webapi::keys::DeactivateKeysetResponse,
-        bcr_wdc_webapi::keys::KeysetMintCondition,
+        wire_keys::DeactivateKeysetRequest,
+        wire_keys::DeactivateKeysetResponse,
+        wire_keys::KeysetMintCondition,
         cashu::BlindSignature,
         cashu::BlindedMessage,
         cashu::Proof,
