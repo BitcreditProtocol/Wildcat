@@ -1,6 +1,8 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, State};
+use bcr_common::wire::signatures as wire_signatures;
 use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
 use cashu::{self as cdk};
 // ----- local imports
@@ -65,8 +67,8 @@ where
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_mint_from_ebill<Wlt, WdcSrvc, Repo>(
     State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
-    Json(request): Json<web_signatures::RequestToMintFromEBillRequest>,
-) -> Result<Json<web_signatures::RequestToMintfromEBillResponse>>
+    Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
+) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>>
 where
     Wlt: debit::Wallet + 'static,
     WdcSrvc: debit::WildcatService + 'static,
@@ -74,10 +76,11 @@ where
 {
     tracing::debug!("Received request to mint from ebill");
 
-    let quote = ctrl
-        .mint_from_ebill(request.ebill_id, request.amount)
-        .await?;
-    let response = web_signatures::RequestToMintfromEBillResponse {
+    //TODO! wait for bitcredit-core to integrate bcr-common
+    let ebill_id = bcr_ebill_core::bill::BillId::from_str(&request.ebill_id.to_string())
+        .expect("compatible billID");
+    let quote = ctrl.mint_from_ebill(ebill_id, request.amount).await?;
+    let response = wire_signatures::RequestToMintFromEBillResponse {
         request_id: quote.id,
         request: quote.request,
     };
