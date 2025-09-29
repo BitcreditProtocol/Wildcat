@@ -9,9 +9,9 @@ test-utils = ["bcr-wdc-key-service", "bcr-wdc-key-service/test-utils"]
 authorized = ["bcr-wdc-utils/auth"]
 
 [dependencies]
+bcr-common = {workspace = true}
 bcr-wdc-key-service = {workspace = true, optional = true}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
-bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}
