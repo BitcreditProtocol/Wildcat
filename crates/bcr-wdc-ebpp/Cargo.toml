@@ -9,9 +9,11 @@ anyhow = {workspace = true}
 async-stream = {version = "0.3"}
 async-trait = { workspace = true}
 axum = { workspace = true, features = ["macros"]}
+bcr-common = {workspace = true}
+bcr-ebill-core = {workspace = true}
+bcr-wdc-ebill-client = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
-bcr-wdc-ebill-client = {workspace = true}
 bdk_core = {workspace = true}
 bdk_electrum = {workspace = true}
 bdk_wallet = {workspace = true, features = ["rusqlite", "keys-bip39"]}
