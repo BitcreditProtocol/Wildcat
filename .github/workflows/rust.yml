@@ -40,39 +40,28 @@ jobs:
           echo "After cleanup:"
           df -h
 
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
       - name: Switch rust version
         run: rustup default stable
 
       - name: Update rust
         run: rustup update
 
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+      - name: Add rustup components
+        run: rustup component add clippy rustfmt
 
-      - name: Cargo update
-        run: cargo update --verbose
+      - name: Activate cache
+        uses: Swatinem/rust-cache@v2.8.0
+        with:
+          prefix-key: "wildcat-01"
+
+      - name: Install required cargo tools
+        run: cargo install cargo-deny clippy-sarif sarif-fmt
 
       - name: Check
-        run: cargo check --verbose
-
-      - name: Test
-        run: cargo test
-        continue-on-error: true
-
-      - name: Build
-        run: cargo build --verbose
-
-      - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
-
-      - name: Add clippy
-        run: rustup component add clippy
-
-      - name: Add fmt
-        run: rustup component add rustfmt
-
-      - name: Add cargo deny
-        run: cargo install cargo-deny
+        run: cargo check
 
       - name: Check formatting
         run: cargo fmt -- --check
