@@ -50,39 +50,23 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - name: Free up disk space
-        run: |
-          echo "Before cleanup:"
-          df -h
-          docker system prune -a -f
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo apt-get clean
-          sudo apt-get autoremove -y
-          echo "After cleanup:"
-          df -h
-
-      - name: Switch rust version
-        run: rustup default stable
-
-      - name: Update rust
-        run: rustup update stable
-
-      - name: Install protoc
+      - name: Install Protoc
         run: sudo apt-get install -y protobuf-compiler
 
-      - name: Activate cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-        with:
-          prefix-key: "wildcat-01"
+      - name: Install Rust
+        run: rustup update stable
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
 
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "wildcat-01"
+
       - name: Install grcov
         run: cargo install grcov
 
-      - name: Run tests
+      - name: run tests
         run: cargo test --workspace --verbose
         env:
           LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"

@@ -47,6 +47,9 @@ jobs:
           echo "After cleanup:"
           df -h
 
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
       - name: Switch rust version
         run: rustup default stable
 
@@ -56,23 +59,19 @@ jobs:
       - name: Add rustup components
         run: rustup component add clippy rustfmt
 
-      - name: Install required cargo tools
-        run: cargo install cargo-deny clippy-sarif sarif-fmt
-
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
-
       - name: Activate cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           prefix-key: "wildcat-01"
+
+      - name: Install required cargo tools
+        run: cargo install cargo-deny clippy-sarif sarif-fmt
 
       - name: Check
         run: cargo check --verbose
 
       - name: Check formatting
         run: cargo fmt -- --check
-        continue-on-error: true
 
       - name: Clippy
         run:
@@ -85,9 +84,6 @@ jobs:
       - name: Cargo deny
         run: cargo deny check
         continue-on-error: true
-
-      - name: Build
-        run: cargo build --verbose
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v4
