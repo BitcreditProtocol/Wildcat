@@ -6,11 +6,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::{wire::keys as wire_keys, KeysClient};
 use bitcoin::bip32 as btc32;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
+#[cfg(feature = "test-utils")]
+pub mod client;
 mod error;
 mod factory;
 mod persistence;
@@ -71,19 +73,22 @@ where
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let web = Router::new()
-        .route("/v1/keysets/{kid}", get(web::lookup_keyset))
-        .route("/v1/keysets", get(web::list_keysets))
-        .route("/v1/keys/{kid}", get(web::lookup_keys))
-        .route("/v1/keys", get(web::list_keys))
-        .route("/v1/mint/ebill", post(web::mint_ebill))
-        .route("/v1/restore", post(web::restore));
+        .route(KeysClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
+        .route(KeysClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
+        .route(KeysClient::KEYS_EP_V1, get(web::lookup_keys))
+        .route(KeysClient::LISTKEYS_EP_V1, get(web::list_keys))
+        .route(KeysClient::MINT_EP_V1, post(web::mint_ebill))
+        .route(KeysClient::RESTORE_EP_V1, post(web::restore));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
-        .route("/v1/admin/keys/{date}", get(admin::get_keyset_for_date))
-        .route("/v1/admin/keys/sign", post(admin::sign_blind))
-        .route("/v1/admin/keys/mintop", post(admin::new_mintop))
-        .route("/v1/admin/keys/verify", post(admin::verify_proof))
-        .route("/v1/admin/keys/deactivate", post(admin::deactivate));
+        .route(
+            KeysClient::KEYSFOREXPIRATION_EP_V1,
+            get(admin::get_keyset_for_date),
+        )
+        .route(KeysClient::SIGN_EP_V1, post(admin::sign_blind))
+        .route(KeysClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
+        .route(KeysClient::VERIFY_EP_V1, post(admin::verify_proof))
+        .route(KeysClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate));
 
     Router::new()
         .merge(web)

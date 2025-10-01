@@ -22,7 +22,7 @@ mod web;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     cdk_mint_url: MintUrl,
-    keys_client_url: bcr_wdc_key_client::Url,
+    keys_client_url: reqwest::Url,
     swap_client_url: bcr_wdc_swap_client::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
@@ -31,7 +31,7 @@ pub struct AppConfig {
 #[derive(Clone, FromRef)]
 pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
-    keys_client: bcr_wdc_key_client::KeyClient,
+    keys_client: bcr_common::KeysClient,
     swap_client: bcr_wdc_swap_client::SwapClient,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
@@ -48,7 +48,7 @@ impl AppController {
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
-        let keys_client = bcr_wdc_key_client::KeyClient::new(keys_client_url);
+        let keys_client = bcr_common::KeysClient::new(keys_client_url);
         let swap_client = bcr_wdc_swap_client::SwapClient::new(swap_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);

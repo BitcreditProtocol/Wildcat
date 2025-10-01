@@ -10,7 +10,6 @@ use cashu::Amount;
 
 pub struct EbillRequestComponents {
     pub bill: web_quotes::SharedBill,
-    pub owner_key: Keypair,
     pub signing_key: Keypair,
 }
 
@@ -18,11 +17,9 @@ pub fn random_ebill_request(
     receiver: bitcoin::PublicKey,
     amount: Option<bitcoin::Amount>,
 ) -> EbillRequestComponents {
-    let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
     let (request, signing_key) = generate_random_bill_enquire_request(receiver, None, amount);
     EbillRequestComponents {
         bill: request.content,
-        owner_key,
         signing_key,
     }
 }

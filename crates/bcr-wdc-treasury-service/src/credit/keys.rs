@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_key_client::{Error as KeyClientError, KeyClient};
+use bcr_common::{KeysClient, KeysError};
 use cashu::nut02 as cdk02;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -11,15 +11,15 @@ use crate::credit::KeyService;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct KeySrvcConfig {
-    pub url: bcr_wdc_key_client::Url,
+    pub url: reqwest::Url,
 }
 
 #[derive(Clone)]
-pub struct KeySrvc(KeyClient);
+pub struct KeySrvc(KeysClient);
 
 impl KeySrvc {
     pub fn new(cfg: KeySrvcConfig) -> Self {
-        let client = KeyClient::new(cfg.url);
+        let client = KeysClient::new(cfg.url);
         Self(client)
     }
 }
@@ -29,7 +29,7 @@ impl KeyService for KeySrvc {
     async fn info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
         match self.0.keyset_info(kid).await {
             Ok(info) => Ok(info),
-            Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(e) => Err(Error::KeyClient(e)),
         }
     }
@@ -37,7 +37,7 @@ impl KeyService for KeySrvc {
     async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
         match self.0.keys(kid).await {
             Ok(keys) => Ok(keys),
-            Err(KeyClientError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(e) => Err(Error::KeyClient(e)),
         }
     }
