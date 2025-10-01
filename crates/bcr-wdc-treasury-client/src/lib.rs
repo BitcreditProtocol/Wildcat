@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
-use cashu::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03, Amount};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -58,9 +57,9 @@ impl TreasuryClient {
     #[cfg(feature = "authorized")]
     pub async fn generate_blinds(
         &self,
-        kid: cdk02::Id,
-        amount: Amount,
-    ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
+        kid: cashu::Id,
+        amount: cashu::Amount,
+    ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)> {
         let msg = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
         let url = self
             .base
@@ -76,7 +75,7 @@ impl TreasuryClient {
     pub async fn store_signatures(
         &self,
         rid: uuid::Uuid,
-        signatures: Vec<cdk00::BlindSignature>,
+        signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()> {
         let msg = web_signatures::StoreBlindSignaturesRequest { rid, signatures };
         let url = self
@@ -91,16 +90,16 @@ impl TreasuryClient {
 
     pub async fn redeem(
         &self,
-        inputs: Vec<cdk00::Proof>,
-        outputs: Vec<cdk00::BlindedMessage>,
-    ) -> Result<Vec<cdk00::BlindSignature>> {
-        let msg = cdk03::SwapRequest::new(inputs, outputs);
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let msg = cashu::SwapRequest::new(inputs, outputs);
         let url = self
             .base
             .join("/v1/treasury/redeem")
             .expect("redeem relative path");
         let request = self.cl.post(url).json(&msg);
-        let response: cdk03::SwapResponse = request.send().await?.json().await?;
+        let response: cashu::SwapResponse = request.send().await?.json().await?;
         Ok(response.signatures)
     }
 

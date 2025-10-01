@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_key_client::KeyClient;
+use bcr_common::KeysClient;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -12,15 +12,15 @@ use crate::{
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KeysRestConfig {
-    pub base_url: bcr_wdc_key_client::Url,
+    pub base_url: reqwest::Url,
 }
 
 #[derive(Debug, Clone)]
-pub struct KeysRestHandler(KeyClient);
+pub struct KeysRestHandler(KeysClient);
 
 impl KeysRestHandler {
     pub fn new(cfg: KeysRestConfig) -> Self {
-        let cl = KeyClient::new(cfg.base_url);
+        let cl = KeysClient::new(cfg.base_url);
         Self(cl)
     }
 }

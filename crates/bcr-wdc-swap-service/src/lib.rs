@@ -79,7 +79,7 @@ pub mod test_utils {
 
     #[derive(Debug, Default, Clone)]
     pub struct TestKeysService {
-        pub keys: bcr_wdc_key_client::test_utils::KeyClient,
+        pub keys: bcr_wdc_key_service::client::DummyClient,
     }
     #[async_trait::async_trait]
     impl service::KeysService for TestKeysService {

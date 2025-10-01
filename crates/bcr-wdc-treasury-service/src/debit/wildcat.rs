@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_key_client as key;
+use bcr_common::{KeysClient, KeysError};
 use bcr_wdc_quote_client as quote;
 use bcr_wdc_swap_client as swap;
 use bcr_wdc_webapi::{bill::BillId, quotes as web_quotes};
@@ -18,21 +18,21 @@ use crate::{
 pub struct WildcatClientConfig {
     pub swap_service_url: swap::Url,
     pub quote_service_url: quote::Url,
-    pub key_service_url: key::Url,
+    pub key_service_url: reqwest::Url,
 }
 
 #[derive(Clone, Debug)]
 pub struct WildcatCl {
     swap_cl: swap::SwapClient,
     quote_cl: quote::QuoteClient,
-    key_cl: key::KeyClient,
+    key_cl: KeysClient,
 }
 
 impl WildcatCl {
     pub fn new(cfg: WildcatClientConfig) -> Self {
         let swap_cl = swap::SwapClient::new(cfg.swap_service_url);
         let quote_cl = quote::QuoteClient::new(cfg.quote_service_url);
-        let key_cl = key::KeyClient::new(cfg.key_service_url);
+        let key_cl = KeysClient::new(cfg.key_service_url);
         Self {
             swap_cl,
             quote_cl,
@@ -79,7 +79,7 @@ impl WildcatService for WildcatCl {
                 let resp = self.key_cl.deactivate_keyset(kid).await;
                 match resp {
                     Ok(_) => return Ok(kid),
-                    Err(key::Error::ResourceNotFound(_)) => {
+                    Err(KeysError::ResourceNotFound(_)) => {
                         continue;
                     }
                     Err(e) => return Err(Error::KeyClient(e)),
