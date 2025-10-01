@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_key_client::KeyClient;
+use bcr_common::KeysClient;
 use bcr_wdc_utils::keys::test_utils as keys_test;
 use cashu::{nut00 as cdk00, Amount};
 // ----- local imports
@@ -10,7 +10,7 @@ async fn restore() {
     let entry = keys_test::generate_random_keyset();
     let server = bcr_wdc_key_service::test_utils::build_test_server(Some(entry.clone())).await;
     let server_url = server.server_address().expect("address");
-    let client = KeyClient::new(server_url);
+    let client = KeysClient::new(server_url);
 
     let (msg, _, _) = keys_test::generate_blind(entry.0.id, Amount::from(16));
 

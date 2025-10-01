@@ -8,6 +8,7 @@ license.workspace = true
 authorized = ["bcr-wdc-utils/auth"]
 
 [dependencies]
+bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 cashu.workspace = true
