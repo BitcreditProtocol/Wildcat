@@ -3,7 +3,7 @@ use std::collections::HashSet;
 // ----- extra library imports
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
-use bcr_wdc_key_client::KeyClient;
+use bcr_common::{KeysClient, KeysError};
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut06 as cdk06, nut07 as cdk07,
     nut09 as cdk09, MintVersion,
@@ -336,14 +336,14 @@ trait KeyClientT {
     async fn keyset_info(
         &self,
         keyset_id: cdk02::Id,
-    ) -> bcr_wdc_key_client::Result<cdk02::KeySetInfo>;
+    ) -> std::result::Result<cdk02::KeySetInfo, KeysError>;
 }
 #[async_trait]
-impl KeyClientT for KeyClient {
+impl KeyClientT for KeysClient {
     async fn keyset_info(
         &self,
         keyset_id: cdk02::Id,
-    ) -> bcr_wdc_key_client::Result<cdk02::KeySetInfo> {
+    ) -> std::result::Result<cdk02::KeySetInfo, KeysError> {
         self.keyset_info(keyset_id).await
     }
 }
@@ -360,7 +360,7 @@ async fn determine_swap_type(
         .collect();
     for response in input_responses.await.into_iter() {
         match response {
-            Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
+            Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
             Err(e) => return Err(Error::Keys(e)),
             Ok(_) => {}
         }
@@ -372,7 +372,7 @@ async fn determine_swap_type(
         .collect();
     for response in outputs_responses.await.into_iter() {
         match response {
-            Err(bcr_wdc_key_client::Error::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
+            Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
             Err(e) => return Err(Error::Keys(e)),
             Ok(_) => {}
         }
@@ -413,7 +413,7 @@ mod tests {
             .expect_keyset_info()
             .times(1)
             .with(eq(sat_kid))
-            .returning(|kid| Err(bcr_wdc_key_client::Error::ResourceNotFound(kid)));
+            .returning(|kid| Err(KeysError::ResourceNotFound(kid)));
 
         let swaptype = determine_swap_type(&client, &inputs, &outputs)
             .await
@@ -465,7 +465,7 @@ mod tests {
             .expect_keyset_info()
             .times(1)
             .with(eq(sat_kid))
-            .returning(|kid| Err(bcr_wdc_key_client::Error::ResourceNotFound(kid)));
+            .returning(|kid| Err(KeysError::ResourceNotFound(kid)));
 
         let swaptype = determine_swap_type(&client, &inputs, &outputs)
             .await

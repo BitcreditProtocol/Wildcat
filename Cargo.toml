@@ -12,7 +12,7 @@ members = [
     "crates/bcr-wdc-ebill-service", "crates/bcr-wdc-ebill-client",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
     "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
-    "crates/bcr-wdc-key-service", "crates/bcr-wdc-key-client",
+    "crates/bcr-wdc-key-service",
     "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
     "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
@@ -26,7 +26,7 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.1.0"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.2.1"}
 bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
 bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
@@ -34,7 +34,6 @@ bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
 bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
-bcr-wdc-key-client = {path = "./crates/bcr-wdc-key-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
 bcr-wdc-quote-client = {path = "./crates/bcr-wdc-quote-client"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}

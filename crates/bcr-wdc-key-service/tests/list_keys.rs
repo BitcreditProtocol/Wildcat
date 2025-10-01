@@ -1,14 +1,14 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_key_client::KeyClient;
+use bcr_common::KeysClient;
 // ----- local imports
 
 #[tokio::test]
-async fn list_keyset_info_empty() {
+async fn list_keys_empty() {
     let server = bcr_wdc_key_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
-    let client = KeyClient::new(server_url);
+    let client = KeysClient::new(server_url);
 
-    let response = client.list_keyset_info().await.unwrap();
+    let response = client.list_keys().await.unwrap();
     assert_eq!(response.len(), 0);
 }
