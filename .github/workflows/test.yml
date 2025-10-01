@@ -45,25 +45,25 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
+      - name: Install Protoc
+        run: sudo apt-get install -y protobuf-compiler
+
       - name: Install Rust
         run: rustup update stable
 
-      - name: Install Protoc
-        run: sudo apt-get install -y protobuf-compiler
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
 
       - name: Activate cache
         uses: Swatinem/rust-cache@v2.8.0
         with:
-          prefix-key: "wildcat-01-"
-
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
+          prefix-key: "wildcat-01"
 
       - name: Install grcov
         run: cargo install grcov
 
       - name: run tests
-        run: cargo test --workspace --verbose
+        run: cargo test --workspace
         env:
           LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"
           RUSTFLAGS: "-Cinstrument-coverage"
