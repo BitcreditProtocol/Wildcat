@@ -74,16 +74,8 @@ jobs:
       - name: Install grcov
         run: cargo install grcov
 
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
-
-      - name: Activate cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-        with:
-          prefix-key: "wildcat-01"
-
-      - name: Run tests
-        run: cargo test --workspace --verbose
+      - name: run tests
+        run: cargo test --workspace
         env:
           LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"
           RUSTFLAGS: "-Cinstrument-coverage"
