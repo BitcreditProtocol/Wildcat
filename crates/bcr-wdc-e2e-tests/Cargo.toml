@@ -6,9 +6,9 @@ license.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
+bcr-common = {workspace = true, features = ["authorized"]}
 bcr-ebill-core.workspace = true
 bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
-bcr-wdc-key-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-quote-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-swap-client = {workspace = true, features = ["authorized"]}

@@ -26,7 +26,7 @@ pub enum Error {
     #[error("schnorr borsh message {0}")]
     SchnorrBorshMsg(#[from] bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("keys client {0}")]
-    KeyClient(#[from] bcr_wdc_key_client::Error),
+    KeyClient(#[from] bcr_common::KeysError),
     #[error("Swap client error {0}")]
     SwapClient(#[from] bcr_wdc_swap_client::Error),
     #[error("Quote client error {0}")]

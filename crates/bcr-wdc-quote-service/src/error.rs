@@ -3,7 +3,6 @@
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_wdc_ebill_client::Error as EbillClientError;
-use bcr_wdc_key_client::Error as KeysHandlerError;
 use bcr_wdc_treasury_client::Error as WalletError;
 use bcr_wdc_utils::keys::{SchnorrBorshMsgError, SignWithKeysError};
 use cashu::nuts::nut02 as cdk02;
@@ -26,7 +25,7 @@ pub enum Error {
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
     #[error("keys handler error {0}")]
-    KeysHandler(KeysHandlerError),
+    KeysHandler(bcr_common::KeysError),
     #[error("wallet error {0}")]
     Wallet(WalletError),
     #[error("ebill client error {0}")]

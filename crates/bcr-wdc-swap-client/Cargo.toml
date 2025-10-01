@@ -8,7 +8,7 @@ license.workspace = true
 authorized = []
 
 [dependencies]
-bcr-common = {workspace = true}
+bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true

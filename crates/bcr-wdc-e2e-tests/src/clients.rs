@@ -2,8 +2,8 @@
 use std::marker::PhantomData;
 // ----- extra library imports
 use anyhow::{anyhow, Result};
+use bcr_common::KeysClient;
 use bcr_wdc_ebill_client::EbillClient;
-use bcr_wdc_key_client::KeyClient;
 use bcr_wdc_quote_client::QuoteClient;
 use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_treasury_client::TreasuryClient;
@@ -14,7 +14,7 @@ use bcr_wdc_webapi::{
 use bcr_wdc_webapi::{quotes as web_quotes, wallet::ECashBalance};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 // ----- local modules
 // ----- end imports
@@ -86,24 +86,6 @@ impl RestClient {
         let resp = req.send().await?.error_for_status()?;
         Ok(resp.json().await?)
     }
-
-    pub async fn post<Req: Serialize, Res: DeserializeOwned>(
-        &self,
-        url: Url,
-        body: &Req,
-    ) -> Result<Res> {
-        let req = self.http.post(url).json(body);
-        let req = self.authorize(req);
-        let resp = req.send().await?.error_for_status()?;
-        Ok(resp.json().await?)
-    }
-
-    pub async fn post_<Req: Serialize>(&self, url: Url, body: &Req) -> Result<()> {
-        let req = self.http.post(url).json(body);
-        let req = self.authorize(req);
-        req.send().await?.error_for_status()?;
-        Ok(())
-    }
 }
 
 impl Default for RestClient {
@@ -115,7 +97,7 @@ impl Default for RestClient {
 pub struct Service<T> {
     base_url: String,
     ebill_cl: EbillClient,
-    key_cl: KeyClient,
+    key_cl: KeysClient,
     quote_cl: QuoteClient,
     swap_cl: SwapClient,
     treasury_cl: TreasuryClient,
@@ -128,7 +110,7 @@ impl<T> Service<T> {
         let url = reqwest::Url::parse(&base_url).unwrap();
         Self {
             ebill_cl: EbillClient::new(url.clone()),
-            key_cl: KeyClient::new(url.clone()),
+            key_cl: KeysClient::new(url.clone()),
             quote_cl: QuoteClient::new(url.clone()),
             swap_cl: SwapClient::new(url.clone()),
             treasury_cl: TreasuryClient::new(url),

@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
-use bcr_wdc_key_client::Error as KeyClientError;
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::nuts::nut01 as cdk01;
 use cashu::nuts::nut02 as cdk02;
@@ -17,7 +16,7 @@ pub enum Error {
     #[error("Proof Repository error: {0}")]
     ProofRepository(anyhow::Error),
     #[error("Keyset Client error: {0}")]
-    KeysClient(KeyClientError),
+    KeysClient(bcr_common::KeysError),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]
