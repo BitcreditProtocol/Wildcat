@@ -15,6 +15,7 @@ axum-test = {workspace = true, optional = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-ebpp-client = {workspace = true}
 bcr-wdc-swap-client = {workspace = true}
+clwdr-client = {workspace = true, default-features = false, features = ["v11"]}
 bcr-wdc-treasury-client = {workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}
 cashu.workspace = true
