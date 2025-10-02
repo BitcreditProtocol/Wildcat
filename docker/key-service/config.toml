@@ -16,7 +16,8 @@ namespace = "test"
 database = "key"
 table = "signatures"
 
-
 [appcfg]
 starting_derivation_path = "m/129372'/0/0"
-clowder = "Dummy"
+
+[appcfg.clowder]
+ClowderNats = { url = "nats://nats0:4222", wait_ack = false }

@@ -1,0 +1,12 @@
+bind_address = "0.0.0.0:3000"
+log_level = "DEBUG"
+
+[nodes.node0]
+public_key = "03f4c9d0124b4207c598ed0efb7b5b65b0404499ba26bbe821e3d1275c30f9fb27"
+
+[nodes.node1]
+public_key = "022a2ad6548211a0eff9a61c236194ae4c3c2f10fd35446108794a76d220786c2b"
+
+[nodes.node2]
+public_key = "031b4bb92e5927aadf29e4d14792327a48be482a7b07d7e042137275590eb51599"
+

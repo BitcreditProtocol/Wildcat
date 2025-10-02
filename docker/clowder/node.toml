@@ -1,0 +1,50 @@
+web_bind_address = "0.0.0.0:3010"
+nats_url = "nats://nats0:4222"
+log_level = "INFO"
+db_url = "http://db0:3000"
+
+pubsub_server_name = "localhost"
+pubsub_socket_addr = "0.0.0.0:5001"
+pubsub_use_gso = true
+
+public_key = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
+private_key = "4db1676b540644f80b620aa9c7d0ca2a2ecd20ca891934ee540896f92fa3c342"
+
+[bitcoin_core]
+rpc_url = "http://bitcoin-core:18443"
+rpc_username = "electrs"
+rpc_password = "bitcredit"
+network = "regtest"
+
+[beta_params]
+offline_seconds = 15
+rabid_seconds = 300
+hashchain_buffer_size = 16384
+max_download_length = 8192
+multisig_m_blocks = 3
+offline_frequency_check_seconds = 3
+lock_reduction_per_hop_seconds = 600
+
+# Clowder Configurations
+
+[[nodes]]
+public_key = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
+socket_addr = "node0:5001"
+rest_url = "http://node0:3010"
+server_name = "localhost"
+mint_url = "http://192.168.1.216:4343"
+
+
+[[nodes]]
+public_key = "03f4c9d0124b4207c598ed0efb7b5b65b0404499ba26bbe821e3d1275c30f9fb27"
+socket_addr = "192.168.1.46:5001"
+rest_url = "http://192.168.1.46:3010"
+server_name = "localhost"
+mint_url = "http://192.168.1.46::3128"
+
+
+[[clowders]]
+alpha = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"  
+betas = [
+    "03f4c9d0124b4207c598ed0efb7b5b65b0404499ba26bbe821e3d1275c30f9fb27",
+]
