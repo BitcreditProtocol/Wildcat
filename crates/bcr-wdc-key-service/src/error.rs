@@ -11,7 +11,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
-    #[error("keys repository error {0}")]
+    #[error("keys repository {0}")]
     KeysRepository(AnyError),
     #[error("sign with keys {0}")]
     SignKeys(#[from] keys_utils::SignWithKeysError),
@@ -33,7 +33,7 @@ pub enum Error {
     #[error("signature already exists {0}")]
     SignatureAlreadyExists(cdk01::PublicKey),
 
-    #[error("internal error {0}")]
+    #[error("internal {0}")]
     Internal(String),
 }
 
