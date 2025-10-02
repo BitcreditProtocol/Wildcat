@@ -2,10 +2,9 @@
 use std::marker::PhantomData;
 // ----- extra library imports
 use anyhow::{anyhow, Result};
-use bcr_common::KeysClient;
+use bcr_common::{KeysClient, SwapClient};
 use bcr_wdc_ebill_client::EbillClient;
 use bcr_wdc_quote_client::QuoteClient;
-use bcr_wdc_swap_client::SwapClient;
 use bcr_wdc_treasury_client::TreasuryClient;
 use bcr_wdc_webapi::{
     identity::Identity,
