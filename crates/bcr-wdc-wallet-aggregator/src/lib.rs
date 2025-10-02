@@ -24,7 +24,7 @@ mod web;
 pub struct AppConfig {
     cdk_mint_url: MintUrl,
     keys_client_url: reqwest::Url,
-    swap_client_url: bcr_wdc_swap_client::Url,
+    swap_client_url: reqwest::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     // Temporary until it gets re-exported for consistency
@@ -35,7 +35,7 @@ pub struct AppConfig {
 pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
     keys_client: bcr_common::KeysClient,
-    swap_client: bcr_wdc_swap_client::SwapClient,
+    swap_client: bcr_common::SwapClient,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
     clwdr_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
@@ -54,7 +54,7 @@ impl AppController {
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
         let keys_client = bcr_common::KeysClient::new(keys_client_url);
-        let swap_client = bcr_wdc_swap_client::SwapClient::new(swap_client_url);
+        let swap_client = bcr_common::SwapClient::new(swap_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 

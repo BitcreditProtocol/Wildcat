@@ -1,9 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{KeysClient, KeysError};
+use bcr_common::{KeysClient, KeysError, SwapClient};
 use bcr_wdc_quote_client as quote;
-use bcr_wdc_swap_client as swap;
 use bcr_wdc_webapi::{bill::BillId, quotes as web_quotes};
 use cashu::{nut00 as cdk00, nut02 as cdk02};
 // ----- local imports
@@ -16,21 +15,21 @@ use crate::{
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct WildcatClientConfig {
-    pub swap_service_url: swap::Url,
+    pub swap_service_url: reqwest::Url,
     pub quote_service_url: quote::Url,
     pub key_service_url: reqwest::Url,
 }
 
 #[derive(Clone, Debug)]
 pub struct WildcatCl {
-    swap_cl: swap::SwapClient,
+    swap_cl: SwapClient,
     quote_cl: quote::QuoteClient,
     key_cl: KeysClient,
 }
 
 impl WildcatCl {
     pub fn new(cfg: WildcatClientConfig) -> Self {
-        let swap_cl = swap::SwapClient::new(cfg.swap_service_url);
+        let swap_cl = SwapClient::new(cfg.swap_service_url);
         let quote_cl = quote::QuoteClient::new(cfg.quote_service_url);
         let key_cl = KeysClient::new(cfg.key_service_url);
         Self {

@@ -2,7 +2,6 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_wdc_ebpp_client::Error as EbppClientError;
-use bcr_wdc_swap_client::Error as SwapClientError;
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use cdk::Error as CDKError;
 use clwdr_client::ClowderClientError;
@@ -18,10 +17,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("CDK Client error: {0}")]
     Cdk(#[from] CDKError),
-    #[error("Keyset Client error: {0}")]
+    #[error("Keyset Client: {0}")]
     Keys(#[from] bcr_common::KeysError),
-    #[error("Swap Client error: {0}")]
-    Swap(#[from] SwapClientError),
+    #[error("Swap Client: {0}")]
+    Swap(#[from] bcr_common::SwapError),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] TreasuryClientError),
     #[error("EBPP Client error: {0}")]
