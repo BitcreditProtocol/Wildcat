@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::{
     extract::FromRef,
@@ -26,6 +27,8 @@ pub struct AppConfig {
     swap_client_url: bcr_wdc_swap_client::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
+    // Temporary until it gets re-exported for consistency
+    clwdr_nats_url: Option<bcr_wdc_ebpp_client::Url>,
 }
 
 #[derive(Clone, FromRef)]
@@ -35,16 +38,18 @@ pub struct AppController {
     swap_client: bcr_wdc_swap_client::SwapClient,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
+    clwdr_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
 }
 
 impl AppController {
-    pub fn new(cfg: AppConfig) -> Self {
+    pub async fn new(cfg: AppConfig) -> error::Result<Self> {
         let AppConfig {
             cdk_mint_url,
             keys_client_url,
             swap_client_url,
             treasury_client_url,
             ebpp_client_url,
+            clwdr_nats_url,
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
@@ -53,13 +58,22 @@ impl AppController {
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
-        Self {
+        let clwdr_client = if let Some(url) = clwdr_nats_url {
+            Some(Arc::new(
+                clwdr_client::ClowderNatsClient::new(url, false).await?,
+            ))
+        } else {
+            None
+        };
+
+        Ok(Self {
             cdk_client,
             keys_client,
             swap_client,
             treasury_client,
             ebpp_client,
-        }
+            clwdr_client,
+        })
     }
 }
 
