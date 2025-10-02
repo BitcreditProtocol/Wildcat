@@ -1,10 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
+use async_trait::async_trait;
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::ClowderClient;
-use async_trait::async_trait;
+use crate::{
+    error::{Error, Result},
+    service::ClowderClient,
+};
 
 // ----- end imports
 
@@ -12,7 +14,10 @@ use async_trait::async_trait;
 pub enum ClowderClientConfig {
     #[default]
     Dummy,
-    ClowderNats { url: reqwest::Url, wait_ack: bool },
+    ClowderNats {
+        url: reqwest::Url,
+        wait_ack: bool,
+    },
 }
 
 pub async fn build_clowder_client(cfg: ClowderClientConfig) -> Result<Box<dyn ClowderClient>> {
