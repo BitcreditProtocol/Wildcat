@@ -14,7 +14,7 @@ members = [
     "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
     "crates/bcr-wdc-key-service",
     "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
-    "crates/bcr-wdc-swap-service", "crates/bcr-wdc-swap-client",
+    "crates/bcr-wdc-swap-service",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
     "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
@@ -38,7 +38,6 @@ bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
 bcr-wdc-quote-client = {path = "./crates/bcr-wdc-quote-client"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
-bcr-wdc-swap-client = {path = "./crates/bcr-wdc-swap-client"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
