@@ -3,6 +3,7 @@
 use axum::extract::FromRef;
 use axum::routing::post;
 use axum::Router;
+use bcr_common::SwapClient;
 // ----- local modules
 mod admin;
 mod error;
@@ -57,11 +58,14 @@ where
     Cntrlr: Send + Sync + Clone + 'static,
 {
     let web = Router::new()
-        .route("/v1/swap", post(crate::web::swap_tokens))
-        .route("/v1/burn", post(crate::web::burn_tokens))
-        .route("/v1/checkstate", post(crate::web::check_state));
+        .route(SwapClient::SWAP_EP_V1, post(crate::web::swap_tokens))
+        .route(SwapClient::BURN_EP_V1, post(crate::web::burn_tokens))
+        .route(SwapClient::CHECKSTATE_EP_V1, post(crate::web::check_state));
     // separate admin as it will likely have different auth requirements
-    let admin = Router::new().route("/v1/admin/swap/recover", post(crate::admin::recover_tokens));
+    let admin = Router::new().route(
+        SwapClient::RECOVER_EP_V1,
+        post(crate::admin::recover_tokens),
+    );
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
