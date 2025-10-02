@@ -11,7 +11,6 @@ bcr-ebill-core.workspace = true
 bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-quote-client = {workspace = true, features = ["authorized"]}
-bcr-wdc-swap-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
