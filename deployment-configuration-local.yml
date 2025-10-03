@@ -22,12 +22,12 @@ services:
         echo "========== Configuring Node ID =========="
         echo -e "========== Setting Seed Phrase =========="
         curl -sSf \
-            -X PUT http://ebill-service:3338/v1/identity/seed/recover \
+            -X PUT http://ebill-service:3338/v1/admin/identity/seed/recover \
             -H "Content-Type: application/json" \
             -d '{"seed_phrase":"$MINT_SEED_PHRASE"}'
         echo -e "\n========== Creating Node ID =========="
         curl -s \
-            -X POST http://ebill-service:3338/v1/identity/create \
+            -X POST http://ebill-service:3338/v1/admin/identity/create \
             -H "Content-Type: application/json" \
             -d '$MINT_IDENTITY'
         echo -e "\n========== Finish Node ID Config ==========\n"
