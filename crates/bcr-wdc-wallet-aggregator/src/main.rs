@@ -31,7 +31,9 @@ async fn main() {
     let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg)
         .await
         .expect("AppController Initialization");
-    let router = bcr_wdc_wallet_aggregator::routes(app);
+    let router = bcr_wdc_wallet_aggregator::routes(app)
+        .await
+        .expect("routes initialization");
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await
