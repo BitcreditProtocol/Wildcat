@@ -117,7 +117,7 @@ services:
     volumes:
       - ./docker/ebill-service/config.toml:/ebill-service/config.toml
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/identity/detail"]
+      test: ["CMD-SHELL", "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail"]
       interval: 10s
       timeout: 10s
       retries: 20
