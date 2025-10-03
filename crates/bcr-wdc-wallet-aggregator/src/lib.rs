@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use cashu::mint_url::MintUrl;
-use cdk::HttpClient;
+use cdk::{wallet::MintConnector, HttpClient};
 use utoipa::OpenApi;
 // ----- local modules
 pub mod built_info {
@@ -17,6 +17,7 @@ pub mod built_info {
 mod error;
 mod web;
 // ----- local imports
+use error::Result;
 
 // ----- end imports
 
@@ -77,11 +78,31 @@ impl AppController {
     }
 }
 
-pub fn routes(app: AppController) -> Router {
+pub async fn routes(app: AppController) -> Result<Router> {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
-    Router::new()
+    // WARNING: big hack: send active keyset in cdk-mint to clowder
+    const ATTEMPTS: usize = 5;
+    for _ in 0..ATTEMPTS {
+        let res = app.cdk_client.get_mint_info().await;
+        if res.is_ok() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    // hopefully cdk-mint is up by now
+    if let Some(clwdr) = &app.clwdr_client {
+        let keyset_lists = app.cdk_client.get_mint_keysets().await?;
+        for info in keyset_lists.keysets {
+            if info.active {
+                let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
+                clwdr.post_keyset(keyset).await?;
+            }
+        }
+    }
+
+    let router = Router::new()
         .route("/health", get(web::health))
         .route("/v1/info", get(web::get_mint_info))
         .route("/v1/keys", get(web::get_mint_keys))
@@ -92,7 +113,8 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
         .with_state(app)
-        .merge(swagger)
+        .merge(swagger);
+    Ok(router)
 }
 
 #[derive(utoipa::OpenApi)]
