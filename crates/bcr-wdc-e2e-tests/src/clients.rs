@@ -130,11 +130,11 @@ impl Service<UserService> {
     pub async fn mint_credit_quote(
         &self,
         bill: web_quotes::SharedBill,
-        miniting_pubkey: cashu::PublicKey,
+        minting_pubkey: cashu::PublicKey,
         signing_key: &bitcoin::key::Keypair,
     ) -> Uuid {
         self.quote_cl
-            .enquire(bill, miniting_pubkey, signing_key)
+            .enquire(bill, minting_pubkey, signing_key)
             .await
             .unwrap()
     }
