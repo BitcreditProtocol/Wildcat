@@ -2,14 +2,11 @@
 use std::marker::PhantomData;
 // ----- extra library imports
 use anyhow::{anyhow, Result};
-use bcr_common::{KeysClient, SwapClient};
+use bcr_common::{wire::identity as wire_identity, KeysClient, SwapClient};
 use bcr_wdc_ebill_client::EbillClient;
 use bcr_wdc_quote_client::QuoteClient;
 use bcr_wdc_treasury_client::TreasuryClient;
-use bcr_wdc_webapi::{
-    identity::Identity,
-    quotes::{ListReplyLight, StatusReply, UpdateQuoteResponse},
-};
+use bcr_wdc_webapi::quotes::{ListReplyLight, StatusReply, UpdateQuoteResponse};
 use bcr_wdc_webapi::{quotes as web_quotes, wallet::ECashBalance};
 use reqwest::Client as HttpClient;
 use reqwest::Url;
@@ -203,7 +200,7 @@ impl Service<AdminService> {
     pub async fn admin_balance_credit(&self) -> Result<ECashBalance> {
         self.treasury_cl.crsat_balance().await.map_err(Into::into)
     }
-    pub async fn admin_ebill_identity_details(&self) -> Result<Identity> {
+    pub async fn admin_ebill_identity_details(&self) -> Result<wire_identity::Identity> {
         self.ebill_cl.get_identity().await.map_err(Into::into)
     }
     pub async fn authenticate(
