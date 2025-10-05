@@ -10,7 +10,7 @@ use axum::{
 use bcr_common::wire::identity as wire_identity;
 use bcr_ebill_api::{
     constants::MAX_DOCUMENT_FILE_SIZE_BYTES,
-    data::{self, bill, contact, identity},
+    data::{bill, contact, identity},
     util::{self, file::detect_content_type_for_bytes, BcrKeys, ValidationError},
 };
 use bcr_ebill_core::{
@@ -248,7 +248,7 @@ pub async fn create_identity(
             ),
             payload.name,
             payload.email,
-            data::OptionalPostalAddress::from(payload.postal_address),
+            convert::optionalpostaladdress_wire2ebill(payload.postal_address),
             payload.date_of_birth,
             payload.country_of_birth,
             payload.city_of_birth,

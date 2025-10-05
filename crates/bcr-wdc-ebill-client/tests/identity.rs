@@ -26,7 +26,7 @@ async fn identity_calls() {
             t: 0,
             name: "name".into(),
             email: None,
-            postal_address: bcr_wdc_webapi::identity::OptionalPostalAddress {
+            postal_address: wire_identity::OptionalPostalAddress {
                 country: None,
                 city: None,
                 zip: None,
