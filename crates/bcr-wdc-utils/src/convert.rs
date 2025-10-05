@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::identity as wire_identity;
-use bcr_ebill_core::{self as ebill_core, identity as ebill_identity};
+use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
+use bcr_ebill_core::{self as ebill_core, contact as ebill_contact, identity as ebill_identity};
 use thiserror::Error;
 // ----- local imports
 
@@ -62,5 +62,21 @@ pub fn file_ebill2wire(input: ebill_core::File) -> wire_identity::File {
         name: input.name,
         hash: input.hash,
         nostr_hash: input.nostr_hash,
+    }
+}
+
+pub fn contacttype_ebill2wire(input: ebill_contact::ContactType) -> wire_contact::ContactType {
+    match input {
+        ebill_contact::ContactType::Person => wire_contact::ContactType::Person,
+        ebill_contact::ContactType::Company => wire_contact::ContactType::Company,
+        ebill_contact::ContactType::Anon => wire_contact::ContactType::Anon,
+    }
+}
+
+pub fn contacttype_wire2ebill(input: wire_contact::ContactType) -> ebill_contact::ContactType {
+    match input {
+        wire_contact::ContactType::Person => ebill_contact::ContactType::Person,
+        wire_contact::ContactType::Company => ebill_contact::ContactType::Company,
+        wire_contact::ContactType::Anon => ebill_contact::ContactType::Anon,
     }
 }

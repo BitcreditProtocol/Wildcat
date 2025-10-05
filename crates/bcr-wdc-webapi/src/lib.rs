@@ -2,7 +2,6 @@
 // ----- extra library imports
 // ----- local modules
 pub mod bill;
-pub mod contact;
 pub mod eiou;
 pub mod identity;
 pub mod quotes;
