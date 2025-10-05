@@ -1,8 +1,9 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
+use bcr_common::wire::identity as wire_identity;
 use bcr_ebill_core::{self as data, identity, NodeId};
-use borsh::{BorshDeserialize, BorshSerialize};
+use bcr_wdc_utils::convert;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -28,7 +29,7 @@ pub struct Identity {
     pub email: Option<String>,
     pub bitcoin_public_key: bitcoin::PublicKey,
     pub npub: String,
-    pub postal_address: OptionalPostalAddress,
+    pub postal_address: wire_identity::OptionalPostalAddress,
     pub date_of_birth: Option<NaiveDate>,
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
@@ -59,7 +60,7 @@ impl TryFrom<identity::Identity> for Identity {
             email: identity.email,
             bitcoin_public_key: identity.node_id.pub_key().into(),
             npub: identity.node_id.npub().to_string(),
-            postal_address: identity.postal_address.into(),
+            postal_address: convert::optionalpostaladdress_ebill2wire(identity.postal_address),
             date_of_birth,
             country_of_birth: identity.country_of_birth,
             city_of_birth: identity.city_of_birth,
@@ -76,7 +77,7 @@ pub struct NewIdentityPayload {
     pub t: u64,
     pub name: String,
     pub email: Option<String>,
-    pub postal_address: OptionalPostalAddress,
+    pub postal_address: wire_identity::OptionalPostalAddress,
     pub date_of_birth: Option<String>,
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
@@ -84,78 +85,6 @@ pub struct NewIdentityPayload {
     pub profile_picture_file_upload_id: Option<String>,
     pub identity_document_file_upload_id: Option<String>,
 }
-
-#[derive(
-    Debug, Default, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema,
-)]
-pub struct PostalAddress {
-    pub country: String,
-    pub city: String,
-    pub zip: Option<String>,
-    pub address: String,
-}
-
-impl From<data::PostalAddress> for PostalAddress {
-    fn from(val: data::PostalAddress) -> Self {
-        PostalAddress {
-            country: val.country,
-            city: val.city,
-            zip: val.zip,
-            address: val.address,
-        }
-    }
-}
-
-impl From<PostalAddress> for data::PostalAddress {
-    fn from(value: PostalAddress) -> Self {
-        Self {
-            country: value.country,
-            city: value.city,
-            zip: value.zip,
-            address: value.address,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, ToSchema)]
-pub struct OptionalPostalAddress {
-    pub country: Option<String>,
-    pub city: Option<String>,
-    pub zip: Option<String>,
-    pub address: Option<String>,
-}
-
-impl OptionalPostalAddress {
-    pub fn is_none(&self) -> bool {
-        self.country.is_none()
-            && self.city.is_none()
-            && self.zip.is_none()
-            && self.address.is_none()
-    }
-}
-
-impl From<data::OptionalPostalAddress> for OptionalPostalAddress {
-    fn from(value: data::OptionalPostalAddress) -> Self {
-        Self {
-            country: value.country,
-            city: value.city,
-            zip: value.zip,
-            address: value.address,
-        }
-    }
-}
-
-impl From<OptionalPostalAddress> for data::OptionalPostalAddress {
-    fn from(value: OptionalPostalAddress) -> Self {
-        Self {
-            country: value.country,
-            city: value.city,
-            zip: value.zip,
-            address: value.address,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct File {
     pub name: String,

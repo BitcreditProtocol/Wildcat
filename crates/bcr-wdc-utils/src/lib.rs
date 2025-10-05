@@ -4,9 +4,9 @@
 pub mod borsh;
 #[cfg(feature = "auth")]
 pub mod client;
+pub mod convert;
 pub mod keys;
 pub mod signatures;
-pub mod convert;
 // ----- local imports
 
 // ----- end imports
