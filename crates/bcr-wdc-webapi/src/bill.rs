@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::identity as wire_identity;
+use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -13,7 +13,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
-use crate::contact::ContactType;
+
 // ----- end imports
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -383,7 +383,7 @@ impl From<BillAnonParticipant> for contact::BillAnonParticipant {
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub struct BillIdentParticipant {
     #[serde(rename = "type")]
-    pub t: ContactType,
+    pub t: wire_contact::ContactType,
     #[schema(value_type=String)]
     pub node_id: NodeId,
     pub name: String,
@@ -396,7 +396,7 @@ pub struct BillIdentParticipant {
 impl From<contact::BillIdentParticipant> for BillIdentParticipant {
     fn from(val: contact::BillIdentParticipant) -> Self {
         BillIdentParticipant {
-            t: val.t.into(),
+            t: convert::contacttype_ebill2wire(val.t),
             name: val.name,
             node_id: val.node_id,
             postal_address: convert::postaladdress_ebill2wire(val.postal_address),
@@ -409,7 +409,7 @@ impl From<contact::BillIdentParticipant> for BillIdentParticipant {
 impl From<BillIdentParticipant> for contact::BillIdentParticipant {
     fn from(val: BillIdentParticipant) -> Self {
         contact::BillIdentParticipant {
-            t: val.t.into(),
+            t: convert::contacttype_wire2ebill(val.t),
             name: val.name,
             node_id: val.node_id,
             postal_address: convert::postaladdress_wire2ebill(val.postal_address),
@@ -547,14 +547,14 @@ impl From<contact::LightBillAnonParticipant> for LightBillAnonParticipant {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LightBillIdentParticipant {
     #[serde(rename = "type")]
-    pub t: ContactType,
+    pub t: wire_contact::ContactType,
     pub name: String,
     pub node_id: NodeId,
 }
 impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
     fn from(val: contact::LightBillIdentParticipant) -> Self {
         LightBillIdentParticipant {
-            t: val.t.into(),
+            t: convert::contacttype_ebill2wire(val.t),
             name: val.name,
             node_id: val.node_id,
         }
@@ -564,7 +564,7 @@ impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LightBillIdentParticipantWithAddress {
     #[serde(rename = "type")]
-    pub t: ContactType,
+    pub t: wire_contact::ContactType,
     pub name: String,
     pub node_id: NodeId,
     #[serde(flatten)]
@@ -574,7 +574,7 @@ pub struct LightBillIdentParticipantWithAddress {
 impl From<contact::LightBillIdentParticipantWithAddress> for LightBillIdentParticipantWithAddress {
     fn from(val: contact::LightBillIdentParticipantWithAddress) -> Self {
         LightBillIdentParticipantWithAddress {
-            t: val.t.into(),
+            t: convert::contacttype_ebill2wire(val.t),
             name: val.name,
             node_id: val.node_id,
             postal_address: convert::postaladdress_ebill2wire(val.postal_address),
