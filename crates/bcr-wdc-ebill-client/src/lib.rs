@@ -6,7 +6,7 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
-    identity::{Identity, NewIdentityPayload},
+    identity::Identity,
     quotes::{BillInfo, SharedBill},
 };
 use reqwest::header;
@@ -134,7 +134,7 @@ impl EbillClient {
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn create_identity(&self, payload: &NewIdentityPayload) -> Result<()> {
+    pub async fn create_identity(&self, payload: &wire_identity::NewIdentityPayload) -> Result<()> {
         let url = self
             .base
             .join("/v1/admin/identity/create")
