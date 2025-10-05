@@ -56,3 +56,11 @@ pub fn optionalpostaladdress_wire2ebill(
         address: input.address,
     }
 }
+
+pub fn file_ebill2wire(input: ebill_core::File) -> wire_identity::File {
+    wire_identity::File {
+        name: input.name,
+        hash: input.hash,
+        nostr_hash: input.nostr_hash,
+    }
+}
