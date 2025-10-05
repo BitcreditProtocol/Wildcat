@@ -13,6 +13,8 @@ auth = ["reqwest", "serde", "tokio", "tracing"]
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+bcr-common = {workspace = true}
+bcr-ebill-core.workspace = true
 bitcoin = { workspace = true}
 borsh = {workspace = true}
 cashu = {workspace = true, features = ["swagger"]}
