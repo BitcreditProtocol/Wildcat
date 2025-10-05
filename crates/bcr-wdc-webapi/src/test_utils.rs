@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_common::wire::identity as wire_identity;
+use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
 use bcr_ebill_core::{
     bill::BillId,
     blockchain::bill::{
@@ -17,7 +17,6 @@ use rand::Rng;
 // ----- local imports
 use crate::{
     bill::BillIdentParticipant,
-    contact::ContactType,
     quotes::{EnquireRequest, SharedBill},
 };
 // ----- end imports
@@ -143,7 +142,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
     let keypair = keys_test::generate_random_keypair();
     let sample = [
         BillIdentParticipant {
-            t: ContactType::Person,
+            t: wire_contact::ContactType::Person,
             email: Some(String::from("Carissa@kemp.com")),
             name: String::from("Carissa Kemp"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -156,7 +155,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Person,
+            t: wire_contact::ContactType::Person,
             email: Some(String::from("alana@carrillo.com")),
             name: String::from("Alana Carrillo"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -169,7 +168,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Person,
+            t: wire_contact::ContactType::Person,
             email: Some(String::from("geremia@pisani.com")),
             name: String::from("Geremia Pisani"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -182,7 +181,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Person,
+            t: wire_contact::ContactType::Person,
             email: Some(String::from("andreas@koenig.com")),
             name: String::from("Andreas Koenig"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -195,7 +194,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("logistilla@fournier.com")),
             name: String::from("Logistilla Fournier"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -208,7 +207,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("moonlimited@ltd.com")),
             name: String::from("Moon Limited"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -221,7 +220,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("blanco@spa.com")),
             name: String::from("Blanco y Asoc."),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -234,7 +233,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("alexanderurner@grimm.com")),
             name: String::from("Grimm GmbH"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -247,7 +246,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("antoniosegovia@santiago.com")),
             name: String::from("Empresa Santiago"),
             node_id: node_id_from_pub_key(keypair.public_key()),
@@ -260,7 +259,7 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             nostr_relays: vec![String::from("")],
         },
         BillIdentParticipant {
-            t: ContactType::Company,
+            t: wire_contact::ContactType::Company,
             email: Some(String::from("santoro_group@spa.com")),
             name: String::from("Santoro Group"),
             node_id: node_id_from_pub_key(keypair.public_key()),
