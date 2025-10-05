@@ -22,7 +22,7 @@ async fn identity_calls() {
     assert!(matches!(response.unwrap_err(), Error::ResourceNotFound(_)));
 
     let response = client
-        .create_identity(&bcr_wdc_webapi::identity::NewIdentityPayload {
+        .create_identity(&wire_identity::NewIdentityPayload {
             t: 0,
             name: "name".into(),
             email: None,

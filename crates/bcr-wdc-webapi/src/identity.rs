@@ -72,17 +72,3 @@ impl TryFrom<identity::Identity> for Identity {
         })
     }
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NewIdentityPayload {
-    pub t: u64,
-    pub name: String,
-    pub email: Option<String>,
-    pub postal_address: wire_identity::OptionalPostalAddress,
-    pub date_of_birth: Option<String>,
-    pub country_of_birth: Option<String>,
-    pub city_of_birth: Option<String>,
-    pub identification_number: Option<String>,
-    pub profile_picture_file_upload_id: Option<String>,
-    pub identity_document_file_upload_id: Option<String>,
-}

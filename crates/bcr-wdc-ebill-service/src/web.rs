@@ -29,7 +29,7 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
         BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
     },
-    identity::{Identity, NewIdentityPayload},
+    identity::Identity,
     quotes::RequestEncryptedFileUrlPayload,
 };
 use futures::StreamExt;
@@ -232,7 +232,7 @@ pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<Iden
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, payload))]
 pub async fn create_identity(
     State(ctrl): State<AppController>,
-    Json(payload): Json<NewIdentityPayload>,
+    Json(payload): Json<wire_identity::NewIdentityPayload>,
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received create identity request");
     if ctrl.identity_service.identity_exists().await {
@@ -249,7 +249,7 @@ pub async fn create_identity(
             payload.name,
             payload.email,
             convert::optionalpostaladdress_wire2ebill(payload.postal_address),
-            payload.date_of_birth,
+            payload.date_of_birth.map(|d| d.to_string()),
             payload.country_of_birth,
             payload.city_of_birth,
             payload.identification_number,
