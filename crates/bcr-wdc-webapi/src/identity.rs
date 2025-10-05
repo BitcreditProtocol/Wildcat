@@ -2,12 +2,11 @@
 use std::str::FromStr;
 // ----- extra library imports
 use bcr_common::wire::identity as wire_identity;
-use bcr_ebill_core::{self as data, identity, NodeId};
+use bcr_ebill_core::{identity, NodeId};
 use bcr_wdc_utils::convert;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use utoipa::ToSchema;
 // ----- local imports
 
 // ----- end imports
@@ -34,8 +33,8 @@ pub struct Identity {
     pub country_of_birth: Option<String>,
     pub city_of_birth: Option<String>,
     pub identification_number: Option<String>,
-    pub profile_picture_file: Option<File>,
-    pub identity_document_file: Option<File>,
+    pub profile_picture_file: Option<wire_identity::File>,
+    pub identity_document_file: Option<wire_identity::File>,
     pub nostr_relays: Vec<url::Url>,
 }
 
@@ -65,8 +64,10 @@ impl TryFrom<identity::Identity> for Identity {
             country_of_birth: identity.country_of_birth,
             city_of_birth: identity.city_of_birth,
             identification_number: identity.identification_number,
-            profile_picture_file: identity.profile_picture_file.map(|f| f.into()),
-            identity_document_file: identity.identity_document_file.map(|f| f.into()),
+            profile_picture_file: identity.profile_picture_file.map(convert::file_ebill2wire),
+            identity_document_file: identity
+                .identity_document_file
+                .map(convert::file_ebill2wire),
             nostr_relays,
         })
     }
@@ -84,20 +85,4 @@ pub struct NewIdentityPayload {
     pub identification_number: Option<String>,
     pub profile_picture_file_upload_id: Option<String>,
     pub identity_document_file_upload_id: Option<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct File {
-    pub name: String,
-    pub hash: String,
-    pub nostr_hash: String,
-}
-
-impl From<data::File> for File {
-    fn from(val: data::File) -> Self {
-        File {
-            name: val.name,
-            hash: val.hash,
-            nostr_hash: val.nostr_hash,
-        }
-    }
 }

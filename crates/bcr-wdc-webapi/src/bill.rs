@@ -13,7 +13,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
-use crate::{contact::ContactType, identity::File};
+use crate::contact::ContactType;
 // ----- end imports
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -267,7 +267,7 @@ pub struct BillData {
     pub city_of_payment: String,
     pub currency: String,
     pub sum: String,
-    pub files: Vec<File>,
+    pub files: Vec<wire_identity::File>,
     pub active_notification: Option<Notification>,
 }
 
@@ -285,7 +285,11 @@ impl From<bill::BillData> for BillData {
             city_of_payment: val.city_of_payment,
             currency: val.currency,
             sum: val.sum,
-            files: val.files.into_iter().map(|f| f.into()).collect(),
+            files: val
+                .files
+                .into_iter()
+                .map(convert::file_ebill2wire)
+                .collect(),
             active_notification: val.active_notification.map(|an| an.into()),
         }
     }
