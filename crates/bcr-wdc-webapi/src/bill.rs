@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::wire::identity as wire_identity;
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -7,14 +8,12 @@ use bcr_ebill_core::{
     contact, notification,
     util::date::DateTimeUtc,
 };
+use bcr_wdc_utils::convert;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
-use crate::{
-    contact::ContactType,
-    identity::{File, PostalAddress},
-};
+use crate::{contact::ContactType, identity::File};
 // ----- end imports
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -385,7 +384,7 @@ pub struct BillIdentParticipant {
     pub node_id: NodeId,
     pub name: String,
     #[serde(flatten)]
-    pub postal_address: PostalAddress,
+    pub postal_address: wire_identity::PostalAddress,
     pub email: Option<String>,
     pub nostr_relays: Vec<String>,
 }
@@ -396,7 +395,7 @@ impl From<contact::BillIdentParticipant> for BillIdentParticipant {
             t: val.t.into(),
             name: val.name,
             node_id: val.node_id,
-            postal_address: val.postal_address.into(),
+            postal_address: convert::postaladdress_ebill2wire(val.postal_address),
             email: val.email,
             nostr_relays: val.nostr_relays,
         }
@@ -409,7 +408,7 @@ impl From<BillIdentParticipant> for contact::BillIdentParticipant {
             t: val.t.into(),
             name: val.name,
             node_id: val.node_id,
-            postal_address: val.postal_address.into(),
+            postal_address: convert::postaladdress_wire2ebill(val.postal_address),
             email: val.email,
             nostr_relays: val.nostr_relays,
         }
@@ -484,7 +483,7 @@ pub struct Endorsement {
     pub pay_to_the_order_of: LightBillIdentParticipantWithAddress,
     pub signed: LightSignedBy,
     pub signing_timestamp: u64,
-    pub signing_address: Option<PostalAddress>,
+    pub signing_address: Option<wire_identity::PostalAddress>,
 }
 
 impl From<bill::Endorsement> for Endorsement {
@@ -493,7 +492,7 @@ impl From<bill::Endorsement> for Endorsement {
             pay_to_the_order_of: val.pay_to_the_order_of.into(),
             signed: val.signed.into(),
             signing_timestamp: val.signing_timestamp,
-            signing_address: val.signing_address.map(|s| s.into()),
+            signing_address: val.signing_address.map(convert::postaladdress_ebill2wire),
         }
     }
 }
@@ -565,7 +564,7 @@ pub struct LightBillIdentParticipantWithAddress {
     pub name: String,
     pub node_id: NodeId,
     #[serde(flatten)]
-    pub postal_address: PostalAddress,
+    pub postal_address: wire_identity::PostalAddress,
 }
 
 impl From<contact::LightBillIdentParticipantWithAddress> for LightBillIdentParticipantWithAddress {
@@ -574,7 +573,7 @@ impl From<contact::LightBillIdentParticipantWithAddress> for LightBillIdentParti
             t: val.t.into(),
             name: val.name,
             node_id: val.node_id,
-            postal_address: val.postal_address.into(),
+            postal_address: convert::postaladdress_ebill2wire(val.postal_address),
         }
     }
 }
