@@ -15,6 +15,7 @@ bcr-common = {workspace = true}
 bcr-ebill-api.workspace = true
 bcr-ebill-core = {workspace = true}
 bcr-ebill-transport.workspace = true
+bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi.workspace = true
 bip39 = {workspace = true, features = ["serde"]}
 bitcoin = {workspace = true, features = ["serde"]}

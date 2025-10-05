@@ -6,6 +6,7 @@ pub mod borsh;
 pub mod client;
 pub mod keys;
 pub mod signatures;
+pub mod convert;
 // ----- local imports
 
 // ----- end imports

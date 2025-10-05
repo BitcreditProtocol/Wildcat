@@ -1,14 +1,14 @@
-use std::str::FromStr;
-use thiserror::Error;
-
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use bcr_ebill_core::{self as data, identity, NodeId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use utoipa::ToSchema;
 // ----- local imports
+
 // ----- end imports
 
 #[derive(Debug, Error)]
@@ -19,48 +19,6 @@ pub enum Error {
     InvalidUrl,
     #[error("Invalid date")]
     InvalidDate(chrono::ParseError),
-}
-
-#[repr(u8)]
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    serde_repr::Serialize_repr,
-    serde_repr::Deserialize_repr,
-    PartialEq,
-    Eq,
-    ToSchema,
-)]
-pub enum IdentityType {
-    Ident = 0,
-    Anon = 1,
-}
-
-impl TryFrom<u64> for IdentityType {
-    type Error = bcr_ebill_core::ValidationError;
-
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
-        Ok(identity::IdentityType::try_from(value)?.into())
-    }
-}
-
-impl From<identity::IdentityType> for IdentityType {
-    fn from(val: identity::IdentityType) -> Self {
-        match val {
-            identity::IdentityType::Ident => IdentityType::Ident,
-            identity::IdentityType::Anon => IdentityType::Anon,
-        }
-    }
-}
-
-impl From<IdentityType> for identity::IdentityType {
-    fn from(value: IdentityType) -> Self {
-        match value {
-            IdentityType::Ident => identity::IdentityType::Ident,
-            IdentityType::Anon => identity::IdentityType::Anon,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
