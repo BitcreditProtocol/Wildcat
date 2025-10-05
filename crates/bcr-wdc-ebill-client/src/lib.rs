@@ -6,7 +6,6 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
         RequestToPayBitcreditBillPayload,
     },
-    identity::Identity,
     quotes::{BillInfo, SharedBill},
 };
 use reqwest::header;
@@ -119,7 +118,7 @@ impl EbillClient {
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn get_identity(&self) -> Result<Identity> {
+    pub async fn get_identity(&self) -> Result<wire_identity::Identity> {
         let url = self
             .base
             .join("/v1/admin/identity/detail")
@@ -129,7 +128,7 @@ impl EbillClient {
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound("identity".into()));
         }
-        let identity = res.json::<Identity>().await?;
+        let identity = res.json::<wire_identity::Identity>().await?;
         Ok(identity)
     }
 

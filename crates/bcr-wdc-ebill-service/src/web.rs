@@ -29,7 +29,6 @@ use bcr_wdc_webapi::{
         BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
         BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
     },
-    identity::Identity,
     quotes::RequestEncryptedFileUrlPayload,
 };
 use futures::StreamExt;
@@ -217,13 +216,15 @@ pub async fn recover_from_seed_phrase(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_identity(State(ctrl): State<AppController>) -> Result<Json<Identity>> {
+pub async fn get_identity(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_identity::Identity>> {
     tracing::debug!("Received get identity request");
     let my_identity = if !ctrl.identity_service.identity_exists().await {
         return Err(bcr_ebill_api::service::Error::NotFound.into());
     } else {
         let full_identity = ctrl.identity_service.get_full_identity().await?;
-        Identity::try_from(full_identity.identity)
+        convert::identity_ebill2wire(full_identity.identity)
             .map_err(|_| crate::error::Error::IdentityConversion)?
     };
     Ok(Json(my_identity))
