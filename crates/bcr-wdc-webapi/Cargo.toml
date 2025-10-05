@@ -15,6 +15,7 @@ path = "src/bin/devtool.rs"
 required-features = ["test-utils"]
 
 [dependencies]
+bcr-common = {workspace = true}
 bcr-ebill-api = {workspace = true}
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }

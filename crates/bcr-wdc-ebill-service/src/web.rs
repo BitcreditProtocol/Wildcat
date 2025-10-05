@@ -23,12 +23,13 @@ use bcr_ebill_core::{
     },
     SecretKey,
 };
+use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::{
     bill::{
         BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
         BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
     },
-    identity::{Identity, IdentityType, NewIdentityPayload},
+    identity::{Identity, NewIdentityPayload},
     quotes::RequestEncryptedFileUrlPayload,
 };
 use futures::StreamExt;
@@ -241,7 +242,10 @@ pub async fn create_identity(
     let current_timestamp = util::date::now().timestamp() as u64;
     ctrl.identity_service
         .create_identity(
-            identity::IdentityType::from(IdentityType::try_from(payload.t)?),
+            convert::identitytype_wire2ebill(
+                wire_identity::IdentityType::try_from(payload.t)
+                    .map_err(|_| Error::IdentityType)?,
+            ),
             payload.name,
             payload.email,
             data::OptionalPostalAddress::from(payload.postal_address),
