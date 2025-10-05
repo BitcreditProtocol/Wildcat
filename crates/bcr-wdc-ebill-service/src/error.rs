@@ -31,6 +31,10 @@ pub enum Error {
     #[error("Identity already exists")]
     IdentityAlreadyExists,
 
+    /// all errors originating from creating an identity, if an identity already exists
+    #[error("Identity type")]
+    IdentityType,
+
     /// all errors originating from invalid mnemonics
     #[error("Invalid Mnemonic")]
     InvalidMnemonic,
@@ -57,6 +61,11 @@ impl axum::response::IntoResponse for Error {
             Error::NotificationService(e) => ServiceError(e.into()).into_response(),
             Error::Validation(e) => ValidationError(e).into_response(),
             Error::FileDownload(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            Error::IdentityType => (
+                StatusCode::BAD_REQUEST,
+                String::from("invalid identity type"),
+            )
+                .into_response(),
             Error::IdentityConversion => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 String::from("invalid identity"),
