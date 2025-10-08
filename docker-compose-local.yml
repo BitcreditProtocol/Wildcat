@@ -56,7 +56,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      WDC_DASHBOARD_URL: http://localhost:5173
+      WDC_DASHBOARD_URL: http://192.168.1.216:5173
       KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
       KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
       KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
@@ -66,7 +66,7 @@ services:
       - --import-realm
       - --http-port=8080
       - --proxy-headers=xforwarded
-      - --hostname=localhost
+      - --hostname=192.168.1.216
     ports:
       - "8000:8000"
 

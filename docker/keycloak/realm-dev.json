@@ -17,7 +17,7 @@
         "publicClient": false,
         "secret": "cute-kitties",
         "directAccessGrantsEnabled": true,
-        "redirectUris": ["http://localhost:*", "http://127.0.0.1:*"]
+        "redirectUris": ["http://localhost:*", "http://127.0.0.1:*", "http://192.168.1.216:*"]
       }
     ],
     "users": [

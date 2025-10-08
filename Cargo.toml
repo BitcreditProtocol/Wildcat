@@ -26,7 +26,7 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.2.1"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", branch="stefan/fix_keys_response"}
 clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", default-features=false, features=['v11'], rev = "e5c4b9ed68a2499a9941710c314a469d3869783c"}
 bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}

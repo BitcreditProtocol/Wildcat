@@ -24,6 +24,7 @@ static_resources:
                             - suffix: "wildcat-dashboard.pages.dev"
                             - prefix: "http://localhost:"
                             - prefix: "http://127.0.0.1:"
+                            - prefix: "http://192.168.1.216:"
                           allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
                           allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Access-Control-Allow-Origin"
                           allow_credentials: true
@@ -72,7 +73,7 @@ static_resources:
                               seconds: 600
                           forward_payload_header: x-jwt-payload
                         keycloak_provider_localhost:
-                          issuer: http://localhost:8080/realms/dev
+                          issuer: http://192.168.1.216:8080/realms/dev
                           remote_jwks:
                             http_uri:
                               uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs

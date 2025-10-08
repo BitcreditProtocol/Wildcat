@@ -366,6 +366,7 @@ async fn determine_swap_type(
         .map(|kid| key_cl.keyset_info(kid))
         .collect();
     for response in input_responses.await.into_iter() {
+        tracing::debug!("resp {:?}", response);
         match response {
             Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
             Err(e) => return Err(Error::Keys(e)),
@@ -378,6 +379,7 @@ async fn determine_swap_type(
         .map(|kid| key_cl.keyset_info(kid))
         .collect();
     for response in outputs_responses.await.into_iter() {
+        tracing::debug!("resp {:?}", response);
         match response {
             Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
             Err(e) => return Err(Error::Keys(e)),

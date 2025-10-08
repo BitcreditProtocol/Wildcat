@@ -87,6 +87,7 @@ pub struct EnquireRequest {
         deserialize_with = "bcr_wdc_utils::borsh::deserialize_cdk_pubkey"
     )]
     /// corresponding secret key must be used later in key_client::mint request
+    #[serde(rename = "public_key")]
     pub minting_pubkey: cdk01::PublicKey,
 }
 
