@@ -27,6 +27,8 @@ pub enum Error {
     Ebpp(#[from] EbppClientError),
     #[error("Clowder Client error: {0}")]
     ClowderClient(#[from] ClowderClientError),
+    #[error("Clowder Client Not Initialized")]
+    ClowderClientNoInit,
 
     #[error("not yet implemented: {0}")]
     NotYet(String),
@@ -45,6 +47,7 @@ impl axum::response::IntoResponse for Error {
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Keys(bcr_common::KeysError::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
