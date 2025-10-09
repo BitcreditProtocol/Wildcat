@@ -3,6 +3,7 @@
 // ----- local modules
 pub mod bill;
 pub mod eiou;
+pub mod exchange;
 pub mod quotes;
 pub mod signatures;
 #[cfg(feature = "test-utils")]

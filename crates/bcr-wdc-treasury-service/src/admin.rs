@@ -3,12 +3,12 @@ use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::wire::signatures as wire_signatures;
-use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
+use bcr_wdc_webapi::{
+    exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
+};
 use cashu::{self as cdk};
 // ----- local imports
-use crate::credit;
-use crate::debit;
-use crate::error::Result;
+use crate::{credit, crsat, debit, error::Result};
 
 // ----- end imports
 
@@ -101,4 +101,14 @@ where
         unit: cdk::CurrencyUnit::Sat,
     };
     Ok(Json(response))
+}
+
+pub async fn try_htlc_swap(
+    State(ctrl): State<crsat::Service>,
+    Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
+) -> Result<Json<cashu::Amount>> {
+    tracing::debug!("Received request to try_htlc_swap");
+
+    let amount = ctrl.try_swap_htlc(&request.preimage).await?;
+    Ok(Json(amount))
 }
