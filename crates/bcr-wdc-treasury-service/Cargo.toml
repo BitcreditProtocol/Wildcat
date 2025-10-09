@@ -21,6 +21,7 @@ cdk = {workspace = true, default-features = false, features = ["wallet"]}
 cdk-common = {workspace = true}
 cdk-redb = { workspace = true }
 chrono.workspace = true
+clwdr-client = {workspace = true}
 config.workspace = true
 futures = {workspace = true}
 itertools = {workspace = true}

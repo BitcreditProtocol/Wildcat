@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 test-utils = ["rand"]
-auth = ["reqwest", "serde", "tokio", "tracing"]
+auth = ["reqwest/json", "tokio", "tracing"]
 
 
 [dependencies]
@@ -22,9 +22,10 @@ cdk-common = {workspace = true}
 chrono.workspace = true
 itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
-reqwest = {workspace = true, features = ["json"], optional = true}
+reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
-serde = {workspace = true, features = ["derive"], optional = true}
+serde = {workspace = true, features = ["derive"]}
+serde_json = {workspace = true}
 thiserror.workspace = true
 tokio = {workspace = true, features = ["time", "rt"], optional = true}
 tracing = {workspace = true, optional = true}
@@ -32,4 +33,5 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 rand = {workspace = true}

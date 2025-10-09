@@ -2,7 +2,10 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::{nut02 as cdk02, nut13::Error as CDK13Error};
+use cashu::{
+    nut00::Error as CDK00Error, nut02 as cdk02, nut10::Error as CDK10Error,
+    nut13::Error as CDK13Error,
+};
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
 use uuid::Uuid;
@@ -13,6 +16,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
+    #[error("unblind {0}")]
+    Unblind(#[from] bcr_wdc_utils::signatures::UnblindError),
+    #[error("cashu::nut00 {0}")]
+    CDK00(#[from] CDK00Error),
+    #[error("cashu::nut10 {0}")]
+    CDK10(#[from] CDK10Error),
     #[error("cashu::nut13 error {0}")]
     CDK13(#[from] CDK13Error),
     #[error("CDK Wallet error {0}")]
@@ -27,6 +36,8 @@ pub enum Error {
     SchnorrBorshMsg(#[from] bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("keys client {0}")]
     KeyClient(#[from] bcr_common::KeysError),
+    #[error("clowder client {0}")]
+    ClowderClient(#[from] clwdr_client::ClowderClientError),
     #[error("Swap client {0}")]
     SwapClient(#[from] bcr_common::SwapError),
     #[error("Quote client error {0}")]
@@ -36,7 +47,7 @@ pub enum Error {
     InsufficientFunds(cdk::Amount, cdk::Amount),
 
     #[error("invalid inputs {0}")]
-    InvalidInput(signatures_utils::ChecksError),
+    InvalidInput(String),
     #[error("invalid outputs {0}")]
     InvalidOutput(signatures_utils::ChecksError),
     #[error("inactive keyset {0}")]
@@ -53,11 +64,16 @@ pub enum Error {
     RequestIDNotFound(Uuid),
     #[error("ebill id not found {0}")]
     EBillNotFound(String),
+
+    #[error("internal {0}")]
+    Internal(String),
 }
+
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::EBillNotFound(id) => {
                 (StatusCode::NOT_FOUND, format!("EBill ID not found: {id}"))
             }
@@ -84,6 +100,7 @@ impl axum::response::IntoResponse for Error {
             Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SwapClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -91,6 +108,9 @@ impl axum::response::IntoResponse for Error {
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Unblind(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
     }

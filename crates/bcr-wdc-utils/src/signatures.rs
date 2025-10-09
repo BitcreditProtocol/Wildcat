@@ -35,6 +35,7 @@ pub fn basic_blinds_checks(blinds: &[cdk00::BlindedMessage]) -> ChecksResult<()>
     }
     Ok(())
 }
+
 pub fn basic_proofs_checks(proofs: &[cdk00::Proof]) -> ChecksResult<()> {
     // 1. no empty proofs
     if proofs.is_empty() {
@@ -121,6 +122,54 @@ pub mod test_utils {
     }
 }
 
+pub type UnblindResult<T> = std::result::Result<T, UnblindError>;
+#[derive(Debug, Error)]
+pub enum UnblindError {
+    #[error("keyset mismatch {0}")]
+    Keyset(String),
+    #[error("amount {0}")]
+    Amount(String),
+    #[error("cashu::dhke {0}")]
+    DHKE(#[from] cashu::dhke::Error),
+}
+pub fn unblind_signatures(
+    premints: impl Iterator<Item = cashu::PreMint>,
+    signatures: impl Iterator<Item = cashu::BlindSignature>,
+    keys: &cashu::KeySet,
+) -> UnblindResult<Vec<cashu::Proof>> {
+    let mut proofs: Vec<cdk00::Proof> = Vec::with_capacity(signatures.size_hint().0);
+    for (signature, premint) in signatures.zip(premints) {
+        if signature.keyset_id != keys.id {
+            return Err(UnblindError::Keyset(format!(
+                "signature {} != keys {}",
+                signature.keyset_id, keys.id
+            )));
+        }
+        if signature.keyset_id != premint.blinded_message.keyset_id {
+            return Err(UnblindError::Keyset(format!(
+                "signature {} != premint {}",
+                signature.keyset_id, premint.blinded_message.keyset_id
+            )));
+        }
+        if premint.amount != cashu::Amount::ZERO && signature.amount != premint.amount {
+            return Err(UnblindError::Amount(format!(
+                "signature.amount {} != premint.amount {}",
+                signature.amount, premint.amount
+            )));
+        }
+        let key = keys.keys.amount_key(signature.amount).ok_or_else(|| {
+            UnblindError::Amount(format!("no key for amount {}", signature.amount))
+        })?;
+        let c = cashu::dhke::unblind_message(&signature.c, &premint.r, &key)?;
+        let mut proof = cdk00::Proof::new(signature.amount, keys.id, premint.secret.clone(), c);
+        if let Some(dleq) = signature.dleq {
+            proof.dleq = Some(cashu::ProofDleq::new(dleq.e, dleq.s, premint.r));
+        }
+        proofs.push(proof);
+    }
+    Ok(proofs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::test_utils::*;
@@ -134,7 +183,6 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::Empty)
         ));
-
         let proofs = vec![];
         assert!(matches!(
             basic_proofs_checks(&proofs),
@@ -146,7 +194,6 @@ mod tests {
     fn basic_checks_zero_amount() {
         let (_, keyset) = generate_keyset();
         let amounts = vec![Amount::from(64), Amount::from(2)];
-
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
@@ -156,7 +203,6 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::ZeroAmount)
         ));
-
         let mut proofs = generate_proofs(&keyset, &amounts);
         proofs[0].amount = Amount::ZERO;
         assert!(matches!(
@@ -169,7 +215,6 @@ mod tests {
     fn basic_checks_unique() {
         let (_, keyset) = generate_keyset();
         let amounts = vec![Amount::from(64), Amount::from(8)];
-
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
@@ -179,7 +224,6 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::NonUnique)
         ));
-
         let mut proofs = generate_proofs(&keyset, &amounts);
         proofs.push(proofs[0].clone());
         assert!(matches!(
