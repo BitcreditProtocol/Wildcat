@@ -138,7 +138,8 @@ where
         outputs: &[cdk00::BlindedMessage],
     ) -> Result<Vec<cdk00::BlindSignature>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(inputs).map_err(Error::InvalidInput)?;
+        signatures_utils::basic_proofs_checks(inputs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         signatures_utils::basic_blinds_checks(outputs).map_err(Error::InvalidOutput)?;
         // 3. inputs and outputs have equal amounts
         let total_input = inputs

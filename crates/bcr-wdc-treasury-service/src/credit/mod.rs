@@ -7,7 +7,7 @@ use futures::try_join;
 use uuid::Uuid;
 // ----- local modules
 mod keys;
-pub use keys::{KeySrvc, KeySrvcConfig};
+pub use keys::KeySrvc;
 // ----- local imports
 use crate::error::{Error, Result};
 

@@ -1,13 +1,18 @@
 // ----- standard library imports
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 // ----- extra library imports
 use async_trait::async_trait;
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
 use uuid::Uuid;
 // ----- local imports
-use crate::credit::{self, PremintSignatures};
-use crate::error::{Error, Result};
+use crate::{
+    credit::{self, PremintSignatures},
+    crsat,
+    error::{Error, Result},
+};
 
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
@@ -97,5 +102,51 @@ impl credit::Repository for InMemoryCreditRepository {
             map.insert(*kid, total);
         }
         Ok(map.into_iter().collect())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Default, Debug)]
+pub struct InMemoryCrsatRepository {
+    proofs: Arc<Mutex<Vec<(cashu::MintUrl, cdk00::Proof)>>>,
+    htlc: Arc<Mutex<HashMap<String, Vec<(cashu::MintUrl, cdk00::Proof)>>>>,
+}
+
+#[async_trait]
+impl crsat::Repository for InMemoryCrsatRepository {
+    async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for proof in proofs {
+            locked.push((mint.clone(), proof));
+        }
+        Ok(())
+    }
+    async fn list(&self) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+        Ok(self.proofs.lock().unwrap().clone())
+    }
+
+    async fn store_htlc(
+        &self,
+        mint: cashu::MintUrl,
+        hash: &str,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut locked = self.htlc.lock().unwrap();
+        let entry = locked.entry(hash.to_string()).or_default();
+        for proof in proofs {
+            entry.push((mint.clone(), proof));
+        }
+        Ok(())
+    }
+    async fn search_htlc(&self, hash: &str) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+        let locked = self.htlc.lock().unwrap();
+        Ok(locked.get(hash).cloned().unwrap_or_default())
+    }
+    async fn remove_htlcs(&self, y: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.htlc.lock().unwrap();
+        for vals in locked.values_mut() {
+            vals.retain(|(_, p)| !y.contains(&p.y().expect("proof should have y")));
+        }
+        Ok(())
     }
 }
