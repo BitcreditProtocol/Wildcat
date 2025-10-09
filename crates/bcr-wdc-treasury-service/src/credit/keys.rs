@@ -4,22 +4,19 @@ use async_trait::async_trait;
 use bcr_common::{KeysClient, KeysError};
 use cashu::nut02 as cdk02;
 // ----- local imports
-use crate::error::{Error, Result};
+use crate::{
+    credit::KeyService,
+    error::{Error, Result},
+};
 
 // ----- end imports
-use crate::credit::KeyService;
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct KeySrvcConfig {
-    pub url: reqwest::Url,
-}
 
 #[derive(Clone)]
 pub struct KeySrvc(KeysClient);
 
 impl KeySrvc {
-    pub fn new(cfg: KeySrvcConfig) -> Self {
-        let client = KeysClient::new(cfg.url);
+    pub fn new(url: reqwest::Url) -> Self {
+        let client = KeysClient::new(url);
         Self(client)
     }
 }

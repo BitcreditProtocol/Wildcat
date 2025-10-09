@@ -1,17 +1,15 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use cashu::{
-    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut12 as cdk12, secret::Secret, Amount,
-};
-use surrealdb::RecordId;
-use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
+use cashu::{secret::Secret, Amount};
+use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 use uuid::Uuid;
-// ----- local modules
 // ----- local imports
-use crate::credit::{self, PremintSignatures};
-use crate::debit;
-use crate::error::{Error, Result};
+use crate::{
+    credit::{self, PremintSignatures},
+    crsat, debit,
+    error::{Error, Result},
+};
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CreditConnectionConfig {
@@ -24,23 +22,23 @@ pub struct CreditConnectionConfig {
     pub proofs: String,
 }
 
-// cdk00::PreMint is not Deserialize
+// cashu::PreMint is not Deserialize
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryPremint {
-    blinded: cdk00::BlindedMessage,
+    blinded: cashu::BlindedMessage,
     secret: Secret,
-    r: cdk01::SecretKey,
+    r: cashu::SecretKey,
     amount: Amount,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryPremintSecret {
     request_id: Uuid,
-    kid: cdk02::Id,
+    kid: cashu::Id,
     secrets: Vec<DBEntryPremint>,
 }
 
-impl std::convert::From<DBEntryPremint> for cdk00::PreMint {
+impl std::convert::From<DBEntryPremint> for cashu::PreMint {
     fn from(entry: DBEntryPremint) -> Self {
         Self {
             blinded_message: entry.blinded,
@@ -51,8 +49,8 @@ impl std::convert::From<DBEntryPremint> for cdk00::PreMint {
     }
 }
 
-impl std::convert::From<cdk00::PreMint> for DBEntryPremint {
-    fn from(entry: cdk00::PreMint) -> Self {
+impl std::convert::From<cashu::PreMint> for DBEntryPremint {
+    fn from(entry: cashu::PreMint) -> Self {
         Self {
             blinded: entry.blinded_message,
             secret: entry.secret,
@@ -62,10 +60,10 @@ impl std::convert::From<cdk00::PreMint> for DBEntryPremint {
     }
 }
 
-impl std::convert::From<DBEntryPremintSecret> for cdk00::PreMintSecrets {
+impl std::convert::From<DBEntryPremintSecret> for cashu::PreMintSecrets {
     fn from(entry: DBEntryPremintSecret) -> Self {
         let DBEntryPremintSecret { kid, secrets, .. } = entry;
-        let secrets: Vec<cdk00::PreMint> = secrets.into_iter().map(|e| e.into()).collect();
+        let secrets: Vec<cashu::PreMint> = secrets.into_iter().map(|e| e.into()).collect();
         Self {
             keyset_id: kid,
             secrets,
@@ -81,20 +79,20 @@ struct DBEntryCounter {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntrySignatures {
     request_id: Uuid,
-    signatures: Vec<cdk00::BlindSignature>,
+    signatures: Vec<cashu::BlindSignature>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntryProof {
     id: RecordId,
     amount: Amount,
-    keyset_id: cdk02::Id,
+    keyset_id: cashu::Id,
     secret: cashu::secret::Secret,
-    c: cdk01::PublicKey,
-    witness: Option<cdk00::Witness>,
-    dleq: Option<cdk12::ProofDleq>,
+    c: cashu::PublicKey,
+    witness: Option<cashu::Witness>,
+    dleq: Option<cashu::ProofDleq>,
 }
-fn convert_to_db_entry_proof(id: RecordId, entry: cdk00::Proof) -> DBEntryProof {
+fn convert_to_db_entry_proof(id: RecordId, entry: cashu::Proof) -> DBEntryProof {
     DBEntryProof {
         id,
         amount: entry.amount,
@@ -105,7 +103,7 @@ fn convert_to_db_entry_proof(id: RecordId, entry: cdk00::Proof) -> DBEntryProof 
         dleq: entry.dleq,
     }
 }
-impl std::convert::From<DBEntryProof> for cdk00::Proof {
+impl std::convert::From<DBEntryProof> for cashu::Proof {
     fn from(entry: DBEntryProof) -> Self {
         Self {
             amount: entry.amount,
@@ -120,7 +118,7 @@ impl std::convert::From<DBEntryProof> for cdk00::Proof {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 struct DBEntryBalance {
-    keyset_id: cdk02::Id,
+    keyset_id: cashu::Id,
     amount: Amount,
 }
 
@@ -148,12 +146,12 @@ impl CreditRepository {
         })
     }
 
-    async fn next_counter(&self, kid: cdk02::Id) -> SurrealResult<DBEntryCounter> {
+    async fn next_counter(&self, kid: cashu::Id) -> SurrealResult<DBEntryCounter> {
         let rid = RecordId::from_table_key(&self.counters, kid.to_string());
         let val: Option<DBEntryCounter> = self.db.select(rid).await?;
         Ok(val.unwrap_or_default())
     }
-    async fn increment_counter(&self, kid: cdk02::Id, inc: u32) -> SurrealResult<()> {
+    async fn increment_counter(&self, kid: cashu::Id, inc: u32) -> SurrealResult<()> {
         let rid = RecordId::from_table_key(&self.counters, kid.to_string());
         let mut val: DBEntryCounter = self.db.select(rid.clone()).await?.unwrap_or_default();
         val.counter += inc;
@@ -195,7 +193,7 @@ impl CreditRepository {
         Ok(())
     }
 
-    async fn store_proofs(&self, proofs: Vec<cdk00::Proof>) -> SurrealResult<()> {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> SurrealResult<()> {
         let mut dbproofs = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
             let rid = RecordId::from_table_key(&self.proofs, proof.secret.to_string());
@@ -205,7 +203,7 @@ impl CreditRepository {
         Ok(())
     }
 
-    async fn list_balance_by_keyset_id(&self) -> SurrealResult<Vec<(cdk02::Id, Amount)>> {
+    async fn list_balance_by_keyset_id(&self) -> SurrealResult<Vec<(cashu::Id, Amount)>> {
         let statement = String::from(
             "SELECT keyset_id, math::sum(amount) AS amount FROM type::table($table) GROUP BY keyset_id",
         );
@@ -226,17 +224,17 @@ impl CreditRepository {
 
 #[async_trait]
 impl credit::Repository for CreditRepository {
-    async fn next_counter(&self, kid: cdk02::Id) -> Result<u32> {
+    async fn next_counter(&self, kid: cashu::Id) -> Result<u32> {
         let entry = self.next_counter(kid).await.map_err(Error::DB)?;
         Ok(entry.counter)
     }
-    async fn increment_counter(&self, kid: cdk02::Id, inc: u32) -> Result<()> {
+    async fn increment_counter(&self, kid: cashu::Id, inc: u32) -> Result<()> {
         self.increment_counter(kid, inc).await.map_err(Error::DB)?;
         Ok(())
     }
 
-    async fn store_secrets(&self, request_id: Uuid, premint: cdk00::PreMintSecrets) -> Result<()> {
-        let cdk00::PreMintSecrets { keyset_id, secrets } = premint;
+    async fn store_secrets(&self, request_id: Uuid, premint: cashu::PreMintSecrets) -> Result<()> {
+        let cashu::PreMintSecrets { keyset_id, secrets } = premint;
         let secrets: Vec<DBEntryPremint> =
             secrets.into_iter().map(std::convert::From::from).collect();
         let entry = DBEntryPremintSecret {
@@ -248,11 +246,11 @@ impl credit::Repository for CreditRepository {
         Ok(())
     }
 
-    async fn load_secrets(&self, rid: Uuid) -> Result<cdk00::PreMintSecrets> {
+    async fn load_secrets(&self, rid: Uuid) -> Result<cashu::PreMintSecrets> {
         let entry: Option<DBEntryPremintSecret> =
             self.load_secrets(rid).await.map_err(Error::DB)?;
         let entry = entry.ok_or(Error::RequestIDNotFound(rid))?;
-        Ok(cdk00::PreMintSecrets::from(entry))
+        Ok(cashu::PreMintSecrets::from(entry))
     }
 
     async fn delete_secrets(&self, rid: Uuid) -> Result<()> {
@@ -274,7 +272,7 @@ impl credit::Repository for CreditRepository {
         Ok(())
     }
 
-    async fn list_premint_signatures(&self) -> Result<Vec<(Uuid, Vec<cdk00::BlindSignature>)>> {
+    async fn list_premint_signatures(&self) -> Result<Vec<(Uuid, Vec<cashu::BlindSignature>)>> {
         let entries = self.list_premint_signatures().await.map_err(Error::DB)?;
         let ret_val = entries
             .into_iter()
@@ -295,11 +293,11 @@ impl credit::Repository for CreditRepository {
         Ok(())
     }
 
-    async fn store_proofs(&self, proofs: Vec<cdk00::Proof>) -> Result<()> {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         self.store_proofs(proofs).await.map_err(Error::DB)?;
         Ok(())
     }
-    async fn list_balance_by_keyset_id(&self) -> Result<Vec<(cdk02::Id, Amount)>> {
+    async fn list_balance_by_keyset_id(&self) -> Result<Vec<(cashu::Id, Amount)>> {
         let balances = self.list_balance_by_keyset_id().await.map_err(Error::DB)?;
         Ok(balances)
     }
@@ -361,6 +359,141 @@ impl debit::Repository for DebitRepository {
             .take(0)
             .map_err(Error::DB)?;
         Ok(entries)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignProofEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    mint: cashu::MintUrl,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignHtlcProofEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    mint: cashu::MintUrl,
+    hash: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct CrsatConnectionConfig {
+    pub connection: String,
+    pub namespace: String,
+    pub database: String,
+    pub foreigns_table: String,
+    pub htlcs_table: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CrsatRepository {
+    db: Surreal<Any>,
+    foreigns_table: String,
+    htlcs_table: String,
+}
+
+impl CrsatRepository {
+    pub async fn new(config: CrsatConnectionConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self {
+            db: db_connection,
+            foreigns_table: config.foreigns_table,
+            htlcs_table: config.htlcs_table,
+        })
+    }
+}
+
+#[async_trait]
+impl crsat::Repository for CrsatRepository {
+    async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs.into_iter() {
+            let rid = RecordId::from_table_key(&self.foreigns_table, proof.y()?.to_string());
+            entries.push(ForeignProofEntry {
+                id: rid,
+                proof,
+                mint: mint.clone(),
+            });
+        }
+        let _: Vec<ForeignProofEntry> = self
+            .db
+            .insert(&self.foreigns_table)
+            .content(entries)
+            .await
+            .map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn list(&self) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+        let statement = String::from("SELECT * FROM type::table($table)");
+        let entries: Vec<ForeignProofEntry> = self
+            .db
+            .query(statement)
+            .bind(("table", self.foreigns_table.clone()))
+            .await
+            .map_err(Error::DB)?
+            .take(0)
+            .map_err(Error::DB)?;
+        let mut ret_val = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let ForeignProofEntry { mint, proof, .. } = entry;
+            ret_val.push((mint, proof));
+        }
+        Ok(ret_val)
+    }
+
+    async fn store_htlc(
+        &self,
+        mint: cashu::MintUrl,
+        hash: &str,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut entries: Vec<ForeignHtlcProofEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let id = RecordId::from_table_key(&self.htlcs_table, proof.y()?.to_string());
+            let entry = ForeignHtlcProofEntry {
+                hash: hash.to_string(),
+                id,
+                mint: mint.clone(),
+                proof,
+            };
+            entries.push(entry);
+        }
+        let _: Vec<ForeignHtlcProofEntry> = self
+            .db
+            .insert(&self.htlcs_table)
+            .content(entries)
+            .await
+            .map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn search_htlc(&self, hash: &str) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+        let htlcs: Vec<ForeignHtlcProofEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE hash = $hash")
+            .bind(("table", self.htlcs_table.clone()))
+            .bind(("hash", hash.to_string()))
+            .await
+            .map_err(Error::DB)?
+            .take(0)
+            .map_err(Error::DB)?;
+        let ret_val = htlcs
+            .into_iter()
+            .map(|ForeignHtlcProofEntry { proof, mint, .. }| (mint, proof))
+            .collect();
+        Ok(ret_val)
+    }
+    async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(&self.htlcs_table, y.to_string());
+            let _: Option<ForeignHtlcProofEntry> = self.db.delete(rid).await.map_err(Error::DB)?;
+        }
+        Ok(())
     }
 }
 
