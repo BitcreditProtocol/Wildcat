@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity};
+use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -478,27 +478,6 @@ impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
     fn from(val: bill::BillCombinedBitcoinKey) -> Self {
         BillCombinedBitcoinKey {
             private_descriptor: val.private_descriptor,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Endorsement {
-    pub pay_to_the_order_of: wire_bill::LightBillIdentParticipantWithAddress,
-    pub signed: wire_bill::LightSignedBy,
-    pub signing_timestamp: u64,
-    pub signing_address: Option<wire_identity::PostalAddress>,
-}
-
-impl From<bill::Endorsement> for Endorsement {
-    fn from(val: bill::Endorsement) -> Self {
-        Endorsement {
-            pay_to_the_order_of: convert::lightbillidentparticipantwithaddress_ebill2wire(
-                val.pay_to_the_order_of,
-            ),
-            signed: convert::lightsignedby_ebill2wire(val.signed),
-            signing_timestamp: val.signing_timestamp,
-            signing_address: val.signing_address.map(convert::postaladdress_ebill2wire),
         }
     }
 }
