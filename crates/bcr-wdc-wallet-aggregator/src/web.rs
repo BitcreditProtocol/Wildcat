@@ -9,6 +9,7 @@ use cashu::{
     nut09 as cdk09, MintVersion,
 };
 use cdk::wallet::MintConnector;
+use clwdr_client::model::{ExchangeRequest, ExchangeResponse};
 use futures::future::JoinAll;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -223,7 +224,7 @@ pub async fn post_swap(
             .map(|resp| resp.signatures)?,
     };
 
-    if let Some(clwdr_client) = ctrl.clwdr_client {
+    if let Some(clwdr_client) = ctrl.clwdr_stream_client {
         clwdr_client.mint_swap(proofs, signatures.clone()).await?;
     }
 
@@ -320,6 +321,50 @@ pub async fn post_restore(
         }
     }
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/id",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_clowder_id(
+    State(ctrl): State<AppController>,
+) -> Result<Json<clwdr_client::model::PublicKeyResponse>> {
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+
+    Ok(Json(clowder_client.get_id().await?))
+}
+
+// TODO, add Utoipa ToSchema for PathRequest
+pub async fn post_clowder_path(
+    State(ctrl): State<AppController>,
+    Json(request): Json<clwdr_client::model::PathRequest>,
+) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+
+    Ok(Json(
+        clowder_client.post_path(request.origin_mint_url).await?,
+    ))
+}
+
+pub async fn get_clowder_betas(
+    State(ctrl): State<AppController>,
+) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+
+    Ok(Json(clowder_client.get_betas().await?))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
+#[allow(dead_code, unused_variables)]
+pub async fn post_exchange(
+    State(ctrl): State<AppController>,
+    Json(request): Json<ExchangeRequest>,
+) -> Result<Json<ExchangeResponse>> {
+    todo!("Intermint Exchange not yet implemented");
 }
 
 #[allow(clippy::enum_variant_names)]

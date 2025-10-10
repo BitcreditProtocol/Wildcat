@@ -134,7 +134,7 @@ impl axum::response::IntoResponse for Error {
         let resp = match self {
             Error::PaymentRequestNotFound(reqid) => (
                 StatusCode::NOT_FOUND,
-                format!("Payment request not found {0}", reqid),
+                format!("Payment request not found {reqid}"),
             ),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };

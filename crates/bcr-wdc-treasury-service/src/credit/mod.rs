@@ -152,7 +152,7 @@ fn unblind_signatures(
             Error::UnblindSignatures(String::from("signature.amount not in keyset"))
         })?;
         let c = cashu::dhke::unblind_message(&signature.c, &secret.r, &key)
-            .map_err(|e| Error::UnblindSignatures(format!("unblind_message error: {}", e)))?;
+            .map_err(|e| Error::UnblindSignatures(format!("unblind_message error: {e}")))?;
         let proof = cdk00::Proof::new(signature.amount, keys.id, secret.secret.clone(), c);
         proofs.push(proof);
     }

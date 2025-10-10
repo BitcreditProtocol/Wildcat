@@ -28,8 +28,8 @@ pub struct AppConfig {
     swap_client_url: reqwest::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
-    // Temporary until it gets re-exported for consistency
-    clwdr_nats_url: Option<bcr_wdc_ebpp_client::Url>,
+    clwdr_nats_url: Option<reqwest::Url>,
+    clwdr_rest_url: Option<reqwest::Url>,
 }
 
 #[derive(Clone, FromRef)]
@@ -39,7 +39,8 @@ pub struct AppController {
     swap_client: bcr_common::SwapClient,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
-    clwdr_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
+    clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
+    clwdr_rest_client: Option<Arc<clwdr_client::ClowderRestClient>>,
 }
 
 impl AppController {
@@ -51,6 +52,7 @@ impl AppController {
             treasury_client_url,
             ebpp_client_url,
             clwdr_nats_url,
+            clwdr_rest_url,
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
@@ -59,7 +61,7 @@ impl AppController {
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
-        let clwdr_client = if let Some(url) = clwdr_nats_url {
+        let clwdr_stream_client = if let Some(url) = clwdr_nats_url {
             Some(Arc::new(
                 clwdr_client::ClowderNatsClient::new(url, false).await?,
             ))
@@ -67,13 +69,17 @@ impl AppController {
             None
         };
 
+        let clwdr_rest_client =
+            clwdr_rest_url.map(|url| Arc::new(clwdr_client::ClowderRestClient::new(url)));
+
         Ok(Self {
             cdk_client,
             keys_client,
             swap_client,
             treasury_client,
             ebpp_client,
-            clwdr_client,
+            clwdr_stream_client,
+            clwdr_rest_client,
         })
     }
 }
@@ -104,6 +110,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
 
     let router = Router::new()
         .route("/health", get(web::health))
+        // Cashu Endpoints
         .route("/v1/info", get(web::get_mint_info))
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
@@ -112,6 +119,11 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
+        // Clowder Endpoints
+        .route("/v1/id", get(web::get_clowder_id))
+        .route("/v1/path", post(web::post_clowder_path))
+        .route("/v1/exchange", post(web::post_exchange))
+        .route("/v1/betas", post(web::get_clowder_betas))
         .with_state(app)
         .merge(swagger);
     Ok(router)
