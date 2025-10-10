@@ -522,7 +522,7 @@ impl From<bill::LightSignedBy> for LightSignedBy {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum LightBillParticipant {
-    Anon(LightBillAnonParticipant),
+    Anon(wire_bill::LightBillAnonParticipant),
     Ident(wire_bill::LightBillIdentParticipantWithAddress),
 }
 
@@ -532,20 +532,9 @@ impl From<contact::LightBillParticipant> for LightBillParticipant {
             contact::LightBillParticipant::Ident(data) => LightBillParticipant::Ident(
                 convert::lightbillidentparticipantwithaddress_ebill2wire(data),
             ),
-            contact::LightBillParticipant::Anon(data) => LightBillParticipant::Anon(data.into()),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LightBillAnonParticipant {
-    pub node_id: NodeId,
-}
-
-impl From<contact::LightBillAnonParticipant> for LightBillAnonParticipant {
-    fn from(val: contact::LightBillAnonParticipant) -> Self {
-        LightBillAnonParticipant {
-            node_id: val.node_id,
+            contact::LightBillParticipant::Anon(data) => {
+                LightBillParticipant::Anon(convert::lightbillanonparticipant_ebill2wire(data))
+            }
         }
     }
 }
