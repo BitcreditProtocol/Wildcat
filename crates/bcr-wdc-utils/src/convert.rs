@@ -175,3 +175,14 @@ pub fn lightsignedby_ebill2wire(input: ebill_bill::LightSignedBy) -> wire_bill::
         signatory: input.signatory.map(lightbillidentparticipant_ebill2wire),
     }
 }
+
+pub fn endorsement_ebill2wire(input: ebill_bill::Endorsement) -> wire_bill::Endorsement {
+    wire_bill::Endorsement {
+        pay_to_the_order_of: lightbillidentparticipantwithaddress_ebill2wire(
+            input.pay_to_the_order_of,
+        ),
+        signed: lightsignedby_ebill2wire(input.signed),
+        signing_timestamp: input.signing_timestamp,
+        signing_address: input.signing_address.map(postaladdress_ebill2wire),
+    }
+}

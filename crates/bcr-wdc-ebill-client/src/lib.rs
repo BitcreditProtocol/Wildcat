@@ -1,9 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::identity as wire_identity;
+use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill, Endorsement,
+        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill,
         RequestToPayBitcreditBillPayload,
     },
     quotes::{BillInfo, SharedBill},
@@ -178,7 +178,10 @@ impl EbillClient {
     }
 
     #[cfg(feature = "authorized")]
-    pub async fn get_bill_endorsements(&self, bill_id: &BillId) -> Result<Vec<Endorsement>> {
+    pub async fn get_bill_endorsements(
+        &self,
+        bill_id: &BillId,
+    ) -> Result<Vec<wire_bill::Endorsement>> {
         let url = self
             .base
             .join(&format!("/v1/admin/bill/endorsements/{bill_id}"))
@@ -188,7 +191,7 @@ impl EbillClient {
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
-        let endorsements = res.json::<Vec<Endorsement>>().await?;
+        let endorsements = res.json::<Vec<wire_bill::Endorsement>>().await?;
         Ok(endorsements)
     }
 
