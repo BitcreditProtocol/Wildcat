@@ -506,14 +506,16 @@ impl From<bill::Endorsement> for Endorsement {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LightSignedBy {
     pub data: LightBillParticipant,
-    pub signatory: Option<LightBillIdentParticipant>,
+    pub signatory: Option<wire_bill::LightBillIdentParticipant>,
 }
 
 impl From<bill::LightSignedBy> for LightSignedBy {
     fn from(val: bill::LightSignedBy) -> Self {
         LightSignedBy {
             data: val.data.into(),
-            signatory: val.signatory.map(|s| s.into()),
+            signatory: val
+                .signatory
+                .map(convert::lightbillidentparticipant_ebill2wire),
         }
     }
 }
@@ -543,23 +545,6 @@ pub struct LightBillAnonParticipant {
 impl From<contact::LightBillAnonParticipant> for LightBillAnonParticipant {
     fn from(val: contact::LightBillAnonParticipant) -> Self {
         LightBillAnonParticipant {
-            node_id: val.node_id,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LightBillIdentParticipant {
-    #[serde(rename = "type")]
-    pub t: wire_contact::ContactType,
-    pub name: String,
-    pub node_id: NodeId,
-}
-impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
-    fn from(val: contact::LightBillIdentParticipant) -> Self {
-        LightBillIdentParticipant {
-            t: convert::contacttype_ebill2wire(val.t),
-            name: val.name,
             node_id: val.node_id,
         }
     }
