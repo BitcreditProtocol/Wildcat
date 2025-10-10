@@ -134,8 +134,7 @@ impl KeysRepository for InMemoryKeyMap {
         let mut wlocked = self.conditions.write().unwrap();
         let (cs, _) = &mut *wlocked;
         let condition = cs.get_mut(&uid).ok_or(Error::Internal(format!(
-            "MintCondition internal uid does not exist {}",
-            uid
+            "MintCondition internal uid does not exist {uid}"
         )))?;
         if condition.minted != old {
             return Err(Error::Internal(format!(
