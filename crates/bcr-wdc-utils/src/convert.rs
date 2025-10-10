@@ -145,3 +145,11 @@ pub fn lightbillidentparticipant_ebill2wire(
         node_id: nodeid_ebill2wire(input.node_id),
     }
 }
+
+pub fn lightbillanonparticipant_ebill2wire(
+    input: ebill_contact::LightBillAnonParticipant,
+) -> wire_bill::LightBillAnonParticipant {
+    wire_bill::LightBillAnonParticipant {
+        node_id: nodeid_ebill2wire(input.node_id),
+    }
+}
