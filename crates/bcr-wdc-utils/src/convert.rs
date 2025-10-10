@@ -3,7 +3,7 @@ use std::str::FromStr;
 // ----- extra library imports
 use bcr_common::{
     core,
-    wire::{contact as wire_contact, identity as wire_identity},
+    wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
 };
 use bcr_ebill_core::{self as ebill_core, contact as ebill_contact, identity as ebill_identity};
 use thiserror::Error;
@@ -123,4 +123,15 @@ pub fn identity_ebill2wire(input: ebill_identity::Identity) -> Result<wire_ident
         nostr_relays,
     };
     Ok(output)
+}
+
+pub fn lightbillidentparticipantwithaddress_ebill2wire(
+    input: ebill_contact::LightBillIdentParticipantWithAddress,
+) -> wire_bill::LightBillIdentParticipantWithAddress {
+    wire_bill::LightBillIdentParticipantWithAddress {
+        t: contacttype_ebill2wire(input.t),
+        name: input.name,
+        node_id: nodeid_ebill2wire(input.node_id),
+        postal_address: postaladdress_ebill2wire(input.postal_address),
+    }
 }
