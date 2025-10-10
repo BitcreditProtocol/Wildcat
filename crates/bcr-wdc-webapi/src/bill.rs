@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
+use bcr_common::wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -484,7 +484,7 @@ impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Endorsement {
-    pub pay_to_the_order_of: LightBillIdentParticipantWithAddress,
+    pub pay_to_the_order_of: wire_bill::LightBillIdentParticipantWithAddress,
     pub signed: LightSignedBy,
     pub signing_timestamp: u64,
     pub signing_address: Option<wire_identity::PostalAddress>,
@@ -493,7 +493,9 @@ pub struct Endorsement {
 impl From<bill::Endorsement> for Endorsement {
     fn from(val: bill::Endorsement) -> Self {
         Endorsement {
-            pay_to_the_order_of: val.pay_to_the_order_of.into(),
+            pay_to_the_order_of: convert::lightbillidentparticipantwithaddress_ebill2wire(
+                val.pay_to_the_order_of,
+            ),
             signed: val.signed.into(),
             signing_timestamp: val.signing_timestamp,
             signing_address: val.signing_address.map(convert::postaladdress_ebill2wire),
@@ -519,13 +521,15 @@ impl From<bill::LightSignedBy> for LightSignedBy {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum LightBillParticipant {
     Anon(LightBillAnonParticipant),
-    Ident(LightBillIdentParticipantWithAddress),
+    Ident(wire_bill::LightBillIdentParticipantWithAddress),
 }
 
 impl From<contact::LightBillParticipant> for LightBillParticipant {
     fn from(val: contact::LightBillParticipant) -> Self {
         match val {
-            contact::LightBillParticipant::Ident(data) => LightBillParticipant::Ident(data.into()),
+            contact::LightBillParticipant::Ident(data) => LightBillParticipant::Ident(
+                convert::lightbillidentparticipantwithaddress_ebill2wire(data),
+            ),
             contact::LightBillParticipant::Anon(data) => LightBillParticipant::Anon(data.into()),
         }
     }
@@ -557,27 +561,6 @@ impl From<contact::LightBillIdentParticipant> for LightBillIdentParticipant {
             t: convert::contacttype_ebill2wire(val.t),
             name: val.name,
             node_id: val.node_id,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LightBillIdentParticipantWithAddress {
-    #[serde(rename = "type")]
-    pub t: wire_contact::ContactType,
-    pub name: String,
-    pub node_id: NodeId,
-    #[serde(flatten)]
-    pub postal_address: wire_identity::PostalAddress,
-}
-
-impl From<contact::LightBillIdentParticipantWithAddress> for LightBillIdentParticipantWithAddress {
-    fn from(val: contact::LightBillIdentParticipantWithAddress) -> Self {
-        LightBillIdentParticipantWithAddress {
-            t: convert::contacttype_ebill2wire(val.t),
-            name: val.name,
-            node_id: val.node_id,
-            postal_address: convert::postaladdress_ebill2wire(val.postal_address),
         }
     }
 }
