@@ -65,15 +65,15 @@ impl axum::response::IntoResponse for Error {
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::RequestIDNotFound(request_id) => (
                 StatusCode::BAD_REQUEST,
-                format!("Request ID not found: {}", request_id),
+                format!("Request ID not found: {request_id}"),
             ),
             Error::UnknownKeyset(keyset) => (
                 StatusCode::BAD_REQUEST,
-                format!("Unknown keyset: {}", keyset),
+                format!("Unknown keyset: {keyset}"),
             ),
             Error::UnmatchingAmount(input, output) => (
                 StatusCode::BAD_REQUEST,
-                format!("Unmatching amount: input {} != output {}", input, output),
+                format!("Unmatching amount: input {input} != output {output}"),
             ),
             Error::ActiveKeyset(kid) => (StatusCode::BAD_REQUEST, format!("Active keyset {kid}")),
             Error::InactiveKeyset(kid) => {

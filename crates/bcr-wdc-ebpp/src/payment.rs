@@ -45,7 +45,7 @@ impl std::fmt::Display for IncomingRequest {
                 uri
             }
         };
-        write!(f, "{}", uri)
+        write!(f, "{uri}")
     }
 }
 
