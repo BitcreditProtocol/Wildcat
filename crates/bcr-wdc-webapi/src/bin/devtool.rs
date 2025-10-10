@@ -15,6 +15,6 @@ fn main() -> std::io::Result<()> {
     let signed_request = bcr_wdc_webapi::quotes::SignedEnquireRequest { request, signature };
     let jason = serde_json::to_string_pretty(&signed_request).expect("Failed to serialize request");
     println!("random generated bcr_wdc_webapi::quotes::EnquireRequest in JSON format");
-    println!("{}", jason);
+    println!("{jason}");
     Ok(())
 }

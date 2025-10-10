@@ -40,7 +40,7 @@ impl axum::response::IntoResponse for Error {
         let response = match self {
             Error::NotYet(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("{} not yet implemented", msg),
+                format!("{msg} not yet implemented"),
             ),
 
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -54,7 +54,7 @@ impl axum::response::IntoResponse for Error {
             }
             Error::Keys(bcr_common::KeysError::ResourceNotFound(kid)) => (
                 StatusCode::NOT_FOUND,
-                format!("keyset Id {} not found", kid),
+                format!("keyset Id {kid} not found"),
             ),
             Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
