@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use bcr_common::wire::identity as wire_identity;
+use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
 use bcr_ebill_api::{
     constants::MAX_DOCUMENT_FILE_SIZE_BYTES,
     data::{bill, contact, identity},
@@ -27,7 +27,7 @@ use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::{
     bill::{
         BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
-        BillsResponse, BitcreditBill, Endorsement, RequestToPayBitcreditBillPayload,
+        BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
     },
     quotes::RequestEncryptedFileUrlPayload,
 };
@@ -319,14 +319,19 @@ pub async fn get_bill_payment_status(
 pub async fn get_bill_endorsements(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<BillId>,
-) -> Result<Json<Vec<Endorsement>>> {
+) -> Result<Json<Vec<wire_bill::Endorsement>>> {
     tracing::debug!("Received get bill detail request");
     let identity = ctrl.identity_service.get_identity().await?;
     let endorsements = ctrl
         .bill_service
         .get_endorsements(&bill_id, &identity.node_id)
         .await?;
-    Ok(Json(endorsements.into_iter().map(|e| e.into()).collect()))
+    Ok(Json(
+        endorsements
+            .into_iter()
+            .map(convert::endorsement_ebill2wire)
+            .collect(),
+    ))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
