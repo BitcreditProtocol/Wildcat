@@ -65,7 +65,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::SignWithKeys(SignWithKeysError::NoKeyForAmount(amount)) => (
                 StatusCode::NOT_FOUND,
-                format!("No key for amount {}", amount),
+                format!("No key for amount {amount}"),
             ),
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 

@@ -27,6 +27,8 @@ pub enum Error {
     Ebpp(#[from] EbppClientError),
     #[error("Clowder Client error: {0}")]
     ClowderClient(#[from] ClowderClientError),
+    #[error("Clowder Client Not Initialized")]
+    ClowderClientNoInit,
 
     #[error("not yet implemented: {0}")]
     NotYet(String),
@@ -38,20 +40,21 @@ impl axum::response::IntoResponse for Error {
         let response = match self {
             Error::NotYet(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("{} not yet implemented", msg),
+                format!("{msg} not yet implemented"),
             ),
 
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Keys(bcr_common::KeysError::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
             }
             Error::Keys(bcr_common::KeysError::ResourceNotFound(kid)) => (
                 StatusCode::NOT_FOUND,
-                format!("keyset Id {} not found", kid),
+                format!("keyset Id {kid} not found"),
             ),
             Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
