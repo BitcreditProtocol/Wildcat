@@ -485,7 +485,7 @@ impl From<bill::BillCombinedBitcoinKey> for BillCombinedBitcoinKey {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Endorsement {
     pub pay_to_the_order_of: wire_bill::LightBillIdentParticipantWithAddress,
-    pub signed: LightSignedBy,
+    pub signed: wire_bill::LightSignedBy,
     pub signing_timestamp: u64,
     pub signing_address: Option<wire_identity::PostalAddress>,
 }
@@ -496,26 +496,9 @@ impl From<bill::Endorsement> for Endorsement {
             pay_to_the_order_of: convert::lightbillidentparticipantwithaddress_ebill2wire(
                 val.pay_to_the_order_of,
             ),
-            signed: val.signed.into(),
+            signed: convert::lightsignedby_ebill2wire(val.signed),
             signing_timestamp: val.signing_timestamp,
             signing_address: val.signing_address.map(convert::postaladdress_ebill2wire),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LightSignedBy {
-    pub data: wire_bill::LightBillParticipant,
-    pub signatory: Option<wire_bill::LightBillIdentParticipant>,
-}
-
-impl From<bill::LightSignedBy> for LightSignedBy {
-    fn from(val: bill::LightSignedBy) -> Self {
-        LightSignedBy {
-            data: convert::lightbillparticipant_ebill2wire(val.data),
-            signatory: val
-                .signatory
-                .map(convert::lightbillidentparticipant_ebill2wire),
         }
     }
 }
