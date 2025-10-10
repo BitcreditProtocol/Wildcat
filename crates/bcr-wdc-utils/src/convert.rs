@@ -135,3 +135,13 @@ pub fn lightbillidentparticipantwithaddress_ebill2wire(
         postal_address: postaladdress_ebill2wire(input.postal_address),
     }
 }
+
+pub fn lightbillidentparticipant_ebill2wire(
+    input: ebill_contact::LightBillIdentParticipant,
+) -> wire_bill::LightBillIdentParticipant {
+    wire_bill::LightBillIdentParticipant {
+        t: contacttype_ebill2wire(input.t),
+        name: input.name,
+        node_id: nodeid_ebill2wire(input.node_id),
+    }
+}
