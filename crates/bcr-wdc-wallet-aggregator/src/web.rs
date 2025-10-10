@@ -350,6 +350,14 @@ pub async fn post_clowder_path(
     ))
 }
 
+pub async fn get_clowder_betas(
+    State(ctrl): State<AppController>,
+) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+
+    Ok(Json(clowder_client.get_betas().await?))
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 #[allow(dead_code, unused_variables)]
 pub async fn post_exchange(
