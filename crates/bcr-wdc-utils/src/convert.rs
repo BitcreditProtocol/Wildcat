@@ -146,10 +146,23 @@ pub fn lightbillidentparticipant_ebill2wire(
     }
 }
 
-pub fn lightbillanonparticipant_ebill2wire(
+fn lightbillanonparticipant_ebill2wire(
     input: ebill_contact::LightBillAnonParticipant,
 ) -> wire_bill::LightBillAnonParticipant {
     wire_bill::LightBillAnonParticipant {
         node_id: nodeid_ebill2wire(input.node_id),
+    }
+}
+
+pub fn lightbillparticipant_ebill2wire(
+    input: ebill_contact::LightBillParticipant,
+) -> wire_bill::LightBillParticipant {
+    match input {
+        ebill_contact::LightBillParticipant::Ident(data) => wire_bill::LightBillParticipant::Ident(
+            lightbillidentparticipantwithaddress_ebill2wire(data),
+        ),
+        ebill_contact::LightBillParticipant::Anon(data) => {
+            wire_bill::LightBillParticipant::Anon(lightbillanonparticipant_ebill2wire(data))
+        }
     }
 }
