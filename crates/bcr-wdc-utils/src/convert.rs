@@ -5,7 +5,9 @@ use bcr_common::{
     core,
     wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
 };
-use bcr_ebill_core::{self as ebill_core, contact as ebill_contact, identity as ebill_identity};
+use bcr_ebill_core::{
+    self as ebill_core, bill as ebill_bill, contact as ebill_contact, identity as ebill_identity,
+};
 use thiserror::Error;
 // ----- local imports
 
@@ -164,5 +166,12 @@ pub fn lightbillparticipant_ebill2wire(
         ebill_contact::LightBillParticipant::Anon(data) => {
             wire_bill::LightBillParticipant::Anon(lightbillanonparticipant_ebill2wire(data))
         }
+    }
+}
+
+pub fn lightsignedby_ebill2wire(input: ebill_bill::LightSignedBy) -> wire_bill::LightSignedBy {
+    wire_bill::LightSignedBy {
+        data: lightbillparticipant_ebill2wire(input.data),
+        signatory: input.signatory.map(lightbillidentparticipant_ebill2wire),
     }
 }
