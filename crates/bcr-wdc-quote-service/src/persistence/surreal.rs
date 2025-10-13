@@ -325,7 +325,7 @@ mod tests {
     use super::*;
     use crate::{quotes::BillInfo, service};
     use bcr_ebill_core::contact::BillParticipant;
-    use bcr_wdc_utils::keys::test_utils as keys_test;
+    use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
     use bcr_wdc_webapi::test_utils::{random_bill_id, random_identity_public_data};
     use std::str::FromStr;
     use surrealdb::RecordId;
@@ -345,11 +345,15 @@ mod tests {
         fn default() -> Self {
             Self {
                 id: random_bill_id(),
-                drawee: random_identity_public_data().1.into(),
-                drawer: random_identity_public_data().1.into(),
-                payee: BillParticipant::Ident(random_identity_public_data().1.into()),
+                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
+                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
+                payee: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
+                    random_identity_public_data().1,
+                )),
                 endorsees: Vec::default(),
-                current_holder: BillParticipant::Ident(random_identity_public_data().1.into()),
+                current_holder: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
+                    random_identity_public_data().1,
+                )),
                 sum: bitcoin::Amount::default(),
                 maturity_date: TStamp::default(),
                 file_urls: Vec::default(),
@@ -498,9 +502,11 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                drawee: random_identity_public_data().1.into(),
-                drawer: random_identity_public_data().1.into(),
-                payee: BillParticipant::Ident(random_identity_public_data().1.into()),
+                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
+                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
+                payee: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
+                    random_identity_public_data().1,
+                )),
                 endorsees: vec![],
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
                 ..Default::default()
@@ -537,7 +543,9 @@ mod tests {
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
-            bill_drawee_id: Some(random_identity_public_data().1.node_id),
+            bill_drawee_id: Some(convert::nodeid_wire2ebill(
+                random_identity_public_data().1.node_id,
+            )),
             ..Default::default()
         };
         let res = db.list_light(filters, None).await.unwrap();
@@ -635,7 +643,9 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
-                current_holder: BillParticipant::Ident(random_identity_public_data().1.into()),
+                current_holder: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
+                    random_identity_public_data().1,
+                )),
                 ..Default::default()
             },
             submitted: TStamp::default(),
