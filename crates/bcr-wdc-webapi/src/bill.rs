@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
+use bcr_common::wire::{contact as wire_contact, identity as wire_identity, bill as wire_bill};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -424,7 +424,7 @@ pub struct Notification {
     pub id: String,
     #[schema(value_type=Option<String>)]
     pub node_id: Option<NodeId>,
-    pub notification_type: NotificationType,
+    pub notification_type: wire_bill::NotificationType,
     pub reference_id: Option<String>,
     pub description: String,
     #[schema(value_type = chrono::DateTime<chrono::Utc>)]
@@ -438,27 +438,12 @@ impl From<notification::Notification> for Notification {
         Notification {
             id: val.id,
             node_id: val.node_id,
-            notification_type: val.notification_type.into(),
+            notification_type: convert::notificationtype_ebill2wire(val.notification_type),
             reference_id: val.reference_id,
             description: val.description,
             datetime: val.datetime,
             active: val.active,
             payload: val.payload,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub enum NotificationType {
-    General,
-    Bill,
-}
-
-impl From<notification::NotificationType> for NotificationType {
-    fn from(val: notification::NotificationType) -> Self {
-        match val {
-            notification::NotificationType::Bill => NotificationType::Bill,
-            notification::NotificationType::General => NotificationType::General,
         }
     }
 }
