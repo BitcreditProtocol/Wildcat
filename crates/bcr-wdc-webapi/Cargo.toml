@@ -37,4 +37,4 @@ uuid = {workspace = true, features = ["serde"]}
 
 [features]
 default = []
-test-utils = []
+test-utils = ["bcr-common/test-utils"]
