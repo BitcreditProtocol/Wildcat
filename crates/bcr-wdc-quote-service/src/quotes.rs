@@ -1,11 +1,14 @@
 // ----- standard library imports
-use bcr_ebill_core::bill::BillId;
 use std::str::FromStr;
-use strum::Display;
 // ----- extra library imports
-use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
+use bcr_ebill_core::{
+    bill::BillId,
+    contact::{BillIdentParticipant, BillParticipant},
+};
+use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::quotes as web_quotes;
 use bitcoin::Amount;
+use strum::Display;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -33,8 +36,8 @@ pub fn convert_to_billinfo(
     let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
     Ok(BillInfo {
         id: bill.id,
-        drawee: bill.drawee.into(),
-        drawer: bill.drawer.into(),
+        drawee: convert::billidentparticipant_wire2ebill(bill.drawee),
+        drawer: convert::billidentparticipant_wire2ebill(bill.drawer),
         payee: bill.payee.into(),
         endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
         current_holder: current_holder.into(),
@@ -49,8 +52,8 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
         let maturity_date = bill.maturity_date.to_rfc3339();
         Self {
             id: bill.id,
-            drawee: bill.drawee.into(),
-            drawer: bill.drawer.into(),
+            drawee: convert::billidentparticipant_ebill2wire(bill.drawee),
+            drawer: convert::billidentparticipant_ebill2wire(bill.drawer),
             payee: bill.payee.into(),
             endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
             sum: bill.sum.to_sat(),

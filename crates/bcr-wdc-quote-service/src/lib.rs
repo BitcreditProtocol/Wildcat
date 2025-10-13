@@ -105,10 +105,10 @@ where
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
+        bcr_common::wire::bill::BillIdentParticipant,
         bcr_common::wire::contact::ContactType,
-        bcr_wdc_webapi::bill::BillIdentParticipant,
-        bcr_wdc_webapi::bill::BillParticipant,
         bcr_common::wire::identity::PostalAddress,
+        bcr_wdc_webapi::bill::BillParticipant,
         bcr_wdc_webapi::quotes::BillInfo,
         bcr_wdc_webapi::quotes::EnableMintingRequest,
         bcr_wdc_webapi::quotes::EnableMintingResponse,

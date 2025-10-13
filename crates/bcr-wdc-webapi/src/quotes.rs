@@ -1,14 +1,14 @@
-use bcr_ebill_core::{bill::BillId, NodeId, PublicKey};
 // ----- standard library imports
-use chrono::{DateTime, Utc};
 // ----- extra library imports
+use bcr_common::wire::bill as wire_bill;
+use bcr_ebill_core::{bill::BillId, NodeId, PublicKey};
 use borsh::{BorshDeserialize, BorshSerialize};
 use cashu::{nut01 as cdk01, nut02 as cdk02};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
-
-use crate::bill::{BillIdentParticipant, BillParticipant};
 // ----- local imports
+use crate::bill::BillParticipant;
 
 // ----- end imports
 
@@ -64,8 +64,8 @@ impl From<bcr_ebill_core::blockchain::bill::BillToShareWithExternalParty> for Sh
 pub struct BillInfo {
     #[schema(value_type=String)]
     pub id: BillId,
-    pub drawee: BillIdentParticipant,
-    pub drawer: BillIdentParticipant,
+    pub drawee: wire_bill::BillIdentParticipant,
+    pub drawer: wire_bill::BillIdentParticipant,
     pub payee: BillParticipant,
     pub endorsees: Vec<BillParticipant>,
     pub sum: u64, // in satoshis, converted to bitcoin::Amount in the service

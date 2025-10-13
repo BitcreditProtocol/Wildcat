@@ -1,7 +1,10 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_common::wire::{contact as wire_contact, identity as wire_identity};
+use bcr_common::{
+    core_tests,
+    wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
+};
 use bcr_ebill_core::{
     bill::BillId,
     blockchain::bill::{
@@ -10,15 +13,12 @@ use bcr_ebill_core::{
     util::BcrKeys,
     NodeId, PublicKey,
 };
-use bcr_wdc_utils::keys::test_utils as keys_test;
+use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
 use bitcoin::{self as btc, secp256k1 as secp, Amount};
 use chrono::NaiveTime;
 use rand::Rng;
 // ----- local imports
-use crate::{
-    bill::BillIdentParticipant,
-    quotes::{EnquireRequest, SharedBill},
-};
+use crate::quotes::{EnquireRequest, SharedBill};
 // ----- end imports
 
 // returns a random `EnquireRequest` with the bill's holder signing keys
@@ -36,7 +36,7 @@ pub fn generate_random_bill_enquire_request(
     let (signing_key, payee) = match payee_kp {
         Some(kp) => {
             let mut payee = random_identity_public_data().1;
-            payee.node_id = node_id_from_pub_key(kp.public_key());
+            payee.node_id = core_tests::node_id_from_pub_key(kp.public_key());
             (kp, payee)
         }
         None => random_identity_public_data(),
@@ -44,9 +44,12 @@ pub fn generate_random_bill_enquire_request(
     let default_amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
     let amount = amount.unwrap_or(default_amount);
 
-    let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = drawer.into();
-    let core_drawee: bcr_ebill_core::contact::BillIdentParticipant = drawee.into();
-    let core_payee: bcr_ebill_core::contact::BillIdentParticipant = payee.into();
+    let core_drawer: bcr_ebill_core::contact::BillIdentParticipant =
+        convert::billidentparticipant_wire2ebill(drawer);
+    let core_drawee: bcr_ebill_core::contact::BillIdentParticipant =
+        convert::billidentparticipant_wire2ebill(drawee);
+    let core_payee: bcr_ebill_core::contact::BillIdentParticipant =
+        convert::billidentparticipant_wire2ebill(payee);
 
     let now = chrono::Utc::now().timestamp() as u64;
     let bill_chain = BillBlockchain::new(
@@ -138,14 +141,14 @@ pub fn random_datetime() -> String {
     random_date.to_rfc3339()
 }
 
-pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
+pub fn random_identity_public_data() -> (secp::Keypair, wire_bill::BillIdentParticipant) {
     let keypair = keys_test::generate_random_keypair();
     let sample = [
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Person,
             email: Some(String::from("Carissa@kemp.com")),
             name: String::from("Carissa Kemp"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Vorarlberg"),
@@ -154,11 +157,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Person,
             email: Some(String::from("alana@carrillo.com")),
             name: String::from("Alana Carrillo"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Spain"),
                 city: String::from("Madrid"),
@@ -167,11 +170,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Person,
             email: Some(String::from("geremia@pisani.com")),
             name: String::from("Geremia Pisani"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Italy"),
                 city: String::from("Firenze"),
@@ -180,11 +183,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Person,
             email: Some(String::from("andreas@koenig.com")),
             name: String::from("Andreas Koenig"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Lorberhof"),
@@ -193,11 +196,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("logistilla@fournier.com")),
             name: String::from("Logistilla Fournier"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("France"),
                 city: String::from("Toulous"),
@@ -206,11 +209,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("moonlimited@ltd.com")),
             name: String::from("Moon Limited"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("USA"),
                 city: String::from("New York"),
@@ -219,11 +222,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("blanco@spa.com")),
             name: String::from("Blanco y Asoc."),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Argentina"),
                 city: String::from("Puerto Clara"),
@@ -232,11 +235,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("alexanderurner@grimm.com")),
             name: String::from("Grimm GmbH"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Austria"),
                 city: String::from("Perg"),
@@ -245,11 +248,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("antoniosegovia@santiago.com")),
             name: String::from("Empresa Santiago"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Spain"),
                 city: String::from("Vall Juarez"),
@@ -258,11 +261,11 @@ pub fn random_identity_public_data() -> (secp::Keypair, BillIdentParticipant) {
             },
             nostr_relays: vec![String::from("")],
         },
-        BillIdentParticipant {
+        wire_bill::BillIdentParticipant {
             t: wire_contact::ContactType::Company,
             email: Some(String::from("santoro_group@spa.com")),
             name: String::from("Santoro Group"),
-            node_id: node_id_from_pub_key(keypair.public_key()),
+            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
             postal_address: wire_identity::PostalAddress {
                 country: String::from("Italy"),
                 city: String::from("Prunetta"),
