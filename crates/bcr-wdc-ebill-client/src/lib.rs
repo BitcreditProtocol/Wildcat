@@ -2,10 +2,7 @@
 // ----- extra library imports
 use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
 use bcr_wdc_webapi::{
-    bill::{
-        BillCombinedBitcoinKey, BillId, BillsResponse, BitcreditBill,
-        RequestToPayBitcreditBillPayload,
-    },
+    bill::{BillId, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload},
     quotes::{BillInfo, SharedBill},
 };
 use reqwest::header;
@@ -224,7 +221,7 @@ impl EbillClient {
     pub async fn get_bitcoin_private_descriptor_for_bill(
         &self,
         bill_id: &BillId,
-    ) -> Result<BillCombinedBitcoinKey> {
+    ) -> Result<wire_bill::BillCombinedBitcoinKey> {
         let url = self
             .base
             .join(&format!("/v1/admin/bill/bitcoin_key/{bill_id}"))
@@ -234,7 +231,7 @@ impl EbillClient {
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::ResourceNotFound(bill_id.to_string()));
         }
-        let btc_key = res.json::<BillCombinedBitcoinKey>().await?;
+        let btc_key = res.json::<wire_bill::BillCombinedBitcoinKey>().await?;
         Ok(btc_key)
     }
 

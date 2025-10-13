@@ -186,3 +186,11 @@ pub fn endorsement_ebill2wire(input: ebill_bill::Endorsement) -> wire_bill::Endo
         signing_address: input.signing_address.map(postaladdress_ebill2wire),
     }
 }
+
+pub fn billcombinedbitcoinkey_ebill2wire(
+    input: ebill_bill::BillCombinedBitcoinKey,
+) -> wire_bill::BillCombinedBitcoinKey {
+    wire_bill::BillCombinedBitcoinKey {
+        private_descriptor: input.private_descriptor,
+    }
+}

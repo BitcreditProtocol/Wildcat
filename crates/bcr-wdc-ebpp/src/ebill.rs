@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::wire::bill as wire_bill;
 use bcr_wdc_ebill_client::{EbillClient, Url};
 use bcr_wdc_webapi::bill::BillId;
 use bdk_wallet::bitcoin::Amount;
@@ -40,7 +41,7 @@ impl EBillNode for EBillClient {
             .request_to_pay_bill(&request)
             .await
             .map_err(Error::EBillClient)?;
-        let bcr_wdc_webapi::bill::BillCombinedBitcoinKey { private_descriptor } = self
+        let wire_bill::BillCombinedBitcoinKey { private_descriptor } = self
             .0
             .get_bitcoin_private_descriptor_for_bill(bill)
             .await
