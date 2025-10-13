@@ -7,6 +7,7 @@ use bcr_common::{
 };
 use bcr_ebill_core::{
     self as ebill_core, bill as ebill_bill, contact as ebill_contact, identity as ebill_identity,
+    notification as ebill_notification,
 };
 use thiserror::Error;
 // ----- local imports
@@ -192,5 +193,14 @@ pub fn billcombinedbitcoinkey_ebill2wire(
 ) -> wire_bill::BillCombinedBitcoinKey {
     wire_bill::BillCombinedBitcoinKey {
         private_descriptor: input.private_descriptor,
+    }
+}
+
+pub fn notificationtype_ebill2wire(
+    input: ebill_notification::NotificationType,
+) -> wire_bill::NotificationType {
+    match input {
+        ebill_notification::NotificationType::Bill => wire_bill::NotificationType::Bill,
+        ebill_notification::NotificationType::General => wire_bill::NotificationType::General,
     }
 }
