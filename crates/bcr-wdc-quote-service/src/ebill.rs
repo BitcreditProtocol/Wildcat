@@ -38,8 +38,9 @@ impl EBillNode for EBillClient {
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
+    use bcr_common::core_tests;
     use bcr_wdc_webapi::test_utils::{
-        holder_key_pair, node_id_from_pub_key, random_datetime, random_identity_public_data,
+        holder_key_pair, random_datetime, random_identity_public_data,
     };
 
     use super::*;
@@ -54,7 +55,7 @@ pub mod test_utils {
             shared_bill: &SharedBill,
         ) -> Result<bcr_wdc_webapi::quotes::BillInfo> {
             let mut payee = random_identity_public_data().1;
-            payee.node_id = node_id_from_pub_key(holder_key_pair().public_key());
+            payee.node_id = core_tests::node_id_from_pub_key(holder_key_pair().public_key());
 
             Ok(bcr_wdc_webapi::quotes::BillInfo {
                 id: shared_bill.bill_id.clone(),

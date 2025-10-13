@@ -98,6 +98,10 @@ pub fn nodeid_ebill2wire(input: ebill_core::NodeId) -> core::NodeId {
     core::NodeId::new(input.pub_key(), input.network())
 }
 
+pub fn nodeid_wire2ebill(input: core::NodeId) -> ebill_core::NodeId {
+    ebill_core::NodeId::new(input.pub_key(), input.network())
+}
+
 pub fn identity_ebill2wire(input: ebill_identity::Identity) -> Result<wire_identity::Identity> {
     let date_of_birth = input
         .date_of_birth
@@ -215,5 +219,31 @@ pub fn notification_ebill2wire(input: ebill_notification::Notification) -> wire_
         datetime: input.datetime,
         active: input.active,
         payload: input.payload,
+    }
+}
+
+pub fn billidentparticipant_ebill2wire(
+    input: ebill_contact::BillIdentParticipant,
+) -> wire_bill::BillIdentParticipant {
+    wire_bill::BillIdentParticipant {
+        t: contacttype_ebill2wire(input.t),
+        name: input.name,
+        node_id: nodeid_ebill2wire(input.node_id),
+        postal_address: postaladdress_ebill2wire(input.postal_address),
+        email: input.email,
+        nostr_relays: input.nostr_relays,
+    }
+}
+
+pub fn billidentparticipant_wire2ebill(
+    input: wire_bill::BillIdentParticipant,
+) -> ebill_contact::BillIdentParticipant {
+    ebill_contact::BillIdentParticipant {
+        t: contacttype_wire2ebill(input.t),
+        name: input.name,
+        node_id: nodeid_wire2ebill(input.node_id),
+        postal_address: postaladdress_wire2ebill(input.postal_address),
+        email: input.email,
+        nostr_relays: input.nostr_relays,
     }
 }

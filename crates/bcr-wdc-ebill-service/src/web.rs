@@ -180,8 +180,8 @@ pub async fn validate_and_decrypt_shared_bill(
     // create result
     Ok(Json(bcr_wdc_webapi::quotes::BillInfo {
         id: bill_data.id,
-        drawee: core_drawee.into(),
-        drawer: core_drawer.into(),
+        drawee: convert::billidentparticipant_ebill2wire(core_drawee),
+        drawer: convert::billidentparticipant_ebill2wire(core_drawer),
         payee: core_payee.into(),
         endorsees: core_endorsees,
         sum: bill_data.sum,

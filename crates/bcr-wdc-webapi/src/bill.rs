@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity};
+use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
@@ -95,7 +95,7 @@ impl From<bill::BillWaitingForSellState> for BillWaitingForSellState {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillWaitingForPaymentState {
     pub time_of_request: u64,
-    pub payer: BillIdentParticipant,
+    pub payer: wire_bill::BillIdentParticipant,
     pub payee: BillParticipant,
     pub currency: String,
     pub sum: String,
@@ -108,7 +108,7 @@ impl From<bill::BillWaitingForPaymentState> for BillWaitingForPaymentState {
     fn from(val: bill::BillWaitingForPaymentState) -> Self {
         BillWaitingForPaymentState {
             time_of_request: val.payment_data.time_of_request,
-            payer: val.payer.into(),
+            payer: convert::billidentparticipant_ebill2wire(val.payer),
             payee: val.payee.into(),
             currency: val.payment_data.currency,
             sum: val.payment_data.sum,
@@ -122,8 +122,8 @@ impl From<bill::BillWaitingForPaymentState> for BillWaitingForPaymentState {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillWaitingForRecourseState {
     pub time_of_request: u64,
-    pub recourser: BillIdentParticipant,
-    pub recoursee: BillIdentParticipant,
+    pub recourser: wire_bill::BillIdentParticipant,
+    pub recoursee: wire_bill::BillIdentParticipant,
     pub currency: String,
     pub sum: String,
     pub link_to_pay: String,
@@ -135,8 +135,8 @@ impl From<bill::BillWaitingForRecourseState> for BillWaitingForRecourseState {
     fn from(val: bill::BillWaitingForRecourseState) -> Self {
         BillWaitingForRecourseState {
             time_of_request: val.payment_data.time_of_request,
-            recourser: val.recourser.into(),
-            recoursee: val.recoursee.into(),
+            recourser: convert::billidentparticipant_ebill2wire(val.recourser),
+            recoursee: convert::billidentparticipant_ebill2wire(val.recoursee),
             currency: val.payment_data.currency,
             sum: val.payment_data.sum,
             link_to_pay: val.payment_data.link_to_pay,
@@ -298,8 +298,8 @@ impl From<bill::BillData> for BillData {
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BillParticipants {
-    pub drawee: BillIdentParticipant,
-    pub drawer: BillIdentParticipant,
+    pub drawee: wire_bill::BillIdentParticipant,
+    pub drawer: wire_bill::BillIdentParticipant,
     pub payee: BillParticipant,
     pub endorsee: Option<BillParticipant>,
     pub endorsements_count: u64,
@@ -310,8 +310,8 @@ pub struct BillParticipants {
 impl From<bill::BillParticipants> for BillParticipants {
     fn from(val: bill::BillParticipants) -> Self {
         BillParticipants {
-            drawee: val.drawee.into(),
-            drawer: val.drawer.into(),
+            drawee: convert::billidentparticipant_ebill2wire(val.drawee),
+            drawer: convert::billidentparticipant_ebill2wire(val.drawer),
             payee: val.payee.into(),
             endorsee: val.endorsee.map(|e| e.into()),
             endorsements_count: val.endorsements_count,
@@ -323,13 +323,13 @@ impl From<bill::BillParticipants> for BillParticipants {
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub enum BillParticipant {
     Anon(BillAnonParticipant),
-    Ident(BillIdentParticipant),
+    Ident(wire_bill::BillIdentParticipant),
 }
 
 impl BillParticipant {
     pub fn node_id(&self) -> NodeId {
         match self {
-            BillParticipant::Ident(data) => data.node_id.clone(),
+            BillParticipant::Ident(data) => convert::nodeid_wire2ebill(data.node_id.clone()),
             BillParticipant::Anon(data) => data.node_id.clone(),
         }
     }
@@ -338,7 +338,9 @@ impl BillParticipant {
 impl From<contact::BillParticipant> for BillParticipant {
     fn from(val: contact::BillParticipant) -> Self {
         match val {
-            contact::BillParticipant::Ident(data) => BillParticipant::Ident(data.into()),
+            contact::BillParticipant::Ident(data) => {
+                BillParticipant::Ident(convert::billidentparticipant_ebill2wire(data))
+            }
             contact::BillParticipant::Anon(data) => BillParticipant::Anon(data.into()),
         }
     }
@@ -347,7 +349,9 @@ impl From<contact::BillParticipant> for BillParticipant {
 impl From<BillParticipant> for contact::BillParticipant {
     fn from(val: BillParticipant) -> Self {
         match val {
-            BillParticipant::Ident(data) => contact::BillParticipant::Ident(data.into()),
+            BillParticipant::Ident(data) => {
+                contact::BillParticipant::Ident(convert::billidentparticipant_wire2ebill(data))
+            }
             BillParticipant::Anon(data) => contact::BillParticipant::Anon(data.into()),
         }
     }
@@ -375,45 +379,6 @@ impl From<BillAnonParticipant> for contact::BillAnonParticipant {
     fn from(val: BillAnonParticipant) -> Self {
         contact::BillAnonParticipant {
             node_id: val.node_id,
-            email: val.email,
-            nostr_relays: val.nostr_relays,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
-pub struct BillIdentParticipant {
-    #[serde(rename = "type")]
-    pub t: wire_contact::ContactType,
-    #[schema(value_type=String)]
-    pub node_id: NodeId,
-    pub name: String,
-    #[serde(flatten)]
-    pub postal_address: wire_identity::PostalAddress,
-    pub email: Option<String>,
-    pub nostr_relays: Vec<String>,
-}
-
-impl From<contact::BillIdentParticipant> for BillIdentParticipant {
-    fn from(val: contact::BillIdentParticipant) -> Self {
-        BillIdentParticipant {
-            t: convert::contacttype_ebill2wire(val.t),
-            name: val.name,
-            node_id: val.node_id,
-            postal_address: convert::postaladdress_ebill2wire(val.postal_address),
-            email: val.email,
-            nostr_relays: val.nostr_relays,
-        }
-    }
-}
-
-impl From<BillIdentParticipant> for contact::BillIdentParticipant {
-    fn from(val: BillIdentParticipant) -> Self {
-        contact::BillIdentParticipant {
-            t: convert::contacttype_wire2ebill(val.t),
-            name: val.name,
-            node_id: val.node_id,
-            postal_address: convert::postaladdress_wire2ebill(val.postal_address),
             email: val.email,
             nostr_relays: val.nostr_relays,
         }
