@@ -52,10 +52,9 @@ impl axum::response::IntoResponse for Error {
             Error::Keys(bcr_common::KeysError::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
             }
-            Error::Keys(bcr_common::KeysError::ResourceNotFound(kid)) => (
-                StatusCode::NOT_FOUND,
-                format!("keyset Id {kid} not found"),
-            ),
+            Error::Keys(bcr_common::KeysError::ResourceNotFound(kid)) => {
+                (StatusCode::NOT_FOUND, format!("keyset Id {kid} not found"))
+            }
             Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Cdk(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
