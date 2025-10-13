@@ -26,8 +26,8 @@ use bcr_ebill_core::{
 use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::{
     bill::{
-        BillCombinedBitcoinKey, BillId, BillPaymentStatus, BillWaitingForPaymentState,
-        BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
+        BillId, BillPaymentStatus, BillWaitingForPaymentState, BillsResponse, BitcreditBill,
+        RequestToPayBitcreditBillPayload,
     },
     quotes::RequestEncryptedFileUrlPayload,
 };
@@ -486,7 +486,7 @@ pub async fn request_to_pay_bill(
 pub async fn bill_bitcoin_key(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<BillId>,
-) -> Result<Json<BillCombinedBitcoinKey>> {
+) -> Result<Json<wire_bill::BillCombinedBitcoinKey>> {
     tracing::debug!("Received get bill bitcoin private key request");
     let identity::IdentityWithAll { identity, key_pair } =
         ctrl.identity_service.get_full_identity().await?;
@@ -498,5 +498,7 @@ pub async fn bill_bitcoin_key(
             &key_pair,
         )
         .await?;
-    Ok(Json(combined_key.into()))
+    Ok(Json(convert::billcombinedbitcoinkey_ebill2wire(
+        combined_key,
+    )))
 }
