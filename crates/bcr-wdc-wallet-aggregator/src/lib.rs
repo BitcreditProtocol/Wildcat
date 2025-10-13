@@ -98,7 +98,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
     // hopefully cdk-mint is up by now
-    if let Some(clwdr) = &app.clwdr_client {
+    if let Some(clwdr) = &app.clwdr_stream_client {
         let keyset_lists = app.cdk_client.get_mint_keysets().await?;
         for info in keyset_lists.keysets {
             if info.active {
