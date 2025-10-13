@@ -1,12 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{contact as wire_contact, identity as wire_identity, bill as wire_bill};
+use bcr_common::wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity};
 pub use bcr_ebill_core::bill::BillId;
 pub use bcr_ebill_core::NodeId;
 use bcr_ebill_core::{
     bill::{self},
-    contact, notification,
-    util::date::DateTimeUtc,
+    contact,
 };
 use bcr_wdc_utils::convert;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -268,7 +267,7 @@ pub struct BillData {
     pub currency: String,
     pub sum: String,
     pub files: Vec<wire_identity::File>,
-    pub active_notification: Option<Notification>,
+    pub active_notification: Option<wire_bill::Notification>,
 }
 
 impl From<bill::BillData> for BillData {
@@ -290,7 +289,9 @@ impl From<bill::BillData> for BillData {
                 .into_iter()
                 .map(convert::file_ebill2wire)
                 .collect(),
-            active_notification: val.active_notification.map(|an| an.into()),
+            active_notification: val
+                .active_notification
+                .map(convert::notification_ebill2wire),
         }
     }
 }
@@ -415,35 +416,6 @@ impl From<BillIdentParticipant> for contact::BillIdentParticipant {
             postal_address: convert::postaladdress_wire2ebill(val.postal_address),
             email: val.email,
             nostr_relays: val.nostr_relays,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct Notification {
-    pub id: String,
-    #[schema(value_type=Option<String>)]
-    pub node_id: Option<NodeId>,
-    pub notification_type: wire_bill::NotificationType,
-    pub reference_id: Option<String>,
-    pub description: String,
-    #[schema(value_type = chrono::DateTime<chrono::Utc>)]
-    pub datetime: DateTimeUtc,
-    pub active: bool,
-    pub payload: Option<serde_json::Value>,
-}
-
-impl From<notification::Notification> for Notification {
-    fn from(val: notification::Notification) -> Self {
-        Notification {
-            id: val.id,
-            node_id: val.node_id,
-            notification_type: convert::notificationtype_ebill2wire(val.notification_type),
-            reference_id: val.reference_id,
-            description: val.description,
-            datetime: val.datetime,
-            active: val.active,
-            payload: val.payload,
         }
     }
 }
