@@ -127,7 +127,7 @@ pub fn identity_ebill2wire(input: ebill_identity::Identity) -> Result<wire_ident
     Ok(output)
 }
 
-pub fn lightbillidentparticipantwithaddress_ebill2wire(
+fn lightbillidentparticipantwithaddress_ebill2wire(
     input: ebill_contact::LightBillIdentParticipantWithAddress,
 ) -> wire_bill::LightBillIdentParticipantWithAddress {
     wire_bill::LightBillIdentParticipantWithAddress {
@@ -138,7 +138,7 @@ pub fn lightbillidentparticipantwithaddress_ebill2wire(
     }
 }
 
-pub fn lightbillidentparticipant_ebill2wire(
+fn lightbillidentparticipant_ebill2wire(
     input: ebill_contact::LightBillIdentParticipant,
 ) -> wire_bill::LightBillIdentParticipant {
     wire_bill::LightBillIdentParticipant {
@@ -156,7 +156,7 @@ fn lightbillanonparticipant_ebill2wire(
     }
 }
 
-pub fn lightbillparticipant_ebill2wire(
+fn lightbillparticipant_ebill2wire(
     input: ebill_contact::LightBillParticipant,
 ) -> wire_bill::LightBillParticipant {
     match input {
@@ -169,7 +169,7 @@ pub fn lightbillparticipant_ebill2wire(
     }
 }
 
-pub fn lightsignedby_ebill2wire(input: ebill_bill::LightSignedBy) -> wire_bill::LightSignedBy {
+fn lightsignedby_ebill2wire(input: ebill_bill::LightSignedBy) -> wire_bill::LightSignedBy {
     wire_bill::LightSignedBy {
         data: lightbillparticipant_ebill2wire(input.data),
         signatory: input.signatory.map(lightbillidentparticipant_ebill2wire),
