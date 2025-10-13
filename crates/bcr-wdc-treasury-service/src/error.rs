@@ -67,10 +67,9 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::BAD_REQUEST,
                 format!("Request ID not found: {request_id}"),
             ),
-            Error::UnknownKeyset(keyset) => (
-                StatusCode::BAD_REQUEST,
-                format!("Unknown keyset: {keyset}"),
-            ),
+            Error::UnknownKeyset(keyset) => {
+                (StatusCode::BAD_REQUEST, format!("Unknown keyset: {keyset}"))
+            }
             Error::UnmatchingAmount(input, output) => (
                 StatusCode::BAD_REQUEST,
                 format!("Unmatching amount: input {input} != output {output}"),

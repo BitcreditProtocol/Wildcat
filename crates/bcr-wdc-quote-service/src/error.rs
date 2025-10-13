@@ -63,10 +63,9 @@ impl axum::response::IntoResponse for Error {
 
             Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
 
-            Error::SignWithKeys(SignWithKeysError::NoKeyForAmount(amount)) => (
-                StatusCode::NOT_FOUND,
-                format!("No key for amount {amount}"),
-            ),
+            Error::SignWithKeys(SignWithKeysError::NoKeyForAmount(amount)) => {
+                (StatusCode::NOT_FOUND, format!("No key for amount {amount}"))
+            }
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 
             Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
