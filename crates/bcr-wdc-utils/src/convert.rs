@@ -204,3 +204,16 @@ pub fn notificationtype_ebill2wire(
         ebill_notification::NotificationType::General => wire_bill::NotificationType::General,
     }
 }
+
+pub fn notification_ebill2wire(input: ebill_notification::Notification) -> wire_bill::Notification {
+    wire_bill::Notification {
+        id: input.id,
+        node_id: input.node_id.map(nodeid_ebill2wire),
+        notification_type: notificationtype_ebill2wire(input.notification_type),
+        reference_id: input.reference_id,
+        description: input.description,
+        datetime: input.datetime,
+        active: input.active,
+        payload: input.payload,
+    }
+}
