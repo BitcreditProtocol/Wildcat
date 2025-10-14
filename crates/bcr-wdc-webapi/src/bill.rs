@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
+use bcr_common::wire::bill as wire_bill;
 pub use bcr_ebill_core::bill::BillId;
 use bcr_ebill_core::bill::{self};
 pub use bcr_ebill_core::NodeId;
@@ -21,20 +21,22 @@ pub struct BitcreditBill {
     #[schema(value_type=String)]
     pub id: BillId,
     pub participants: wire_bill::BillParticipants,
-    pub data: BillData,
+    pub data: wire_bill::BillData,
     pub status: BillStatus,
     pub current_waiting_state: Option<BillCurrentWaitingState>,
 }
 
-impl From<bill::BitcreditBillResult> for BitcreditBill {
-    fn from(val: bill::BitcreditBillResult) -> Self {
-        BitcreditBill {
+impl TryFrom<bill::BitcreditBillResult> for BitcreditBill {
+    type Error = convert::Error;
+    fn try_from(val: bill::BitcreditBillResult) -> std::result::Result<Self, Self::Error> {
+        let retv = Self {
             id: val.id,
             participants: convert::billparticipants_ebill2wire(val.participants),
-            data: val.data.into(),
+            data: convert::billdata_ebill2wire(val.data)?,
             status: val.status.into(),
             current_waiting_state: val.current_waiting_state.map(|cws| cws.into()),
-        }
+        };
+        Ok(retv)
     }
 }
 
@@ -245,49 +247,6 @@ impl From<bill::BillRecourseStatus> for BillRecourseStatus {
             requested_to_recourse: val.requested_to_recourse,
             request_to_recourse_timed_out: val.request_to_recourse_timed_out,
             rejected_request_to_recourse: val.rejected_request_to_recourse,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillData {
-    pub language: String,
-    pub time_of_drawing: u64,
-    pub issue_date: String,
-    pub time_of_maturity: u64,
-    pub maturity_date: String,
-    pub country_of_issuing: String,
-    pub city_of_issuing: String,
-    pub country_of_payment: String,
-    pub city_of_payment: String,
-    pub currency: String,
-    pub sum: String,
-    pub files: Vec<wire_identity::File>,
-    pub active_notification: Option<wire_bill::Notification>,
-}
-
-impl From<bill::BillData> for BillData {
-    fn from(val: bill::BillData) -> Self {
-        BillData {
-            language: val.language,
-            time_of_drawing: val.time_of_drawing,
-            issue_date: val.issue_date,
-            time_of_maturity: val.time_of_maturity,
-            maturity_date: val.maturity_date,
-            country_of_issuing: val.country_of_issuing,
-            city_of_issuing: val.city_of_issuing,
-            country_of_payment: val.country_of_payment,
-            city_of_payment: val.city_of_payment,
-            currency: val.currency,
-            sum: val.sum,
-            files: val
-                .files
-                .into_iter()
-                .map(convert::file_ebill2wire)
-                .collect(),
-            active_notification: val
-                .active_notification
-                .map(convert::notification_ebill2wire),
         }
     }
 }
