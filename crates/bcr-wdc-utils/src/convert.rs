@@ -266,3 +266,29 @@ pub fn billanonparticipant_wire2ebill(
         nostr_relays: input.nostr_relays,
     }
 }
+
+pub fn billparticipant_ebill2wire(
+    input: ebill_contact::BillParticipant,
+) -> wire_bill::BillParticipant {
+    match input {
+        ebill_contact::BillParticipant::Ident(data) => {
+            wire_bill::BillParticipant::Ident(billidentparticipant_ebill2wire(data))
+        }
+        ebill_contact::BillParticipant::Anon(data) => {
+            wire_bill::BillParticipant::Anon(billanonparticipant_ebill2wire(data))
+        }
+    }
+}
+
+pub fn billparticipant_wire2ebill(
+    input: wire_bill::BillParticipant,
+) -> ebill_contact::BillParticipant {
+    match input {
+        wire_bill::BillParticipant::Ident(data) => {
+            ebill_contact::BillParticipant::Ident(billidentparticipant_wire2ebill(data))
+        }
+        wire_bill::BillParticipant::Anon(data) => {
+            ebill_contact::BillParticipant::Anon(billanonparticipant_wire2ebill(data))
+        }
+    }
+}
