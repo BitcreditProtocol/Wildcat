@@ -22,7 +22,7 @@ pub struct BitcreditBill {
     pub id: BillId,
     pub participants: wire_bill::BillParticipants,
     pub data: wire_bill::BillData,
-    pub status: BillStatus,
+    pub status: wire_bill::BillStatus,
     pub current_waiting_state: Option<BillCurrentWaitingState>,
 }
 
@@ -33,7 +33,7 @@ impl TryFrom<bill::BitcreditBillResult> for BitcreditBill {
             id: val.id,
             participants: convert::billparticipants_ebill2wire(val.participants),
             data: convert::billdata_ebill2wire(val.data)?,
-            status: val.status.into(),
+            status: convert::billstatus_ebill2wire(val.status),
             current_waiting_state: val.current_waiting_state.map(|cws| cws.into()),
         };
         Ok(retv)
@@ -140,113 +140,6 @@ impl From<bill::BillWaitingForRecourseState> for BillWaitingForRecourseState {
             link_to_pay: val.payment_data.link_to_pay,
             address_to_pay: val.payment_data.address_to_pay,
             mempool_link_for_address_to_pay: val.payment_data.mempool_link_for_address_to_pay,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillStatus {
-    pub acceptance: BillAcceptanceStatus,
-    pub payment: BillPaymentStatus,
-    pub sell: BillSellStatus,
-    pub recourse: BillRecourseStatus,
-    pub redeemed_funds_available: bool,
-    pub has_requested_funds: bool,
-}
-
-impl From<bill::BillStatus> for BillStatus {
-    fn from(val: bill::BillStatus) -> Self {
-        BillStatus {
-            acceptance: val.acceptance.into(),
-            payment: val.payment.into(),
-            sell: val.sell.into(),
-            recourse: val.recourse.into(),
-            redeemed_funds_available: val.redeemed_funds_available,
-            has_requested_funds: val.has_requested_funds,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillAcceptanceStatus {
-    pub time_of_request_to_accept: Option<u64>,
-    pub requested_to_accept: bool,
-    pub accepted: bool,
-    pub request_to_accept_timed_out: bool,
-    pub rejected_to_accept: bool,
-}
-
-impl From<bill::BillAcceptanceStatus> for BillAcceptanceStatus {
-    fn from(val: bill::BillAcceptanceStatus) -> Self {
-        BillAcceptanceStatus {
-            time_of_request_to_accept: val.time_of_request_to_accept,
-            requested_to_accept: val.requested_to_accept,
-            accepted: val.accepted,
-            request_to_accept_timed_out: val.request_to_accept_timed_out,
-            rejected_to_accept: val.rejected_to_accept,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillPaymentStatus {
-    pub time_of_request_to_pay: Option<u64>,
-    pub requested_to_pay: bool,
-    pub paid: bool,
-    pub request_to_pay_timed_out: bool,
-    pub rejected_to_pay: bool,
-}
-
-impl From<bill::BillPaymentStatus> for BillPaymentStatus {
-    fn from(val: bill::BillPaymentStatus) -> Self {
-        BillPaymentStatus {
-            time_of_request_to_pay: val.time_of_request_to_pay,
-            requested_to_pay: val.requested_to_pay,
-            paid: val.paid,
-            request_to_pay_timed_out: val.request_to_pay_timed_out,
-            rejected_to_pay: val.rejected_to_pay,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillSellStatus {
-    pub time_of_last_offer_to_sell: Option<u64>,
-    pub sold: bool,
-    pub offered_to_sell: bool,
-    pub offer_to_sell_timed_out: bool,
-    pub rejected_offer_to_sell: bool,
-}
-
-impl From<bill::BillSellStatus> for BillSellStatus {
-    fn from(val: bill::BillSellStatus) -> Self {
-        BillSellStatus {
-            time_of_last_offer_to_sell: val.time_of_last_offer_to_sell,
-            sold: val.sold,
-            offered_to_sell: val.offered_to_sell,
-            offer_to_sell_timed_out: val.offer_to_sell_timed_out,
-            rejected_offer_to_sell: val.rejected_offer_to_sell,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillRecourseStatus {
-    pub time_of_last_request_to_recourse: Option<u64>,
-    pub recoursed: bool,
-    pub requested_to_recourse: bool,
-    pub request_to_recourse_timed_out: bool,
-    pub rejected_request_to_recourse: bool,
-}
-
-impl From<bill::BillRecourseStatus> for BillRecourseStatus {
-    fn from(val: bill::BillRecourseStatus) -> Self {
-        BillRecourseStatus {
-            time_of_last_request_to_recourse: val.time_of_last_request_to_recourse,
-            recoursed: val.recoursed,
-            requested_to_recourse: val.requested_to_recourse,
-            request_to_recourse_timed_out: val.request_to_recourse_timed_out,
-            rejected_request_to_recourse: val.rejected_request_to_recourse,
         }
     }
 }
