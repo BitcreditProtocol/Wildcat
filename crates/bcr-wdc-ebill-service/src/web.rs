@@ -174,15 +174,17 @@ pub async fn validate_and_decrypt_shared_bill(
     let core_drawer: bcr_ebill_core::contact::BillIdentParticipant = bill_parties.drawer.into();
     let core_drawee: bcr_ebill_core::contact::BillIdentParticipant = bill_parties.drawee.into();
     let core_payee: bcr_ebill_core::contact::BillParticipant = bill_parties.payee.into();
-    let core_endorsees: Vec<bcr_wdc_webapi::bill::BillParticipant> =
-        endorsees.into_iter().map(|e| e.into()).collect();
+    let core_endorsees: Vec<wire_bill::BillParticipant> = endorsees
+        .into_iter()
+        .map(convert::billparticipant_ebill2wire)
+        .collect();
 
     // create result
     Ok(Json(bcr_wdc_webapi::quotes::BillInfo {
         id: bill_data.id,
         drawee: convert::billidentparticipant_ebill2wire(core_drawee),
         drawer: convert::billidentparticipant_ebill2wire(core_drawer),
-        payee: core_payee.into(),
+        payee: convert::billparticipant_ebill2wire(core_payee),
         endorsees: core_endorsees,
         sum: bill_data.sum,
         maturity_date: util::date::date_string_to_rfc3339(&bill_data.maturity_date)
