@@ -20,7 +20,7 @@ pub struct BillsResponse<T: Serialize> {
 pub struct BitcreditBill {
     #[schema(value_type=String)]
     pub id: BillId,
-    pub participants: BillParticipants,
+    pub participants: wire_bill::BillParticipants,
     pub data: BillData,
     pub status: BillStatus,
     pub current_waiting_state: Option<BillCurrentWaitingState>,
@@ -30,7 +30,7 @@ impl From<bill::BitcreditBillResult> for BitcreditBill {
     fn from(val: bill::BitcreditBillResult) -> Self {
         BitcreditBill {
             id: val.id,
-            participants: val.participants.into(),
+            participants: convert::billparticipants_ebill2wire(val.participants),
             data: val.data.into(),
             status: val.status.into(),
             current_waiting_state: val.current_waiting_state.map(|cws| cws.into()),
@@ -288,30 +288,6 @@ impl From<bill::BillData> for BillData {
             active_notification: val
                 .active_notification
                 .map(convert::notification_ebill2wire),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-pub struct BillParticipants {
-    pub drawee: wire_bill::BillIdentParticipant,
-    pub drawer: wire_bill::BillIdentParticipant,
-    pub payee: wire_bill::BillParticipant,
-    pub endorsee: Option<wire_bill::BillParticipant>,
-    pub endorsements_count: u64,
-    #[schema(value_type=Vec<String>)]
-    pub all_participant_node_ids: Vec<NodeId>,
-}
-
-impl From<bill::BillParticipants> for BillParticipants {
-    fn from(val: bill::BillParticipants) -> Self {
-        BillParticipants {
-            drawee: convert::billidentparticipant_ebill2wire(val.drawee),
-            drawer: convert::billidentparticipant_ebill2wire(val.drawer),
-            payee: convert::billparticipant_ebill2wire(val.payee),
-            endorsee: val.endorsee.map(convert::billparticipant_ebill2wire),
-            endorsements_count: val.endorsements_count,
-            all_participant_node_ids: val.all_participant_node_ids,
         }
     }
 }
