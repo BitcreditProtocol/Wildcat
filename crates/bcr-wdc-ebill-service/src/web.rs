@@ -26,8 +26,7 @@ use bcr_ebill_core::{
 use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::{
     bill::{
-        self as web_bill, BillId, BillWaitingForPaymentState, BillsResponse, BitcreditBill,
-        RequestToPayBitcreditBillPayload,
+        self as web_bill, BillId, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
     },
     quotes::RequestEncryptedFileUrlPayload,
 };
@@ -55,7 +54,7 @@ impl SuccessResponse {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SimplifiedBillPaymentStatus {
     payment_status: wire_bill::BillPaymentStatus,
-    payment_details: Option<BillWaitingForPaymentState>,
+    payment_details: Option<wire_bill::BillWaitingForPaymentState>,
 }
 
 // decrypt and validate hashes to get bill chain with plaintext
@@ -309,7 +308,7 @@ pub async fn get_bill_payment_status(
     let payment_status = bill_detail.status.payment;
     let payment_details = match bill_detail.current_waiting_state {
         Some(bcr_ebill_api::data::bill::BillCurrentWaitingState::Payment(payment)) => {
-            Some(payment.into())
+            Some(convert::billwaitingforpaymentstate_ebill2wire(payment))
         }
         _ => None,
     };
