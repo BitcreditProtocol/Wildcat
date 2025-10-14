@@ -12,6 +12,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     /// all errors originating from the bcr API service layer
+    #[error("convert error: {0}")]
+    Convert(#[from] bcr_wdc_utils::convert::Error),
+
+    /// all errors originating from the bcr API service layer
     #[error("Service error: {0}")]
     Service(#[from] service::Error),
 
@@ -56,6 +60,7 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {self}");
         let response = match self {
+            Error::Convert(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
             Error::Service(e) => ServiceError(e).into_response(),
             Error::BillService(e) => BillServiceError(e).into_response(),
             Error::NotificationService(e) => ServiceError(e.into()).into_response(),

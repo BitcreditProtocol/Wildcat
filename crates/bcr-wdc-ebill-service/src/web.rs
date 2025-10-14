@@ -26,8 +26,8 @@ use bcr_ebill_core::{
 use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::{
     bill::{
-        BillId, BillPaymentStatus, BillWaitingForPaymentState, BillsResponse, BitcreditBill,
-        RequestToPayBitcreditBillPayload,
+        self as web_bill, BillId, BillPaymentStatus, BillWaitingForPaymentState, BillsResponse,
+        BitcreditBill, RequestToPayBitcreditBillPayload,
     },
     quotes::RequestEncryptedFileUrlPayload,
 };
@@ -271,9 +271,11 @@ pub async fn get_bills(
     tracing::debug!("Received get bills request");
     let identity = ctrl.identity_service.get_identity().await?;
     let bills = ctrl.bill_service.get_bills(&identity.node_id).await?;
-    Ok(Json(BillsResponse {
-        bills: bills.into_iter().map(|b| b.into()).collect(),
-    }))
+    let wbills = bills
+        .into_iter()
+        .map(web_bill::BitcreditBill::try_from)
+        .collect::<std::result::Result<_, convert::Error>>()?;
+    Ok(Json(BillsResponse { bills: wbills }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -288,7 +290,8 @@ pub async fn get_bill_detail(
         .bill_service
         .get_detail(&bill_id, &identity, &identity.node_id, current_timestamp)
         .await?;
-    Ok(Json(bill_detail.into()))
+    let wbill = web_bill::BitcreditBill::try_from(bill_detail)?;
+    Ok(Json(wbill))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
