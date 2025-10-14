@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 // ----- local imports
-use crate::bill::BillParticipant;
 
 // ----- end imports
 
@@ -66,8 +65,8 @@ pub struct BillInfo {
     pub id: BillId,
     pub drawee: wire_bill::BillIdentParticipant,
     pub drawer: wire_bill::BillIdentParticipant,
-    pub payee: BillParticipant,
-    pub endorsees: Vec<BillParticipant>,
+    pub payee: wire_bill::BillParticipant,
+    pub endorsees: Vec<wire_bill::BillParticipant>,
     pub sum: u64, // in satoshis, converted to bitcoin::Amount in the service
     pub maturity_date: String,
     #[borsh(

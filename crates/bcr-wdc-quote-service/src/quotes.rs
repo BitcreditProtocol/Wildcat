@@ -38,9 +38,13 @@ pub fn convert_to_billinfo(
         id: bill.id,
         drawee: convert::billidentparticipant_wire2ebill(bill.drawee),
         drawer: convert::billidentparticipant_wire2ebill(bill.drawer),
-        payee: bill.payee.into(),
-        endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
-        current_holder: current_holder.into(),
+        payee: convert::billparticipant_wire2ebill(bill.payee),
+        endorsees: bill
+            .endorsees
+            .into_iter()
+            .map(convert::billparticipant_wire2ebill)
+            .collect(),
+        current_holder: convert::billparticipant_wire2ebill(current_holder),
         sum: Amount::from_sat(bill.sum),
         maturity_date,
         file_urls: bill.file_urls,
@@ -54,8 +58,12 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
             id: bill.id,
             drawee: convert::billidentparticipant_ebill2wire(bill.drawee),
             drawer: convert::billidentparticipant_ebill2wire(bill.drawer),
-            payee: bill.payee.into(),
-            endorsees: bill.endorsees.into_iter().map(Into::into).collect(),
+            payee: convert::billparticipant_ebill2wire(bill.payee),
+            endorsees: bill
+                .endorsees
+                .into_iter()
+                .map(convert::billparticipant_ebill2wire)
+                .collect(),
             sum: bill.sum.to_sat(),
             maturity_date,
             file_urls: bill.file_urls,
