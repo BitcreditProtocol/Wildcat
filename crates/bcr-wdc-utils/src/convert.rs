@@ -309,3 +309,24 @@ pub fn billparticipants_ebill2wire(
             .collect(),
     }
 }
+
+pub fn billdata_ebill2wire(input: ebill_bill::BillData) -> Result<wire_bill::BillData> {
+    let issue_date = chrono::NaiveDate::from_str(&input.issue_date)?;
+    let maturity_date = chrono::NaiveDate::from_str(&input.maturity_date)?;
+    let output = wire_bill::BillData {
+        language: input.language,
+        time_of_drawing: input.time_of_drawing,
+        issue_date,
+        time_of_maturity: input.time_of_maturity,
+        maturity_date,
+        country_of_issuing: input.country_of_issuing,
+        city_of_issuing: input.city_of_issuing,
+        country_of_payment: input.country_of_payment,
+        city_of_payment: input.city_of_payment,
+        currency: input.currency,
+        sum: input.sum,
+        files: input.files.into_iter().map(file_ebill2wire).collect(),
+        active_notification: input.active_notification.map(notification_ebill2wire),
+    };
+    Ok(output)
+}
