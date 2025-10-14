@@ -322,7 +322,7 @@ impl From<bill::BillParticipants> for BillParticipants {
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
 pub enum BillParticipant {
-    Anon(BillAnonParticipant),
+    Anon(wire_bill::BillAnonParticipant),
     Ident(wire_bill::BillIdentParticipant),
 }
 
@@ -330,7 +330,7 @@ impl BillParticipant {
     pub fn node_id(&self) -> NodeId {
         match self {
             BillParticipant::Ident(data) => convert::nodeid_wire2ebill(data.node_id.clone()),
-            BillParticipant::Anon(data) => data.node_id.clone(),
+            BillParticipant::Anon(data) => convert::nodeid_wire2ebill(data.node_id.clone()),
         }
     }
 }
@@ -341,7 +341,9 @@ impl From<contact::BillParticipant> for BillParticipant {
             contact::BillParticipant::Ident(data) => {
                 BillParticipant::Ident(convert::billidentparticipant_ebill2wire(data))
             }
-            contact::BillParticipant::Anon(data) => BillParticipant::Anon(data.into()),
+            contact::BillParticipant::Anon(data) => {
+                BillParticipant::Anon(convert::billanonparticipant_ebill2wire(data))
+            }
         }
     }
 }
@@ -352,35 +354,9 @@ impl From<BillParticipant> for contact::BillParticipant {
             BillParticipant::Ident(data) => {
                 contact::BillParticipant::Ident(convert::billidentparticipant_wire2ebill(data))
             }
-            BillParticipant::Anon(data) => contact::BillParticipant::Anon(data.into()),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, ToSchema)]
-pub struct BillAnonParticipant {
-    #[schema(value_type=String)]
-    pub node_id: NodeId,
-    pub email: Option<String>,
-    pub nostr_relays: Vec<String>,
-}
-
-impl From<contact::BillAnonParticipant> for BillAnonParticipant {
-    fn from(val: contact::BillAnonParticipant) -> Self {
-        BillAnonParticipant {
-            node_id: val.node_id,
-            email: val.email,
-            nostr_relays: val.nostr_relays,
-        }
-    }
-}
-
-impl From<BillAnonParticipant> for contact::BillAnonParticipant {
-    fn from(val: BillAnonParticipant) -> Self {
-        contact::BillAnonParticipant {
-            node_id: val.node_id,
-            email: val.email,
-            nostr_relays: val.nostr_relays,
+            BillParticipant::Anon(data) => {
+                contact::BillParticipant::Anon(convert::billanonparticipant_wire2ebill(data))
+            }
         }
     }
 }

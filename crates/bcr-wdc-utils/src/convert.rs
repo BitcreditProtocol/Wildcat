@@ -247,3 +247,22 @@ pub fn billidentparticipant_wire2ebill(
         nostr_relays: input.nostr_relays,
     }
 }
+
+pub fn billanonparticipant_ebill2wire(
+    input: ebill_contact::BillAnonParticipant,
+) -> wire_bill::BillAnonParticipant {
+    wire_bill::BillAnonParticipant {
+        node_id: nodeid_ebill2wire(input.node_id),
+        email: input.email,
+        nostr_relays: input.nostr_relays,
+    }
+}
+pub fn billanonparticipant_wire2ebill(
+    input: wire_bill::BillAnonParticipant,
+) -> ebill_contact::BillAnonParticipant {
+    ebill_contact::BillAnonParticipant {
+        node_id: nodeid_wire2ebill(input.node_id),
+        email: input.email,
+        nostr_relays: input.nostr_relays,
+    }
+}
