@@ -375,3 +375,55 @@ pub fn billstatus_ebill2wire(input: ebill_bill::BillStatus) -> wire_bill::BillSt
         has_requested_funds: input.has_requested_funds,
     }
 }
+
+pub fn billwaitingforpaymentstate_ebill2wire(
+    input: ebill_bill::BillWaitingForPaymentState,
+) -> wire_bill::BillWaitingForPaymentState {
+    wire_bill::BillWaitingForPaymentState {
+        address_to_pay: input.payment_data.address_to_pay,
+        currency: input.payment_data.currency,
+        link_to_pay: input.payment_data.link_to_pay,
+        mempool_link_for_address_to_pay: input.payment_data.mempool_link_for_address_to_pay,
+        payee: billparticipant_ebill2wire(input.payee),
+        payer: billidentparticipant_ebill2wire(input.payer),
+        time_of_request: input.payment_data.time_of_request,
+        sum: input.payment_data.sum,
+    }
+}
+
+pub fn billcurrentwaitingstate_ebill2wire(
+    input: ebill_bill::BillCurrentWaitingState,
+) -> wire_bill::BillCurrentWaitingState {
+    match input {
+        ebill_bill::BillCurrentWaitingState::Sell(state) => {
+            let state = wire_bill::BillWaitingForSellState {
+                address_to_pay: state.payment_data.address_to_pay,
+                buyer: billparticipant_ebill2wire(state.buyer),
+                currency: state.payment_data.currency,
+                link_to_pay: state.payment_data.link_to_pay,
+                mempool_link_for_address_to_pay: state.payment_data.mempool_link_for_address_to_pay,
+                seller: billparticipant_ebill2wire(state.seller),
+                sum: state.payment_data.sum,
+                time_of_request: state.payment_data.time_of_request,
+            };
+            wire_bill::BillCurrentWaitingState::Sell(state)
+        }
+        ebill_bill::BillCurrentWaitingState::Payment(state) => {
+            let state = billwaitingforpaymentstate_ebill2wire(state);
+            wire_bill::BillCurrentWaitingState::Payment(state)
+        }
+        ebill_bill::BillCurrentWaitingState::Recourse(state) => {
+            let state = wire_bill::BillWaitingForRecourseState {
+                address_to_pay: state.payment_data.address_to_pay,
+                currency: state.payment_data.currency,
+                link_to_pay: state.payment_data.link_to_pay,
+                time_of_request: state.payment_data.time_of_request,
+                mempool_link_for_address_to_pay: state.payment_data.mempool_link_for_address_to_pay,
+                recourser: billidentparticipant_ebill2wire(state.recourser),
+                recoursee: billidentparticipant_ebill2wire(state.recoursee),
+                sum: state.payment_data.sum,
+            };
+            wire_bill::BillCurrentWaitingState::Recourse(state)
+        }
+    }
+}
