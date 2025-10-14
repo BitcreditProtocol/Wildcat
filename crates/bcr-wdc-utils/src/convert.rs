@@ -330,3 +330,48 @@ pub fn billdata_ebill2wire(input: ebill_bill::BillData) -> Result<wire_bill::Bil
     };
     Ok(output)
 }
+
+pub fn billpaymentstatus_ebill2wire(
+    input: ebill_bill::BillPaymentStatus,
+) -> wire_bill::BillPaymentStatus {
+    wire_bill::BillPaymentStatus {
+        rejected_to_pay: input.rejected_to_pay,
+        requested_to_pay: input.requested_to_pay,
+        request_to_pay_timed_out: input.request_to_pay_timed_out,
+        time_of_request_to_pay: input.time_of_request_to_pay,
+        paid: input.paid,
+    }
+}
+
+pub fn billstatus_ebill2wire(input: ebill_bill::BillStatus) -> wire_bill::BillStatus {
+    let acceptance = wire_bill::BillAcceptanceStatus {
+        time_of_request_to_accept: input.acceptance.time_of_request_to_accept,
+        accepted: input.acceptance.accepted,
+        rejected_to_accept: input.acceptance.rejected_to_accept,
+        requested_to_accept: input.acceptance.requested_to_accept,
+        request_to_accept_timed_out: input.acceptance.request_to_accept_timed_out,
+    };
+    let payment = billpaymentstatus_ebill2wire(input.payment);
+    let sell = wire_bill::BillSellStatus {
+        offered_to_sell: input.sell.offered_to_sell,
+        offer_to_sell_timed_out: input.sell.offer_to_sell_timed_out,
+        rejected_offer_to_sell: input.sell.rejected_offer_to_sell,
+        sold: input.sell.sold,
+        time_of_last_offer_to_sell: input.sell.time_of_last_offer_to_sell,
+    };
+    let recourse = wire_bill::BillRecourseStatus {
+        recoursed: input.recourse.recoursed,
+        requested_to_recourse: input.recourse.requested_to_recourse,
+        request_to_recourse_timed_out: input.recourse.request_to_recourse_timed_out,
+        rejected_request_to_recourse: input.recourse.rejected_request_to_recourse,
+        time_of_last_request_to_recourse: input.recourse.time_of_last_request_to_recourse,
+    };
+    wire_bill::BillStatus {
+        acceptance,
+        payment,
+        sell,
+        recourse,
+        redeemed_funds_available: input.redeemed_funds_available,
+        has_requested_funds: input.has_requested_funds,
+    }
+}
