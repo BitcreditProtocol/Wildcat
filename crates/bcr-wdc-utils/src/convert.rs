@@ -292,3 +292,20 @@ pub fn billparticipant_wire2ebill(
         }
     }
 }
+
+pub fn billparticipants_ebill2wire(
+    input: ebill_bill::BillParticipants,
+) -> wire_bill::BillParticipants {
+    wire_bill::BillParticipants {
+        drawee: billidentparticipant_ebill2wire(input.drawee),
+        drawer: billidentparticipant_ebill2wire(input.drawer),
+        payee: billparticipant_ebill2wire(input.payee),
+        endorsee: input.endorsee.map(billparticipant_ebill2wire),
+        endorsements_count: input.endorsements_count,
+        all_participant_node_ids: input
+            .all_participant_node_ids
+            .into_iter()
+            .map(nodeid_ebill2wire)
+            .collect(),
+    }
+}
