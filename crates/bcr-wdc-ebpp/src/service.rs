@@ -9,9 +9,14 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::wire::signatures as wire_signatures;
-use bdk_wallet::bitcoin as btc;
-use cdk_common::mint::MeltQuote;
+use bcr_wdc_webapi::exchange as web_exchange;
+use bdk_wallet::bitcoin::{
+    self as btc,
+    hashes::{sha256::Hash as Sha256, Hash},
+    secp256k1 as secp,
+};
 use cdk_common::{
+    mint::MeltQuote,
     nuts::{MeltQuoteState, MintQuoteState},
     payment::{
         Bolt11Settings, CreateIncomingPaymentResponse, Error as PaymentError, MakePaymentResponse,
@@ -24,8 +29,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::payment;
+use crate::{
+    error::{Error, Result},
+    payment,
+};
 
 // ----- end imports
 
@@ -60,6 +67,10 @@ pub trait PaymentRepository: Sync {
     async fn load_outgoing(&self, reqid: Uuid) -> Result<payment::OutgoingRequest>;
     async fn store_outgoing(&self, req: payment::OutgoingRequest) -> Result<()>;
     async fn update_outgoing(&self, req: payment::OutgoingRequest) -> Result<()>;
+
+    async fn store_foreign(&self, reqid: Uuid, nonce: String) -> Result<()>;
+    async fn check_foreign_nonce(&self, nonce: &str) -> Result<bool>;
+    async fn check_foreign_reqid(&self, reqid: Uuid) -> Result<bool>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -159,18 +170,30 @@ where
         }
 
         let amount = btc::Amount::from_sat(amount.into());
-        let parsed_description =
-            serde_json::from_str::<wire_signatures::SignedRequestToMintFromEBillDesc>(&description);
+        let parsed_description = ParsedDescription::parse(&description);
         let payment_type = match parsed_description {
-            Ok(ebill_request_to_mint) => {
+            ParsedDescription::ForeignECash(request) => {
+                tracing::trace!("Parsed foreign ecash request",);
+                let request =
+                    validate_foreignecash_request_signature(&request, &self.treasury_pubkey)?;
+                let present = self.payrepo.check_foreign_nonce(&request.nonce).await?;
+                if present {
+                    return Err(PaymentError::InvoiceAlreadyPaid);
+                }
+                let reqid = Uuid::new_v4();
+                self.payrepo.store_foreign(reqid, request.nonce).await?;
+                return Ok(CreateIncomingPaymentResponse {
+                    request_lookup_id: reqid.to_string(),
+                    request: String::new(),
+                    expiry: None,
+                });
+            }
+            ParsedDescription::EbillRequestToPay(request) => {
                 tracing::trace!(
-                    bill_id = ?ebill_request_to_mint.data.ebill_id,
+                    bill_id = ?request.data.ebill_id,
                     "Parsed EBill request",
                 );
-                let request = validate_ebill_request_signature(
-                    &ebill_request_to_mint,
-                    &self.treasury_pubkey,
-                )?;
+                let request = validate_ebill_request_signature(&request, &self.treasury_pubkey)?;
                 //TODO! wait for bitcredit-core to integrate bcr-common
                 let ebill_id =
                     bcr_ebill_core::bill::BillId::from_str(&request.ebill_id.to_string())
@@ -179,7 +202,7 @@ where
                 let recipient = self.onchain.add_descriptor(&output).await?;
                 payment::PaymentType::EBill(recipient)
             }
-            Err(_) => {
+            ParsedDescription::None => {
                 let recipient = self
                     .onchain
                     .generate_new_recipient()
@@ -371,6 +394,11 @@ where
 
         let reqid =
             Uuid::parse_str(request_lookup_id).map_err(|_| PaymentError::UnknownPaymentState)?;
+        // first check if it's a foreign ecash payment
+        if self.payrepo.check_foreign_reqid(reqid).await? {
+            return Ok(MintQuoteState::Paid);
+        }
+        // nothing to look at, proceed
         let mut request = self.payrepo.load_incoming(reqid).await?;
         let mut response = request.status;
         if request.status == MintQuoteState::Unpaid {
@@ -422,6 +450,19 @@ fn validate_ebill_request_signature<'a>(
     bcr_wdc_utils::keys::schnorr_verify_borsh_msg_with_key(&signed.data, &signed.signature, pubkey)
         .map_err(Error::SchnorrBorsh)?;
     Ok(&signed.data)
+}
+
+fn validate_foreignecash_request_signature(
+    signed: &web_exchange::RequestToMintFromForeigneCash,
+    pubkey: &btc::secp256k1::XOnlyPublicKey,
+) -> Result<web_exchange::RequestToMintFromForeignCashPayload> {
+    let serialized = bdk_wallet::bitcoin::base64::decode(&signed.payload)?;
+    let sha = Sha256::hash(&serialized);
+    let secp_msg = secp::Message::from_digest(*sha.as_ref());
+    secp::global::SECP256K1.verify_schnorr(&signed.signature, &secp_msg, pubkey)?;
+    let message: web_exchange::RequestToMintFromForeignCashPayload =
+        borsh::from_slice(&serialized)?;
+    Ok(message)
 }
 
 async fn notify_payment<OnChain>(
@@ -496,6 +537,27 @@ fn parse_to_bip21_uri(input: &str, network: btc::Network) -> Result<bip21::Uri<'
         .map_err(|e| Error::Bip21Parse(anyhow!(e)))?
         .require_network(network)
         .map_err(|e| Error::Bip21Parse(anyhow!(e)))
+}
+
+enum ParsedDescription {
+    EbillRequestToPay(wire_signatures::SignedRequestToMintFromEBillDesc),
+    ForeignECash(web_exchange::RequestToMintFromForeigneCash),
+    None,
+}
+impl ParsedDescription {
+    fn parse(input: &str) -> Self {
+        if let Ok(ebill_request) =
+            serde_json::from_str::<wire_signatures::SignedRequestToMintFromEBillDesc>(input)
+        {
+            Self::EbillRequestToPay(ebill_request)
+        } else if let Ok(foreign_ecash_request) =
+            serde_json::from_str::<web_exchange::RequestToMintFromForeigneCash>(input)
+        {
+            Self::ForeignECash(foreign_ecash_request)
+        } else {
+            Self::None
+        }
+    }
 }
 
 #[cfg(test)]
