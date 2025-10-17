@@ -42,6 +42,7 @@ impl PrivateKeysRepository for InMemoryKeys {
 pub struct InMemoryPaymentRepo {
     incomings: Arc<Mutex<HashMap<Uuid, IncomingRequest>>>,
     outgoings: Arc<Mutex<HashMap<Uuid, OutgoingRequest>>>,
+    foreign: Arc<Mutex<Vec<(Uuid, String)>>>,
 }
 
 #[async_trait]
@@ -109,5 +110,29 @@ impl PaymentRepository for InMemoryPaymentRepo {
             .cloned()
             .collect();
         Ok(values)
+    }
+
+    async fn store_foreign(&self, reqid: Uuid, nonce: String) -> Result<()> {
+        let mut locked = self.foreign.lock().expect("store_foreign");
+        locked.push((reqid, nonce));
+        Ok(())
+    }
+    async fn check_foreign_nonce(&self, nonce: &str) -> Result<bool> {
+        let locked = self.foreign.lock().expect("check_foreign_nonce");
+        for (_, stored_nonce) in locked.iter() {
+            if stored_nonce == nonce {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+    async fn check_foreign_reqid(&self, reqid: Uuid) -> Result<bool> {
+        let locked = self.foreign.lock().expect("check_foreign_reqid");
+        for (stored_reqid, _) in locked.iter() {
+            if *stored_reqid == reqid {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
