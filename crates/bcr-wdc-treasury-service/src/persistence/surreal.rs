@@ -7,8 +7,9 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     credit::{self, PremintSignatures},
-    crsat, debit,
+    debit,
     error::{Error, Result},
+    foreign,
 };
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -408,7 +409,7 @@ impl CrsatRepository {
 }
 
 #[async_trait]
-impl crsat::Repository for CrsatRepository {
+impl foreign::Repository for CrsatRepository {
     async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
         let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {

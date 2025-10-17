@@ -9,9 +9,9 @@ use bitcoin::secp256k1;
 // ----- local modules
 mod admin;
 mod credit;
-mod crsat;
 mod debit;
 mod error;
+mod foreign;
 mod persistence;
 mod web;
 // ----- local imports
@@ -23,10 +23,10 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 type ProdCreditRepository = persistence::surreal::CreditRepository;
 type ProdCreditKeysService = credit::KeySrvc;
 type ProdCreditService = credit::Service<ProdCreditRepository, ProdCreditKeysService>;
-type ProdCrsatService = crsat::Service;
+type ProdCrsatService = foreign::crsat::Service;
 type ProdCrsatRepository = persistence::surreal::CrsatRepository;
-type ProdCrsatKeysClient = crsat::clients::KeysCl;
-type ProdCrsatClowderClient = crsat::clients::ClowderCl;
+type ProdCrsatKeysClient = foreign::clients::KeysCl;
+type ProdCrsatClowderClient = foreign::clients::ClowderCl;
 
 type ProdDebitWallet = debit::CDKWallet;
 type ProdWildcatClient = debit::WildcatCl;
