@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::{
     nut00::Error as CDK00Error, nut02 as cdk02, nut10::Error as CDK10Error,
-    nut13::Error as CDK13Error,
+    nut13::Error as CDK13Error, nut20::Error as CDK20Error,
 };
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
@@ -16,8 +16,16 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
+    #[error("bcr_common::signatures {0}")]
+    BcrCommonSignature(#[from] bcr_common::core::signature::Error),
+    #[error("borsh {0}")]
+    Borsh(#[from] borsh::io::Error),
+
     #[error("unblind {0}")]
     Unblind(#[from] bcr_wdc_utils::signatures::UnblindError),
+
+    #[error("cashu::nut20 {0}")]
+    CDK20(#[from] CDK20Error),
     #[error("cashu::nut00 {0}")]
     CDK00(#[from] CDK00Error),
     #[error("cashu::nut10 {0}")]
@@ -110,7 +118,10 @@ impl axum::response::IntoResponse for Error {
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Unblind(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrCommonSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
     }
