@@ -8,7 +8,7 @@ use bcr_wdc_webapi::{
 };
 use cashu::{self as cdk};
 // ----- local imports
-use crate::{credit, crsat, debit, error::Result};
+use crate::{credit, foreign, debit, error::Result};
 
 // ----- end imports
 
@@ -104,7 +104,7 @@ where
 }
 
 pub async fn try_htlc_swap(
-    State(ctrl): State<crsat::Service>,
+    State(ctrl): State<foreign::crsat::Service>,
     Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     tracing::debug!("Received request to try_htlc_swap");

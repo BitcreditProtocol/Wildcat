@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use clwdr_client::ClowderRestClient;
 // ----- local imports
 use crate::{
-    crsat,
+    foreign::{proof, KeysClient, ClowderClient},
     error::{Error, Result},
 };
 
@@ -24,7 +24,7 @@ impl KeysCl {
 }
 
 #[async_trait]
-impl crsat::proof::KeysClient for KeysCl {
+impl proof::KeysClient for KeysCl {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::with_capacity(blinds.len());
         for b in blinds {
@@ -36,7 +36,7 @@ impl crsat::proof::KeysClient for KeysCl {
 }
 
 #[async_trait]
-impl crsat::KeysClient for KeysCl {
+impl KeysClient for KeysCl {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
@@ -60,7 +60,7 @@ impl ClowderCl {
 }
 
 #[async_trait]
-impl crsat::proof::ClowderClient for ClowderCl {
+impl proof::ClowderClient for ClowderCl {
     async fn check_htlc_proofs(
         &self,
         issuer: cashu::PublicKey,
@@ -87,7 +87,7 @@ impl crsat::proof::ClowderClient for ClowderCl {
 }
 
 #[async_trait]
-impl crsat::ClowderClient for ClowderCl {
+impl ClowderClient for ClowderCl {
     async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey> {
         let response = self.clwdr.get_id().await?;
         let pk = bitcoin::PublicKey::from(response.public_key);
