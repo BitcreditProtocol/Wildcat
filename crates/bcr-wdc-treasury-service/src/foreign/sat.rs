@@ -1,27 +1,23 @@
 // ----- standard library imports
+use cdk::wallet::MintConnector;
 use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use cdk::wallet::MintConnector;
 use itertools::Itertools;
 // ----- local imports
 use crate::{
     error::{Error, Result},
     foreign::proof,
     foreign::{proofs_vec_to_map, ClowderClient, Repository},
-    TStamp,
 };
 
 // ----- end imports
 
 #[async_trait]
 pub trait KeysClient: proof::KeysClient {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
+    async fn get_active_keyset(&self) -> Result<cashu::KeySet>;
 }
 
 #[derive(Clone)]
@@ -32,6 +28,7 @@ pub struct Service {
 }
 
 impl Service {
+    const HTLC_BUFFER_MINUTES: i64 = 15;
     pub async fn online_exchange(
         &self,
         proofs: Vec<cashu::Proof>,
@@ -53,7 +50,6 @@ impl Service {
         };
         let foreign_pk = path_it.next().unwrap();
         let foreign_mint = self.clowder.get_mint_url_from_pk(foreign_pk).await?;
-
         let foreign_client = cdk::wallet::HttpClient::new(foreign_mint.clone(), None);
         let (htlc_hash, foreign_locktime) = proof::check_htlc_foreign_proofs(
             *foreign_pk,
@@ -65,25 +61,11 @@ impl Service {
         let total = proofs
             .iter()
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
-        let kid = proofs[0].keyset_id;
         self.repo
             .store_htlc(foreign_mint, &htlc_hash, proofs)
             .await?;
-        let foreign_keyset = foreign_client.get_mint_keyset(kid).await?;
-        let Some(foreign_unix_expiration) = foreign_keyset.final_expiry else {
-            return Err(Error::InvalidInput(String::from(
-                "Foreign keyset has no expiration",
-            )));
-        };
-        let foreign_date = TStamp::from_timestamp_secs(foreign_unix_expiration as i64)
-            .map(|tstamp| tstamp.date_naive());
-        let Some(foreign_date) = foreign_date else {
-            return Err(Error::InvalidInput(String::from(
-                "foreign expiry date parse",
-            )));
-        };
-        let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
-        let locktime = foreign_locktime - chrono::TimeDelta::minutes(15);
+        let keyset = self.keys.get_active_keyset().await?;
+        let locktime = foreign_locktime - chrono::TimeDelta::minutes(Self::HTLC_BUFFER_MINUTES);
         let proofs = proof::generate_htlc_proofs(
             total,
             locktime,
@@ -97,7 +79,7 @@ impl Service {
     }
 
     pub async fn try_swap_htlc(&self, preimage: &str) -> Result<cashu::Amount> {
-        let mut gran_total = cashu::Amount::ZERO;
+        let mut grand_total = cashu::Amount::ZERO;
         let hash =
             Sha256Hash::from_str(preimage).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let foreign_proofs = self.repo.search_htlc(&hash.to_string()).await?;
@@ -118,12 +100,11 @@ impl Service {
                 &cashu::amount::SplitTarget::None,
             )
             .map_err(|e| Error::Internal(e.to_string()))?;
-            // TODO: allow different keyset_ids
-            assert_eq!(
-                1,
-                f_proofs.iter().map(|p| p.keyset_id).unique().count(),
-                "All foreign proofs must have the same keyset_id"
-            );
+            if f_proofs.iter().map(|p| p.keyset_id).unique().count() != 1 {
+                return Err(Error::InvalidInput(
+                    "All foreign proofs must have the same keyset_id".to_string(),
+                ));
+            }
             let foreign_client = cdk::wallet::HttpClient::new(mint.clone(), None);
             let keys = foreign_client
                 .get_mint_keyset(f_proofs[0].keyset_id)
@@ -134,8 +115,8 @@ impl Service {
                 .map_err(|e| Error::Internal(e.to_string()))?;
             self.repo.store(mint, proofs).await?;
             self.repo.remove_htlcs(&f_fingerprints).await?;
-            gran_total += total;
+            grand_total += total;
         }
-        Ok(gran_total)
+        Ok(grand_total)
     }
 }
