@@ -12,6 +12,12 @@ use uuid::Uuid;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("schnorr:: {0}")]
+    Schnorr(#[from] bdk_wallet::bitcoin::secp256k1::Error),
+
+    #[error("borsh:: {0}")]
+    Borsh(#[from] borsh::io::Error),
+
     #[error("bdk_wallet::rusqlite {0}")]
     BDKSQLite(#[from] bdk_wallet::rusqlite::Error),
     #[error("bdk_wallet::LoadWithPersisted {0}")]
@@ -39,6 +45,8 @@ pub enum Error {
     BTCWif(#[from] bdk_wallet::bitcoin::key::FromWifError),
     #[error("bitcoin::bip32: {0}")]
     BTCBIP32(#[from] bdk_wallet::bitcoin::bip32::Error),
+    #[error("bitcoin::base64: {0}")]
+    BTCBase64(#[from] bdk_wallet::bitcoin::base64::DecodeError),
 
     #[error("miniscript: {0}")]
     Miniscript(#[from] bdk_wallet::miniscript::Error),
@@ -70,12 +78,19 @@ pub enum Error {
     SchnorrBorsh(bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("invalid descriptor {0}")]
     InvalidDescriptor(String),
+
+    #[error("internal {0}")]
+    Internal(String),
 }
 
 impl std::convert::From<Error> for cdk_common::payment::Error {
     fn from(e: Error) -> Self {
         tracing::error!("Error --> PaymentError: {:?}", e);
         match e {
+            Error::Internal(_) => {
+                CDKPaymentError::Custom(String::from("internal error, this should never happen"))
+            }
+
             Error::InvalidDescriptor(_) => CDKPaymentError::Custom(String::from(
                 "invalid descriptor, this should never happen",
             )),
@@ -103,6 +118,7 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
                 "leaking internal error, this should never happen",
             )),
 
+            Error::BTCBase64(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCBIP32(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCWif(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BTCPsbt(_) => CDKPaymentError::Custom(String::from("internal error")),
@@ -111,10 +127,8 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
             Error::BTCPsbtExtract(_) => CDKPaymentError::Custom(String::from("internal error")),
 
             Error::BDKSignOpNotOK => CDKPaymentError::Custom(String::from("internal error")),
-            Error::BDKSQLite(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKSigner(_) => CDKPaymentError::Custom(String::from("internal error")),
             Error::BDKCreateTx(_) => CDKPaymentError::Custom(String::from("internal error")),
-
             Error::BDKCannotConnect(_) => CDKPaymentError::Custom(String::from(
                 "leaking internal error, this should never happen",
             )),
@@ -124,6 +138,11 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
             Error::BDKLoadWithPersisted(_) => CDKPaymentError::Custom(String::from(
                 "leaking internal error, this should never happen",
             )),
+            Error::BDKSQLite(_) => CDKPaymentError::Custom(String::from("internal error")),
+
+            Error::Borsh(_) => CDKPaymentError::Custom(String::from("internal error")),
+
+            Error::Schnorr(_) => CDKPaymentError::Custom(String::from("internal error")),
         }
     }
 }
