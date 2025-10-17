@@ -379,7 +379,7 @@ struct ForeignHtlcProofEntry {
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct CrsatConnectionConfig {
+pub struct ForeignConnectionConfig {
     pub connection: String,
     pub namespace: String,
     pub database: String,
@@ -388,14 +388,14 @@ pub struct CrsatConnectionConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct CrsatRepository {
+pub struct ForeignRepository {
     db: Surreal<Any>,
     foreigns_table: String,
     htlcs_table: String,
 }
 
-impl CrsatRepository {
-    pub async fn new(config: CrsatConnectionConfig) -> SurrealResult<Self> {
+impl ForeignRepository {
+    pub async fn new(config: ForeignConnectionConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(config.connection).await?;
         db_connection.use_ns(config.namespace).await?;
@@ -409,7 +409,7 @@ impl CrsatRepository {
 }
 
 #[async_trait]
-impl foreign::Repository for CrsatRepository {
+impl foreign::Repository for ForeignRepository {
     async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
         let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
