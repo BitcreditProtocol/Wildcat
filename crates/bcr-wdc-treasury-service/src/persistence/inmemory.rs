@@ -10,7 +10,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     credit::{self, PremintSignatures},
-    crsat,
+    foreign,
     error::{Error, Result},
 };
 
@@ -113,7 +113,7 @@ pub struct InMemoryCrsatRepository {
 }
 
 #[async_trait]
-impl crsat::Repository for InMemoryCrsatRepository {
+impl foreign::Repository for InMemoryCrsatRepository {
     async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
         for proof in proofs {

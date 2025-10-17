@@ -1,53 +1,20 @@
 // ----- standard library imports
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 // ----- extra library imports
-use async_trait::async_trait;
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use cdk::wallet::MintConnector;
 use itertools::Itertools;
-// ----- local modules
-pub mod clients;
-mod proof;
 // ----- local imports
 use crate::{
     error::{Error, Result},
+    foreign::proof,
+    foreign::{ClowderClient, Repository, KeysClient},
     TStamp,
 };
 
 // ----- end imports
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait Repository: Send + Sync {
-    async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()>;
-    #[allow(dead_code)]
-    async fn list(&self) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>>;
-
-    async fn store_htlc(
-        &self,
-        mint: cashu::MintUrl,
-        hash: &str,
-        proofs: Vec<cashu::Proof>,
-    ) -> Result<()>;
-    async fn search_htlc(&self, hash: &str) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>>;
-    async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
-}
-
-#[async_trait]
-pub trait ClowderClient: proof::ClowderClient {
-    async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl>;
-    async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey>;
-    async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
-}
-
-#[async_trait]
-pub trait KeysClient: proof::KeysClient {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
-}
 
 #[derive(Clone)]
 pub struct Service {
@@ -143,10 +110,11 @@ impl Service {
                 &cashu::amount::SplitTarget::None,
             )
             .map_err(|e| Error::Internal(e.to_string()))?;
+            // TODO: allow different keyset_ids
             assert_eq!(
                 1,
                 f_proofs.iter().map(|p| p.keyset_id).unique().count(),
-                "All proofs must have the same keyset_id"
+                "All foreign proofs must have the same keyset_id"
             );
             let foreign_client = cdk::wallet::HttpClient::new(mint.clone(), None);
             let keys = foreign_client
