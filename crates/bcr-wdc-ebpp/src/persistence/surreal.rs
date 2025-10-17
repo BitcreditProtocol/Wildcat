@@ -210,6 +210,12 @@ fn into_outgoing_request(
     })
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignPaymentDBEntry {
+    reqid: Uuid,
+    nonce: String,
+}
+
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct PaymentConnectionConfig {
     pub connection: String,
@@ -217,6 +223,7 @@ pub struct PaymentConnectionConfig {
     pub database: String,
     pub incoming_payments_table: String,
     pub outgoing_payments_table: String,
+    pub foreign_payments_table: String,
 }
 
 #[derive(Debug, Clone)]
@@ -224,6 +231,7 @@ pub struct DBPayments {
     db: Surreal<surrealdb::engine::any::Any>,
     incoming_table: String,
     outgoing_table: String,
+    foreign: String,
     network: btc::Network,
 }
 
@@ -237,6 +245,7 @@ impl DBPayments {
             db: db_connection,
             incoming_table: cfg.incoming_payments_table,
             outgoing_table: cfg.outgoing_payments_table,
+            foreign: cfg.foreign_payments_table,
             network,
         })
     }
@@ -364,6 +373,39 @@ impl PaymentRepository for DBPayments {
             .collect::<Result<_>>()?;
         Ok(requests)
     }
+
+    async fn store_foreign(&self, reqid: Uuid, nonce: String) -> Result<()> {
+        let entry = ForeignPaymentDBEntry { reqid, nonce };
+        let rid = surrealdb::RecordId::from_table_key(&self.foreign, reqid);
+        let _: Option<ForeignPaymentDBEntry> = self
+            .db
+            .insert(rid)
+            .content(entry)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+    async fn check_foreign_nonce(&self, nonce: &str) -> Result<bool> {
+        let entry: Option<ForeignPaymentDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE nonce == $nonce")
+            .bind(("table", self.foreign.clone()))
+            .bind(("nonce", nonce.to_string()))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entry.is_some())
+    }
+    async fn check_foreign_reqid(&self, reqid: Uuid) -> Result<bool> {
+        let rid = surrealdb::RecordId::from_table_key(&self.foreign, reqid);
+        let entry: Option<ForeignPaymentDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entry.is_some())
+    }
 }
 
 #[cfg(test)]
@@ -382,6 +424,7 @@ mod tests {
             network: btc::Network::Bitcoin,
             incoming_table: String::from("incoming"),
             outgoing_table: String::from("outgoing"),
+            foreign: String::from("foreign"),
         }
     }
 
@@ -429,5 +472,23 @@ mod tests {
         unpaids.sort();
         assert_eq!(list[0].reqid, unpaids[0]);
         assert_eq!(list[1].reqid, unpaids[1]);
+    }
+
+    #[tokio::test]
+    async fn store_check_foreign() {
+        let db = init_mem_db().await;
+        let reqid = Uuid::new_v4();
+        let nonce = String::from("nonce");
+
+        db.store_foreign(reqid, nonce).await.unwrap();
+        let exists = db.check_foreign_nonce("nonce").await.unwrap();
+        assert!(exists);
+        let not_exists = db.check_foreign_nonce("other").await.unwrap();
+        assert!(!not_exists);
+
+        let exists_reqid = db.check_foreign_reqid(reqid).await.unwrap();
+        assert!(exists_reqid);
+        let not_exists_reqid = db.check_foreign_reqid(Uuid::new_v4()).await.unwrap();
+        assert!(!not_exists_reqid);
     }
 }

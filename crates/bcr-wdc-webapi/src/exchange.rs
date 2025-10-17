@@ -33,7 +33,7 @@ pub struct RequestToMintFromForeignCashPayload {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RequestToMintFromForeignCash {
+pub struct RequestToMintFromForeigneCash {
     pub payload: String, // b64 borsh payload
     pub signature: bitcoin::secp256k1::schnorr::Signature,
 }
