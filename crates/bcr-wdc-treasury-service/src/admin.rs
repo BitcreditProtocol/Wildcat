@@ -8,7 +8,7 @@ use bcr_wdc_webapi::{
 };
 use cashu::{self as cdk};
 // ----- local imports
-use crate::{credit, foreign, debit, error::Result};
+use crate::{credit, debit, error::Result, foreign};
 
 // ----- end imports
 
@@ -103,8 +103,18 @@ where
     Ok(Json(response))
 }
 
-pub async fn try_htlc_swap(
+pub async fn crsat_try_htlc_swap(
     State(ctrl): State<foreign::crsat::Service>,
+    Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
+) -> Result<Json<cashu::Amount>> {
+    tracing::debug!("Received request to try_htlc_swap");
+
+    let amount = ctrl.try_swap_htlc(&request.preimage).await?;
+    Ok(Json(amount))
+}
+
+pub async fn sat_try_htlc_swap(
+    State(ctrl): State<foreign::sat::Service>,
     Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     tracing::debug!("Received request to try_htlc_swap");

@@ -24,3 +24,16 @@ pub struct OnlineExchangeResponse {
 pub struct HtlcSwapAttemptRequest {
     pub preimage: String,
 }
+
+///--------------------------- RequestToMintFromForeigneCash
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct RequestToMintFromForeignCashPayload {
+    pub foreign_amount_sat: u64,
+    pub nonce: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestToMintFromForeignCash {
+    pub payload: String, // b64 borsh payload
+    pub signature: bitcoin::secp256k1::schnorr::Signature,
+}
