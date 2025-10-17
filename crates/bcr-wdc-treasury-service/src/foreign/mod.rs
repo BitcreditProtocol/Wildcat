@@ -1,10 +1,12 @@
 // ----- standard library imports
+use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
 // ----- local modules
 pub mod clients;
 pub mod crsat;
 mod proof;
+pub mod sat;
 // ----- local imports
 use crate::error::Result;
 
@@ -34,10 +36,12 @@ pub trait ClowderClient: proof::ClowderClient {
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
 }
 
-#[async_trait]
-pub trait KeysClient: proof::KeysClient {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
+fn proofs_vec_to_map(
+    input: Vec<(cashu::MintUrl, cashu::Proof)>,
+) -> HashMap<cashu::MintUrl, Vec<cashu::Proof>> {
+    let mut map: HashMap<cashu::MintUrl, Vec<cashu::Proof>> = HashMap::new();
+    for (mint, proof) in input {
+        map.entry(mint).or_default().push(proof);
+    }
+    map
 }

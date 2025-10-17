@@ -10,8 +10,8 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     credit::{self, PremintSignatures},
-    foreign,
     error::{Error, Result},
+    foreign,
 };
 
 #[allow(dead_code)]
