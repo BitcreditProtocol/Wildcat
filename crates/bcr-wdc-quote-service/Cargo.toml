@@ -15,7 +15,6 @@ axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-ebill-core.workspace = true
-bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-webapi = {workspace = true}

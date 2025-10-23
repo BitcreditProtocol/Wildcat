@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::wire::signatures as wire_signatures;
@@ -76,10 +75,9 @@ where
 {
     tracing::debug!("Received request to mint from ebill");
 
-    //TODO! wait for bitcredit-core to integrate bcr-common
-    let ebill_id = bcr_ebill_core::bill::BillId::from_str(&request.ebill_id.to_string())
-        .expect("compatible billID");
-    let quote = ctrl.mint_from_ebill(ebill_id, request.amount).await?;
+    let quote = ctrl
+        .mint_from_ebill(request.ebill_id, request.amount, request.deadline)
+        .await?;
     let response = wire_signatures::RequestToMintFromEBillResponse {
         request_id: quote.id,
         request: quote.request,

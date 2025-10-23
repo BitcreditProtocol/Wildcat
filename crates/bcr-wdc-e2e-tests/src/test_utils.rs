@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::quotes as web_quotes;
+use bcr_common::wire::quotes as wire_quotes;
 use bcr_wdc_webapi::test_utils::generate_random_bill_enquire_request;
 use bitcoin::secp256k1::Keypair;
 use cashu::nuts::nut02 as cdk02;
@@ -9,7 +9,7 @@ use cashu::Amount;
 // ----- end imports
 
 pub struct EbillRequestComponents {
-    pub bill: web_quotes::SharedBill,
+    pub bill: wire_quotes::SharedBill,
     pub signing_key: Keypair,
 }
 

@@ -33,10 +33,7 @@ jobs:
           echo "After cleanup:"
           df -h
 
-      - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-
-      - name: Create GitHub App token
+      - name: Create GitHub app token
         id: app-token
         uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
         with:
@@ -50,10 +47,16 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - name: Install Protoc
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
 
-      - name: Install Rust
+      - name: install rust
         run: rustup update stable
 
       - name: Install llvm-tools-preview

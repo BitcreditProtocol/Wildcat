@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bitcoin::bip32 as btc32;
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
 use futures::try_join;
 use uuid::Uuid;
@@ -18,9 +17,6 @@ pub type PremintSignatures = (Uuid, Vec<cdk00::BlindSignature>);
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository {
-    async fn next_counter(&self, kid: cdk02::Id) -> Result<u32>;
-    async fn increment_counter(&self, kid: cdk02::Id, inc: u32) -> Result<()>;
-
     async fn store_secrets(&self, request_id: Uuid, premint: cdk00::PreMintSecrets) -> Result<()>;
     async fn load_secrets(&self, request_id: Uuid) -> Result<cdk00::PreMintSecrets>;
     async fn delete_secrets(&self, request_id: Uuid) -> Result<()>;
@@ -42,7 +38,6 @@ pub trait KeyService {
 
 #[derive(Clone)]
 pub struct Service<Repo, KeySrvc> {
-    pub xpriv: btc32::Xpriv,
     pub repo: Repo,
     pub keys: KeySrvc,
 }
@@ -56,21 +51,12 @@ where
         kid: cdk02::Id,
         total: Amount,
     ) -> Result<(Uuid, Vec<cdk00::BlindedMessage>)> {
-        let counter = self.repo.next_counter(kid).await?;
-        let premint = cdk00::PreMintSecrets::from_xpriv(
-            kid,
-            counter,
-            self.xpriv,
-            total,
-            &cashu::amount::SplitTarget::default(),
-        )
-        .map_err(Error::CDK13)?;
+        let premint =
+            cdk00::PreMintSecrets::random(kid, total, &cashu::amount::SplitTarget::default())
+                .map_err(Error::CDK00)?;
         let request_id = Uuid::new_v4();
         let blinds = premint.blinded_messages();
         self.repo.store_secrets(request_id, premint).await?;
-        self.repo
-            .increment_counter(kid, blinds.len() as u32)
-            .await?;
         Ok((request_id, blinds))
     }
 
@@ -164,21 +150,19 @@ mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use bitcoin::network::Network;
     use itertools::Itertools;
 
     #[tokio::test]
     async fn balance_emptysignatures() {
         let mut repo = MockRepository::new();
         let keys = MockKeyService::new();
-        let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         repo.expect_list_premint_signatures()
             .returning(|| Ok(vec![]));
         repo.expect_list_balance_by_keyset_id()
             .returning(|| Ok(vec![]));
 
-        let srvc = Service { keys, xpriv, repo };
+        let srvc = Service { keys, repo };
         let balance = srvc.balance().await.unwrap();
         assert_eq!(balance, Amount::ZERO);
     }
@@ -187,7 +171,6 @@ mod tests {
     async fn balance_signatures_deactive_keyset() {
         let mut repo = MockRepository::new();
         let mut keys = MockKeyService::new();
-        let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         let (info, keyset) = keys_utils::generate_random_keyset();
         let signatures = signatures_test::generate_signatures(&keyset, &[Amount::from(16)]);
@@ -208,7 +191,7 @@ mod tests {
         repo.expect_list_balance_by_keyset_id()
             .returning(move || Ok(vec![]));
 
-        let srvc = Service { keys, xpriv, repo };
+        let srvc = Service { keys, repo };
         let balance = srvc.balance().await.unwrap();
         assert_eq!(balance, Amount::from(0));
     }
@@ -217,7 +200,6 @@ mod tests {
     async fn balance_signatures() {
         let mut repo = MockRepository::new();
         let mut keys = MockKeyService::new();
-        let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         let (info, keyset) = keys_utils::generate_random_keyset();
 
@@ -269,7 +251,7 @@ mod tests {
         repo.expect_list_balance_by_keyset_id()
             .returning(move || Ok(vec![(kid, Amount::from(16))]));
 
-        let srvc = Service { keys, xpriv, repo };
+        let srvc = Service { keys, repo };
         let balance = srvc.balance().await.unwrap();
         assert_eq!(balance, Amount::from(16));
     }
@@ -278,7 +260,6 @@ mod tests {
     async fn balance_only_proofs() {
         let mut repo = MockRepository::new();
         let mut keys = MockKeyService::new();
-        let xpriv = btc32::Xpriv::new_master(Network::Testnet, &[0; 32]).unwrap();
 
         repo.expect_list_premint_signatures()
             .returning(|| Ok(vec![]));
@@ -292,7 +273,7 @@ mod tests {
             .withf(move |k_id| *k_id == kid)
             .returning(move |_| Ok(kinfo.clone()));
 
-        let srvc = Service { keys, xpriv, repo };
+        let srvc = Service { keys, repo };
         let balance = srvc.balance().await.unwrap();
         assert_eq!(balance, Amount::from(16));
     }

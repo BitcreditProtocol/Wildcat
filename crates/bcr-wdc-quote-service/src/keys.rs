@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::KeysClient;
+use bcr_common::client::keys::Client as KeysClient;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports

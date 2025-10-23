@@ -106,12 +106,12 @@ impl Repository for QuotesIDMap {
                     bill_holder_id,
                 } = &filters;
                 if let Some(bill_maturity_date_from) = bill_maturity_date_from {
-                    if quote.bill.maturity_date.date_naive() < *bill_maturity_date_from {
+                    if quote.bill.maturity_date < *bill_maturity_date_from {
                         return false;
                     }
                 }
                 if let Some(bill_maturity_date_to) = bill_maturity_date_to {
-                    if quote.bill.maturity_date.date_naive() > *bill_maturity_date_to {
+                    if quote.bill.maturity_date > *bill_maturity_date_to {
                         return false;
                     }
                 }

@@ -27,7 +27,7 @@ pub struct HtlcSwapAttemptRequest {
 
 ///--------------------------- RequestToMintFromForeigneCash
 #[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
-pub struct RequestToMintFromForeignCashPayload {
+pub struct RequestToMintFromForeigneCashPayload {
     pub foreign_amount_sat: u64,
     pub nonce: String,
 }

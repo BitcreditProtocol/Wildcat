@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
-use bcr_wdc_webapi::quotes as web_quotes;
+use bcr_common::wire::quotes as wire_quotes;
 // ----- local imports
 use crate::{
     error::Result,
@@ -17,41 +17,41 @@ use crate::{
         ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::ListReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::ListReply, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_pending_quotes(
     State(ctrl): State<Service>,
-    Query(req): Query<web_quotes::ListPendingQueryRequest>,
-) -> Result<Json<web_quotes::ListReply>> {
+    Query(req): Query<wire_quotes::ListPendingQueryRequest>,
+) -> Result<Json<wire_quotes::ListReply>> {
     tracing::debug!("Received request to list pending quotes");
 
     let quotes = ctrl.list_pendings(req.since).await?;
-    Ok(Json(web_quotes::ListReply { quotes }))
+    Ok(Json(wire_quotes::ListReply { quotes }))
 }
 
-fn convert_into_light_quote(quote: quotes::LightQuote) -> web_quotes::LightInfo {
+fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo {
     let status = match quote.status {
-        quotes::StatusDiscriminants::Pending => web_quotes::StatusReplyDiscriminants::Pending,
-        quotes::StatusDiscriminants::Canceled => web_quotes::StatusReplyDiscriminants::Canceled,
-        quotes::StatusDiscriminants::Offered => web_quotes::StatusReplyDiscriminants::Offered,
+        quotes::StatusDiscriminants::Pending => wire_quotes::StatusReplyDiscriminants::Pending,
+        quotes::StatusDiscriminants::Canceled => wire_quotes::StatusReplyDiscriminants::Canceled,
+        quotes::StatusDiscriminants::Offered => wire_quotes::StatusReplyDiscriminants::Offered,
         quotes::StatusDiscriminants::OfferExpired => {
-            web_quotes::StatusReplyDiscriminants::OfferExpired
+            wire_quotes::StatusReplyDiscriminants::OfferExpired
         }
-        quotes::StatusDiscriminants::Denied => web_quotes::StatusReplyDiscriminants::Denied,
-        quotes::StatusDiscriminants::Rejected => web_quotes::StatusReplyDiscriminants::Rejected,
-        quotes::StatusDiscriminants::Accepted => web_quotes::StatusReplyDiscriminants::Accepted,
+        quotes::StatusDiscriminants::Denied => wire_quotes::StatusReplyDiscriminants::Denied,
+        quotes::StatusDiscriminants::Rejected => wire_quotes::StatusReplyDiscriminants::Rejected,
+        quotes::StatusDiscriminants::Accepted => wire_quotes::StatusReplyDiscriminants::Accepted,
     };
-    web_quotes::LightInfo {
+    wire_quotes::LightInfo {
         id: quote.id,
         status,
         sum: quote.sum,
     }
 }
 
-fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Option<SortOrder>) {
-    let web_quotes::ListParam {
+fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Option<SortOrder>) {
+    let wire_quotes::ListParam {
         bill_maturity_date_from,
         bill_maturity_date_to,
         status,
@@ -64,32 +64,32 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
     } = params;
     let status = match status {
         None => None,
-        Some(web_quotes::StatusReplyDiscriminants::Pending) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Pending) => {
             Some(quotes::StatusDiscriminants::Pending)
         }
-        Some(web_quotes::StatusReplyDiscriminants::Canceled) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Canceled) => {
             Some(quotes::StatusDiscriminants::Canceled)
         }
-        Some(web_quotes::StatusReplyDiscriminants::Offered) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Offered) => {
             Some(quotes::StatusDiscriminants::Offered)
         }
-        Some(web_quotes::StatusReplyDiscriminants::OfferExpired) => {
+        Some(wire_quotes::StatusReplyDiscriminants::OfferExpired) => {
             Some(quotes::StatusDiscriminants::OfferExpired)
         }
-        Some(web_quotes::StatusReplyDiscriminants::Denied) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Denied) => {
             Some(quotes::StatusDiscriminants::Denied)
         }
-        Some(web_quotes::StatusReplyDiscriminants::Rejected) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Rejected) => {
             Some(quotes::StatusDiscriminants::Rejected)
         }
-        Some(web_quotes::StatusReplyDiscriminants::Accepted) => {
+        Some(wire_quotes::StatusReplyDiscriminants::Accepted) => {
             Some(quotes::StatusDiscriminants::Accepted)
         }
     };
     let sort = match sort {
         None => None,
-        Some(web_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
-        Some(web_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
+        Some(wire_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
+        Some(wire_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
     };
     let filters = ListFilters {
         bill_maturity_date_from,
@@ -107,39 +107,39 @@ fn convert_into_list_params(params: web_quotes::ListParam) -> (ListFilters, Opti
 #[utoipa::path(
     get,
     path = "/v1/admin/credit/quote",
-    params(web_quotes::ListParam),
+    params(wire_quotes::ListParam),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::ListReplyLight, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::ListReplyLight, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<Service>,
-    params: Query<web_quotes::ListParam>,
-) -> Result<Json<web_quotes::ListReplyLight>> {
+    params: Query<wire_quotes::ListParam>,
+) -> Result<Json<wire_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
 
     let now = chrono::Utc::now();
     let (filters, sort) = convert_into_list_params(params.0);
     let quotes = ctrl.list_light(filters, sort, now).await?;
-    let response = web_quotes::ListReplyLight {
+    let response = wire_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
     };
     Ok(Json(response))
 }
 
 /// --------------------------- Look up request
-fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
+fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
     match quote.status {
-        quotes::Status::Pending { .. } => web_quotes::InfoReply::Pending {
+        quotes::Status::Pending { .. } => wire_quotes::InfoReply::Pending {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             submitted: quote.submitted,
             suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
         },
-        quotes::Status::Canceled { tstamp } => web_quotes::InfoReply::Canceled {
+        quotes::Status::Canceled { tstamp } => wire_quotes::InfoReply::Canceled {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             tstamp,
         },
         quotes::Status::Offered {
@@ -147,39 +147,39 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
             ttl,
             discounted,
             ..
-        } => web_quotes::InfoReply::Offered {
+        } => wire_quotes::InfoReply::Offered {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             ttl,
             keyset_id,
         },
         quotes::Status::OfferExpired { tstamp, discounted } => {
-            web_quotes::InfoReply::OfferExpired {
+            wire_quotes::InfoReply::OfferExpired {
                 id: quote.id,
-                bill: quote.bill.into(),
+                bill: wire_quotes::BillInfo::from(quote.bill),
                 discounted,
                 tstamp,
             }
         }
-        quotes::Status::Denied { tstamp } => web_quotes::InfoReply::Denied {
+        quotes::Status::Denied { tstamp } => wire_quotes::InfoReply::Denied {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             tstamp,
         },
         quotes::Status::Accepted {
             keyset_id,
             discounted,
             ..
-        } => web_quotes::InfoReply::Accepted {
+        } => wire_quotes::InfoReply::Accepted {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             keyset_id,
         },
-        quotes::Status::Rejected { tstamp, discounted } => web_quotes::InfoReply::Rejected {
+        quotes::Status::Rejected { tstamp, discounted } => wire_quotes::InfoReply::Rejected {
             id: quote.id,
-            bill: quote.bill.into(),
+            bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             tstamp,
         },
@@ -193,7 +193,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
         ("id" = String, Path, description = "The quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::InfoReply, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::InfoReply, content_type = "application/json"),
         (status = 404, description = "Quote id not  found"),
     )
 )]
@@ -201,7 +201,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> web_quotes::InfoReply {
 pub async fn lookup_quote(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<web_quotes::InfoReply>> {
+) -> Result<Json<wire_quotes::InfoReply>> {
     tracing::debug!("Received mint quote lookup request");
 
     let now = chrono::Utc::now();
@@ -216,28 +216,28 @@ pub async fn lookup_quote(
     params(
         ("id" = String, Path, description = "The quote id")
     ),
-    request_body(content = web_quotes::UpdateQuoteRequest, content_type = "application/json"),
+    request_body(content = wire_quotes::UpdateQuoteRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::UpdateQuoteResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::UpdateQuoteResponse, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn update_quote(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-    Json(req): Json<web_quotes::UpdateQuoteRequest>,
-) -> Result<Json<web_quotes::UpdateQuoteResponse>> {
+    Json(req): Json<wire_quotes::UpdateQuoteRequest>,
+) -> Result<Json<wire_quotes::UpdateQuoteResponse>> {
     tracing::debug!("Received mint quote update request");
 
     let now = chrono::Utc::now();
     let response = match req {
-        web_quotes::UpdateQuoteRequest::Deny => {
+        wire_quotes::UpdateQuoteRequest::Deny => {
             ctrl.deny(id, now).await?;
-            web_quotes::UpdateQuoteResponse::Denied
+            wire_quotes::UpdateQuoteResponse::Denied
         }
-        web_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
+        wire_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
             let (discounted, ttl) = ctrl.offer(id, discounted, now, ttl).await?;
-            web_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
+            wire_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
         }
     };
     Ok(Json(response))
@@ -249,20 +249,20 @@ pub async fn update_quote(
     params(
         ("id" = String, Path, description = "The quote id")
     ),
-    request_body(content =web_quotes::EnableMintingRequest , content_type = "application/json"),
+    request_body(content =wire_quotes::EnableMintingRequest , content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = web_quotes::EnableMintingResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::EnableMintingResponse, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn enable_minting(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
-    Json(req): Json<web_quotes::EnableMintingRequest>,
-) -> Result<Json<web_quotes::EnableMintingResponse>> {
+    Json(req): Json<wire_quotes::EnableMintingRequest>,
+) -> Result<Json<wire_quotes::EnableMintingResponse>> {
     tracing::debug!("Received enable mint for quote request");
 
     ctrl.enable_minting(id).await?;
-    let response = web_quotes::EnableMintingResponse {};
+    let response = wire_quotes::EnableMintingResponse {};
     Ok(Json(response))
 }

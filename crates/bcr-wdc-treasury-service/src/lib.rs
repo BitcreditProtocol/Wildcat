@@ -4,7 +4,6 @@ use std::sync::Arc;
 use axum::extract::FromRef;
 use axum::routing::{get, post};
 use axum::Router;
-use bitcoin::bip32 as btc32;
 use bitcoin::secp256k1;
 // ----- local modules
 mod admin;
@@ -59,7 +58,7 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub async fn new(seed: &[u8], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
+    pub async fn new(seed: [u8; 64], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
         let AppConfig {
             credit_keys_url,
             cdk_mintd_url,
@@ -75,10 +74,8 @@ impl AppController {
         let repo = ProdCreditRepository::new(credit_repo)
             .await
             .expect("Failed to create repository");
-        let xpriv = btc32::Xpriv::new_master(bitcoin::NetworkKind::Main, seed)
-            .expect("Failed to create xpriv");
         let keys = ProdCreditKeysService::new(credit_keys_url.clone());
-        let credit = ProdCreditService { repo, xpriv, keys };
+        let credit = ProdCreditService { repo, keys };
 
         let wallet = ProdDebitWallet::new(sat_wallet, seed)
             .await
