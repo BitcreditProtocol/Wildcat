@@ -1,12 +1,8 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
-use bcr_ebill_core::{
-    bill::BillId,
-    contact::{BillIdentParticipant, BillParticipant},
-};
+use bcr_common::{core::BillId, wire::quotes as wire_quotes};
+use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
 use bcr_wdc_utils::convert;
-use bcr_wdc_webapi::quotes as web_quotes;
 use bitcoin::Amount;
 use strum::Display;
 use uuid::Uuid;
@@ -24,36 +20,35 @@ pub struct BillInfo {
     pub endorsees: Vec<BillParticipant>,
     pub current_holder: BillParticipant,
     pub sum: Amount,
-    pub maturity_date: TStamp,
+    pub maturity_date: chrono::NaiveDate,
     pub file_urls: Vec<url::Url>,
     pub shared_bill_data: String, // The base58 encoded, encrypted, borshed BillBlockPlaintextWrappers of the bill
 }
 pub fn convert_to_billinfo(
-    bill: web_quotes::BillInfo,
-    shared_bill: web_quotes::SharedBill,
+    bill: wire_quotes::BillInfo,
+    shared_bill: wire_quotes::SharedBill,
 ) -> Result<BillInfo> {
-    let maturity_date = TStamp::from_str(&bill.maturity_date).map_err(Error::Chrono)?;
+    let maturity_date = bill.maturity_date;
     let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
     Ok(BillInfo {
         id: bill.id,
-        drawee: convert::billidentparticipant_wire2ebill(bill.drawee),
-        drawer: convert::billidentparticipant_wire2ebill(bill.drawer),
-        payee: convert::billparticipant_wire2ebill(bill.payee),
+        drawee: convert::billidentparticipant_wire2ebill(bill.drawee)?,
+        drawer: convert::billidentparticipant_wire2ebill(bill.drawer)?,
+        payee: convert::billparticipant_wire2ebill(bill.payee)?,
         endorsees: bill
             .endorsees
             .into_iter()
             .map(convert::billparticipant_wire2ebill)
-            .collect(),
-        current_holder: convert::billparticipant_wire2ebill(current_holder),
+            .collect::<std::result::Result<_, convert::Error>>()?,
+        current_holder: convert::billparticipant_wire2ebill(current_holder)?,
         sum: Amount::from_sat(bill.sum),
         maturity_date,
         file_urls: bill.file_urls,
         shared_bill_data: shared_bill.data,
     })
 }
-impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
+impl From<BillInfo> for wire_quotes::BillInfo {
     fn from(bill: BillInfo) -> Self {
-        let maturity_date = bill.maturity_date.to_rfc3339();
         Self {
             id: bill.id,
             drawee: convert::billidentparticipant_ebill2wire(bill.drawee),
@@ -65,7 +60,7 @@ impl From<BillInfo> for bcr_wdc_webapi::quotes::BillInfo {
                 .map(convert::billparticipant_ebill2wire)
                 .collect(),
             sum: bill.sum.to_sat(),
-            maturity_date,
+            maturity_date: bill.maturity_date,
             file_urls: bill.file_urls,
         }
     }
@@ -117,7 +112,7 @@ pub struct LightQuote {
     pub id: Uuid,
     pub status: StatusDiscriminants,
     pub sum: Amount,
-    pub maturity_date: TStamp,
+    pub maturity_date: chrono::NaiveDate,
 }
 
 impl Quote {

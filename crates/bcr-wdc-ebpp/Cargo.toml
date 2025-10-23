@@ -11,7 +11,6 @@ async-trait = { workspace = true}
 axum = { workspace = true, features = ["macros"]}
 bcr-common = {workspace = true}
 bcr-ebill-core = {workspace = true}
-bcr-wdc-ebill-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bdk_core = {workspace = true}
@@ -22,12 +21,13 @@ bip39 = {workspace = true}
 borsh = {workspace = true}
 cashu = {workspace = true}
 cdk-common = {workspace = true}
-cdk-payment-processor = {workspace = true, features = ["fake"]}
+cdk-payment-processor = {workspace = true}
 chrono = {workspace = true}
 config = {workspace = true}
 electrum-client = {version = "0.24"}
 futures = {workspace = true}
 rand = {workspace = true}
+reqwest = { workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true}
 serde_json = { workspace = true}

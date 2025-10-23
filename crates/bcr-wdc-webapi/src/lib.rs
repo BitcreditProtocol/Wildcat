@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 // ----- local modules
-pub mod bill;
 pub mod eiou;
 pub mod exchange;
 pub mod quotes;

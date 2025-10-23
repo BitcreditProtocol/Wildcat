@@ -1,19 +1,20 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::bill as wire_bill;
-use bcr_wdc_ebill_client::{EbillClient, Url};
-use bcr_wdc_webapi::bill::BillId;
+use bcr_common::{client::ebill::Client as EbillClient, core::BillId, wire::bill as wire_bill};
 use bdk_wallet::bitcoin::Amount;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::EBillNode;
+use crate::{
+    error::{Error, Result},
+    service::EBillNode,
+    TStamp,
+};
 
 // ----- end imports
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct EBillClientConfig {
-    base_url: Url,
+    base_url: reqwest::Url,
 }
 
 #[derive(Debug, Clone)]
@@ -27,15 +28,21 @@ impl EBillClient {
 
 #[async_trait]
 impl EBillNode for EBillClient {
-    async fn request_to_pay(&self, bill: &BillId, amount: Amount) -> Result<String> {
+    async fn request_to_pay(
+        &self,
+        bill: &BillId,
+        amount: Amount,
+        deadline: TStamp,
+    ) -> Result<String> {
         tracing::info!(
             "EBillClient: request_to_pay called with bill: {}, amount: {}",
             bill,
             amount
         );
-        let request = bcr_wdc_webapi::bill::RequestToPayBitcreditBillPayload {
+        let request = wire_bill::RequestToPayBitcreditBillPayload {
             bill_id: bill.to_owned(),
             currency: String::from("sat"),
+            deadline,
         };
         self.0
             .request_to_pay_bill(&request)

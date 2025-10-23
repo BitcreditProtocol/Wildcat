@@ -144,10 +144,11 @@ pub mod test_utils {
 
     pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
         let path = DerivationPath::master();
+        let denominations: Vec<u64> = (0..10).into_iter().map(|i| 2u64.pow(i)).collect();
         let set = cdk02::MintKeySet::generate_from_seed(
             secp256k1::global::SECP256K1,
             &[],
-            10,
+            &denominations,
             cdk00::CurrencyUnit::Sat,
             path.clone(),
             None,
@@ -155,6 +156,7 @@ pub mod test_utils {
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
+            amounts: denominations,
             active: true,
             unit: cdk00::CurrencyUnit::Sat,
             valid_from: 0,
@@ -169,11 +171,12 @@ pub mod test_utils {
     pub fn generate_random_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
         let path = DerivationPath::master();
         let mut random_seed = [0u8; 32];
+        let denominations: Vec<u64> = (0..10).into_iter().map(|i| 2u64.pow(i)).collect();
         rand::thread_rng().fill_bytes(&mut random_seed);
         let set = cdk02::MintKeySet::generate_from_seed(
             secp256k1::global::SECP256K1,
             &random_seed,
-            10,
+            &denominations,
             cdk00::CurrencyUnit::Sat,
             path.clone(),
             None,
@@ -182,6 +185,7 @@ pub mod test_utils {
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             active: true,
+            amounts: denominations,
             unit: cdk00::CurrencyUnit::Sat,
             valid_from: 0,
             final_expiry: None,

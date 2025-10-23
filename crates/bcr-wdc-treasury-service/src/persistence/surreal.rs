@@ -12,13 +12,14 @@ use crate::{
     foreign,
 };
 
+// ----- end imports
+
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CreditConnectionConfig {
     pub connection: String,
     pub namespace: String,
     pub database: String,
     pub secrets: String,
-    pub counters: String,
     pub signatures: String,
     pub proofs: String,
 }
@@ -72,11 +73,6 @@ impl std::convert::From<DBEntryPremintSecret> for cashu::PreMintSecrets {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-struct DBEntryCounter {
-    counter: u32,
-}
-
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct DBEntrySignatures {
     request_id: Uuid,
@@ -127,7 +123,6 @@ struct DBEntryBalance {
 pub struct CreditRepository {
     db: Surreal<Any>,
     secrets: String,
-    counters: String,
     signatures: String,
     proofs: String,
 }
@@ -141,23 +136,9 @@ impl CreditRepository {
         Ok(Self {
             db: db_connection,
             secrets: config.secrets,
-            counters: config.counters,
             signatures: config.signatures,
             proofs: config.proofs,
         })
-    }
-
-    async fn next_counter(&self, kid: cashu::Id) -> SurrealResult<DBEntryCounter> {
-        let rid = RecordId::from_table_key(&self.counters, kid.to_string());
-        let val: Option<DBEntryCounter> = self.db.select(rid).await?;
-        Ok(val.unwrap_or_default())
-    }
-    async fn increment_counter(&self, kid: cashu::Id, inc: u32) -> SurrealResult<()> {
-        let rid = RecordId::from_table_key(&self.counters, kid.to_string());
-        let mut val: DBEntryCounter = self.db.select(rid.clone()).await?.unwrap_or_default();
-        val.counter += inc;
-        let _: Option<DBEntryCounter> = self.db.upsert(rid).content(val).await?;
-        Ok(())
     }
 
     async fn store_secrets(&self, entry: DBEntryPremintSecret) -> SurrealResult<()> {
@@ -225,15 +206,6 @@ impl CreditRepository {
 
 #[async_trait]
 impl credit::Repository for CreditRepository {
-    async fn next_counter(&self, kid: cashu::Id) -> Result<u32> {
-        let entry = self.next_counter(kid).await.map_err(Error::DB)?;
-        Ok(entry.counter)
-    }
-    async fn increment_counter(&self, kid: cashu::Id, inc: u32) -> Result<()> {
-        self.increment_counter(kid, inc).await.map_err(Error::DB)?;
-        Ok(())
-    }
-
     async fn store_secrets(&self, request_id: Uuid, premint: cashu::PreMintSecrets) -> Result<()> {
         let cashu::PreMintSecrets { keyset_id, secrets } = premint;
         let secrets: Vec<DBEntryPremint> =
@@ -503,9 +475,9 @@ mod tests {
     use crate::debit::Repository;
 
     use super::*;
+    use bcr_common::core_tests;
     use bcr_wdc_utils::keys::test_utils as keys_utils;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use bcr_wdc_webapi::test_utils::random_bill_id;
 
     async fn init_cred_mem_db() -> CreditRepository {
         let sdb = Surreal::<Any>::init();
@@ -515,33 +487,9 @@ mod tests {
         CreditRepository {
             db: sdb,
             secrets: "secrets".to_string(),
-            counters: "counters".to_string(),
             signatures: "signatures".to_string(),
             proofs: "proofs".to_string(),
         }
-    }
-
-    #[tokio::test]
-    async fn next_counter_newkeyset() {
-        let db = init_cred_mem_db().await;
-        let kid = keys_utils::generate_random_keysetid();
-        let c = db.next_counter(kid).await.expect("next_counter failed");
-        assert_eq!(c.counter, 0);
-    }
-
-    #[tokio::test]
-    async fn next_counter_existingkeyset() {
-        let db = init_cred_mem_db().await;
-        let kid = keys_utils::generate_random_keysetid();
-        let rid = RecordId::from_table_key(&db.counters, kid.to_string());
-        let _resp: Option<DBEntryCounter> = db
-            .db
-            .insert(rid)
-            .content(DBEntryCounter { counter: 42 })
-            .await
-            .expect("insert failed");
-        let c = db.next_counter(kid).await.expect("next_counter failed");
-        assert_eq!(c.counter, 42);
     }
 
     #[tokio::test]
@@ -617,7 +565,7 @@ mod tests {
 
         let quote = debit::MintQuote {
             qid: Uuid::new_v4().to_string(),
-            ebill_id: random_bill_id(),
+            ebill_id: core_tests::random_bill_id(),
         };
         db.store_quote(quote.clone()).await.unwrap();
 

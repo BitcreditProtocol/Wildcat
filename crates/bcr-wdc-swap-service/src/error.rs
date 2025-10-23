@@ -16,7 +16,7 @@ pub enum Error {
     #[error("Proof Repository error: {0}")]
     ProofRepository(anyhow::Error),
     #[error("Keyset Client error: {0}")]
-    KeysClient(bcr_common::KeysError),
+    KeysClient(bcr_common::client::keys::Error),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]

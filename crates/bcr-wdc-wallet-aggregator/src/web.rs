@@ -3,7 +3,7 @@ use std::collections::HashSet;
 // ----- extra library imports
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
-use bcr_common::{KeysClient, KeysError};
+use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
 use cashu::{
     nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut06 as cdk06, nut07 as cdk07,
     nut09 as cdk09, MintVersion,

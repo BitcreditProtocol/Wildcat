@@ -1,24 +1,23 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_common::{
-    core_tests,
-    wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
-};
+use bcr_common::{core::BillId, core_tests, wire::quotes as wire_quotes, wire_tests};
 use bcr_ebill_core::{
-    bill::BillId,
+    address::Address,
     blockchain::bill::{
         block::BillIssueBlockData, create_bill_to_share_with_external_party, BillBlockchain,
     },
+    city::City,
+    country::Country,
+    date::Date,
     util::BcrKeys,
-    NodeId, PublicKey,
 };
 use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
 use bitcoin::{self as btc, secp256k1 as secp, Amount};
 use chrono::NaiveTime;
 use rand::Rng;
 // ----- local imports
-use crate::quotes::{EnquireRequest, SharedBill};
+
 // ----- end imports
 
 // returns a random `EnquireRequest` with the bill's holder signing keys
@@ -26,55 +25,51 @@ pub fn generate_random_bill_enquire_request(
     receiver_pk: btc::PublicKey,
     payee_kp: Option<secp::Keypair>,
     amount: Option<btc::Amount>,
-) -> (crate::quotes::EnquireRequest, secp::Keypair) {
+) -> (wire_quotes::EnquireRequest, secp::Keypair) {
     let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key())
         .expect("valid key");
     let bill_id = BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
-
-    let (_, drawee) = random_identity_public_data();
-    let (drawer_key_pair, drawer) = random_identity_public_data();
+    let (_, drawee) = wire_tests::random_identity_public_data();
+    let (drawer_key_pair, drawer) = wire_tests::random_identity_public_data();
     let (signing_key, payee) = match payee_kp {
         Some(kp) => {
-            let mut payee = random_identity_public_data().1;
+            let mut payee = wire_tests::random_identity_public_data().1;
             payee.node_id = core_tests::node_id_from_pub_key(kp.public_key());
             (kp, payee)
         }
-        None => random_identity_public_data(),
+        None => wire_tests::random_identity_public_data(),
     };
     let default_amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
     let amount = amount.unwrap_or(default_amount);
-
     let core_drawer: bcr_ebill_core::contact::BillIdentParticipant =
-        convert::billidentparticipant_wire2ebill(drawer);
+        convert::billidentparticipant_wire2ebill(drawer).unwrap();
     let core_drawee: bcr_ebill_core::contact::BillIdentParticipant =
-        convert::billidentparticipant_wire2ebill(drawee);
+        convert::billidentparticipant_wire2ebill(drawee).unwrap();
     let core_payee: bcr_ebill_core::contact::BillIdentParticipant =
-        convert::billidentparticipant_wire2ebill(payee);
-
+        convert::billidentparticipant_wire2ebill(payee).unwrap();
     let now = chrono::Utc::now().timestamp() as u64;
     let bill_chain = BillBlockchain::new(
         &BillIssueBlockData {
             id: bill_id.clone(),
-            country_of_issuing: "AT".to_string(),
-            city_of_issuing: "Vienna".to_string(),
+            country_of_issuing: Country::AT,
+            city_of_issuing: City::new("Vienna").unwrap(),
             drawee: core_drawee.into(),
             drawer: core_drawer.into(),
             payee: bcr_ebill_core::contact::BillParticipant::Ident(core_payee).into(),
             currency: "sat".to_string(),
             sum: amount.to_sat(),
-            maturity_date: random_datetime(),
-            issue_date: random_datetime(),
-            country_of_payment: "AT".to_string(),
-            city_of_payment: "Vienna".to_string(),
-            language: "en".to_string(),
+            maturity_date: random_date(),
+            issue_date: random_date(),
+            country_of_payment: Country::AT,
+            city_of_payment: City::new("Vienna").unwrap(),
             files: vec![],
             signatory: None,
             signing_timestamp: now,
             signing_address: bcr_ebill_core::PostalAddress {
-                country: "AT".to_string(),
-                city: "Vienna".to_string(),
+                country: Country::AT,
+                city: City::new("Vienna").unwrap(),
                 zip: None,
-                address: "Address".to_string(),
+                address: Address::new("Address").unwrap(),
             },
         },
         BcrKeys::from_private_key(&drawer_key_pair.secret_key()).expect("valid key"),
@@ -95,10 +90,8 @@ pub fn generate_random_bill_enquire_request(
         &[],
     )
     .expect("can create sharable bill");
-
-    let shared_bill: SharedBill = bill_to_share.into();
-
-    let request = EnquireRequest {
+    let shared_bill: wire_quotes::SharedBill = convert::sharedbill_ebill2wire(bill_to_share);
+    let request = wire_quotes::EnquireRequest {
         content: shared_bill,
         minting_pubkey: receiver_pk.inner.into(),
     };
@@ -116,21 +109,7 @@ pub fn holder_key_pair() -> secp::Keypair {
     )
 }
 
-pub fn random_bill_id() -> BillId {
-    let keypair = keys_test::generate_random_keypair();
-    BillId::new(keypair.public_key(), btc::Network::Testnet)
-}
-
-pub fn random_node_id() -> NodeId {
-    let keypair = keys_test::generate_random_keypair();
-    NodeId::new(keypair.public_key(), btc::Network::Testnet)
-}
-
-pub fn node_id_from_pub_key(pub_key: PublicKey) -> NodeId {
-    NodeId::new(pub_key, btc::Network::Testnet)
-}
-
-pub fn random_datetime() -> String {
+pub fn random_date() -> Date {
     let start = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
         .expect("naivedate")
         .and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("NaiveTime"))
@@ -138,146 +117,5 @@ pub fn random_datetime() -> String {
     let mut rng = rand::thread_rng();
     let days = chrono::Duration::days(rng.gen_range(0..365));
     let random_date = start + days;
-    random_date.to_rfc3339()
-}
-
-pub fn random_identity_public_data() -> (secp::Keypair, wire_bill::BillIdentParticipant) {
-    let keypair = keys_test::generate_random_keypair();
-    let sample = [
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Person,
-            email: Some(String::from("Carissa@kemp.com")),
-            name: String::from("Carissa Kemp"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Austria"),
-                city: String::from("Vorarlberg"),
-                zip: Some(String::from("5196")),
-                address: String::from("Auf der Stift 17c"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Person,
-            email: Some(String::from("alana@carrillo.com")),
-            name: String::from("Alana Carrillo"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Spain"),
-                city: String::from("Madrid"),
-                zip: Some(String::from("81015")),
-                address: String::from("Paseo José Emilio Ruíz 69"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Person,
-            email: Some(String::from("geremia@pisani.com")),
-            name: String::from("Geremia Pisani"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Italy"),
-                city: String::from("Firenze"),
-                zip: Some(String::from("50141")),
-                address: String::from("Piazza Principale Umberto 148"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Person,
-            email: Some(String::from("andreas@koenig.com")),
-            name: String::from("Andreas Koenig"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Austria"),
-                city: String::from("Lorberhof"),
-                zip: Some(String::from("9556")),
-                address: String::from("Haiden 96"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("logistilla@fournier.com")),
-            name: String::from("Logistilla Fournier"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("France"),
-                city: String::from("Toulous"),
-                zip: Some(String::from("31000")),
-                address: String::from("25, rou Pierre de Coubertin"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("moonlimited@ltd.com")),
-            name: String::from("Moon Limited"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("USA"),
-                city: String::from("New York"),
-                zip: Some(String::from("86659-2593")),
-                address: String::from("3443 Joanny Bypass"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("blanco@spa.com")),
-            name: String::from("Blanco y Asoc."),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Argentina"),
-                city: String::from("Puerto Clara"),
-                zip: Some(String::from("38074")),
-                address: String::from("Isidora 96 0 7"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("alexanderurner@grimm.com")),
-            name: String::from("Grimm GmbH"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Austria"),
-                city: String::from("Perg"),
-                zip: Some(String::from("3512")),
-                address: String::from("Barthring 342"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("antoniosegovia@santiago.com")),
-            name: String::from("Empresa Santiago"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Spain"),
-                city: String::from("Vall Juarez"),
-                zip: Some(String::from("88191")),
-                address: String::from("Avinguida José Antonio, 20"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-        wire_bill::BillIdentParticipant {
-            t: wire_contact::ContactType::Company,
-            email: Some(String::from("santoro_group@spa.com")),
-            name: String::from("Santoro Group"),
-            node_id: core_tests::node_id_from_pub_key(keypair.public_key()),
-            postal_address: wire_identity::PostalAddress {
-                country: String::from("Italy"),
-                city: String::from("Prunetta"),
-                zip: Some(String::from("51020")),
-                address: String::from("Corso Vittorio Emanuele, 90"),
-            },
-            nostr_relays: vec![String::from("")],
-        },
-    ];
-
-    let mut rng = rand::thread_rng();
-    let random_index = rand::Rng::gen_range(&mut rng, 0..sample.len());
-    let random_identity = sample[random_index].clone();
-    (keypair, random_identity)
+    Date::new(random_date.date_naive().to_string()).unwrap()
 }

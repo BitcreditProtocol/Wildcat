@@ -6,14 +6,13 @@ use std::{
 // ----- extra library imports
 use async_trait::async_trait;
 use cashu::MintQuoteState;
-use uuid::Uuid;
+use cdk_common::payment::PaymentIdentifier;
 // ----- local imports
-use crate::onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor};
-use crate::payment::IncomingRequest;
-use crate::service::PaymentRepository;
 use crate::{
     error::{Error, Result},
-    payment::OutgoingRequest,
+    onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor},
+    payment::{ForeignPayment, IncomingRequest, OutgoingRequest},
+    service::PaymentRepository,
 };
 
 // ----- end imports
@@ -40,24 +39,24 @@ impl PrivateKeysRepository for InMemoryKeys {
 
 #[allow(dead_code)]
 pub struct InMemoryPaymentRepo {
-    incomings: Arc<Mutex<HashMap<Uuid, IncomingRequest>>>,
-    outgoings: Arc<Mutex<HashMap<Uuid, OutgoingRequest>>>,
-    foreign: Arc<Mutex<Vec<(Uuid, String)>>>,
+    incomings: Arc<Mutex<HashMap<PaymentIdentifier, IncomingRequest>>>,
+    outgoings: Arc<Mutex<HashMap<PaymentIdentifier, OutgoingRequest>>>,
+    foreign: Arc<Mutex<Vec<(PaymentIdentifier, ForeignPayment)>>>,
 }
 
 #[async_trait]
 impl PaymentRepository for InMemoryPaymentRepo {
-    async fn load_incoming(&self, reqid: Uuid) -> Result<IncomingRequest> {
+    async fn load_incoming(&self, reqid: &PaymentIdentifier) -> Result<IncomingRequest> {
         let locked = self.incomings.lock().expect("load_incoming");
-        if let Some(req) = locked.get(&reqid) {
+        if let Some(req) = locked.get(reqid) {
             Ok(req.clone())
         } else {
-            Err(Error::PaymentRequestNotFound(reqid))
+            Err(Error::PaymentRequestNotFound(reqid.clone()))
         }
     }
     async fn store_incoming(&self, req: IncomingRequest) -> Result<()> {
         let mut locked = self.incomings.lock().expect("store_incoming");
-        locked.insert(req.reqid, req);
+        locked.insert(req.reqid.clone(), req);
         Ok(())
     }
     async fn update_incoming(&self, req: IncomingRequest) -> Result<()> {
@@ -70,18 +69,18 @@ impl PaymentRepository for InMemoryPaymentRepo {
         }
     }
 
-    async fn load_outgoing(&self, reqid: Uuid) -> Result<OutgoingRequest> {
+    async fn load_outgoing(&self, reqid: &PaymentIdentifier) -> Result<OutgoingRequest> {
         let locked = self.outgoings.lock().expect("load_outgoing");
-        if let Some(req) = locked.get(&reqid) {
+        if let Some(req) = locked.get(reqid) {
             Ok(req.clone())
         } else {
-            Err(Error::PaymentRequestNotFound(reqid))
+            Err(Error::PaymentRequestNotFound(reqid.clone()))
         }
     }
 
     async fn store_outgoing(&self, req: OutgoingRequest) -> Result<()> {
         let mut locked = self.outgoings.lock().expect("store_outgoing");
-        locked.insert(req.reqid, req);
+        locked.insert(req.reqid.clone(), req);
         Ok(())
     }
 
@@ -112,27 +111,30 @@ impl PaymentRepository for InMemoryPaymentRepo {
         Ok(values)
     }
 
-    async fn store_foreign(&self, reqid: Uuid, nonce: String) -> Result<()> {
+    async fn store_foreign(&self, payment: ForeignPayment) -> Result<()> {
         let mut locked = self.foreign.lock().expect("store_foreign");
-        locked.push((reqid, nonce));
+        locked.push((payment.reqid.clone(), payment));
         Ok(())
     }
-    async fn check_foreign_nonce(&self, nonce: &str) -> Result<bool> {
+    async fn check_foreign_nonce(&self, nonce: &str) -> Result<Option<ForeignPayment>> {
         let locked = self.foreign.lock().expect("check_foreign_nonce");
-        for (_, stored_nonce) in locked.iter() {
-            if stored_nonce == nonce {
-                return Ok(true);
+        for (_, foreign) in locked.iter() {
+            if foreign.nonce == nonce {
+                return Ok(Some(foreign.clone()));
             }
         }
-        Ok(false)
+        Ok(None)
     }
-    async fn check_foreign_reqid(&self, reqid: Uuid) -> Result<bool> {
+    async fn check_foreign_reqid(
+        &self,
+        reqid: &PaymentIdentifier,
+    ) -> Result<Option<ForeignPayment>> {
         let locked = self.foreign.lock().expect("check_foreign_reqid");
-        for (stored_reqid, _) in locked.iter() {
-            if *stored_reqid == reqid {
-                return Ok(true);
+        for (stored_reqid, foreign) in locked.iter() {
+            if *stored_reqid == *reqid {
+                return Ok(Some(foreign.clone()));
             }
         }
-        Ok(false)
+        Ok(None)
     }
 }

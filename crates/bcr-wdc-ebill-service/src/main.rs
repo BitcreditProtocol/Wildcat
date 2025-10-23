@@ -1,9 +1,9 @@
 // ----- standard library imports
-use bcr_ebill_api::{MintConfig, NostrConfig, PaymentConfig};
+use bcr_common::core::NodeId;
+use bcr_ebill_api::{CourtConfig, DevModeConfig, MintConfig, NostrConfig, PaymentConfig};
 use bcr_ebill_transport::{
     chain_keys::ChainKeyService, create_nostr_clients, create_nostr_consumer,
 };
-use bcr_wdc_webapi::bill::NodeId;
 use std::str::FromStr;
 // ----- extra library imports
 use tokio::signal;
@@ -45,6 +45,12 @@ async fn main() {
 
     // create bcr_ebill_api config
     let api_config = bcr_ebill_api::Config {
+        court_config: CourtConfig {
+            default_url: maincfg.appcfg.court_config.default_url.clone(),
+        },
+        dev_mode_config: DevModeConfig {
+            on: maincfg.appcfg.dev_mode_config.on,
+        },
         bitcoin_network: maincfg.appcfg.bitcoin_network.clone(),
         esplora_base_url: maincfg.appcfg.esplora_base_url.clone(),
         nostr_config: NostrConfig {

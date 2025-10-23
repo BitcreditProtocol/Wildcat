@@ -2,6 +2,7 @@
 use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::core::signature::serialize_n_schnorr_sign_borsh_msg;
 use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
 use cdk::wallet::MintConnector;
@@ -16,12 +17,12 @@ use crate::{
 
 ///--------------------------- KeysCl
 pub struct CrsatKeysClient {
-    keys: bcr_common::KeysClient,
+    keys: bcr_common::client::keys::Client,
 }
 
 impl CrsatKeysClient {
     pub fn new(url: reqwest::Url) -> Self {
-        let keys = bcr_common::KeysClient::new(url);
+        let keys = bcr_common::client::keys::Client::new(url);
         Self { keys }
     }
 }
@@ -131,14 +132,14 @@ impl proof::KeysClient for SatKeysClient {
             .iter()
             .fold(cashu::Amount::ZERO, |acc, b| acc + b.amount);
         let nonce: [u8; 16] = rand::random();
-        let message = web_exchange::RequestToMintFromForeignCashPayload {
+        let message = web_exchange::RequestToMintFromForeigneCashPayload {
             foreign_amount_sat: total.into(),
             nonce: nonce.as_hex().to_string(),
         };
         let kp = bitcoin::key::Keypair::new(secp256k1::global::SECP256K1, &mut rand::thread_rng());
         let pk = cashu::PublicKey::from(kp.public_key());
-        let payload = bitcoin::base64::encode(borsh::to_vec(&message)?);
-        let signature = bcr_common::core::signature::sign_with_key(&message, &self.signing_keys)?;
+        let (payload, signature) =
+            serialize_n_schnorr_sign_borsh_msg(&message, &self.signing_keys)?;
         let description = serde_json::to_string(&web_exchange::RequestToMintFromForeigneCash {
             payload,
             signature,

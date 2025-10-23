@@ -1,0 +1,6 @@
+[submodule "crates/bcr-common"]
+	path = bcr-common
+	url = https://github.com/BitcreditProtocol/bcr-common.git
+[submodule "bcr-common"]
+	path = bcr-common
+	url = https://github.com/BitcreditProtocol/bcr-common.git

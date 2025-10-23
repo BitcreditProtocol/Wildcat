@@ -18,9 +18,9 @@ pub enum Error {
     #[error("CDK Client error: {0}")]
     Cdk(#[from] CDKError),
     #[error("Keyset Client: {0}")]
-    Keys(#[from] bcr_common::KeysError),
+    Keys(#[from] bcr_common::client::keys::Error),
     #[error("Swap Client: {0}")]
-    Swap(#[from] bcr_common::SwapError),
+    Swap(#[from] bcr_common::client::swap::Error),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] TreasuryClientError),
     #[error("EBPP Client error: {0}")]
@@ -49,10 +49,10 @@ impl axum::response::IntoResponse for Error {
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
-            Error::Keys(bcr_common::KeysError::InvalidRequest) => {
+            Error::Keys(bcr_common::client::keys::Error::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
             }
-            Error::Keys(bcr_common::KeysError::ResourceNotFound(kid)) => {
+            Error::Keys(bcr_common::client::keys::Error::ResourceNotFound(kid)) => {
                 (StatusCode::NOT_FOUND, format!("keyset Id {kid} not found"))
             }
             Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

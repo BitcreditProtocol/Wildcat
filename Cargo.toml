@@ -9,11 +9,11 @@ resolver = "2"
 members = [
     "crates/bcr-wdc-balance-collector",
     "crates/bcr-wdc-e2e-tests",
-    "crates/bcr-wdc-ebill-service", "crates/bcr-wdc-ebill-client",
+    "crates/bcr-wdc-ebill-service",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
     "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
     "crates/bcr-wdc-key-service",
-    "crates/bcr-wdc-quote-service", "crates/bcr-wdc-quote-client",
+    "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-swap-service",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
     "crates/bcr-wdc-utils",
@@ -26,17 +26,15 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.2.1"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", default-features=false, features=['v11'], rev = "0ab1b1e98ad83c9a04318e05a2eda18b10c01eb0"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
-bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
-bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.5"}
-bcr-wdc-ebill-client = {path = "./crates/bcr-wdc-ebill-client"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.5.0"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "0ab1b1e98ad83c9a04318e05a2eda18b10c01eb0"}
+bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
+bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
+bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
 bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
-bcr-wdc-quote-client = {path = "./crates/bcr-wdc-quote-client"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
@@ -49,16 +47,17 @@ bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
-cashu = {version = "0.11", default-features = false}
-cdk = {version = "0.11"}
-cdk-common = {version = "0.11"}
-cdk-payment-processor = {version = "0.11", default-features = false}
-cdk-redb = {version = "0.11"}
+cashu = {version = "0.13", default-features = false}
+cdk = {version = "0.13"}
+cdk-common = {version = "0.13"}
+cdk-payment-processor = {version = "0.13", default-features = false}
+cdk-redb = {version = "0.13"}
 chrono = {version = "0.4"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
 mockall = {version = "0.13"}
+nostr = {version = "0.43"}
 rand = {version = "0.8"}
 reqwest = {version = "0.12"}
 secp256k1 = {version = "0.29"}
@@ -77,3 +76,7 @@ url = {version = "2.5.4"}
 utoipa = {version = "5"}
 utoipa-swagger-ui = {version = "9"}
 uuid = {version = "1"}
+
+# due to https://github.com/rust-lang/cargo/issues/5478 we need to use a different source
+[patch."https://github.com/BitcreditProtocol/bcr-common.git"]
+bcr-common = {path = "./bcr-common"}

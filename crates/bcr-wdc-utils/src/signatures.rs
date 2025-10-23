@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, Amount};
+use cashu::Amount;
 use itertools::Itertools;
 use thiserror::Error;
 // ----- local imports
@@ -18,7 +18,7 @@ pub enum ChecksError {
     NonUnique,
 }
 
-pub fn basic_blinds_checks(blinds: &[cdk00::BlindedMessage]) -> ChecksResult<()> {
+pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
     // 1. no empty blinds
     if blinds.is_empty() {
         return Err(ChecksError::Empty);
@@ -35,8 +35,7 @@ pub fn basic_blinds_checks(blinds: &[cdk00::BlindedMessage]) -> ChecksResult<()>
     }
     Ok(())
 }
-
-pub fn basic_proofs_checks(proofs: &[cdk00::Proof]) -> ChecksResult<()> {
+pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     // 1. no empty proofs
     if proofs.is_empty() {
         return Err(ChecksError::Empty);
@@ -60,8 +59,8 @@ pub mod test_utils {
     use crate::keys::test_utils::{generate_blind, publics};
     use cashu::{dhke, secret, Id};
 
-    pub fn generate_proofs(keyset: &cdk02::MintKeySet, amounts: &[Amount]) -> Vec<cdk00::Proof> {
-        let mut proofs: Vec<cdk00::Proof> = Vec::new();
+    pub fn generate_proofs(keyset: &cashu::MintKeySet, amounts: &[Amount]) -> Vec<cashu::Proof> {
+        let mut proofs: Vec<cashu::Proof> = Vec::new();
         for amount in amounts {
             let keypair = keyset.keys.get(amount).expect("keys for amount");
             let secret = secret::Secret::new(rand::random::<u64>().to_string());
@@ -69,7 +68,7 @@ pub mod test_utils {
                 dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
             let c_ = dhke::sign_message(&keypair.secret_key, &b_).expect("cdk_dhke::sign_message");
             let c = dhke::unblind_message(&c_, &r, &keypair.public_key).expect("unblind_message");
-            proofs.push(cdk00::Proof::new(*amount, keyset.id, secret, c));
+            proofs.push(cashu::Proof::new(*amount, keyset.id, secret, c));
         }
         proofs
     }
@@ -77,8 +76,8 @@ pub mod test_utils {
     pub fn generate_blinds(
         id: Id,
         amounts: &[Amount],
-    ) -> Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> {
-        let mut blinds: Vec<(cdk00::BlindedMessage, secret::Secret, cdk01::SecretKey)> = Vec::new();
+    ) -> Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> {
+        let mut blinds: Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> = Vec::new();
         for amount in amounts {
             blinds.push(generate_blind(id, *amount));
         }
@@ -86,12 +85,12 @@ pub mod test_utils {
     }
 
     pub fn generate_signatures(
-        keyset: &cdk02::MintKeySet,
+        keyset: &cashu::MintKeySet,
         amounts: &[Amount],
-    ) -> Vec<cdk00::BlindSignature> {
-        let mut signatures: Vec<cdk00::BlindSignature> = Vec::new();
+    ) -> Vec<cashu::BlindSignature> {
+        let mut signatures: Vec<cashu::BlindSignature> = Vec::new();
         for amount in amounts {
-            signatures.push(cdk00::BlindSignature {
+            signatures.push(cashu::BlindSignature {
                 keyset_id: keyset.id,
                 amount: *amount,
                 c: publics()[0],
@@ -102,8 +101,8 @@ pub mod test_utils {
     }
 
     pub fn verify_signatures_data(
-        keyset: &cdk02::MintKeySet,
-        signatures: impl std::iter::IntoIterator<Item = (cdk00::BlindedMessage, cdk00::BlindSignature)>,
+        keyset: &cashu::MintKeySet,
+        signatures: impl std::iter::IntoIterator<Item = (cashu::BlindedMessage, cashu::BlindSignature)>,
     ) -> bool {
         for (msg, sig) in signatures.into_iter() {
             if msg.keyset_id != keyset.id || sig.keyset_id != keyset.id {
@@ -137,7 +136,7 @@ pub fn unblind_signatures(
     signatures: impl Iterator<Item = cashu::BlindSignature>,
     keys: &cashu::KeySet,
 ) -> UnblindResult<Vec<cashu::Proof>> {
-    let mut proofs: Vec<cdk00::Proof> = Vec::with_capacity(signatures.size_hint().0);
+    let mut proofs: Vec<cashu::Proof> = Vec::with_capacity(signatures.size_hint().0);
     for (signature, premint) in signatures.zip(premints) {
         if signature.keyset_id != keys.id {
             return Err(UnblindError::Keyset(format!(
@@ -161,7 +160,7 @@ pub fn unblind_signatures(
             UnblindError::Amount(format!("no key for amount {}", signature.amount))
         })?;
         let c = cashu::dhke::unblind_message(&signature.c, &premint.r, &key)?;
-        let mut proof = cdk00::Proof::new(signature.amount, keys.id, premint.secret.clone(), c);
+        let mut proof = cashu::Proof::new(signature.amount, keys.id, premint.secret.clone(), c);
         if let Some(dleq) = signature.dleq {
             proof.dleq = Some(cashu::ProofDleq::new(dleq.e, dleq.s, premint.r));
         }

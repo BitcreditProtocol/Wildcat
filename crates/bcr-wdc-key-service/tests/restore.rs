@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::KeysClient;
+use bcr_common::client::keys::Client as KeysClient;
 use bcr_wdc_utils::keys::test_utils as keys_test;
 use cashu::{nut00 as cdk00, Amount};
 // ----- local imports

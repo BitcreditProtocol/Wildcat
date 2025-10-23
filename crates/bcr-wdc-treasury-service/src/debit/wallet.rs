@@ -31,7 +31,7 @@ pub struct CDKWallet {
 }
 
 impl CDKWallet {
-    pub async fn new(cfg: CDKWalletConfig, seed: &[u8]) -> AnyResult<Self> {
+    pub async fn new(cfg: CDKWalletConfig, seed: [u8; 64]) -> AnyResult<Self> {
         let storage = cdk_redb::WalletRedbDatabase::new(&cfg.storage)?;
         let arced_storage = std::sync::Arc::new(storage);
         let wlt = cdk::Wallet::new(
@@ -44,7 +44,7 @@ impl CDKWallet {
         let mint_url = MintUrl::from_str(&cfg.mint_url)?;
         let client = cdk::wallet::HttpClient::new(mint_url, None);
         // make the wallet aware of the mint info
-        wlt.get_mint_info().await.map_err(Error::CDKWallet)?;
+        wlt.fetch_mint_info().await.map_err(Error::CDKWallet)?;
         Ok(Self { wlt, client })
     }
 }
@@ -75,7 +75,7 @@ impl Wallet for CDKWallet {
     }
 
     async fn keysets_info(&self, kids: &[cdk02::Id]) -> Result<Vec<cdk02::KeySetInfo>> {
-        let mint_infos = self.wlt.get_active_mint_keysets().await?;
+        let mint_infos = self.wlt.get_mint_keysets().await?;
         let mut infos: Vec<cdk02::KeySetInfo> = Vec::with_capacity(kids.len());
         for kid in kids {
             if let Some(info) = mint_infos.iter().find(|info| info.id == *kid) {
