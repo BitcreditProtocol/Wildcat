@@ -2,9 +2,8 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_wdc_ebill_client::Error as EbillClientError;
 use bcr_wdc_treasury_client::Error as WalletError;
-use bcr_wdc_utils::keys::{SchnorrBorshMsgError, SignWithKeysError};
+use bcr_wdc_utils::keys::SignWithKeysError;
 use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
@@ -14,10 +13,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
-    #[error("Secp256k1 {0}")]
-    Secp256k1(#[from] bitcoin::secp256k1::Error),
-    #[error("schnorr borsh message {0}")]
-    SchnorrBorshMsg(#[from] SchnorrBorshMsgError),
+    #[error("bcr_common::borsh {0}")]
+    BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
+    #[error("convert {0}")]
+    Convert(#[from] bcr_wdc_utils::convert::Error),
     #[error("Keys error {0}")]
     SignWithKeys(#[from] SignWithKeysError),
     #[error("Error in parsing datetime: {0}")]
@@ -25,11 +24,11 @@ pub enum Error {
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
     #[error("keys handler error {0}")]
-    KeysHandler(bcr_common::KeysError),
+    KeysHandler(bcr_common::client::keys::Error),
     #[error("wallet error {0}")]
     Wallet(WalletError),
     #[error("ebill client error {0}")]
-    EbillClient(EbillClientError),
+    EbillClient(#[from] bcr_common::client::ebill::Error),
 
     #[error("quote {0} incorrect status, expected {1}, found {2}")]
     InvalidQuoteStatus(
@@ -41,6 +40,8 @@ pub enum Error {
     UnknownQuoteID(uuid::Uuid),
     #[error("Invalid amount: {0}")]
     InvalidAmount(bitcoin::Amount),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
     #[error("Invalid blindedMessages: {0}")]
     InvalidKeysetId(cdk02::Id),
     #[error("Internal server error: {0}")]
@@ -51,10 +52,13 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::Convert(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()),
             Error::InternalServer(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             Error::InvalidKeysetId(_) => {
                 (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID"))
             }
+
+            Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, String::from("Invalid input")),
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
             Error::UnknownQuoteID(_) => (StatusCode::NOT_FOUND, String::from("Quote ID not found")),
             Error::InvalidQuoteStatus(_, _, _) => {
@@ -72,8 +76,7 @@ impl axum::response::IntoResponse for Error {
             Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Secp256k1(_) => (
+            Error::BcrCommonBorsh(_) => (
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid signature or public key"),
             ),

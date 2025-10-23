@@ -31,6 +31,8 @@ tracing-log = {workspace = true}
 tracing-subscriber = {workspace = true}
 
 [dev-dependencies]
+bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
+bcr-wdc-swap-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-utils = { workspace = true, features = ["test-utils"] }
 bip39 = {workspace = true}
 mockall.workspace = true

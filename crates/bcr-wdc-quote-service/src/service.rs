@@ -2,8 +2,10 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_ebill_core::{bill::BillId, NodeId};
-use bcr_wdc_webapi::quotes::SharedBill;
+use bcr_common::{
+    core::{BillId, NodeId},
+    wire::quotes as wire_quotes,
+};
 use bitcoin::Amount;
 use futures::future::JoinAll;
 use uuid::Uuid;
@@ -69,8 +71,8 @@ pub trait KeysHandler {
 pub trait EBillNode: Sync {
     async fn validate_and_decrypt_shared_bill(
         &self,
-        shared_bill: &SharedBill,
-    ) -> Result<bcr_wdc_webapi::quotes::BillInfo>;
+        shared_bill: &wire_quotes::SharedBill,
+    ) -> Result<wire_quotes::BillInfo>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -115,8 +117,8 @@ impl Service {
 
     pub async fn validate_and_decrypt_shared_bill(
         &self,
-        shared_bill: &SharedBill,
-    ) -> Result<bcr_wdc_webapi::quotes::BillInfo> {
+        shared_bill: &wire_quotes::SharedBill,
+    ) -> Result<wire_quotes::BillInfo> {
         self.ebill
             .validate_and_decrypt_shared_bill(shared_bill)
             .await
@@ -305,7 +307,7 @@ impl Service {
         let maturity_date = quote.bill.maturity_date;
         let kid = self
             .keys_hndlr
-            .get_keyset_with_redemption_date(maturity_date.date_naive())
+            .get_keyset_with_redemption_date(maturity_date)
             .await?;
         let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
         quote.offer(kid, expiration, discounted)?;
@@ -360,96 +362,33 @@ pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super:
 mod tests {
 
     use super::*;
-    use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
-    use bcr_wdc_utils::keys::test_utils as keys_utils;
-    use bcr_wdc_webapi::test_utils::{random_bill_id, random_node_id};
+    use bcr_common::{core_tests, wire_tests};
+    use bcr_ebill_core::contact::BillParticipant;
+    use bcr_wdc_utils::{convert, keys::test_utils as keys_utils};
     use mockall::predicate::*;
-    use rand::{seq::IteratorRandom, Rng};
-
-    fn generate_random_identity() -> bcr_ebill_core::contact::BillIdentParticipant {
-        let identities = vec![
-            BillIdentParticipant {
-                t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: random_node_id(),
-                name: String::from("Alice"),
-                postal_address: bcr_ebill_core::PostalAddress {
-                    country: String::from("USA"),
-                    city: String::from("New York"),
-                    zip: None,
-                    address: String::from("123 Main St"),
-                },
-                email: None,
-                nostr_relays: vec![],
-            },
-            BillIdentParticipant {
-                t: bcr_ebill_core::contact::ContactType::Company,
-                node_id: random_node_id(),
-                name: String::from("Bob Corp"),
-                postal_address: bcr_ebill_core::PostalAddress {
-                    country: String::from("UK"),
-                    city: String::from("London"),
-                    zip: None,
-                    address: String::from("456 High St"),
-                },
-                email: None,
-                nostr_relays: vec![],
-            },
-            BillIdentParticipant {
-                t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: random_node_id(),
-                name: String::from("Charlie"),
-                postal_address: bcr_ebill_core::PostalAddress {
-                    country: String::from("France"),
-                    city: String::from("Paris"),
-                    zip: None,
-                    address: String::from("789 Rue de Paris"),
-                },
-                email: None,
-                nostr_relays: vec![],
-            },
-            BillIdentParticipant {
-                t: bcr_ebill_core::contact::ContactType::Company,
-                node_id: random_node_id(),
-                name: String::from("Dave Ltd"),
-                postal_address: bcr_ebill_core::PostalAddress {
-                    country: String::from("Japan"),
-                    city: String::from("Tokyo"),
-                    zip: None,
-                    address: String::from("101 Shibuya St"),
-                },
-                email: None,
-                nostr_relays: vec![],
-            },
-            BillIdentParticipant {
-                t: bcr_ebill_core::contact::ContactType::Person,
-                node_id: random_node_id(),
-                name: String::from("Eve"),
-                postal_address: bcr_ebill_core::PostalAddress {
-                    country: String::from("Germany"),
-                    city: String::from("Berlin"),
-                    zip: None,
-                    address: String::from("555 Alexanderplatz"),
-                },
-                email: None,
-                nostr_relays: vec![],
-            },
-        ];
-        let mut rng = rand::thread_rng();
-        identities.into_iter().choose(&mut rng).unwrap().clone()
-    }
+    use rand::Rng;
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
-        let holder = generate_random_identity();
+        let holder =
+            convert::billidentparticipant_wire2ebill(wire_tests::random_identity_public_data().1)
+                .unwrap();
         BillInfo {
-            id: random_bill_id(),
-            drawee: generate_random_identity(),
-            drawer: generate_random_identity(),
+            id: core_tests::random_bill_id(),
+            drawee: convert::billidentparticipant_wire2ebill(
+                wire_tests::random_identity_public_data().1,
+            )
+            .unwrap(),
+            drawer: convert::billidentparticipant_wire2ebill(
+                wire_tests::random_identity_public_data().1,
+            )
+            .unwrap(),
             payee: BillParticipant::Ident(holder.clone()),
             current_holder: BillParticipant::Ident(holder),
             endorsees: Default::default(),
             sum: Amount::from_sat(rng.gen_range(1000..100000)),
-            maturity_date: chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)),
+            maturity_date: (chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)))
+                .date_naive(),
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
         }

@@ -16,8 +16,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
-    #[error("bcr_common::signatures {0}")]
-    BcrCommonSignature(#[from] bcr_common::core::signature::Error),
+    #[error("bcr_common::signature::borsh {0}")]
+    BcrBorshSignature(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("borsh {0}")]
     Borsh(#[from] borsh::io::Error),
 
@@ -43,13 +43,13 @@ pub enum Error {
     #[error("schnorr borsh message {0}")]
     SchnorrBorshMsg(#[from] bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("keys client {0}")]
-    KeyClient(#[from] bcr_common::KeysError),
+    KeyClient(#[from] bcr_common::client::keys::Error),
     #[error("clowder client {0}")]
     ClowderClient(#[from] clwdr_client::ClowderClientError),
     #[error("Swap client {0}")]
-    SwapClient(#[from] bcr_common::SwapError),
+    SwapClient(#[from] bcr_common::client::swap::Error),
     #[error("Quote client error {0}")]
-    QuoteClient(#[from] bcr_wdc_quote_client::Error),
+    QuoteClient(#[from] bcr_common::client::quote::Error),
     // internal errors
     #[error("internal sat wallet has not enough funds: requested {0}, available {1}")]
     InsufficientFunds(cdk::Amount, cdk::Amount),
@@ -121,7 +121,7 @@ impl axum::response::IntoResponse for Error {
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Unblind(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BcrCommonSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
     }

@@ -4,7 +4,6 @@ use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use cdk_common::{amount::Error as CDKAmountError, payment::Error as CDKPaymentError};
 use thiserror::Error;
-use uuid::Uuid;
 // ----- local imports
 
 // ----- end imports
@@ -12,6 +11,9 @@ use uuid::Uuid;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("bcr_common::borsh:: {0}")]
+    BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
+
     #[error("schnorr:: {0}")]
     Schnorr(#[from] bdk_wallet::bitcoin::secp256k1::Error),
 
@@ -61,13 +63,13 @@ pub enum Error {
     #[error("bip21::from_str {0}")]
     Bip21Parse(AnyError),
     #[error("ebill client error {0}")]
-    EBillClient(bcr_wdc_ebill_client::Error),
+    EBillClient(#[from] bcr_common::client::ebill::Error),
 
     #[error("onchain wallet storage path error: {0}")]
     OnChainStore(std::path::PathBuf),
 
     #[error("payment request not found {0}")]
-    PaymentRequestNotFound(Uuid),
+    PaymentRequestNotFound(cdk_common::payment::PaymentIdentifier),
     #[error("unknown address {0}")]
     UnknownAddress(bdk_wallet::bitcoin::Address),
     #[error("unknown amount")]
@@ -143,6 +145,8 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
             Error::Borsh(_) => CDKPaymentError::Custom(String::from("internal error")),
 
             Error::Schnorr(_) => CDKPaymentError::Custom(String::from("internal error")),
+
+            Error::BcrCommonBorsh(_) => CDKPaymentError::Custom(String::from("internal error")),
         }
     }
 }

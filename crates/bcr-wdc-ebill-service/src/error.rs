@@ -98,7 +98,9 @@ pub struct ServiceError(bcr_ebill_api::service::Error);
 impl axum::response::IntoResponse for ServiceError {
     fn into_response(self) -> axum::response::Response {
         let response = match self.0 {
-            bcr_ebill_api::service::Error::NoFileForFileUploadId => {
+            bcr_ebill_api::service::Error::NoFileForFileUploadId
+            | bcr_ebill_api::service::Error::Json(_)
+            | bcr_ebill_api::service::Error::InvalidOperation => {
                 (StatusCode::BAD_REQUEST, self.0.to_string()).into_response()
             }
             bcr_ebill_api::service::Error::NotFound => {
@@ -163,17 +165,25 @@ impl axum::response::IntoResponse for ValidationError {
     fn into_response(self) -> axum::response::Response {
         let response = match self.0 {
             bcr_ebill_api::util::ValidationError::RequestAlreadyExpired
+                | bcr_ebill_api::util::ValidationError::InvalidIdentityProofStatus(_)
+                | bcr_ebill_api::util::ValidationError::InvalidUrl
+                | bcr_ebill_api::util::ValidationError::InvalidSignature
+                | bcr_ebill_api::util::ValidationError::InvalidBase58
+                | bcr_ebill_api::util::ValidationError::DeadlineBeforeMinimum
+                | bcr_ebill_api::util::ValidationError::InvalidTimestamp
+                | bcr_ebill_api::util::ValidationError::InvalidCountry
                 | bcr_ebill_api::util::ValidationError::FieldEmpty(_)
+                | bcr_ebill_api::util::ValidationError::FieldInvalid(_)
                 | bcr_ebill_api::util::ValidationError::InvalidSum
                 | bcr_ebill_api::util::ValidationError::InvalidCurrency
                 | bcr_ebill_api::util::ValidationError::InvalidBillId
+                | bcr_ebill_api::util::ValidationError::InvalidBillAction
                 | bcr_ebill_api::util::ValidationError::InvalidNodeId
                 | bcr_ebill_api::util::ValidationError::RequestToMintForBillAndMintAlreadyActive
                 | bcr_ebill_api::util::ValidationError::InvalidMint(_)
                 | bcr_ebill_api::util::ValidationError::InvalidPaymentAddress
                 | bcr_ebill_api::util::ValidationError::InvalidDate
                 | bcr_ebill_api::util::ValidationError::IdentityCantBeAnon
-                | bcr_ebill_api::util::ValidationError::IdentityIsNotBillIssuer
                 | bcr_ebill_api::util::ValidationError::InvalidContact(_)
                 | bcr_ebill_api::util::ValidationError::ContactIsAnonymous(_)
                 | bcr_ebill_api::util::ValidationError::SignerCantBeAnon
@@ -194,8 +204,6 @@ impl axum::response::IntoResponse for ValidationError {
                 | bcr_ebill_api::util::ValidationError::BillAcceptanceExpired
                 | bcr_ebill_api::util::ValidationError::BillWasRejectedToPay
                 | bcr_ebill_api::util::ValidationError::BillPaymentExpired
-                | bcr_ebill_api::util::ValidationError::BillWasRejectedToRecourse
-                | bcr_ebill_api::util::ValidationError::BillRequestToRecourseExpired
                 | bcr_ebill_api::util::ValidationError::BillWasRecoursedToTheEnd
                 | bcr_ebill_api::util::ValidationError::BillWasNotOfferedToSell
                 | bcr_ebill_api::util::ValidationError::BillWasNotRequestedToPay
@@ -228,7 +236,6 @@ impl axum::response::IntoResponse for ValidationError {
                 | bcr_ebill_api::util::ValidationError::SignatoryAlreadySignatory(_)
                 | bcr_ebill_api::util::ValidationError::SignatoryNotInContacts(_)
                 | bcr_ebill_api::util::ValidationError::CantRemoveLastSignatory
-                | bcr_ebill_api::util::ValidationError::DrawerIsNotBillIssuer
                 | bcr_ebill_api::util::ValidationError::CallerMustBeSignatory
                 | bcr_ebill_api::util::ValidationError::CallerIsNotHolder
                 | bcr_ebill_api::util::ValidationError::FileIsEmpty

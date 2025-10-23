@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{KeysClient, KeysError};
+use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
 use bcr_wdc_utils::keys::test_utils as keys_utils;
 // ----- local imports
 

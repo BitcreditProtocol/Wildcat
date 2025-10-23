@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::KeysClient;
+use bcr_common::client::keys::Client as KeysClient;
 // ----- local imports
 
 #[tokio::test]

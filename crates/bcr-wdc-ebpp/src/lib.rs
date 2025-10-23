@@ -23,12 +23,13 @@ mod web;
 
 // ----- end imports
 
+pub type TStamp = chrono::DateTime<chrono::Utc>;
+
 pub type ProdPrivateKeysRepository = persistence::surreal::DBPrivateKeys;
 pub type ProdPaymentRepository = persistence::surreal::DBPayments;
 pub type ProdOnChainElectrumApi = bdk_electrum::electrum_client::Client;
-pub type ProdOnChainWallet = onchain::Wallet<ProdPrivateKeysRepository, ProdOnChainElectrumApi>;
-pub type ProdService =
-    service::Service<ProdOnChainWallet, ProdPaymentRepository, ebill::EBillClient>;
+pub type ProdOnChainWallet = onchain::Wallet<ProdOnChainElectrumApi>;
+pub type ProdService = service::Service;
 
 #[serde_as]
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -68,9 +69,10 @@ impl AppController {
             .expect("private keys repo");
         let electrum_client = bdk_electrum::electrum_client::Client::new(&electrum_url)
             .expect("electrum_client::Client::new");
-        let onchain_wallet = ProdOnChainWallet::new(seed, onchain, key_repo, electrum_client)
-            .await
-            .expect("onchain wallet");
+        let onchain_wallet =
+            ProdOnChainWallet::new(seed, onchain, Box::new(key_repo), electrum_client)
+                .await
+                .expect("onchain wallet");
 
         let payrepo = ProdPaymentRepository::new(payments, onchain_wallet.network())
             .await
@@ -83,9 +85,9 @@ impl AppController {
             .expect("refresh_interval conversion");
 
         let processor = ProdService::new(
-            onchain_wallet,
-            payrepo,
-            ebillnode,
+            Arc::new(onchain_wallet),
+            Arc::new(payrepo),
+            Arc::new(ebillnode),
             refresh_interval,
             treasury_service_public_key.to_x_only_pubkey(),
         )

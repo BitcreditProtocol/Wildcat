@@ -10,12 +10,16 @@ permissions:
   actions: read
 
 env:
-  CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - stable
     steps:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -48,17 +52,10 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - name: Free up disk space
-        run: |
-          echo "Before cleanup:"
-          df -h
-          docker system prune -a -f
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo apt-get clean
-          sudo apt-get autoremove -y
-          echo "After cleanup:"
-          df -h
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -78,14 +75,12 @@ jobs:
       - name: Add rustup components
         run: rustup component add clippy rustfmt
 
-<<<<<<< HEAD
       - name: Activate cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           prefix-key: "wildcat-01"
 
       - name: Check
-<<<<<<< HEAD
         run: cargo check --verbose
 
 
