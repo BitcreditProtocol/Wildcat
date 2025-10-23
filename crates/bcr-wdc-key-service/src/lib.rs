@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{wire::keys as wire_keys, KeysClient};
+use bcr_common::{client::keys::Client as KeysClient, wire::keys as wire_keys};
 use bitcoin::bip32 as btc32;
 use utoipa::OpenApi;
 // ----- local modules

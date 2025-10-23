@@ -2,7 +2,7 @@
 // ----- extra library imports
 use bdk_wallet::bitcoin as btc;
 use cashu::{MeltQuoteState, MintQuoteState};
-use uuid::Uuid;
+use cdk_common::payment::PaymentIdentifier;
 // ----- local imports
 use crate::error::{Error, Result};
 
@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct IncomingRequest {
-    pub reqid: Uuid,
+    pub reqid: PaymentIdentifier,
     pub payment_type: PaymentType,
     pub amount: btc::Amount,
     pub status: MintQuoteState,
@@ -51,24 +51,37 @@ impl std::fmt::Display for IncomingRequest {
 
 #[derive(Debug, Clone)]
 pub struct OutgoingRequest {
-    pub reqid: Uuid,
+    pub reqid: PaymentIdentifier,
     pub recipient: btc::Address,
     pub amount: btc::Amount,
+    pub reserved_fees: btc::Amount,
     pub status: MeltQuoteState,
     pub proof: Option<btc::Txid>,
     pub total_spent: Option<btc::Amount>,
 }
 
 impl OutgoingRequest {
-    pub fn new(reqid: Uuid, uri: bip21::Uri) -> Result<Self> {
+    pub fn new(
+        reqid: PaymentIdentifier,
+        uri: bip21::Uri,
+        reserved_fees: btc::Amount,
+    ) -> Result<Self> {
         let amount = uri.amount.ok_or(Error::UnknownAmount)?;
         Ok(Self {
             reqid,
             recipient: uri.address,
             amount,
+            reserved_fees,
             status: MeltQuoteState::Unpaid,
             proof: None,
             total_spent: None,
         })
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ForeignPayment {
+    pub reqid: PaymentIdentifier,
+    pub nonce: String,
+    pub amount: btc::Amount,
 }

@@ -15,7 +15,7 @@ use bdk_wallet::{
     descriptor::template::Bip84,
     miniscript::{descriptor::KeyMap, Descriptor, DescriptorPublicKey},
     rusqlite::OpenFlags,
-    KeychainKind, SignOptions, TxOrdering,
+    KeychainKind, TxOrdering,
 };
 use futures::future::JoinAll;
 use serde_with::serde_as;
@@ -40,54 +40,33 @@ pub struct WalletConfig {
 }
 
 #[async_trait]
-pub trait PrivateKeysRepository {
+pub trait PrivateKeysRepository: Send + Sync + std::fmt::Debug {
     async fn get_private_keys(&self) -> Result<Vec<SingleSecretKeyDescriptor>>;
     async fn add_key(&self, key: SingleSecretKeyDescriptor) -> Result<()>;
 }
 
 #[derive(Debug)]
-pub struct Wallet<KeyRepo, ElectrumApi> {
+pub struct Wallet<ElectrumApi> {
     main: Arc<Mutex<PersistedBdkWallet>>,
-    // the vector is mutating as keys are added and removed
-    singles: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
-    store_path: std::path::PathBuf,
-    repo: KeyRepo,
-    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
-    // configs
     network: Network,
+    // the vector is mutating as keys are added and removed
+    singles: Box<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
+    store_path: std::path::PathBuf,
+    repo: Box<dyn PrivateKeysRepository>,
+    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     stop_gap: usize,                   // number of unused addresses to stop scanning
     max_confirmation_blocks: usize,    // number of blocks to confirm a transaction
     avg_transaction_size_bytes: usize, // transaction size in bytes used to estimate fees
 }
 
-impl<KeyRepo, ElectrumApi> Wallet<KeyRepo, ElectrumApi> {
+impl<ElectrumApi> Wallet<ElectrumApi> {
     pub fn network(&self) -> Network {
         self.network
     }
 }
 
-impl<KeyRepo, ElectrumApi> std::clone::Clone for Wallet<KeyRepo, ElectrumApi>
+impl<ElectrumApi> Wallet<ElectrumApi>
 where
-    KeyRepo: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            main: self.main.clone(),
-            singles: self.singles.clone(),
-            store_path: self.store_path.clone(),
-            repo: self.repo.clone(),
-            electrum_client: self.electrum_client.clone(),
-            network: self.network,
-            stop_gap: self.stop_gap,
-            max_confirmation_blocks: self.max_confirmation_blocks,
-            avg_transaction_size_bytes: self.avg_transaction_size_bytes,
-        }
-    }
-}
-
-impl<KeyRepo, ElectrumApi> Wallet<KeyRepo, ElectrumApi>
-where
-    KeyRepo: PrivateKeysRepository,
     ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
@@ -97,7 +76,7 @@ where
     pub async fn new(
         seed: &[u8],
         cfg: WalletConfig,
-        repo: KeyRepo,
+        repo: Box<dyn PrivateKeysRepository>,
         api: ElectrumApi,
     ) -> Result<Self> {
         if !cfg.store_path.is_dir() {
@@ -149,7 +128,7 @@ where
 
         Ok(Self {
             main,
-            singles: Arc::new(Mutex::new(singles)),
+            singles: Box::new(Mutex::new(singles)),
             repo,
             store_path: cfg.store_path,
             electrum_client,
@@ -162,9 +141,8 @@ where
 }
 
 #[async_trait]
-impl<KeyRepo, ElectrumApi> OnChainWallet for Wallet<KeyRepo, ElectrumApi>
+impl<ElectrumApi> OnChainWallet for Wallet<ElectrumApi>
 where
-    KeyRepo: PrivateKeysRepository + Sync,
     ElectrumApi: electrum_client::ElectrumApi + Sync + Send + 'static,
 {
     fn generate_new_recipient(&self) -> Result<btc::Address> {
@@ -182,7 +160,7 @@ where
     async fn balance(&self) -> Result<bdk_wallet::Balance> {
         wallets_sync(
             self.main.clone(),
-            self.singles.clone(),
+            &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
@@ -203,7 +181,7 @@ where
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address> {
         wallets_sync(
             self.main.clone(),
-            self.singles.clone(),
+            &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
@@ -240,7 +218,7 @@ where
     async fn get_address_balance(&self, addr: &btc::Address) -> Result<btc::Amount> {
         wallets_sync(
             self.main.clone(),
-            self.singles.clone(),
+            &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
@@ -306,7 +284,7 @@ where
     ) -> Result<(btc::Txid, btc::Amount)> {
         wallets_sync(
             self.main.clone(),
-            self.singles.clone(),
+            &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
@@ -348,7 +326,7 @@ where
     async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool> {
         wallets_sync(
             self.main.clone(),
-            self.singles.clone(),
+            &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
@@ -479,7 +457,7 @@ where
 
 async fn wallets_sync<ElectrumApi>(
     main: Arc<Mutex<PersistedBdkWallet>>,
-    singles: Arc<Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>>,
+    singles: &Mutex<Vec<Arc<Mutex<PersistedBdkWallet>>>>,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
 ) -> Result<()>
 where
@@ -533,15 +511,14 @@ where
             .fee_absolute(max_fee);
         builder.finish().map_err(Error::BDKCreateTx)?
     };
-    let signopt = SignOptions::default();
     let signok = wallet
-        .sign(&mut psbt, signopt.clone())
+        .sign(&mut psbt, bdk_wallet::SignOptions::default())
         .map_err(Error::BDKSigner)?;
     if !signok {
         return Err(Error::BDKSignOpNotOK);
     }
     let finalok = wallet
-        .finalize_psbt(&mut psbt, signopt)
+        .finalize_psbt(&mut psbt, bdk_wallet::SignOptions::default())
         .map_err(Error::BDKSigner)?;
     if !finalok {
         return Err(Error::BDKSignOpNotOK);
@@ -574,15 +551,14 @@ where
             .fee_absolute(max_fee);
         builder.finish().map_err(Error::BDKCreateTx)?
     };
-    let signopt = SignOptions::default();
     let signok = wallet
-        .sign(&mut psbt, signopt.clone())
+        .sign(&mut psbt, bdk_wallet::SignOptions::default())
         .map_err(Error::BDKSigner)?;
     if !signok {
         return Err(Error::BDKSignOpNotOK);
     }
     let finalok = wallet
-        .finalize_psbt(&mut psbt, signopt)
+        .finalize_psbt(&mut psbt, bdk_wallet::SignOptions::default())
         .map_err(Error::BDKSigner)?;
     if !finalok {
         return Err(Error::BDKSignOpNotOK);

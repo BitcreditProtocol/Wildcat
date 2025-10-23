@@ -17,7 +17,6 @@ use crate::{
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryCreditRepository {
-    counters: Arc<Mutex<HashMap<cdk02::Id, u32>>>,
     secrets: Arc<Mutex<HashMap<Uuid, cdk00::PreMintSecrets>>>,
     signatures: Arc<Mutex<HashMap<Uuid, Vec<cdk00::BlindSignature>>>>,
     proofs: Arc<Mutex<HashMap<cdk02::Id, Vec<cdk00::Proof>>>>,
@@ -25,24 +24,6 @@ pub struct InMemoryCreditRepository {
 
 #[async_trait]
 impl credit::Repository for InMemoryCreditRepository {
-    async fn next_counter(&self, kid: cdk02::Id) -> Result<u32> {
-        let val = self
-            .counters
-            .lock()
-            .unwrap()
-            .get(&kid)
-            .copied()
-            .unwrap_or_default();
-        Ok(val)
-    }
-
-    async fn increment_counter(&self, kid: cdk02::Id, inc: u32) -> Result<()> {
-        let mut map = self.counters.lock().unwrap();
-        let val = map.get(&kid).copied().unwrap_or_default() + inc;
-        map.insert(kid, val);
-        Ok(())
-    }
-
     async fn store_secrets(&self, rid: Uuid, premint: cdk00::PreMintSecrets) -> Result<()> {
         self.secrets.lock().unwrap().insert(rid, premint);
         Ok(())

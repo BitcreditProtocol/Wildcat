@@ -8,8 +8,8 @@ use axum::{
 };
 use bcr_ebill_api::{
     external::{
-        bitcoin::BitcoinClient, email::EmailClient, file_storage::FileStorageClient,
-        mint::MintClient,
+        bitcoin::BitcoinClient, court::CourtClient, email::EmailClient,
+        file_storage::FileStorageClient, mint::MintClient,
     },
     service::{
         bill_service::{BillService, BillServiceApi},
@@ -28,7 +28,7 @@ mod web;
 pub struct AppConfig {
     pub ebill_db: ConnectionConfig,
     pub bitcoin_network: String,
-    pub esplora_base_url: String,
+    pub esplora_base_url: url::Url,
     pub nostr_cfg: NostrConfig,
     pub mint_config: MintConfig,
     pub payment_config: PaymentConfig,
@@ -36,30 +36,44 @@ pub struct AppConfig {
     pub job_runner_initial_delay_seconds: u64,
     pub job_runner_check_interval_seconds: u64,
     pub url: url::Url,
+    pub court_config: CourtConfig,
+    pub dev_mode_config: DevModeConfig,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct NostrConfig {
     pub only_known_contacts: bool,
-    pub relays: Vec<String>,
+    pub relays: Vec<url::Url>,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct MintConfig {
-    pub default_mint_url: String,
+    pub default_mint_url: url::Url,
     pub default_mint_node_id: String,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ConnectionConfig {
     pub connection: String,
     pub namespace: String,
     pub database: String,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct PaymentConfig {
     pub num_confirmations_for_payment: usize,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CourtConfig {
+    /// The default court URL
+    pub default_url: url::Url,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct DevModeConfig {
+    /// Whether dev mode is on
+    pub on: bool,
 }
 
 #[derive(Clone, FromRef)]
@@ -77,6 +91,15 @@ impl AppController {
         nostr_clients: Vec<Arc<NostrClient>>,
         db: bcr_ebill_api::DbContext,
     ) -> Self {
+        let email_client = Arc::new(EmailClient::new());
+        let notification_service = create_notification_service(
+            nostr_clients,
+            db.clone(),
+            email_client,
+            cfg.nostr_config.relays.to_owned(),
+        )
+        .await
+        .expect("Failed to create notification service");
         let file_upload_client = Arc::new(FileStorageClient::new());
         let contact_service = Arc::new(ContactService::new(
             db.contact_store.clone(),
@@ -84,21 +107,11 @@ impl AppController {
             file_upload_client.clone(),
             db.identity_store.clone(),
             db.nostr_contact_store.clone(),
+            notification_service.clone(),
             &cfg.clone(),
         ));
 
-        let email_client = Arc::new(EmailClient::new());
-
-        let notification_service = create_notification_service(
-            nostr_clients,
-            db.clone(),
-            contact_service.clone(),
-            email_client,
-            cfg.nostr_config.relays.to_owned(),
-        )
-        .await
-        .expect("Failed to create notification service");
-
+        let court_client = Arc::new(CourtClient::new());
         let bill_service = Arc::new(BillService::new(
             db.bill_store.clone(),
             db.bill_blockchain_store.clone(),
@@ -113,6 +126,8 @@ impl AppController {
             db.company_store.clone(),
             db.mint_store.clone(),
             Arc::new(MintClient::new()),
+            court_client.clone(),
+            db.nostr_contact_store.clone(),
         ));
 
         let identity_service = IdentityService::new(
@@ -181,7 +196,6 @@ pub fn routes(ctrl: AppController) -> Router {
 pub mod test_utils {
     use super::*;
     use async_trait::async_trait;
-    use bcr_ebill_api::service::notification_service::NostrContactData;
     use bcr_ebill_api::{
         data::{
             bill::{
@@ -195,6 +209,7 @@ pub mod test_utils {
             notification::{ActionType, Notification},
             File, OptionalPostalAddress, PostalAddress,
         },
+        service::notification_service::NostrContactData,
         service::{
             bill_service::Error as BillError,
             bill_service::Result as BillResult,
@@ -205,6 +220,10 @@ pub mod test_utils {
         NotificationFilter,
     };
     use bcr_ebill_core::{blockchain::bill::BillBlockchain, ServiceTraitBounds};
+    use bcr_ebill_core::{
+        city::City, country::Country, date::Date, email::Email, identification::Identification,
+        name::Name,
+    };
     use bcr_ebill_transport::Result as NotifResult;
     use std::collections::HashMap;
 
@@ -215,6 +234,25 @@ pub mod test_utils {
 
         #[async_trait]
         impl BillServiceApi for BillServiceApi {
+            async fn get_bill_history(
+                &self,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                local_identity: &bcr_ebill_core::identity::Identity,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
+                current_timestamp: u64,
+            ) -> BillResult<bcr_ebill_core::bill::BillHistory>;
+            async fn share_bill_with_court(
+                &self,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                signer_public_data: &BillParticipant,
+                signer_keys: &BcrKeys,
+                court_node_id: &bcr_ebill_core::NodeId,
+            ) -> BillResult<()>;
+            async fn dev_mode_get_full_bill_chain(
+                &self,
+                bill_id: &bcr_ebill_core::bill::BillId,
+                current_identity_node_id: &bcr_ebill_core::NodeId,
+            ) -> BillResult<Vec<bcr_ebill_core::blockchain::bill::chain::BillBlockPlaintextWrapper>>;
             async fn get_bill_balances(
                 &self,
                 currency: &str,
@@ -289,7 +327,9 @@ pub mod test_utils {
             async fn get_endorsements(
                 &self,
                 bill_id: &bcr_ebill_core::bill::BillId,
+                identity: &bcr_ebill_core::identity::Identity,
                 current_identity_node_id: &bcr_ebill_core::NodeId,
+                current_timestamp: u64,
             ) -> BillResult<Vec<Endorsement>>;
             async fn clear_bill_cache(&self) -> BillResult<()>;
             async fn request_to_mint(
@@ -346,7 +386,7 @@ pub mod test_utils {
 
             #[async_trait]
             impl ContactServiceApi for ContactServiceApi {
-                async fn search(&self, search_term: &str) -> Result<Vec<Contact>>;
+                async fn search(&self, search_term: &str,include_logical: Option<bool>,        include_contact: Option<bool>,) -> Result<Vec<Contact>>;
                 async fn get_contacts(&self) -> Result<Vec<Contact>>;
                 async fn get_contact(&self, node_id: &bcr_ebill_core::NodeId) -> Result<Contact>;
                 async fn get_identity_by_node_id(&self, node_id: &bcr_ebill_core::NodeId) -> Result<Option<BillParticipant>>;
@@ -354,13 +394,13 @@ pub mod test_utils {
                 async fn update_contact(
                     &self,
                     node_id: &bcr_ebill_core::NodeId,
-                    name: Option<String>,
-                    email: Option<String>,
+                    name: Option<Name>,
+                    email: Option<Email>,
                     postal_address: OptionalPostalAddress,
-                    date_of_birth_or_registration: Option<String>,
-                    country_of_birth_or_registration: Option<String>,
-                    city_of_birth_or_registration: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth_or_registration: Option<Date>,
+                    country_of_birth_or_registration: Option<Country>,
+                    city_of_birth_or_registration: Option<City>,
+                    identification_number: Option<Identification>,
                     avatar_file_upload_id: Option<String>,
     ignore_avatar_file_upload_id: bool,
                     proof_document_file_upload_id: Option<String>,
@@ -370,13 +410,13 @@ pub mod test_utils {
                     &self,
                     node_id: &bcr_ebill_core::NodeId,
                     t: ContactType,
-                    name: String,
-                    email: Option<String>,
+                    name: Name,
+                    email: Option<Email>,
                     postal_address: Option<PostalAddress>,
-                    date_of_birth_or_registration: Option<String>,
-                    country_of_birth_or_registration: Option<String>,
-                    city_of_birth_or_registration: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth_or_registration: Option<Date>,
+                    country_of_birth_or_registration: Option<Country>,
+                    city_of_birth_or_registration: Option<City>,
+                    identification_number: Option<Identification>,
                     avatar_file_upload_id: Option<String>,
                     proof_document_file_upload_id: Option<String>,
                 ) -> Result<Contact>;
@@ -384,13 +424,13 @@ pub mod test_utils {
                     &self,
                     node_id: &bcr_ebill_core::NodeId,
                     t: ContactType,
-                    name: String,
-                    email: Option<String>,
+                    name: Name,
+                    email: Option<Email>,
                     postal_address: Option<PostalAddress>,
-                    date_of_birth_or_registration: Option<String>,
-                    country_of_birth_or_registration: Option<String>,
-                    city_of_birth_or_registration: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth_or_registration: Option<Date>,
+                    country_of_birth_or_registration: Option<Country>,
+                    city_of_birth_or_registration: Option<City>,
+                    identification_number: Option<Identification>,
                     avatar_file_upload_id: Option<String>,
                     proof_document_file_upload_id: Option<String>,
                 ) -> Result<Contact>;
@@ -410,20 +450,22 @@ pub mod test_utils {
     mockall::mock! {
             pub IdentityServiceApi {}
 
-
             impl ServiceTraitBounds for IdentityServiceApi {}
 
             #[async_trait]
             impl IdentityServiceApi for IdentityServiceApi {
+                async fn share_contact_details(&self, share_to: &bcr_ebill_core::NodeId) -> Result<()>;
+                async fn publish_contact(&self, identity: &Identity, keys: &BcrKeys) -> Result<()>;
+                async fn dev_mode_get_full_identity_chain(&self) -> Result<Vec<bcr_ebill_core::blockchain::identity::IdentityBlockPlaintextWrapper>>;
                 async fn update_identity(
                     &self,
-                    name: Option<String>,
-                    email: Option<String>,
+                    name: Option<Name>,
+                    email: Option<Email>,
                     postal_address: OptionalPostalAddress,
-                    date_of_birth: Option<String>,
-                    country_of_birth: Option<String>,
-                    city_of_birth: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth: Option<Date>,
+                    country_of_birth: Option<Country>,
+                    city_of_birth: Option<City>,
+                    identification_number: Option<Identification>,
                     profile_picture_file_upload_id: Option<String>,
     ignore_profile_picture_file_upload_id: bool,
                     identity_document_file_upload_id: Option<String>,
@@ -436,13 +478,13 @@ pub mod test_utils {
                 async fn create_identity(
                     &self,
                     t: IdentityType,
-                    name: String,
-                    email: Option<String>,
+                    name: Name,
+                    email: Option<Email>,
                     postal_address: OptionalPostalAddress,
-                    date_of_birth: Option<String>,
-                    country_of_birth: Option<String>,
-                    city_of_birth: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth: Option<Date>,
+                    country_of_birth: Option<Country>,
+                    city_of_birth: Option<City>,
+                    identification_number: Option<Identification>,
                     profile_picture_file_upload_id: Option<String>,
                     identity_document_file_upload_id: Option<String>,
                     timestamp: u64,
@@ -450,13 +492,13 @@ pub mod test_utils {
                 async fn deanonymize_identity(
                     &self,
                     t: IdentityType,
-                    name: String,
-                    email: Option<String>,
+                    name: Name,
+                    email: Option<Email>,
                     postal_address: OptionalPostalAddress,
-                    date_of_birth: Option<String>,
-                    country_of_birth: Option<String>,
-                    city_of_birth: Option<String>,
-                    identification_number: Option<String>,
+                    date_of_birth: Option<Date>,
+                    country_of_birth: Option<Country>,
+                    city_of_birth: Option<City>,
+                    identification_number: Option<Identification>,
                     profile_picture_file_upload_id: Option<String>,
                     identity_document_file_upload_id: Option<String>,
                     timestamp: u64,
@@ -477,105 +519,116 @@ pub mod test_utils {
             }
         }
     mockall::mock! {
-            pub NotificationServiceApi {}
+                        pub NotificationServiceApi {}
 
-            impl ServiceTraitBounds for NotificationServiceApi {}
+                        impl ServiceTraitBounds for NotificationServiceApi {}
 
-            #[async_trait]
-            impl NotificationServiceApi for NotificationServiceApi {
-                async fn add_company_transport(&self, company: &bcr_ebill_core::company::Company, keys: &BcrKeys) -> NotifResult<()>;
-                async fn send_identity_chain_events(&self, events: IdentityChainEvent) -> NotifResult<()>;
-                async fn send_company_chain_events(&self, events: CompanyChainEvent) -> NotifResult<()>;
-                async fn resolve_contact(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<Option<NostrContactData>>;
-                async fn send_bill_is_signed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_bill_is_accepted_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_request_to_accept_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_request_to_pay_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_bill_is_paid_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_bill_is_endorsed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
-                async fn send_offer_to_sell_event(
+                        #[async_trait]
+                        impl NotificationServiceApi for NotificationServiceApi {
+    async fn ensure_nostr_contact(&self, node_id: &bcr_ebill_core::NodeId);
+        async fn connect(&self);
+            async fn share_contact_details_keys(
                     &self,
-                    event: &BillChainEvent,
-                    buyer: &BillParticipant,
+                    recipient: &bcr_ebill_core::NodeId,
+                    contact_id: &bcr_ebill_core::NodeId,
+                    keys: &BcrKeys,
                 ) -> NotifResult<()>;
-                async fn send_bill_is_sold_event(
-                    &self,
-                    event: &BillChainEvent,
-                    buyer: &BillParticipant,
-                ) -> NotifResult<()>;
-                async fn send_bill_recourse_paid_event(
-                    &self,
-                    event: &BillChainEvent,
-                    recoursee: &BillIdentParticipant,
-                ) -> NotifResult<()>;
-                async fn send_request_to_action_rejected_event(
-                    &self,
-                    event: &BillChainEvent,
-                    rejected_action: ActionType,
-                ) -> NotifResult<()>;
-                async fn send_request_to_action_timed_out_event(
-                    &self,
-                    sender_node_id: &bcr_ebill_core::NodeId,
-                    bill_id: &bcr_ebill_core::bill::BillId,
-                    sum: Option<u64>,
-                    timed_out_action: ActionType,
-                    recipients: Vec<BillParticipant>,
-                    holder: &bcr_ebill_core::NodeId,
-                    drawee: &bcr_ebill_core::NodeId,
-                    recoursee: &Option<bcr_ebill_core::NodeId>,
-                ) -> NotifResult<()>;
-                async fn send_recourse_action_event(
-                    &self,
-                    event: &BillChainEvent,
-                    action: ActionType,
-                    recoursee: &BillIdentParticipant,
-                ) -> NotifResult<()>;
-                async fn send_request_to_mint_event(
-                    &self,
-                    sender_node_id: &bcr_ebill_core::NodeId,
-                    mint: &BillParticipant,
-                    bill: &BitcreditBill,
-                ) -> NotifResult<()>;
-                async fn send_new_quote_event(&self, quote: &BitcreditBill) -> NotifResult<()>;
-                async fn send_quote_is_approved_event(&self, quote: &BitcreditBill) -> NotifResult<()>;
-                async fn get_client_notifications(
-                    &self,
-                    filter: NotificationFilter,
-                ) -> NotifResult<Vec<Notification>>;
-                async fn mark_notification_as_done(&self, notification_id: &str) -> NotifResult<()>;
-                async fn get_active_bill_notification(&self, bill_id: &bcr_ebill_core::bill::BillId) -> Option<Notification>;
-                async fn get_active_bill_notifications(
-                    &self,
-                    bill_ids: &[bcr_ebill_core::bill::BillId],
-                ) -> HashMap<bcr_ebill_core::bill::BillId, Notification>;
-                async fn check_bill_notification_sent(
-                    &self,
-                    bill_id: &bcr_ebill_core::bill::BillId,
-                    block_height: i32,
-                    action: ActionType,
-                ) -> NotifResult<bool>;
-                async fn mark_bill_notification_sent(
-                    &self,
-                    bill_id: &bcr_ebill_core::bill::BillId,
-                    block_height: i32,
-                    action: ActionType,
-                ) -> NotifResult<()>;
-                async fn send_retry_messages(&self) -> NotifResult<()>;
-    async fn get_active_notification_status_for_node_ids(
-            &self,
-            node_ids: &[bcr_ebill_core::NodeId],
-        ) -> NotifResult<HashMap<bcr_ebill_core::NodeId, bool>>;
-    async fn register_email_notifications(
-            &self,
-            relay_url: &str,
-            email: &str,
-            node_id: &bcr_ebill_core::NodeId,
-            caller_keys: &BcrKeys,
-        ) -> NotifResult<()>;
-    async fn get_email_notifications_preferences_link(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<url::Url>;
-    async fn resync_bill_chain(&self, bill_id: &bcr_ebill_core::bill::BillId) -> NotifResult<()>;
-            }
-        }
+                            async fn resync_identity_chain(&self) -> NotifResult<()>;
+                            async fn resync_company_chain(&self, company_id: &bcr_ebill_core::NodeId) -> NotifResult<()>;
+                            async fn publish_contact(&self, node_id: &bcr_ebill_core::NodeId, contact: &NostrContactData) -> NotifResult<()>;
+                            async fn add_company_transport(&self, company: &bcr_ebill_core::company::Company, keys: &BcrKeys) -> NotifResult<()>;
+                            async fn send_identity_chain_events(&self, events: IdentityChainEvent) -> NotifResult<()>;
+                            async fn send_company_chain_events(&self, events: CompanyChainEvent) -> NotifResult<()>;
+                            async fn resolve_contact(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<Option<NostrContactData>>;
+                            async fn send_bill_is_signed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_bill_is_accepted_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_request_to_accept_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_request_to_pay_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_bill_is_paid_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_bill_is_endorsed_event(&self, event: &BillChainEvent) -> NotifResult<()>;
+                            async fn send_offer_to_sell_event(
+                                &self,
+                                event: &BillChainEvent,
+                                buyer: &BillParticipant,
+                            ) -> NotifResult<()>;
+                            async fn send_bill_is_sold_event(
+                                &self,
+                                event: &BillChainEvent,
+                                buyer: &BillParticipant,
+                            ) -> NotifResult<()>;
+                            async fn send_bill_recourse_paid_event(
+                                &self,
+                                event: &BillChainEvent,
+                                recoursee: &BillIdentParticipant,
+                            ) -> NotifResult<()>;
+                            async fn send_request_to_action_rejected_event(
+                                &self,
+                                event: &BillChainEvent,
+                                rejected_action: ActionType,
+                            ) -> NotifResult<()>;
+                            async fn send_request_to_action_timed_out_event(
+                                &self,
+                                sender_node_id: &bcr_ebill_core::NodeId,
+                                bill_id: &bcr_ebill_core::bill::BillId,
+                                sum: Option<u64>,
+                                timed_out_action: ActionType,
+                                recipients: Vec<BillParticipant>,
+                                holder: &bcr_ebill_core::NodeId,
+                                drawee: &bcr_ebill_core::NodeId,
+                                recoursee: &Option<bcr_ebill_core::NodeId>,
+                            ) -> NotifResult<()>;
+                            async fn send_recourse_action_event(
+                                &self,
+                                event: &BillChainEvent,
+                                action: ActionType,
+                                recoursee: &BillIdentParticipant,
+                            ) -> NotifResult<()>;
+                            async fn send_request_to_mint_event(
+                                &self,
+                                sender_node_id: &bcr_ebill_core::NodeId,
+                                mint: &BillParticipant,
+                                bill: &BitcreditBill,
+                            ) -> NotifResult<()>;
+                            async fn send_new_quote_event(&self, quote: &BitcreditBill) -> NotifResult<()>;
+                            async fn send_quote_is_approved_event(&self, quote: &BitcreditBill) -> NotifResult<()>;
+                            async fn get_client_notifications(
+                                &self,
+                                filter: NotificationFilter,
+                            ) -> NotifResult<Vec<Notification>>;
+                            async fn mark_notification_as_done(&self, notification_id: &str) -> NotifResult<()>;
+                            async fn get_active_bill_notification(&self, bill_id: &bcr_ebill_core::bill::BillId) -> Option<Notification>;
+                            async fn get_active_bill_notifications(
+                                &self,
+                                bill_ids: &[bcr_ebill_core::bill::BillId],
+                            ) -> HashMap<bcr_ebill_core::bill::BillId, Notification>;
+                            async fn check_bill_notification_sent(
+                                &self,
+                                bill_id: &bcr_ebill_core::bill::BillId,
+                                block_height: i32,
+                                action: ActionType,
+                            ) -> NotifResult<bool>;
+                            async fn mark_bill_notification_sent(
+                                &self,
+                                bill_id: &bcr_ebill_core::bill::BillId,
+                                block_height: i32,
+                                action: ActionType,
+                            ) -> NotifResult<()>;
+                            async fn send_retry_messages(&self) -> NotifResult<()>;
+                async fn get_active_notification_status_for_node_ids(
+                        &self,
+                        node_ids: &[bcr_ebill_core::NodeId],
+                    ) -> NotifResult<HashMap<bcr_ebill_core::NodeId, bool>>;
+                async fn register_email_notifications(
+                        &self,
+                        relay_url: &url::Url,
+                        email: &Email,
+                        node_id: &bcr_ebill_core::NodeId,
+                        caller_keys: &BcrKeys,
+                    ) -> NotifResult<()>;
+                async fn get_email_notifications_preferences_link(&self, node_id: &bcr_ebill_core::NodeId) -> NotifResult<url::Url>;
+                async fn resync_bill_chain(&self, bill_id: &bcr_ebill_core::bill::BillId) -> NotifResult<()>;
+                        }
+                    }
 
     impl std::default::Default for AppController {
         fn default() -> Self {

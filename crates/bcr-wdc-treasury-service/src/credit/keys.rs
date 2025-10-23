@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{KeysClient, KeysError};
+use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
 use cashu::nut02 as cdk02;
 // ----- local imports
 use crate::{

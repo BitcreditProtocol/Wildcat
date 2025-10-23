@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_wdc_ebill_client::{EbillClient, Url};
-use bcr_wdc_webapi::quotes::SharedBill;
+use bcr_common::{client::ebill::Client as EbillClient, wire::quotes as wire_quotes};
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::EBillNode;
@@ -11,7 +10,7 @@ use crate::service::EBillNode;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct EBillClientConfig {
-    base_url: Url,
+    base_url: reqwest::Url,
 }
 
 #[derive(Debug, Clone)]
@@ -27,8 +26,8 @@ impl EBillClient {
 impl EBillNode for EBillClient {
     async fn validate_and_decrypt_shared_bill(
         &self,
-        shared_bill: &SharedBill,
-    ) -> Result<bcr_wdc_webapi::quotes::BillInfo> {
+        shared_bill: &wire_quotes::SharedBill,
+    ) -> Result<wire_quotes::BillInfo> {
         self.0
             .validate_and_decrypt_shared_bill(shared_bill)
             .await
@@ -38,12 +37,10 @@ impl EBillNode for EBillClient {
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
-    use bcr_common::{core_tests, wire::bill as wire_bill};
-    use bcr_wdc_webapi::test_utils::{
-        holder_key_pair, random_datetime, random_identity_public_data,
-    };
-
     use super::*;
+    use bcr_common::{core_tests, wire::bill as wire_bill};
+    use bcr_wdc_webapi::test_utils::{holder_key_pair, random_date, random_identity_public_data};
+    use std::str::FromStr;
 
     #[derive(Clone, Debug, Default)]
     pub struct DummyEbillNode {}
@@ -52,19 +49,20 @@ pub mod test_utils {
     impl EBillNode for DummyEbillNode {
         async fn validate_and_decrypt_shared_bill(
             &self,
-            shared_bill: &SharedBill,
-        ) -> Result<bcr_wdc_webapi::quotes::BillInfo> {
+            shared_bill: &wire_quotes::SharedBill,
+        ) -> Result<wire_quotes::BillInfo> {
             let mut payee = random_identity_public_data().1;
             payee.node_id = core_tests::node_id_from_pub_key(holder_key_pair().public_key());
 
-            Ok(bcr_wdc_webapi::quotes::BillInfo {
+            Ok(wire_quotes::BillInfo {
                 id: shared_bill.bill_id.clone(),
                 drawee: random_identity_public_data().1,
                 drawer: random_identity_public_data().1,
                 payee: wire_bill::BillParticipant::Ident(payee),
                 endorsees: vec![],
                 sum: 100,
-                maturity_date: random_datetime(),
+                maturity_date: chrono::NaiveDate::from_str(random_date().to_string().as_str())
+                    .unwrap(),
                 file_urls: shared_bill.file_urls.clone(),
             })
         }

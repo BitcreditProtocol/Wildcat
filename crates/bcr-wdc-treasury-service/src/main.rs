@@ -48,7 +48,7 @@ async fn main() {
     let secret = bitcoin::secp256k1::SecretKey::from_slice(signing_slice.as_byte_array())
         .expect("Failed to create secret key from seed");
 
-    let app = bcr_wdc_treasury_service::AppController::new(&seed, secret, maincfg.appcfg).await;
+    let app = bcr_wdc_treasury_service::AppController::new(seed, secret, maincfg.appcfg).await;
     let router = bcr_wdc_treasury_service::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)

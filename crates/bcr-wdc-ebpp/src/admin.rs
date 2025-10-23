@@ -5,7 +5,7 @@ use axum::extract::{Json, State};
 use bcr_wdc_webapi::wallet::Balance;
 // ----- local imports
 use crate::error::Result;
-use crate::service::{OnChainWallet, Service};
+use crate::service::Service;
 
 // ----- end imports
 
@@ -20,12 +20,7 @@ use crate::service::{OnChainWallet, Service};
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn balance<OnChainWlt, PayRepo, EBillCl>(
-    State(ctrl): State<Arc<Service<OnChainWlt, PayRepo, EBillCl>>>,
-) -> Result<Json<Balance>>
-where
-    OnChainWlt: OnChainWallet,
-{
+pub async fn balance(State(ctrl): State<Arc<Service>>) -> Result<Json<Balance>> {
     tracing::debug!("Received balance");
 
     let info = ctrl.balance().await?;

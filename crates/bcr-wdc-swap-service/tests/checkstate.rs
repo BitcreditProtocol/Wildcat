@@ -1,10 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::SwapClient;
+use bcr_common::client::swap::Client as SwapClient;
 use bcr_wdc_key_service::KeysRepository;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 use cashu::{dhke::hash_to_curve, nut07 as cdk07, Amount};
 // ----- local imports
+
+// ----- end imports
 
 #[tokio::test]
 async fn checkstate() {

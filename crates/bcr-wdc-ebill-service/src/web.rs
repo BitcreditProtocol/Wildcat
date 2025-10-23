@@ -7,7 +7,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use bcr_common::wire::{bill as wire_bill, identity as wire_identity};
+use bcr_common::{
+    core::BillId,
+    wire::{bill as wire_bill, identity as wire_identity, quotes as wire_quotes},
+};
 use bcr_ebill_api::{
     constants::MAX_DOCUMENT_FILE_SIZE_BYTES,
     data::{bill, contact, identity},
@@ -21,15 +24,15 @@ use bcr_ebill_core::{
         },
         BillBlock, BillBlockchain,
     },
+    city::City,
+    country::Country,
+    date::Date,
+    email::Email,
+    identification::Identification,
+    name::Name,
     SecretKey,
 };
 use bcr_wdc_utils::convert;
-use bcr_wdc_webapi::{
-    bill::{
-        self as web_bill, BillId, BillsResponse, BitcreditBill, RequestToPayBitcreditBillPayload,
-    },
-    quotes::RequestEncryptedFileUrlPayload,
-};
 use futures::StreamExt;
 use reqwest::StatusCode;
 // ----- local imports
@@ -186,8 +189,7 @@ pub async fn validate_and_decrypt_shared_bill(
         payee: convert::billparticipant_ebill2wire(core_payee),
         endorsees: core_endorsees,
         sum: bill_data.sum,
-        maturity_date: util::date::date_string_to_rfc3339(&bill_data.maturity_date)
-            .map_err(|e| Error::SharedBill(format!("invalid date format: {e}")))?,
+        maturity_date: bill_data.maturity_date.to_string(),
         file_urls: payload.file_urls,
     }))
 }
@@ -248,13 +250,24 @@ pub async fn create_identity(
                 wire_identity::IdentityType::try_from(payload.t)
                     .map_err(|_| Error::IdentityType)?,
             ),
-            payload.name,
-            payload.email,
-            convert::optionalpostaladdress_wire2ebill(payload.postal_address),
-            payload.date_of_birth.map(|d| d.to_string()),
-            payload.country_of_birth,
-            payload.city_of_birth,
-            payload.identification_number,
+            Name::new(payload.name)?,
+            payload.email.map(Email::new).transpose()?,
+            convert::optionalpostaladdress_wire2ebill(payload.postal_address)?,
+            payload
+                .date_of_birth
+                .map(|d| d.to_string())
+                .map(Date::new)
+                .transpose()?,
+            payload
+                .country_of_birth
+                .as_deref()
+                .map(Country::parse)
+                .transpose()?,
+            payload.city_of_birth.map(City::new).transpose()?,
+            payload
+                .identification_number
+                .map(Identification::new)
+                .transpose()?,
             payload.profile_picture_file_upload_id,
             payload.identity_document_file_upload_id,
             current_timestamp,
@@ -266,22 +279,22 @@ pub async fn create_identity(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bills(
     State(ctrl): State<AppController>,
-) -> Result<Json<BillsResponse<BitcreditBill>>> {
+) -> Result<Json<wire_bill::BillsResponse<wire_bill::BitcreditBill>>> {
     tracing::debug!("Received get bills request");
     let identity = ctrl.identity_service.get_identity().await?;
     let bills = ctrl.bill_service.get_bills(&identity.node_id).await?;
     let wbills = bills
         .into_iter()
-        .map(web_bill::BitcreditBill::try_from)
+        .map(convert::bitcreditbill_ebill2wire)
         .collect::<std::result::Result<_, convert::Error>>()?;
-    Ok(Json(BillsResponse { bills: wbills }))
+    Ok(Json(wire_bill::BillsResponse { bills: wbills }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_bill_detail(
     State(ctrl): State<AppController>,
     Path(bill_id): Path<BillId>,
-) -> Result<Json<BitcreditBill>> {
+) -> Result<Json<wire_bill::BitcreditBill>> {
     tracing::debug!("Received get bill detail request");
     let current_timestamp = util::date::now().timestamp() as u64;
     let identity = ctrl.identity_service.get_identity().await?;
@@ -289,7 +302,7 @@ pub async fn get_bill_detail(
         .bill_service
         .get_detail(&bill_id, &identity, &identity.node_id, current_timestamp)
         .await?;
-    let wbill = web_bill::BitcreditBill::try_from(bill_detail)?;
+    let wbill = convert::bitcreditbill_ebill2wire(bill_detail)?;
     Ok(Json(wbill))
 }
 
@@ -325,10 +338,12 @@ pub async fn get_bill_endorsements(
     Path(bill_id): Path<BillId>,
 ) -> Result<Json<Vec<wire_bill::Endorsement>>> {
     tracing::debug!("Received get bill detail request");
+
+    let now = util::date::now().timestamp() as u64;
     let identity = ctrl.identity_service.get_identity().await?;
     let endorsements = ctrl
         .bill_service
-        .get_endorsements(&bill_id, &identity.node_id)
+        .get_endorsements(&bill_id, &identity, &identity.node_id, now)
         .await?;
     Ok(Json(
         endorsements
@@ -382,7 +397,7 @@ pub async fn get_bill_attachment(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, bill_file_url_req))]
 pub async fn get_encrypted_bill_file_from_request_to_mint(
     State(ctrl): State<AppController>,
-    Query(bill_file_url_req): Query<RequestEncryptedFileUrlPayload>,
+    Query(bill_file_url_req): Query<wire_quotes::RequestEncryptedFileUrlPayload>,
 ) -> Result<impl IntoResponse> {
     tracing::debug!(
         "Received get encrypted bill file from request to mint, url: {}",
@@ -466,17 +481,22 @@ async fn do_get_encrypted_bill_file_from_request_to_mint(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_to_pay_bill(
     State(ctrl): State<AppController>,
-    Json(request_to_pay_bill_payload): Json<RequestToPayBitcreditBillPayload>,
+    Json(request_to_pay_bill_payload): Json<wire_bill::RequestToPayBitcreditBillPayload>,
 ) -> Result<Json<SuccessResponse>> {
     tracing::debug!("Received request to pay bill request");
+
     let current_timestamp = util::date::now().timestamp() as u64;
     let identity::IdentityWithAll { identity, key_pair } =
         ctrl.identity_service.get_full_identity().await?;
 
+    let deadline_ts = request_to_pay_bill_payload.deadline.timestamp() as u64;
     ctrl.bill_service
         .execute_bill_action(
             &request_to_pay_bill_payload.bill_id,
-            bill::BillAction::RequestToPay(request_to_pay_bill_payload.currency.clone()),
+            bill::BillAction::RequestToPay(
+                request_to_pay_bill_payload.currency.clone(),
+                deadline_ts,
+            ),
             &contact::BillParticipant::Ident(contact::BillIdentParticipant::new(identity)?),
             &key_pair,
             current_timestamp,
