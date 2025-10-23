@@ -17,7 +17,6 @@ pub struct Factory {
 }
 
 impl Factory {
-    /// amount of currency denominations, from 2^0 to 2^MAX_ORDER
     pub const MAX_ORDER: u8 = 20;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
@@ -50,11 +49,12 @@ impl Factory {
             .master
             .derive_priv(secp, &path)
             .expect("bitcoin::derive_priv unexpected error");
+        let denominations: Vec<u64> = (0..Self::MAX_ORDER).map(|i| 2_u64.pow(i as u32)).collect();
         let keyset = cashu::MintKeySet::generate(
             secp,
             xpriv,
             self.unit.clone(),
-            Self::MAX_ORDER,
+            &denominations,
             Some(expire.timestamp() as u64),
             KeySetVersion::Version01,
         );
@@ -68,6 +68,7 @@ impl Factory {
             derivation_path: path,
             derivation_path_index: None,
             max_order: Self::MAX_ORDER,
+            amounts: denominations,
             input_fee_ppk: 0,
         };
         (info, keyset)

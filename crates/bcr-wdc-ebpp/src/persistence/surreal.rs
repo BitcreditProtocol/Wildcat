@@ -13,13 +13,15 @@ use bdk_wallet::miniscript::{
     Descriptor, DescriptorPublicKey,
 };
 use cashu::MintQuoteState;
+use cdk_common::payment::PaymentIdentifier;
 use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
-use uuid::Uuid;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor};
-use crate::payment::{IncomingRequest, OutgoingRequest, PaymentType};
-use crate::service::PaymentRepository;
+use crate::{
+    error::{Error, Result},
+    onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor},
+    payment::{ForeignPayment, IncomingRequest, OutgoingRequest, PaymentType},
+    service::PaymentRepository,
+};
 
 // ----- end imports
 
@@ -143,7 +145,7 @@ fn into_payment_type(pt: PaymentTypeDBEntry, network: btc::Network) -> Result<Pa
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct IncomingPaymentDBEntry {
-    reqid: Uuid,
+    reqid: PaymentIdentifier,
     amount: btc::Amount,
     payment_type: PaymentTypeDBEntry,
     status: cdk_common::MintQuoteState,
@@ -176,9 +178,10 @@ fn into_incoming_request(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OutgoingPaymentDBEntry {
-    reqid: Uuid,
+    reqid: PaymentIdentifier,
     recipient: btc::Address<btc::address::NetworkUnchecked>,
     amount: btc::Amount,
+    reserved_fees: btc::Amount,
     status: cdk_common::MeltQuoteState,
     proof: Option<btc::Txid>,
     total_spent: Option<btc::Amount>,
@@ -188,6 +191,7 @@ impl std::convert::From<OutgoingRequest> for OutgoingPaymentDBEntry {
         Self {
             reqid: req.reqid,
             amount: req.amount,
+            reserved_fees: req.reserved_fees,
             status: req.status,
             recipient: req.recipient.into_unchecked(),
             proof: req.proof,
@@ -203,6 +207,7 @@ fn into_outgoing_request(
     Ok(OutgoingRequest {
         reqid: dbreq.reqid,
         amount: dbreq.amount,
+        reserved_fees: dbreq.reserved_fees,
         recipient,
         status: dbreq.status,
         proof: dbreq.proof,
@@ -212,8 +217,27 @@ fn into_outgoing_request(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ForeignPaymentDBEntry {
-    reqid: Uuid,
+    reqid: PaymentIdentifier,
     nonce: String,
+    amount: btc::Amount,
+}
+impl From<ForeignPayment> for ForeignPaymentDBEntry {
+    fn from(fp: ForeignPayment) -> Self {
+        Self {
+            reqid: fp.reqid,
+            nonce: fp.nonce,
+            amount: fp.amount,
+        }
+    }
+}
+impl From<ForeignPaymentDBEntry> for ForeignPayment {
+    fn from(dbfp: ForeignPaymentDBEntry) -> Self {
+        Self {
+            reqid: dbfp.reqid,
+            nonce: dbfp.nonce,
+            amount: dbfp.amount,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -250,8 +274,11 @@ impl DBPayments {
         })
     }
 
-    async fn load_incoming(&self, reqid: Uuid) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, reqid);
+    async fn load_incoming(
+        &self,
+        reqid: PaymentIdentifier,
+    ) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, reqid.to_string());
         self.db.select(rid).await
     }
 
@@ -259,7 +286,8 @@ impl DBPayments {
         &self,
         request: IncomingPaymentDBEntry,
     ) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid);
+        let rid =
+            surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid.to_string());
         self.db.insert(rid).content(request).await
     }
 
@@ -267,12 +295,16 @@ impl DBPayments {
         &self,
         request: IncomingPaymentDBEntry,
     ) -> SurrealResult<Option<IncomingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid);
+        let rid =
+            surrealdb::RecordId::from_table_key(&self.incoming_table, request.reqid.to_string());
         self.db.update(rid).content(request).await
     }
 
-    async fn load_outgoing(&self, reqid: Uuid) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, reqid);
+    async fn load_outgoing(
+        &self,
+        reqid: PaymentIdentifier,
+    ) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, reqid.to_string());
         self.db.select(rid).await
     }
 
@@ -280,7 +312,8 @@ impl DBPayments {
         &self,
         request: OutgoingPaymentDBEntry,
     ) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid);
+        let rid =
+            surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid.to_string());
         self.db.insert(rid).content(request).await
     }
 
@@ -288,7 +321,8 @@ impl DBPayments {
         &self,
         request: OutgoingPaymentDBEntry,
     ) -> SurrealResult<Option<OutgoingPaymentDBEntry>> {
-        let rid = surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid);
+        let rid =
+            surrealdb::RecordId::from_table_key(&self.outgoing_table, request.reqid.to_string());
         self.db.update(rid).content(request).await
     }
 
@@ -305,12 +339,12 @@ impl DBPayments {
 
 #[async_trait]
 impl PaymentRepository for DBPayments {
-    async fn load_incoming(&self, reqid: Uuid) -> Result<IncomingRequest> {
+    async fn load_incoming(&self, reqid: &PaymentIdentifier) -> Result<IncomingRequest> {
         let dbreq = self
-            .load_incoming(reqid)
+            .load_incoming(reqid.clone())
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid))?;
+        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid.clone()))?;
         into_incoming_request(dbreq, self.network)
     }
 
@@ -323,9 +357,9 @@ impl PaymentRepository for DBPayments {
     }
 
     async fn update_incoming(&self, req: IncomingRequest) -> Result<()> {
-        let reqid = req.reqid;
+        let reqid = req.reqid.clone();
         let res: Option<IncomingPaymentDBEntry> = self
-            .update_incoming(req.into())
+            .update_incoming(req.clone().into())
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         if res.is_none() {
@@ -334,12 +368,12 @@ impl PaymentRepository for DBPayments {
         Ok(())
     }
 
-    async fn load_outgoing(&self, reqid: Uuid) -> Result<OutgoingRequest> {
+    async fn load_outgoing(&self, reqid: &PaymentIdentifier) -> Result<OutgoingRequest> {
         let dbreq = self
-            .load_outgoing(reqid)
+            .load_outgoing(reqid.clone())
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid))?;
+        let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid.clone()))?;
         into_outgoing_request(dbreq, self.network)
     }
 
@@ -351,7 +385,7 @@ impl PaymentRepository for DBPayments {
         Ok(())
     }
     async fn update_outgoing(&self, req: OutgoingRequest) -> Result<()> {
-        let reqid = req.reqid;
+        let reqid = req.reqid.clone();
         let res: Option<OutgoingPaymentDBEntry> = self
             .update_outgoing(req.into())
             .await
@@ -374,9 +408,13 @@ impl PaymentRepository for DBPayments {
         Ok(requests)
     }
 
-    async fn store_foreign(&self, reqid: Uuid, nonce: String) -> Result<()> {
-        let entry = ForeignPaymentDBEntry { reqid, nonce };
-        let rid = surrealdb::RecordId::from_table_key(&self.foreign, reqid);
+    async fn store_foreign(&self, foreign: ForeignPayment) -> Result<()> {
+        let rid = surrealdb::RecordId::from_table_key(&self.foreign, foreign.reqid.to_string());
+        let entry = ForeignPaymentDBEntry {
+            reqid: foreign.reqid,
+            nonce: foreign.nonce,
+            amount: foreign.amount,
+        };
         let _: Option<ForeignPaymentDBEntry> = self
             .db
             .insert(rid)
@@ -385,7 +423,7 @@ impl PaymentRepository for DBPayments {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
-    async fn check_foreign_nonce(&self, nonce: &str) -> Result<bool> {
+    async fn check_foreign_nonce(&self, nonce: &str) -> Result<Option<ForeignPayment>> {
         let entry: Option<ForeignPaymentDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE nonce == $nonce")
@@ -395,16 +433,19 @@ impl PaymentRepository for DBPayments {
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(entry.is_some())
+        Ok(entry.map(From::from))
     }
-    async fn check_foreign_reqid(&self, reqid: Uuid) -> Result<bool> {
-        let rid = surrealdb::RecordId::from_table_key(&self.foreign, reqid);
+    async fn check_foreign_reqid(
+        &self,
+        reqid: &PaymentIdentifier,
+    ) -> Result<Option<ForeignPayment>> {
+        let rid = surrealdb::RecordId::from_table_key(&self.foreign, reqid.to_string());
         let entry: Option<ForeignPaymentDBEntry> = self
             .db
             .select(rid)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(entry.is_some())
+        Ok(entry.map(From::from))
     }
 }
 
@@ -432,63 +473,67 @@ mod tests {
     async fn list_unpaid() {
         let db = init_mem_db().await;
 
-        let mut unpaids: [uuid::Uuid; 2] = Default::default();
+        let mut unpaids: Vec<PaymentIdentifier> = Default::default();
         let address = btc::Address::from_str("1thMirt546nngXqyPEz532S8fLwbozud8").unwrap();
         let unpaid1 = IncomingPaymentDBEntry {
-            reqid: Uuid::new_v4(),
+            reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
             payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
             status: MintQuoteState::Unpaid,
         };
-        unpaids[0] = unpaid1.reqid;
-        let rid = RecordId::from_table_key(&db.incoming_table, unpaid1.reqid);
+        unpaids.push(unpaid1.reqid.clone());
+        let rid = RecordId::from_table_key(&db.incoming_table, unpaid1.reqid.to_string());
         let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(unpaid1).await.unwrap();
 
         let paid1 = IncomingPaymentDBEntry {
-            reqid: Uuid::new_v4(),
+            reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
             payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
             status: MintQuoteState::Paid,
         };
-        let rid = RecordId::from_table_key(&db.incoming_table, paid1.reqid);
+        let rid = RecordId::from_table_key(&db.incoming_table, paid1.reqid.to_string());
         let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(paid1).await.unwrap();
 
         let unpaid2 = IncomingPaymentDBEntry {
-            reqid: Uuid::new_v4(),
+            reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
             payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
             status: MintQuoteState::Unpaid,
         };
-        unpaids[1] = unpaid2.reqid;
-        let rid = RecordId::from_table_key(&db.incoming_table, unpaid2.reqid);
+        unpaids.push(unpaid2.reqid.clone());
+        let rid = RecordId::from_table_key(&db.incoming_table, unpaid2.reqid.to_string());
         let _: Option<IncomingPaymentDBEntry> = db.db.insert(rid).content(unpaid2).await.unwrap();
 
-        let mut list = db.list_unpaid().await.unwrap();
+        let list = db.list_unpaid().await.unwrap();
         assert_eq!(list.len(), 2);
-        list.sort_by(|a, b| a.reqid.cmp(&b.reqid));
-        unpaids.sort();
-        assert_eq!(list[0].reqid, unpaids[0]);
-        assert_eq!(list[1].reqid, unpaids[1]);
+        assert!(unpaids.contains(&list[0].reqid));
+        assert!(unpaids.contains(&list[1].reqid));
     }
 
     #[tokio::test]
     async fn store_check_foreign() {
         let db = init_mem_db().await;
-        let reqid = Uuid::new_v4();
-        let nonce = String::from("nonce");
+        let foreign = ForeignPayment {
+            reqid: PaymentIdentifier::PaymentId(rand::random()),
+            nonce: String::from("nonce"),
+            amount: btc::Amount::from_sat(1000),
+        };
 
-        db.store_foreign(reqid, nonce).await.unwrap();
+        db.store_foreign(foreign.clone()).await.unwrap();
         let exists = db.check_foreign_nonce("nonce").await.unwrap();
-        assert!(exists);
+        assert!(exists.is_some());
         let not_exists = db.check_foreign_nonce("other").await.unwrap();
-        assert!(!not_exists);
+        assert!(not_exists.is_none());
 
-        let exists_reqid = db.check_foreign_reqid(reqid).await.unwrap();
-        assert!(exists_reqid);
-        let not_exists_reqid = db.check_foreign_reqid(Uuid::new_v4()).await.unwrap();
-        assert!(!not_exists_reqid);
+        let exists_reqid = db.check_foreign_reqid(&foreign.reqid).await.unwrap();
+        assert!(exists_reqid.is_some());
+        let not_exists_reqid = db
+            .check_foreign_reqid(&PaymentIdentifier::PaymentId(rand::random()))
+            .await
+            .unwrap();
+        assert!(not_exists_reqid.is_none());
     }
 }

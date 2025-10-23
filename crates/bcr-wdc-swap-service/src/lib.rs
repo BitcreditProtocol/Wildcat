@@ -3,7 +3,7 @@
 use axum::extract::FromRef;
 use axum::routing::post;
 use axum::Router;
-use bcr_common::SwapClient;
+use bcr_common::client::swap::Client as SwapClient;
 // ----- local modules
 mod admin;
 mod error;

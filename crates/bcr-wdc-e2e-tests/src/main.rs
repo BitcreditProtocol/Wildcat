@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_wdc_webapi::quotes::{StatusReply, UpdateQuoteResponse};
+use bcr_common::wire::quotes::{StatusReply, UpdateQuoteResponse};
 use cashu::MintUrl;
 
 use reqwest::Url;

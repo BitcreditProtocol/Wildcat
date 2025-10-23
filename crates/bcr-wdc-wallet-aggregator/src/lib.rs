@@ -35,8 +35,8 @@ pub struct AppConfig {
 #[derive(Clone, FromRef)]
 pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
-    keys_client: bcr_common::KeysClient,
-    swap_client: bcr_common::SwapClient,
+    keys_client: bcr_common::client::keys::Client,
+    swap_client: bcr_common::client::swap::Client,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
     clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
@@ -56,8 +56,8 @@ impl AppController {
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
-        let keys_client = bcr_common::KeysClient::new(keys_client_url);
-        let swap_client = bcr_common::SwapClient::new(swap_client_url);
+        let keys_client = bcr_common::client::keys::Client::new(keys_client_url);
+        let swap_client = bcr_common::client::swap::Client::new(swap_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 

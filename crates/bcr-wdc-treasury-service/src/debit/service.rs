@@ -1,18 +1,21 @@
 // ----- standard library imports
-use std::str::FromStr;
 use std::time::Duration;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::core;
-use bcr_common::wire::signatures as wire_signatures;
+use bcr_common::{
+    core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
+    wire::signatures as wire_signatures,
+};
 use bcr_wdc_utils::signatures as signatures_utils;
-use bcr_wdc_webapi::bill::BillId;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
 use itertools::Itertools;
 // ----- local imports
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    TStamp,
+};
 
 // ----- end imports
 
@@ -96,18 +99,16 @@ where
         &self,
         ebill_id: BillId,
         amount: Amount,
+        deadline: TStamp,
     ) -> Result<cdk::wallet::MintQuote> {
         let request = wire_signatures::RequestToMintFromEBillDesc {
-            // TODO: wait for Bitcredit-Core to integrate bcr-common
-            ebill_id: core::BillId::from_str(&ebill_id.clone().to_string()).expect("valid bill id"),
+            ebill_id: ebill_id.clone(),
+            deadline,
         };
-        let signature =
-            bcr_wdc_utils::keys::schnorr_sign_borsh_msg_with_key(&request, &self.signing_keys)
-                .map_err(Error::SchnorrBorshMsg)?;
-        let signed_request = wire_signatures::SignedRequestToMintFromEBillDesc {
-            data: request,
-            signature,
-        };
+        let (content, signature) =
+            serialize_n_schnorr_sign_borsh_msg(&request, &self.signing_keys)?;
+        let signed_request =
+            wire_signatures::SignedRequestToMintFromEBillDesc { content, signature };
         let quote = self.wallet.mint_quote(amount, signed_request).await?;
         let mint_quote = MintQuote {
             qid: quote.id.clone(),
@@ -283,7 +284,6 @@ mod tests {
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::{nut00 as cdk00, nut23 as cdk23, Amount};
     use mockall::predicate::*;
-    use mockall::*;
     use secp256k1::global::SECP256K1;
     use std::str::FromStr;
 
@@ -295,20 +295,17 @@ mod tests {
         let mut wdc = MockWildcatService::new();
         let mut repo = MockRepository::new();
         let mut wallet = MockWallet::new();
-        let ebill_id_clone = ebill_id.clone();
-        let signed_request_check = predicate::function(
-            move |req: &wire_signatures::SignedRequestToMintFromEBillDesc| {
-                req.data.ebill_id.to_string() == ebill_id_clone.to_string()
-            },
-        );
         let mint_quote = cdk::wallet::MintQuote {
             id: String::from("mint_quote_id"),
             mint_url: cdk_common::mint_url::MintUrl::from_str("http://test_mint_url.com:3338")
                 .unwrap(),
-            amount,
+            amount: Some(amount),
+            amount_paid: amount,
+            amount_issued: amount,
+            payment_method: cashu::PaymentMethod::Bolt11,
             unit: cdk00::CurrencyUnit::Sat,
             request: Default::default(),
-            state: cdk23::QuoteState::Pending,
+            state: cdk23::QuoteState::Paid,
             expiry: Default::default(),
             secret_key: None,
         };
@@ -316,7 +313,6 @@ mod tests {
         let ebill_cloned = ebill_id.clone();
         wallet
             .expect_mint_quote()
-            .with(eq(amount), signed_request_check)
             .returning(move |_, _| Ok(mint_quote.clone()));
         let wallet_cloned = MockWallet::new();
         wallet.expect_clone().return_once(move || wallet_cloned);
@@ -341,7 +337,14 @@ mod tests {
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
         };
-        let quote = service.mint_from_ebill(ebill_id, amount).await.unwrap();
+        let quote = service
+            .mint_from_ebill(
+                ebill_id,
+                amount,
+                TStamp::from_str("2026-01-01T00:00:00Z").unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(quote.id, "mint_quote_id");
     }
 

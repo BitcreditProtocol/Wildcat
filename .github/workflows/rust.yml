@@ -10,15 +10,28 @@ permissions:
   actions: read
 
 env:
-  CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - stable
     steps:
-      - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Free up disk space
+        run: |
+          echo "Before cleanup:"
+          df -h
+          docker system prune -a -f
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          echo "After cleanup:"
+          df -h
 
       - name: Create GitHub App token
         id: app-token
@@ -34,26 +47,16 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      
-      - name: Free up disk space
-        run: |
-          echo "Before cleanup:"
-          df -h
-          docker system prune -a -f
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo apt-get clean
-          sudo apt-get autoremove -y
-          echo "After cleanup:"
-          df -h
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
+
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
 
-      - name: Switch rust version
-        run: rustup default stable
-
-      - name: Update rust
+      - name: install rust
         run: rustup update stable
 
       - name: Add rustup components

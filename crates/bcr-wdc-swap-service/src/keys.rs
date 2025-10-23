@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{KeysClient, KeysError};
+use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::KeysService;

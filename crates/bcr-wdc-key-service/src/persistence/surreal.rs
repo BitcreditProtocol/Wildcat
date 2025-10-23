@@ -30,6 +30,7 @@ struct KeysInfoDBEntry {
     derivation_path: DerivationPath,
     derivation_path_index: Option<u32>,
     max_order: u8,
+    denominations: Vec<u64>,
     input_fee_ppk: u64,
     final_expiry: Option<u64>,
 }
@@ -45,6 +46,7 @@ impl std::convert::From<KeysInfoDBEntry> for MintKeySetInfo {
             max_order: info.max_order,
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
+            amounts: info.denominations,
         }
     }
 }
@@ -60,6 +62,7 @@ impl std::convert::From<MintKeySetInfo> for KeysInfoDBEntry {
             max_order: info.max_order,
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
+            denominations: info.amounts,
         }
     }
 }

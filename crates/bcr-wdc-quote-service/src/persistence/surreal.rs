@@ -52,7 +52,7 @@ struct LightQuoteDBEntry {
     qid: uuid::Uuid,
     status: quotes::StatusDiscriminants,
     sum: bitcoin::Amount,
-    maturity_date: TStamp,
+    maturity_date: chrono::NaiveDate,
 }
 impl From<LightQuoteDBEntry> for quotes::LightQuote {
     fn from(dbq: LightQuoteDBEntry) -> Self {
@@ -324,10 +324,9 @@ impl Repository for DBQuotes {
 mod tests {
     use super::*;
     use crate::{quotes::BillInfo, service};
+    use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
     use bcr_ebill_core::contact::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
-    use bcr_wdc_webapi::test_utils::{random_bill_id, random_identity_public_data};
-    use std::str::FromStr;
     use surrealdb::RecordId;
 
     async fn init_mem_db() -> DBQuotes {
@@ -345,17 +344,21 @@ mod tests {
         fn default() -> Self {
             Self {
                 id: random_bill_id(),
-                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
-                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
-                payee: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
-                    random_identity_public_data().1,
-                )),
+                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                    .unwrap(),
+                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                    .unwrap(),
+                payee: BillParticipant::Ident(
+                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                        .unwrap(),
+                ),
                 endorsees: Vec::default(),
-                current_holder: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
-                    random_identity_public_data().1,
-                )),
+                current_holder: BillParticipant::Ident(
+                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                        .unwrap(),
+                ),
                 sum: bitcoin::Amount::default(),
-                maturity_date: TStamp::default(),
+                maturity_date: chrono::NaiveDate::default(),
                 file_urls: Vec::default(),
                 shared_bill_data: String::default(),
             }
@@ -502,13 +505,16 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
-                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1),
-                payee: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
-                    random_identity_public_data().1,
-                )),
+                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                    .unwrap(),
+                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                    .unwrap(),
+                payee: BillParticipant::Ident(
+                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                        .unwrap(),
+                ),
                 endorsees: vec![],
-                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
+                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
                 ..Default::default()
             },
             submitted: TStamp::default(),
@@ -572,7 +578,7 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
+                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
                 ..Default::default()
             },
             submitted: TStamp::default(),
@@ -587,7 +593,7 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: TStamp::from_str("2020-01-01T00:00:00Z").unwrap(),
+                maturity_date: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
                 ..Default::default()
             },
             submitted: TStamp::default(),
@@ -602,7 +608,7 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: TStamp::from_str("2022-01-01T00:00:00Z").unwrap(),
+                maturity_date: chrono::NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
                 ..Default::default()
             },
             submitted: TStamp::default(),
@@ -642,10 +648,11 @@ mod tests {
                 minting_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: TStamp::from_str("2021-01-01T00:00:00Z").unwrap(),
-                current_holder: BillParticipant::Ident(convert::billidentparticipant_wire2ebill(
-                    random_identity_public_data().1,
-                )),
+                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+                current_holder: BillParticipant::Ident(
+                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                        .unwrap(),
+                ),
                 ..Default::default()
             },
             submitted: TStamp::default(),

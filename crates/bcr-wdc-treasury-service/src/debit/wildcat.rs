@@ -1,9 +1,15 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{KeysClient, KeysError, SwapClient};
-use bcr_wdc_quote_client as quote;
-use bcr_wdc_webapi::{bill::BillId, quotes as web_quotes};
+use bcr_common::{
+    client::{
+        keys::{Client as KeysClient, Error as KeysError},
+        quote::Client as QuoteClient,
+        swap::Client as SwapClient,
+    },
+    core::BillId,
+    wire::quotes as wire_quotes,
+};
 use cashu::{nut00 as cdk00, nut02 as cdk02};
 // ----- local imports
 use crate::{
@@ -16,21 +22,21 @@ use crate::{
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct WildcatClientConfig {
     pub swap_service_url: reqwest::Url,
-    pub quote_service_url: quote::Url,
+    pub quote_service_url: reqwest::Url,
     pub key_service_url: reqwest::Url,
 }
 
 #[derive(Clone, Debug)]
 pub struct WildcatCl {
     swap_cl: SwapClient,
-    quote_cl: quote::QuoteClient,
+    quote_cl: QuoteClient,
     key_cl: KeysClient,
 }
 
 impl WildcatCl {
     pub fn new(cfg: WildcatClientConfig) -> Self {
         let swap_cl = SwapClient::new(cfg.swap_service_url);
-        let quote_cl = quote::QuoteClient::new(cfg.quote_service_url);
+        let quote_cl = QuoteClient::new(cfg.quote_service_url);
         let key_cl = KeysClient::new(cfg.key_service_url);
         Self {
             swap_cl,
@@ -48,16 +54,16 @@ impl WildcatService for WildcatCl {
     }
     async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id> {
         // find all quotes for the ebill
-        let params = web_quotes::ListParam {
+        let params = wire_quotes::ListParam {
             bill_id: Some(ebill_id.clone()),
             ..Default::default()
         };
         let list = self.quote_cl.list(params).await?;
         // filter by status that contains keyset_id, from the most to the least likely
         for status in [
-            web_quotes::StatusReplyDiscriminants::Accepted,
-            web_quotes::StatusReplyDiscriminants::Offered,
-            web_quotes::StatusReplyDiscriminants::OfferExpired,
+            wire_quotes::StatusReplyDiscriminants::Accepted,
+            wire_quotes::StatusReplyDiscriminants::Offered,
+            wire_quotes::StatusReplyDiscriminants::OfferExpired,
         ] {
             let candidates: Vec<_> = list
                 .quotes
@@ -94,10 +100,10 @@ impl WildcatService for WildcatCl {
     }
 }
 
-fn extract_keyset_id(quote: web_quotes::StatusReply) -> Option<cdk02::Id> {
+fn extract_keyset_id(quote: wire_quotes::StatusReply) -> Option<cdk02::Id> {
     match quote {
-        web_quotes::StatusReply::Accepted { keyset_id, .. } => Some(keyset_id),
-        web_quotes::StatusReply::Offered { keyset_id, .. } => Some(keyset_id),
+        wire_quotes::StatusReply::Accepted { keyset_id, .. } => Some(keyset_id),
+        wire_quotes::StatusReply::Offered { keyset_id, .. } => Some(keyset_id),
         _ => None,
     }
 }
