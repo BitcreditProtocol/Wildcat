@@ -15,6 +15,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("DB: {0}")]
+    DB(anyhow::Error),
+    #[error("cashu::nut00:: {0}")]
+    Cdk00(#[from] cashu::nut00::Error),
+    #[error("borsh:: {0}")]
+    Borsh(#[from] borsh::io::Error),
+    #[error("bcr_common::borsh:: {0}")]
+    BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("CDK Client error: {0}")]
     Cdk(#[from] CDKError),
     #[error("Keyset Client: {0}")]
@@ -32,12 +40,15 @@ pub enum Error {
 
     #[error("not yet implemented: {0}")]
     NotYet(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let response = match self {
+            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::NotYet(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("{msg} not yet implemented"),
@@ -58,6 +69,10 @@ impl axum::response::IntoResponse for Error {
             Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Cdk(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrCommonBorsh(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Cdk00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
 
         response.into_response()

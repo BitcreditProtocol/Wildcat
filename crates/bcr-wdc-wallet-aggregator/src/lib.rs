@@ -14,12 +14,17 @@ pub mod built_info {
     // The file has been placed there by the build script.
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
+mod commitment;
 mod error;
+mod persistence;
+mod signer;
 mod web;
 // ----- local imports
 use error::Result;
 
 // ----- end imports
+
+pub type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -30,6 +35,7 @@ pub struct AppConfig {
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     clwdr_nats_url: Option<reqwest::Url>,
     clwdr_rest_url: Option<reqwest::Url>,
+    commit_repo_cfg: persistence::surreal::DBCommitmentsConnectionConfig,
 }
 
 #[derive(Clone, FromRef)]
@@ -41,6 +47,7 @@ pub struct AppController {
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
     clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
     clwdr_rest_client: Option<Arc<clwdr_client::ClowderRestClient>>,
+    commit_srv: Arc<commitment::Service>,
 }
 
 impl AppController {
@@ -53,6 +60,7 @@ impl AppController {
             ebpp_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
+            commit_repo_cfg,
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url, None);
@@ -72,6 +80,15 @@ impl AppController {
         let clwdr_rest_client =
             clwdr_rest_url.map(|url| Arc::new(clwdr_client::ClowderRestClient::new(url)));
 
+        let commit_repo = persistence::surreal::DBCommitments::new(commit_repo_cfg)
+            .await
+            .expect("failed to init commitment repo");
+        let dummy = signer::DummySigner::default();
+        let commit_srv = Arc::new(commitment::Service {
+            repo: Box::new(commit_repo),
+            signer: Box::new(dummy),
+        });
+
         Ok(Self {
             cdk_client,
             keys_client,
@@ -80,6 +97,7 @@ impl AppController {
             ebpp_client,
             clwdr_stream_client,
             clwdr_rest_client,
+            commit_srv,
         })
     }
 }
@@ -119,6 +137,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
+        .route("/v1/commitment", post(web::post_commit))
         // Clowder Endpoints
         .route("/v1/id", get(web::get_clowder_id))
         .route("/v1/path", post(web::post_clowder_path))
