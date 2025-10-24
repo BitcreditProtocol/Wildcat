@@ -4,10 +4,8 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
-use cashu::{
-    nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut03 as cdk03, nut06 as cdk06, nut07 as cdk07,
-    nut09 as cdk09, MintVersion,
-};
+use bcr_common::wire::swap as wire_swap;
+use cashu::MintVersion;
 use cdk::wallet::MintConnector;
 use clwdr_client::model::{ExchangeRequest, ExchangeResponse};
 use futures::future::JoinAll;
@@ -35,7 +33,7 @@ pub async fn health() -> Result<&'static str> {
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
 )]
-pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cdk06::MintInfo>> {
+pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cashu::MintInfo>> {
     tracing::debug!("Requested /v1/info");
     let network = ctrl.ebpp_client.network().await?;
     let info = ctrl.cdk_client.get_mint_info().await?;
@@ -81,13 +79,13 @@ cdk-mintd = {cdk_mintd}"#,
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
 )]
-pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cdk01::KeysResponse>> {
+pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/keys");
 
     let mut keys = ctrl.cdk_client.get_mint_keys().await?;
     let mut bcr_keys = ctrl.keys_client.list_keys().await.unwrap_or_default();
     keys.append(&mut bcr_keys);
-    let response = cdk01::KeysResponse { keysets: keys };
+    let response = cashu::KeysResponse { keysets: keys };
     Ok(Json(response))
 }
 
@@ -100,7 +98,7 @@ pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cdk
 )]
 pub async fn get_mint_keysets(
     State(ctrl): State<AppController>,
-) -> Result<Json<cdk02::KeysetResponse>> {
+) -> Result<Json<cashu::KeysetResponse>> {
     tracing::debug!("Requested /v1/keysets");
 
     let mut infos = ctrl.cdk_client.get_mint_keysets().await?;
@@ -117,7 +115,7 @@ pub async fn get_mint_keysets(
     get,
     path = "/v1/keys/{kid}",
     params(
-        ("kid" = cdk02::Id, Path, description = "The keyset id")
+        ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
@@ -126,19 +124,19 @@ pub async fn get_mint_keysets(
 )]
 pub async fn get_mint_keyset(
     State(ctrl): State<AppController>,
-    Path(kid): Path<cdk02::Id>,
-) -> Result<Json<cdk01::KeysResponse>> {
+    Path(kid): Path<cashu::Id>,
+) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/keys/{}", kid);
 
     let bcr_response = ctrl.keys_client.keys(kid).await;
     if let Ok(keys) = bcr_response {
-        let response = cdk01::KeysResponse {
+        let response = cashu::KeysResponse {
             keysets: vec![keys],
         };
         return Ok(Json(response));
     }
     let keys = ctrl.cdk_client.get_mint_keyset(kid).await?;
-    let response = cdk01::KeysResponse {
+    let response = cashu::KeysResponse {
         keysets: vec![keys],
     };
     Ok(Json(response))
@@ -148,7 +146,7 @@ pub async fn get_mint_keyset(
     get,
     path = "/v1/keysets/{kid}",
     params(
-        ("kid" = cdk02::Id, Path, description = "The keyset id")
+        ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
@@ -157,8 +155,8 @@ pub async fn get_mint_keyset(
 )]
 pub async fn get_keyset_info(
     State(ctrl): State<AppController>,
-    Path(kid): Path<cdk02::Id>,
-) -> Result<Json<cdk02::KeySetInfo>> {
+    Path(kid): Path<cashu::Id>,
+) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Requested /v1/keysets/{}", kid);
 
     if let Ok(info) = ctrl.keys_client.keyset_info(kid).await {
@@ -173,7 +171,7 @@ pub async fn get_keyset_info(
         }
         // if there are no keys, then it doesn't exist, otherwise its inactive
         let keys = ctrl.cdk_client.get_mint_keyset(kid).await?;
-        Ok(Json(cdk02::KeySetInfo {
+        Ok(Json(cashu::KeySetInfo {
             id: kid,
             active: false,
             unit: keys.unit,
@@ -194,10 +192,17 @@ pub async fn get_keyset_info(
 )]
 pub async fn post_swap(
     State(ctrl): State<AppController>,
-    Json(request): Json<cdk03::SwapRequest>,
-) -> Result<Json<cdk03::SwapResponse>> {
+    Json(request): Json<cashu::SwapRequest>,
+) -> Result<Json<cashu::SwapResponse>> {
     tracing::debug!("Requested /v1/swap");
 
+    let now = chrono::Utc::now();
+    let is_ok = ctrl.commit_srv.check_swap(now, request.clone()).await?;
+    if !is_ok {
+        return Err(Error::InvalidInput(String::from(
+            "Swap request rejected due to commitment",
+        )));
+    }
     let swap_type = determine_swap_type(
         &ctrl.keys_client,
         request.inputs().as_slice(),
@@ -228,7 +233,7 @@ pub async fn post_swap(
         clwdr_client.mint_swap(proofs, signatures.clone()).await?;
     }
 
-    let response = cdk03::SwapResponse { signatures };
+    let response = cashu::SwapResponse { signatures };
 
     Ok(Json(response))
 }
@@ -242,8 +247,8 @@ pub async fn post_swap(
 )]
 pub async fn post_check_state(
     State(ctrl): State<AppController>,
-    Json(request): Json<cdk07::CheckStateRequest>,
-) -> Result<Json<cdk07::CheckStateResponse>> {
+    Json(request): Json<cashu::CheckStateRequest>,
+) -> Result<Json<cashu::CheckStateResponse>> {
     tracing::debug!("Requested /v1/checkstate");
 
     let n = request.ys.len();
@@ -269,7 +274,7 @@ pub async fn post_check_state(
             merged.push(credit.clone());
         }
     }
-    Ok(Json(cdk07::CheckStateResponse { states: merged }))
+    Ok(Json(cashu::CheckStateResponse { states: merged }))
 }
 
 #[utoipa::path(
@@ -281,8 +286,8 @@ pub async fn post_check_state(
 )]
 pub async fn post_restore(
     State(ctrl): State<AppController>,
-    Json(request): Json<cdk09::RestoreRequest>,
-) -> Result<Json<cdk09::RestoreResponse>> {
+    Json(request): Json<cashu::RestoreRequest>,
+) -> Result<Json<cashu::RestoreResponse>> {
     tracing::debug!("Requested /v1/restore");
 
     let outputs = request.outputs.clone();
@@ -294,7 +299,7 @@ pub async fn post_restore(
         .zip(restore_resp.signatures.into_iter())
         .collect::<Vec<_>>();
 
-    let mut response = cdk09::RestoreResponse {
+    let mut response = cashu::RestoreResponse {
         outputs: Default::default(),
         signatures: Default::default(),
         promises: Default::default(),
@@ -367,6 +372,25 @@ pub async fn post_exchange(
     todo!("Intermint Exchange not yet implemented");
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
+pub async fn post_commit(
+    State(ctrl): State<AppController>,
+    Json(request): Json<wire_swap::CommitmentRequest>,
+) -> Result<Json<wire_swap::CommitmentResponse>> {
+    let now = chrono::Utc::now();
+    let response = ctrl
+        .commit_srv
+        .commit(
+            now,
+            request,
+            &ctrl.swap_client,
+            &ctrl.keys_client,
+            &ctrl.cdk_client,
+        )
+        .await?;
+    Ok(Json(response))
+}
+
 #[allow(clippy::enum_variant_names)]
 enum SwapType {
     CrSat2CrSat,
@@ -387,23 +411,23 @@ enum SwapType {
 trait KeyClientT {
     async fn keyset_info(
         &self,
-        keyset_id: cdk02::Id,
-    ) -> std::result::Result<cdk02::KeySetInfo, KeysError>;
+        keyset_id: cashu::Id,
+    ) -> std::result::Result<cashu::KeySetInfo, KeysError>;
 }
 #[async_trait]
 impl KeyClientT for KeysClient {
     async fn keyset_info(
         &self,
-        keyset_id: cdk02::Id,
-    ) -> std::result::Result<cdk02::KeySetInfo, KeysError> {
+        keyset_id: cashu::Id,
+    ) -> std::result::Result<cashu::KeySetInfo, KeysError> {
         self.keyset_info(keyset_id).await
     }
 }
 
 async fn determine_swap_type(
     key_cl: &impl KeyClientT,
-    inputs: &[cdk00::Proof],
-    outputs: &[cdk00::BlindedMessage],
+    inputs: &[cashu::Proof],
+    outputs: &[cashu::BlindedMessage],
 ) -> Result<SwapType> {
     let input_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
     let input_responses: JoinAll<_> = input_kids
@@ -448,7 +472,7 @@ mod tests {
             signatures_test::generate_proofs(&crsat_keyset, &amounts[1..])[0].clone(),
             signatures_test::generate_proofs(&sat_keyset, &amounts[..1])[0].clone(),
         ];
-        let outputs: Vec<cdk00::BlindedMessage> =
+        let outputs: Vec<cashu::BlindedMessage> =
             signatures_test::generate_blinds(sat_keyset.id, &amounts)
                 .into_iter()
                 .map(|(b, _, _)| b)
@@ -478,7 +502,7 @@ mod tests {
         let (info, keyset) = keys_test::generate_random_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
         let inputs = signatures_test::generate_proofs(&keyset, &amounts);
-        let outputs: Vec<cdk00::BlindedMessage> =
+        let outputs: Vec<cashu::BlindedMessage> =
             signatures_test::generate_blinds(keyset.id, &amounts)
                 .into_iter()
                 .map(|(b, _, _)| b)
@@ -500,7 +524,7 @@ mod tests {
         let (crsat_info, crsat_keyset) = keys_test::generate_random_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
         let inputs = signatures_test::generate_proofs(&crsat_keyset, &amounts);
-        let outputs: Vec<cdk00::BlindedMessage> =
+        let outputs: Vec<cashu::BlindedMessage> =
             signatures_test::generate_blinds(sat_keyset.id, &amounts)
                 .into_iter()
                 .map(|(b, _, _)| b)
