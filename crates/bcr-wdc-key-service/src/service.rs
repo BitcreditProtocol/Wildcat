@@ -2,14 +2,17 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::core;
 use bcr_wdc_utils::keys as keys_utils;
 use cdk_common::mint::MintKeySetInfo;
 use itertools::Itertools;
 use uuid::Uuid;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::factory::Factory;
-use crate::TStamp;
+use crate::{
+    error::{Error, Result},
+    factory::Factory,
+    TStamp,
+};
 
 // ----- end imports
 
@@ -96,7 +99,14 @@ impl Service {
 
     pub async fn verify_proof(&self, proof: cashu::Proof) -> Result<()> {
         let keyset = self.keys(proof.keyset_id).await?;
-        keys_utils::verify_with_keys(&keyset, &proof)?;
+
+        core::signature::verify_ecash_proof(&keyset, &proof)?;
+        Ok(())
+    }
+
+    pub async fn verify_fingerprint(&self, fp: core::signature::ProofFingerprint) -> Result<()> {
+        let keyset = self.keys(fp.keyset_id).await?;
+        core::signature::verify_ecash_fingerprint(&keyset, &fp)?;
         Ok(())
     }
 
@@ -129,7 +139,7 @@ impl Service {
 
     pub async fn sign_blind(&self, blind: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
         let keyset = self.keys(blind.keyset_id).await?;
-        let signature = keys_utils::sign_with_keys(&keyset, blind)?;
+        let signature = core::signature::sign_ecash(&keyset, blind)?;
         self.signatures
             .store(blind.blinded_secret, signature.clone())
             .await?;
@@ -193,7 +203,7 @@ impl Service {
         let keyset = self.keys(*kid).await?;
         let mut signatures = Vec::with_capacity(request.outputs.len());
         for blind in &request.outputs {
-            let signature = keys_utils::sign_with_keys(&keyset, blind)?;
+            let signature = core::signature::sign_ecash(&keyset, blind)?;
             self.signatures
                 .store(blind.blinded_secret, signature.clone())
                 .await?;

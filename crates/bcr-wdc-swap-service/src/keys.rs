@@ -42,7 +42,7 @@ impl KeysService for RESTClient {
         }
     }
     async fn verify_proof(&self, proof: &cashu::Proof) -> Result<()> {
-        let response = self.0.verify(proof).await;
+        let response = self.0.verify_proof(proof).await;
         match response {
             Ok(()) => Ok(()),
             Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
