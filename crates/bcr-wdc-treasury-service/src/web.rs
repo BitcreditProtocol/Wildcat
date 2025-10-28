@@ -30,9 +30,12 @@ pub async fn crsat_online_exchange(
 ) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");
 
-    let signatures = ctrl
-        .online_exchange(request.proofs, &request.exchange_path)
-        .await?;
+    let exchange_path: Vec<cashu::PublicKey> = request
+        .exchange_path
+        .iter()
+        .map(|p| cashu::PublicKey::from(*p))
+        .collect();
+    let signatures = ctrl.online_exchange(request.proofs, &exchange_path).await?;
     let response = web_exchange::OnlineExchangeResponse { proofs: signatures };
     Ok(Json(response))
 }
@@ -45,9 +48,12 @@ pub async fn sat_online_exchange(
 ) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");
 
-    let signatures = ctrl
-        .online_exchange(request.proofs, &request.exchange_path)
-        .await?;
+    let exchange_path: Vec<cashu::PublicKey> = request
+        .exchange_path
+        .iter()
+        .map(|p| cashu::PublicKey::from(*p))
+        .collect();
+    let signatures = ctrl.online_exchange(request.proofs, &exchange_path).await?;
     let response = web_exchange::OnlineExchangeResponse { proofs: signatures };
     Ok(Json(response))
 }

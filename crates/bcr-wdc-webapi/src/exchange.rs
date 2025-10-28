@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bitcoin::secp256k1;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
@@ -10,7 +11,8 @@ use utoipa::ToSchema;
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct OnlineExchangeRequest {
     pub proofs: Vec<cashu::Proof>,
-    pub exchange_path: Vec<cashu::PublicKey>,
+    #[schema(value_type = Vec<String>)]
+    pub exchange_path: Vec<secp256k1::PublicKey>,
 }
 
 ///--------------------------- ExchangeResponse
@@ -35,5 +37,5 @@ pub struct RequestToMintFromForeigneCashPayload {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestToMintFromForeigneCash {
     pub payload: String, // b64 borsh payload
-    pub signature: bitcoin::secp256k1::schnorr::Signature,
+    pub signature: secp256k1::schnorr::Signature,
 }
