@@ -62,7 +62,7 @@ pub struct SimplifiedBillPaymentStatus {
 
 // decrypt and validate hashes to get bill chain with plaintext
 pub fn get_chain_with_plaintext_from_shared_bill(
-    shared_bill: &bcr_wdc_webapi::quotes::SharedBill,
+    shared_bill: &wire_quotes::SharedBill,
     private_key: &SecretKey,
 ) -> Result<Vec<BillBlockPlaintextWrapper>> {
     let decoded = util::base58_decode(&shared_bill.data)
@@ -91,14 +91,14 @@ pub fn get_chain_with_plaintext_from_shared_bill(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, payload))]
 pub async fn validate_and_decrypt_shared_bill(
     State(ctrl): State<AppController>,
-    Json(payload): Json<bcr_wdc_webapi::quotes::SharedBill>,
-) -> Result<Json<bcr_wdc_webapi::quotes::BillInfo>> {
+    Json(payload): Json<wire_quotes::SharedBill>,
+) -> Result<Json<wire_quotes::BillInfo>> {
     tracing::debug!("Received validate and decrypt shared bill request");
     let identity::IdentityWithAll { identity, key_pair } =
         ctrl.identity_service.get_full_identity().await?;
 
     // check that our pub key is the receiver pub key
-    if identity.node_id.pub_key() != payload.receiver {
+    if identity.node_id.pub_key() != payload.receiver.inner {
         return Err(Error::SharedBill("Public keys don't match".into()));
     }
 
@@ -180,16 +180,18 @@ pub async fn validate_and_decrypt_shared_bill(
         .into_iter()
         .map(convert::billparticipant_ebill2wire)
         .collect();
+    let maturity_date = chrono::NaiveDate::from_str(&bill_data.maturity_date.to_string())
+        .map_err(|e| Error::SharedBill(e.to_string()))?;
 
     // create result
-    Ok(Json(bcr_wdc_webapi::quotes::BillInfo {
+    Ok(Json(wire_quotes::BillInfo {
         id: bill_data.id,
         drawee: convert::billidentparticipant_ebill2wire(core_drawee),
         drawer: convert::billidentparticipant_ebill2wire(core_drawer),
         payee: convert::billparticipant_ebill2wire(core_payee),
         endorsees: core_endorsees,
         sum: bill_data.sum,
-        maturity_date: bill_data.maturity_date.to_string(),
+        maturity_date,
         file_urls: payload.file_urls,
     }))
 }
