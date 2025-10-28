@@ -1,17 +1,17 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
+use bcr_common::client::keys::Client;
 use cashu::MintRequest;
 // ----- local imports
-use crate::error::Result;
-use crate::service::Service;
+use crate::{error::Result, service::Service};
 
 // ----- end imports
 
 /// --------------------------- Look up keysets info
 #[utoipa::path(
     get,
-    path = "/v1/keysets/{kid}",
+    path = Client::KEYSETINFO_EP_V1,
     params(
         ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
@@ -34,7 +34,7 @@ pub async fn lookup_keyset(
 /// --------------------------- list keysets info
 #[utoipa::path(
     get,
-    path = "/v1/keysets",
+    path = Client::LISTKEYSETINFO_EP_V1,
     params(),
     responses (
         (status = 200, description = "Successful response", body = cashu::KeysetResponse, content_type = "application/json"),
@@ -57,7 +57,7 @@ pub async fn list_keysets(State(ctrl): State<Service>) -> Result<Json<cashu::Key
 /// --------------------------- Look up keys
 #[utoipa::path(
     get,
-    path = "/v1/keys/{kid}",
+    path = Client::KEYS_EP_V1,
     params(
         ("kid" = cashu::Id, Path, description = "The keyset id")
     ),
@@ -83,7 +83,7 @@ pub async fn lookup_keys(
 /// --------------------------- List keys
 #[utoipa::path(
     get,
-    path = "/v1/keys",
+    path = Client::LISTKEYS_EP_V1,
     params(),
     responses (
         (status = 200, description = "Successful response", body = cashu::KeysResponse, content_type = "application/json"),
@@ -106,7 +106,7 @@ pub async fn list_keys(State(ctrl): State<Service>) -> Result<Json<cashu::KeysRe
 /// --------------------------- Mint
 #[utoipa::path(
     post,
-    path = "/v1/mint/ebill",
+    path = Client::MINT_EP_V1,
     request_body(content = MintRequest<uuid::Uuid>, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = cashu::MintResponse, content_type = "application/json"),
@@ -125,7 +125,7 @@ pub async fn mint_ebill(
 /// --------------------------- Restore signatures
 #[utoipa::path(
     post,
-    path = "/v1/restore",
+    path = Client::RESTORE_EP_V1,
     request_body(content = cashu::RestoreRequest, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = cashu::RestoreResponse, content_type = "application/json"),
