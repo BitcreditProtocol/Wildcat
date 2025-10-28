@@ -2,7 +2,6 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_wdc_utils::keys as keys_utils;
 use cashu::{nut01 as cdk01, nut02 as cdk02};
 use thiserror::Error;
 // ----- local imports
@@ -13,10 +12,8 @@ pub enum Error {
     // external errors wrappers
     #[error("keys repository {0}")]
     KeysRepository(AnyError),
-    #[error("sign with keys {0}")]
-    SignKeys(#[from] keys_utils::SignWithKeysError),
-    #[error("verify with keys {0}")]
-    VerifyKeys(#[from] keys_utils::VerifyWithKeysError),
+    #[error("{0}")]
+    SignVerifyEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("signatures repository {0}")]
     SignaturesRepository(AnyError),
     #[error("clowder client {0}")]
@@ -62,8 +59,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SignaturesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::VerifyKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::SignKeys(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::SignVerifyEcash(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()

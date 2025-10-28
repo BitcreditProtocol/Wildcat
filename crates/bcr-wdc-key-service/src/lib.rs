@@ -94,7 +94,11 @@ where
         )
         .route(KeysClient::SIGN_EP_V1, post(admin::sign_blind))
         .route(KeysClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
-        .route(KeysClient::VERIFY_EP_V1, post(admin::verify_proof))
+        .route(KeysClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
+        .route(
+            KeysClient::VERIFY_FINGERPRINT_EP_V1,
+            post(admin::verify_fingerprint),
+        )
         .route(KeysClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate));
 
     Router::new()
