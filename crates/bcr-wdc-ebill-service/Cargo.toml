@@ -21,6 +21,7 @@ bip39 = {workspace = true, features = ["serde"]}
 bitcoin = {workspace = true, features = ["serde"]}
 borsh.workspace = true
 config.workspace = true
+chrono = {workspace = true}
 futures.workspace = true
 mockall = {workspace = true, optional = true}
 reqwest = {workspace = true, features = ["stream"]}
