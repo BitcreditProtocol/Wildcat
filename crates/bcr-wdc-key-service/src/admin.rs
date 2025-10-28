@@ -1,14 +1,14 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::{client::keys::Client, wire::keys as wire_keys};
 // ----- local imports
 use crate::error::Result;
 use crate::service::Service;
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/keys/sign/",
+    path = Client::SIGN_EP_V1,
     request_body(content = cashu::BlindedMessage, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = cashu::BlindSignature, content_type = "application/json"),
@@ -27,7 +27,7 @@ pub async fn sign_blind(
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/keys/verify/",
+    path = Client::VERIFY_PROOF_EP_V1,
     request_body(content = cashu::Proof, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = bool, content_type = "application/json"),
@@ -45,8 +45,27 @@ pub async fn verify_proof(
 }
 
 #[utoipa::path(
+    post,
+    path = Client::VERIFY_FINGERPRINT_EP_V1,
+    request_body(content = wire_keys::ProofFingerprint, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = bool, content_type = "application/json"),
+        (status = 400, description = "proof verification failed"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn verify_fingerprint(
+    State(ctrl): State<Service>,
+    Json(fp): Json<wire_keys::ProofFingerprint>,
+) -> Result<()> {
+    tracing::debug!("Received verify fingerprint request");
+
+    ctrl.verify_fingerprint(fp.into()).await
+}
+
+#[utoipa::path(
     get,
-    path = "/v1/admin/keys/{date}",
+    path = Client::KEYSFOREXPIRATION_EP_V1,
     params(
         ("date" = chrono::NaiveDate, Path, description = "The expiration date")
     ),
@@ -69,7 +88,7 @@ pub async fn get_keyset_for_date(
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/keys/deactivate/",
+    path = Client::DEACTIVATEKEYSET_EP_V1,
     request_body(content = wire_keys::DeactivateKeysetRequest, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = wire_keys::DeactivateKeysetResponse, content_type = "application/json"),
@@ -90,7 +109,7 @@ pub async fn deactivate(
 
 #[utoipa::path(
     post,
-    path = "/v1/admin/keys/mintop",
+    path = Client::NEWMINTOP_EP_V1,
     request_body(content = wire_keys::NewMintOperationRequest, content_type = "application/json"),
     responses (
         (status = 200, description = "Successful response", body = wire_keys::NewMintOperationResponse, content_type = "application/json"),
