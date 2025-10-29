@@ -15,7 +15,8 @@ axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-ebpp-client = {workspace = true}
-bcr-wdc-treasury-client = {workspace = true}
+bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
 borsh = {workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}
