@@ -27,7 +27,6 @@ async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.5.0"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "0ab1b1e98ad83c9a04318e05a2eda18b10c01eb0"}
 bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
 bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
@@ -53,6 +52,7 @@ cdk-common = {version = "0.13"}
 cdk-payment-processor = {version = "0.13", default-features = false}
 cdk-redb = {version = "0.13"}
 chrono = {version = "0.4"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "1f88e3c0239621bec03a11d5efdc5ffa9261aac9"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}

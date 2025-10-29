@@ -73,7 +73,7 @@ impl proof::ClowderClient for ClowderCl {
         let issuer_pk: &bitcoin::secp256k1::PublicKey = issuer.deref();
         let response = self
             .clwdr
-            .post_verify_intermint_proofs(*issuer_pk, proofs.clone())
+            .post_verify_proofs(*issuer_pk, proofs.clone())
             .await?;
         if response.valid_proofs != proofs {
             return Err(Error::InvalidInput(String::from(
