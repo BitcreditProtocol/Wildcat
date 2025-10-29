@@ -38,6 +38,8 @@ pub enum Error {
     #[error("Clowder Client Not Initialized")]
     ClowderClientNoInit,
 
+    #[error("invalid: {0}")]
+    Invalid(String),
     #[error("not yet implemented: {0}")]
     NotYet(String),
     #[error("invalid input: {0}")]
@@ -53,6 +55,7 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("{msg} not yet implemented"),
             ),
+            Error::Invalid(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
 
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

@@ -1,17 +1,22 @@
 // ----- standard library imports
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
-use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
-use bcr_common::wire::swap as wire_swap;
+use bcr_common::{
+    client::keys::{Client as KeysClient, Error as KeysError},
+    wire::swap as wire_swap,
+};
+use bcr_wdc_treasury_client::TreasuryClient;
+use bcr_wdc_webapi::exchange as web_exchange;
 use cashu::MintVersion;
 use cdk::wallet::MintConnector;
-use clwdr_client::model::{ExchangeRequest, ExchangeResponse};
 use futures::future::JoinAll;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::{built_info, AppController};
+use crate::{
+    error::{Error, Result},
+    {built_info, AppController},
+};
 
 // ----- end imports
 
@@ -203,14 +208,14 @@ pub async fn post_swap(
             "Swap request rejected due to commitment",
         )));
     }
-    let swap_type = determine_swap_type(
-        &ctrl.keys_client,
-        request.inputs().as_slice(),
-        request.outputs().as_slice(),
-    )
-    .await?;
+    let input_type = determine_input_type(&ctrl.keys_client, request.inputs()).await?;
+    let output_type = determine_output_type(&ctrl.keys_client, request.outputs()).await?;
+    let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs().clone();
     let blinded_messages = request.outputs();
+    let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
+    tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
+
     let signatures = match swap_type {
         SwapType::CrSat2CrSat => {
             ctrl.swap_client
@@ -367,9 +372,39 @@ pub async fn get_clowder_betas(
 #[allow(dead_code, unused_variables)]
 pub async fn post_exchange(
     State(ctrl): State<AppController>,
-    Json(request): Json<ExchangeRequest>,
-) -> Result<Json<ExchangeResponse>> {
-    todo!("Intermint Exchange not yet implemented");
+    Json(request): Json<web_exchange::OnlineExchangeRequest>,
+) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
+    if request.exchange_path.len() < 3 {
+        return Err(Error::Invalid(String::from(
+            "minimum exchange path [alpha_pk, this_mint_pk, wallet_pk] not met",
+        )));
+    }
+    let Some(rest_clwdr) = ctrl.clwdr_rest_client.as_ref() else {
+        return Err(Error::ClowderClientNoInit);
+    };
+    let clowder_keys = ForeignKeyClientWithClowder {
+        clwdr_cl: rest_clwdr.clone(),
+        pk: request.exchange_path[0],
+    };
+    let input_type = determine_input_type(&clowder_keys, &request.proofs).await?;
+    let web_exchange::OnlineExchangeRequest {
+        proofs,
+        exchange_path,
+    } = request;
+    let proofs = match input_type {
+        InputType::Sat => {
+            ctrl.treasury_client
+                .sat_exchange_online(proofs, exchange_path)
+                .await?
+        }
+        InputType::CrSat => {
+            ctrl.treasury_client
+                .crsat_exchange_online(proofs, exchange_path)
+                .await?
+        }
+    };
+    let response = web_exchange::OnlineExchangeResponse { proofs };
+    Ok(Json(response))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
@@ -391,6 +426,16 @@ pub async fn post_commit(
     Ok(Json(response))
 }
 
+#[derive(Debug, Clone, Copy)]
+enum InputType {
+    CrSat,
+    Sat,
+}
+enum OutputType {
+    CrSat,
+    Sat,
+}
+
 #[allow(clippy::enum_variant_names)]
 enum SwapType {
     CrSat2CrSat,
@@ -398,63 +443,117 @@ enum SwapType {
     CrSat2Sat,
 }
 
-/// if any keyset ID among the inputs is not found in crsat-key-service, then the swap can only be
-/// a sat2sat
-/// once proved that all inputs are found in crsat-key-service,
-/// if any keyset ID among the outputs is not found in crsat-key-service, then the swap can only be
-/// a crsat2sat
-/// once proved that all outputs are found in crsat-key-service,
-/// then it's definitely a crsat2crsat swap
-/// it's not a responsibility of this service to deal with the case of mixed inputs/outputs
+fn io_to_swap(input: InputType, output: OutputType) -> Result<SwapType> {
+    match (input, output) {
+        (InputType::CrSat, OutputType::CrSat) => Ok(SwapType::CrSat2CrSat),
+        (InputType::Sat, OutputType::Sat) => Ok(SwapType::Sat2Sat),
+        (InputType::CrSat, OutputType::Sat) => Ok(SwapType::CrSat2Sat),
+        (InputType::Sat, OutputType::CrSat) => {
+            Err(Error::Invalid(String::from("swap not allowed")))
+        }
+    }
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 trait KeyClientT {
-    async fn keyset_info(
-        &self,
-        keyset_id: cashu::Id,
-    ) -> std::result::Result<cashu::KeySetInfo, KeysError>;
+    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool>;
 }
 #[async_trait]
 impl KeyClientT for KeysClient {
-    async fn keyset_info(
-        &self,
-        keyset_id: cashu::Id,
-    ) -> std::result::Result<cashu::KeySetInfo, KeysError> {
-        self.keyset_info(keyset_id).await
+    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool> {
+        let info = self.keyset_info(keyset_id).await;
+        match info {
+            Ok(_) => Ok(true),
+            Err(KeysError::ResourceNotFound(_)) => Ok(false),
+            Err(e) => Err(Error::Keys(e)),
+        }
+    }
+}
+pub struct ForeignKeyClientWithClowder {
+    clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
+    pk: bitcoin::secp256k1::PublicKey,
+}
+#[async_trait]
+impl KeyClientT for ForeignKeyClientWithClowder {
+    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool> {
+        let info = self.clwdr_cl.get_keyset(&self.pk, &keyset_id).await;
+        match info {
+            Ok(_) => Ok(true),
+            Err(clwdr_client::ClowderClientError::Http(err))
+                if err.status() == Some(axum::http::StatusCode::NOT_FOUND) =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(Error::ClowderClient(e)),
+        }
     }
 }
 
-async fn determine_swap_type(
+async fn determine_input_type(
     key_cl: &impl KeyClientT,
     inputs: &[cashu::Proof],
-    outputs: &[cashu::BlindedMessage],
-) -> Result<SwapType> {
-    let input_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
-    let input_responses: JoinAll<_> = input_kids
+) -> Result<InputType> {
+    let unique_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
+    let requests: JoinAll<_> = unique_kids
         .into_iter()
-        .map(|kid| key_cl.keyset_info(kid))
+        .map(|kid| key_cl.belongs_to(kid))
         .collect();
-    for response in input_responses.await.into_iter() {
-        match response {
-            Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::Sat2Sat),
-            Err(e) => return Err(Error::Keys(e)),
-            Ok(_) => {}
-        }
+    let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
+    let all_crsat = responses.iter().cloned().all(std::convert::identity);
+    let all_sat = responses.iter().all(|b| !b);
+    if all_crsat {
+        Ok(InputType::CrSat)
+    } else if all_sat {
+        Ok(InputType::Sat)
+    } else {
+        Err(Error::Invalid(String::from(
+            "mixed credit/debit inputs not allowed",
+        )))
     }
-    let output_kids = outputs.iter().map(|b| b.keyset_id).collect::<HashSet<_>>();
-    let outputs_responses: JoinAll<_> = output_kids
-        .into_iter()
-        .map(|kid| key_cl.keyset_info(kid))
-        .collect();
-    for response in outputs_responses.await.into_iter() {
-        match response {
-            Err(KeysError::ResourceNotFound(_)) => return Ok(SwapType::CrSat2Sat),
-            Err(e) => return Err(Error::Keys(e)),
-            Ok(_) => {}
-        }
-    }
+}
 
-    Ok(SwapType::CrSat2CrSat)
+async fn determine_output_type(
+    key_cl: &impl KeyClientT,
+    outputs: &[cashu::BlindedMessage],
+) -> Result<OutputType> {
+    let unique_kids = outputs.iter().map(|b| b.keyset_id).collect::<HashSet<_>>();
+    let requests: JoinAll<_> = unique_kids
+        .into_iter()
+        .map(|kid| key_cl.belongs_to(kid))
+        .collect();
+    let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
+    let all_crsat = responses.iter().cloned().all(std::convert::identity);
+    let all_sat = responses.iter().all(|b| !b);
+    if all_crsat {
+        Ok(OutputType::CrSat)
+    } else if all_sat {
+        Ok(OutputType::Sat)
+    } else {
+        Err(Error::Invalid(String::from(
+            "mixed credit/debit output not allowed",
+        )))
+    }
+}
+
+async fn test_for_htlc(
+    proofs: &[cashu::Proof],
+    input_type: InputType,
+    tcl: &TreasuryClient,
+) -> Result<cashu::Amount> {
+    let mut total = cashu::Amount::ZERO;
+    for proof in proofs {
+        if let Some(cashu::Witness::HTLCWitness(cashu::HTLCWitness { preimage, .. })) =
+            &proof.witness
+        {
+            let amount = match input_type {
+                InputType::CrSat => tcl.try_crsat_htlc(preimage.to_string()).await?,
+                InputType::Sat => tcl.try_sat_htlc(preimage.to_string()).await?,
+            };
+            total += amount;
+        }
+    }
+    Ok(total)
 }
 
 #[cfg(test)]
@@ -464,44 +563,60 @@ mod tests {
     use mockall::predicate::*;
 
     #[tokio::test]
-    async fn determine_swap_type_sat2sat() {
+    async fn determine_input_type_sat() {
         let (_, sat_keyset) = keys_test::generate_random_keyset();
-        let (crsat_info, crsat_keyset) = keys_test::generate_random_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
-        let inputs = [
-            signatures_test::generate_proofs(&crsat_keyset, &amounts[1..])[0].clone(),
-            signatures_test::generate_proofs(&sat_keyset, &amounts[..1])[0].clone(),
-        ];
+        let inputs = [signatures_test::generate_proofs(&sat_keyset, &amounts[..1])[0].clone()];
+        let mut client = MockKeyClientT::new();
+        let sat_kid = sat_keyset.id;
+        client
+            .expect_belongs_to()
+            .times(1)
+            .with(eq(sat_kid))
+            .returning(|_| Ok(false));
+        let inputtype = determine_input_type(&client, &inputs).await.unwrap();
+        assert!(matches!(inputtype, InputType::Sat));
+    }
+
+    #[tokio::test]
+    async fn determine_output_type_sat() {
+        let (_, sat_keyset) = keys_test::generate_random_keyset();
+        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
         let outputs: Vec<cashu::BlindedMessage> =
             signatures_test::generate_blinds(sat_keyset.id, &amounts)
                 .into_iter()
                 .map(|(b, _, _)| b)
                 .collect();
         let mut client = MockKeyClientT::new();
-        let crsat_kid = crsat_keyset.id;
-        client
-            .expect_keyset_info()
-            .times(1)
-            .with(eq(crsat_kid))
-            .returning(move |_| Ok(cashu::KeySetInfo::from(crsat_info.clone())));
         let sat_kid = sat_keyset.id;
         client
-            .expect_keyset_info()
+            .expect_belongs_to()
             .times(1)
             .with(eq(sat_kid))
-            .returning(|kid| Err(KeysError::ResourceNotFound(kid)));
+            .returning(|_| Ok(false));
 
-        let swaptype = determine_swap_type(&client, &inputs, &outputs)
-            .await
-            .unwrap();
-        assert!(matches!(swaptype, SwapType::Sat2Sat));
+        let outputtype = determine_output_type(&client, &outputs).await.unwrap();
+        assert!(matches!(outputtype, OutputType::Sat));
+    }
+
+    #[tokio::test]
+    async fn determine_input_type_crsat() {
+        let (_, keyset) = keys_test::generate_random_keyset();
+        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
+        let inputs = signatures_test::generate_proofs(&keyset, &amounts);
+        let mut client = MockKeyClientT::new();
+        client
+            .expect_belongs_to()
+            .times(1)
+            .returning(move |_| Ok(true));
+        let inputtype = determine_input_type(&client, &inputs).await.unwrap();
+        assert!(matches!(inputtype, InputType::CrSat));
     }
 
     #[tokio::test]
     async fn determine_swap_type_crsat2crsat() {
-        let (info, keyset) = keys_test::generate_random_keyset();
+        let (_, keyset) = keys_test::generate_random_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
-        let inputs = signatures_test::generate_proofs(&keyset, &amounts);
         let outputs: Vec<cashu::BlindedMessage> =
             signatures_test::generate_blinds(keyset.id, &amounts)
                 .into_iter()
@@ -509,43 +624,10 @@ mod tests {
                 .collect();
         let mut client = MockKeyClientT::new();
         client
-            .expect_keyset_info()
-            .times(2)
-            .returning(move |_| Ok(cashu::KeySetInfo::from(info.clone())));
-        let swaptype = determine_swap_type(&client, &inputs, &outputs)
-            .await
-            .unwrap();
-        assert!(matches!(swaptype, SwapType::CrSat2CrSat));
-    }
-
-    #[tokio::test]
-    async fn determine_swap_type_crsat2sat() {
-        let (_, sat_keyset) = keys_test::generate_random_keyset();
-        let (crsat_info, crsat_keyset) = keys_test::generate_random_keyset();
-        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
-        let inputs = signatures_test::generate_proofs(&crsat_keyset, &amounts);
-        let outputs: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(sat_keyset.id, &amounts)
-                .into_iter()
-                .map(|(b, _, _)| b)
-                .collect();
-        let mut client = MockKeyClientT::new();
-        let crsat_kid = crsat_keyset.id;
-        client
-            .expect_keyset_info()
+            .expect_belongs_to()
             .times(1)
-            .with(eq(crsat_kid))
-            .returning(move |_| Ok(cashu::KeySetInfo::from(crsat_info.clone())));
-        let sat_kid = sat_keyset.id;
-        client
-            .expect_keyset_info()
-            .times(1)
-            .with(eq(sat_kid))
-            .returning(|kid| Err(KeysError::ResourceNotFound(kid)));
-
-        let swaptype = determine_swap_type(&client, &inputs, &outputs)
-            .await
-            .unwrap();
-        assert!(matches!(swaptype, SwapType::CrSat2Sat));
+            .returning(move |_| Ok(true));
+        let outputtype = determine_output_type(&client, &outputs).await.unwrap();
+        assert!(matches!(outputtype, OutputType::CrSat));
     }
 }
