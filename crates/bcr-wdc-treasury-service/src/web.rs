@@ -23,7 +23,6 @@ where
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-#[axum::debug_handler]
 pub async fn crsat_online_exchange(
     State(ctrl): State<foreign::crsat::Service>,
     Json(request): Json<web_exchange::OnlineExchangeRequest>,
@@ -41,7 +40,6 @@ pub async fn crsat_online_exchange(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-#[axum::debug_handler]
 pub async fn sat_online_exchange(
     State(ctrl): State<foreign::sat::Service>,
     Json(request): Json<web_exchange::OnlineExchangeRequest>,

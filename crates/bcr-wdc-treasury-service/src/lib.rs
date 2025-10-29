@@ -1,9 +1,12 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::FromRef;
-use axum::routing::{get, post};
-use axum::Router;
+use axum::{
+    extract::FromRef,
+    routing::{get, post},
+    Router,
+};
+use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::secp256k1;
 // ----- local modules
 mod admin;
@@ -131,13 +134,13 @@ impl AppController {
 
 pub fn routes(app: AppController) -> Router {
     let web = Router::new()
-        .route("/v1/treasury/redeem", post(web::redeem))
+        .route(TreasuryClient::REDEEM_EP_V1, post(web::redeem))
         .route(
-            "/v1/treasury/credit/online_exchange",
+            TreasuryClient::CRSATEXCHANGEONLINE_EP_V1,
             post(web::crsat_online_exchange),
         )
         .route(
-            "/v1/treasury/debit/online_exchange",
+            TreasuryClient::SATEXCHANGEONLINE_EP_V1,
             post(web::sat_online_exchange),
         );
     let admin = Router::new()
@@ -146,25 +149,25 @@ pub fn routes(app: AppController) -> Router {
             post(admin::request_mint_from_ebill),
         )
         .route(
-            "/v1/admin/treasury/credit/generate_blinds",
+            TreasuryClient::GENERATEBLINDS_EP_V1,
             post(admin::generate_blinds),
         )
         .route(
-            "/v1/admin/treasury/credit/store_signatures",
+            TreasuryClient::STORESIGNATURES_EP_V1,
             post(admin::store_signatures),
         )
         .route(
-            "/v1/admin/treasury/credit/balance",
+            TreasuryClient::CRSATBALANCE_EP_V1,
             get(admin::crsat_balance),
         )
         .route(
-            "/v1/admin/treasury/credit/try_htlc_swap",
+            TreasuryClient::TRYCRSATHTLC_EP_V1,
             post(admin::crsat_try_htlc_swap),
         )
         .route(
-            "/v1/admin/treasury/debit/try_htlc_swap",
+            TreasuryClient::TRYSATHTLC_EP_V1,
             post(admin::sat_try_htlc_swap),
         )
-        .route("/v1/admin/treasury/debit/balance", get(admin::sat_balance));
+        .route(TreasuryClient::SATBALANCE_EP_V1, get(admin::sat_balance));
     admin.merge(web).with_state(app)
 }

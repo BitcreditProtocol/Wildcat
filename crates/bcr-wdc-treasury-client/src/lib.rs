@@ -1,6 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::{signatures as web_signatures, wallet as web_wallet};
+use bcr_wdc_webapi::{
+    exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
+};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -54,6 +56,7 @@ impl TreasuryClient {
         Ok(())
     }
 
+    pub const GENERATEBLINDS_EP_V1: &'static str = "/v1/admin/treasury/credit/generate_blinds";
     #[cfg(feature = "authorized")]
     pub async fn generate_blinds(
         &self,
@@ -63,7 +66,7 @@ impl TreasuryClient {
         let msg = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
         let url = self
             .base
-            .join("/v1/admin/treasury/credit/generate_blinds")
+            .join(Self::GENERATEBLINDS_EP_V1)
             .expect("generate_blinds relative path");
         let request = self.cl.post(url).json(&msg);
         let response: web_signatures::GenerateBlindedMessagesResponse =
@@ -71,6 +74,7 @@ impl TreasuryClient {
         Ok((response.request_id, response.messages))
     }
 
+    pub const STORESIGNATURES_EP_V1: &'static str = "/v1/admin/treasury/credit/store_signatures";
     #[cfg(feature = "authorized")]
     pub async fn store_signatures(
         &self,
@@ -80,7 +84,7 @@ impl TreasuryClient {
         let msg = web_signatures::StoreBlindSignaturesRequest { rid, signatures };
         let url = self
             .base
-            .join("/v1/admin/treasury/credit/store_signatures")
+            .join(Self::STORESIGNATURES_EP_V1)
             .expect("store_signatures relative path");
         let request = self.cl.post(url).json(&msg);
         let response = self.auth.authorize(request).send().await?;
@@ -88,6 +92,7 @@ impl TreasuryClient {
         Ok(())
     }
 
+    pub const REDEEM_EP_V1: &'static str = "/v1/treasury/redeem";
     pub async fn redeem(
         &self,
         inputs: Vec<cashu::Proof>,
@@ -96,18 +101,19 @@ impl TreasuryClient {
         let msg = cashu::SwapRequest::new(inputs, outputs);
         let url = self
             .base
-            .join("/v1/treasury/redeem")
+            .join(Self::REDEEM_EP_V1)
             .expect("redeem relative path");
         let request = self.cl.post(url).json(&msg);
         let response: cashu::SwapResponse = request.send().await?.json().await?;
         Ok(response.signatures)
     }
 
+    pub const CRSATBALANCE_EP_V1: &'static str = "/v1/admin/treasury/credit/balance";
     #[cfg(feature = "authorized")]
     pub async fn crsat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
-            .join("/v1/admin/treasury/credit/balance")
+            .join(Self::CRSATBALANCE_EP_V1)
             .expect("crsat balance relative path");
         let request = self.cl.get(url);
         let response: web_wallet::ECashBalance =
@@ -115,15 +121,80 @@ impl TreasuryClient {
         Ok(response)
     }
 
+    pub const SATBALANCE_EP_V1: &'static str = "/v1/admin/treasury/debit/balance";
     #[cfg(feature = "authorized")]
     pub async fn sat_balance(&self) -> Result<web_wallet::ECashBalance> {
         let url = self
             .base
-            .join("/v1/admin/treasury/debit/balance")
+            .join(Self::SATBALANCE_EP_V1)
             .expect("sat balance relative path");
         let request = self.cl.get(url);
         let response: web_wallet::ECashBalance =
             self.auth.authorize(request).send().await?.json().await?;
+        Ok(response)
+    }
+
+    pub const SATEXCHANGEONLINE_EP_V1: &'static str = "/v1/treasury/debit/exchange/online";
+    pub async fn sat_exchange_online(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        exchange_path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>> {
+        let url = self
+            .base
+            .join(Self::SATEXCHANGEONLINE_EP_V1)
+            .expect("sat_exchange_online relative path");
+        let msg = web_exchange::OnlineExchangeRequest {
+            proofs,
+            exchange_path,
+        };
+        let request = self.cl.post(url).json(&msg);
+        let response: web_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
+        Ok(response.proofs)
+    }
+
+    pub const CRSATEXCHANGEONLINE_EP_V1: &'static str = "/v1/treasury/credit/exchange/online";
+    pub async fn crsat_exchange_online(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        exchange_path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>> {
+        let url = self
+            .base
+            .join(Self::CRSATEXCHANGEONLINE_EP_V1)
+            .expect("crsat_exchange_online relative path");
+        let msg = web_exchange::OnlineExchangeRequest {
+            proofs,
+            exchange_path,
+        };
+        let request = self.cl.post(url).json(&msg);
+        let response: web_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
+        Ok(response.proofs)
+    }
+
+    pub const TRYSATHTLC_EP_V1: &'static str = "/v1/admin/treasury/debit/try_htlc_swap";
+    #[cfg(feature = "authorized")]
+    pub async fn try_sat_htlc(&self, preimage: String) -> Result<cashu::Amount> {
+        let url = self
+            .base
+            .join(Self::TRYSATHTLC_EP_V1)
+            .expect("try_sat_htlc relative path");
+        let msg = web_exchange::HtlcSwapAttemptRequest { preimage };
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?.json().await?;
+        Ok(response)
+    }
+
+    pub const TRYCRSATHTLC_EP_V1: &'static str = "/v1/admin/treasury/credit/try_htlc_swap";
+    #[cfg(feature = "authorized")]
+    pub async fn try_crsat_htlc(&self, preimage: String) -> Result<cashu::Amount> {
+        let url = self
+            .base
+            .join(Self::TRYCRSATHTLC_EP_V1)
+            .expect("try_crsat_htlc relative path");
+        let msg = web_exchange::HtlcSwapAttemptRequest { preimage };
+        let request = self.cl.post(url).json(&msg);
+        let response = self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
     }
 }
