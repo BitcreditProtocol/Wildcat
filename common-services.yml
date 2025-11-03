@@ -180,7 +180,7 @@ services:
       - ./docker/electrs/config.toml:/data/.electrs/config.toml
 
   cdk-mintd:
-    image: thesimplekid/cdk-mintd:0.9
+    image: cashubtc/mintd:0.13.1
     platform: linux/amd64
     volumes:
       - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml

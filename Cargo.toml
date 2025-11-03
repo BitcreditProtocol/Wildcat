@@ -46,11 +46,11 @@ bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
-cashu = {version = "0.13", default-features = false}
-cdk = {version = "0.13"}
-cdk-common = {version = "0.13"}
-cdk-payment-processor = {version = "0.13", default-features = false}
-cdk-redb = {version = "0.13"}
+cashu = {version = "=0.13.1", default-features = false}
+cdk = {version = "=0.13"}
+cdk-common = {version = "=0.13.1"}
+cdk-payment-processor = {version = "=0.13.1", default-features = false}
+cdk-redb = {version = "=0.13.1"}
 chrono = {version = "0.4"}
 clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "1f88e3c0239621bec03a11d5efdc5ffa9261aac9"}
 config = {version = "0.15"}

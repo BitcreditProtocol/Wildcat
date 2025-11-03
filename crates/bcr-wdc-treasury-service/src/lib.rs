@@ -46,7 +46,7 @@ pub struct AppConfig {
     debit_repo: persistence::surreal::DebitConnectionConfig,
     crsat_repo: persistence::surreal::ForeignConnectionConfig,
     sat_repo: persistence::surreal::ForeignConnectionConfig,
-    crsat_clowder_url: reqwest::Url,
+    clowder_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u64,
@@ -65,7 +65,7 @@ impl AppController {
         let AppConfig {
             credit_keys_url,
             cdk_mintd_url,
-            crsat_clowder_url,
+            clowder_url,
             credit_repo,
             debit_repo,
             crsat_repo,
@@ -106,7 +106,7 @@ impl AppController {
             .await
             .expect("Failed to create crsat repository");
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url);
-        let clowder = Arc::new(ProdClowderClient::new(crsat_clowder_url));
+        let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let crsat = ProdCrsatService {
             repo: Arc::new(crsatrepo),
             keys: Arc::new(crsatkeys),
