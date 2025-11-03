@@ -1,11 +1,10 @@
 // ----- standard library imports
 use cdk::wallet::MintConnector;
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use itertools::Itertools;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -100,7 +99,7 @@ impl Service {
                 &cashu::amount::SplitTarget::None,
             )
             .map_err(|e| Error::Internal(e.to_string()))?;
-            if f_proofs.iter().map(|p| p.keyset_id).unique().count() != 1 {
+            if f_proofs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>().len() != 1 {
                 return Err(Error::InvalidInput(
                     "All foreign proofs must have the same keyset_id".to_string(),
                 ));
