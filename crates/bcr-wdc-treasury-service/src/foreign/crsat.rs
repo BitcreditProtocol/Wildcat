@@ -1,11 +1,10 @@
 // ----- standard library imports
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use cdk::wallet::MintConnector;
-use itertools::Itertools;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -121,7 +120,11 @@ impl Service {
             // TODO: allow different keyset_ids
             assert_eq!(
                 1,
-                f_proofs.iter().map(|p| p.keyset_id).unique().count(),
+                f_proofs
+                    .iter()
+                    .map(|p| p.keyset_id)
+                    .collect::<HashSet<_>>()
+                    .len(),
                 "All foreign proofs must have the same keyset_id"
             );
             let foreign_client = cdk::wallet::HttpClient::new(mint.clone(), None);
