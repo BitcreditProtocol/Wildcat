@@ -14,6 +14,12 @@ only_known_contacts = false
 default_mint_url = "http://localhost:4343"
 default_mint_node_id = "bitcrt039180c169e5f6d7c579cf1cefa37bffd47a2b389c8125601f4068c87bea795943"
 
+[appcfg.court_config]
+default_url = "http://localhost:8080"
+
+[appcfg.dev_mode_config]
+on = true
+
 [appcfg]
 bitcoin_network = "testnet"
 esplora_base_url = "https://esplora.minibill.tech"

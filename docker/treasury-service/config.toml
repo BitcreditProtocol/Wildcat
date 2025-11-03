@@ -2,8 +2,11 @@
 bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
-[appcfg.credit_keys_service]
-url = "http://key-service:3338"
+[appcfg]
+credit_keys_url = "http://key-service:3338"
+monitor_interval_sec = 30
+cdk_mintd_url = "http://cdk-mintd:8085"
+clowder_url = "https://clowder:3338"
 
 [appcfg.credit_repo]
 connection = "ws://surrealdb:8000"
@@ -20,6 +23,20 @@ namespace = "test"
 database = "treasury"
 table = "mint_quotes"
 
+[appcfg.crsat_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury"
+foreigns_table = "crsat_foreigns"
+htlcs_table = "crsat_htlcs"
+
+[appcfg.sat_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury"
+foreigns_table = "sat_foreigns"
+htlcs_table = "sat_htlcs"
+
 [appcfg.sat_wallet]
 mint_url = "http://cdk-mintd:8085"
 storage = "/data/cdk-wallet-redb.redb"
@@ -28,6 +45,3 @@ storage = "/data/cdk-wallet-redb.redb"
 swap_service_url = "http://swap-service:3338"
 quote_service_url = "http://quote-service:3338"
 key_service_url = "http://key-service:3338"
-
-[appcfg]
-monitor_interval_sec = 30
