@@ -24,7 +24,6 @@ chrono.workspace = true
 clwdr-client = {workspace = true}
 config.workspace = true
 futures = {workspace = true}
-itertools = {workspace = true}
 rand = {workspace = true}
 reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
@@ -43,6 +42,7 @@ bcr-common = {workspace = true, features = ["test-utils"] }
 bcr-wdc-swap-service = { workspace = true, features = ["test-utils"] }
 bcr-wdc-utils = { workspace = true , features = ["test-utils"] }
 bcr-wdc-webapi = { workspace = true, features = ["test-utils"] }
+itertools.workspace = true
 mockall.workspace = true
 rand.workspace = true
 secp256k1 = {workspace = true, features = ["global-context"]}

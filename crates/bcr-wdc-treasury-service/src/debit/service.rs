@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -10,7 +10,6 @@ use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
-use itertools::Itertools;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -154,7 +153,8 @@ where
         }
         // expensive verifications
         // 1. output keysets must be active
-        let unique_ids: Vec<_> = outputs.iter().map(|p| p.keyset_id).unique().collect();
+        let unique_ids: HashSet<_> = outputs.iter().map(|p| p.keyset_id).collect();
+        let unique_ids: Vec<_> = unique_ids.into_iter().collect();
         let infos = self.wallet.keysets_info(&unique_ids).await?;
         for info in infos {
             if !info.active {
@@ -162,7 +162,8 @@ where
             }
         }
         // 2. input keysets must be inactive
-        let unique_ids: Vec<_> = inputs.iter().map(|p| p.keyset_id).unique().collect();
+        let unique_ids: HashSet<_> = inputs.iter().map(|p| p.keyset_id).collect();
+        let unique_ids: Vec<_> = unique_ids.into_iter().collect();
         for id in unique_ids {
             let info = self.wdc.keyset_info(id).await?;
             if info.active {
