@@ -2,6 +2,8 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::wire::keys as wire_keys;
+pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
 pub mod crsat;
@@ -14,19 +16,59 @@ use crate::error::Result;
 //
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Repository: Send + Sync {
-    async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()>;
+pub trait OnlineRepository: Send + Sync {
+    async fn store(
+        &self,
+        mint: (secp256k1::PublicKey, cashu::MintUrl),
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()>;
     #[allow(dead_code)]
-    async fn list(&self) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>>;
+    async fn list(&self) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>;
 
     async fn store_htlc(
         &self,
-        mint: cashu::MintUrl,
+        mint: (secp256k1::PublicKey, cashu::MintUrl),
         hash: &str,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
-    async fn search_htlc(&self, hash: &str) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>>;
+    async fn search_htlc(
+        &self,
+        hash: &str,
+    ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>;
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait OfflineRepository: Send + Sync {
+    async fn store_fps(
+        &self,
+        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hash: Vec<Sha256Hash>,
+    ) -> Result<()>;
+    async fn search_fp(
+        &self,
+        hash: &Sha256Hash,
+    ) -> Result<
+        Option<(
+            (secp256k1::PublicKey, cashu::MintUrl),
+            wire_keys::ProofFingerprint,
+        )>,
+    >;
+    async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()>;
+    async fn store_proofs(
+        &self,
+        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        proof: Vec<cashu::Proof>,
+    ) -> Result<()>;
+    #[allow(dead_code)]
+    async fn load_proofs(
+        &self,
+        alpha: &(secp256k1::PublicKey, cashu::MintUrl),
+    ) -> Result<Vec<cashu::Proof>>;
+    #[allow(dead_code)]
+    async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 
 #[async_trait]
@@ -34,14 +76,42 @@ pub trait ClowderClient: proof::ClowderClient {
     async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl>;
     async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey>;
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
+    // yes if result is Ok
+    async fn can_accept_offline_exchange(
+        &self,
+        fps: Vec<wire_keys::ProofFingerprint>,
+    ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)>;
+    async fn get_keyset_info(
+        &self,
+        alpha_pk: &secp256k1::PublicKey,
+        kid: &cashu::Id,
+    ) -> Result<cashu::KeySetInfo>;
+    async fn get_keyset(
+        &self,
+        alpha_pk: &secp256k1::PublicKey,
+        kid: &cashu::Id,
+    ) -> Result<cashu::KeySet>;
 }
 
 fn proofs_vec_to_map(
-    input: Vec<(cashu::MintUrl, cashu::Proof)>,
-) -> HashMap<cashu::MintUrl, Vec<cashu::Proof>> {
-    let mut map: HashMap<cashu::MintUrl, Vec<cashu::Proof>> = HashMap::new();
+    input: Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>,
+) -> HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> {
+    let mut map: HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> =
+        HashMap::new();
     for (mint, proof) in input {
         map.entry(mint).or_default().push(proof);
+    }
+    map
+}
+
+fn fingerprints_vec_to_map(
+    input: Vec<wire_keys::ProofFingerprint>,
+    hashes: Vec<Sha256Hash>,
+) -> HashMap<cashu::Id, Vec<(wire_keys::ProofFingerprint, Sha256Hash)>> {
+    let mut map: HashMap<cashu::Id, Vec<(wire_keys::ProofFingerprint, Sha256Hash)>> =
+        HashMap::new();
+    for (fp, hash) in input.into_iter().zip(hashes.into_iter()) {
+        map.entry(fp.keyset_id).or_default().push((fp, hash));
     }
     map
 }

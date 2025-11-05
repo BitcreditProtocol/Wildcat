@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::wire::keys as wire_keys;
 use bcr_wdc_webapi::{
     exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
 };
+use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -14,6 +16,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
+    #[error("signature verification {0}")]
+    Signature(#[from] bcr_common::core::signature::BorshMsgSignatureError),
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +174,64 @@ impl TreasuryClient {
         let request = self.cl.post(url).json(&msg);
         let response: web_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
         Ok(response.proofs)
+    }
+
+    pub const SATEXCHANGEOFFLINE_EP_V1: &'static str = "/v1/treasury/debit/exchange/offline";
+    pub async fn sat_exchange_offline(
+        &self,
+        fingerprints: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        mint_pk: secp256k1::PublicKey,
+    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+        let url = self
+            .base
+            .join(Self::SATEXCHANGEOFFLINE_EP_V1)
+            .expect("sat_exchange_offline relative path");
+        let msg = web_exchange::OfflineExchangeRequest {
+            fingerprints,
+            hashes,
+            wallet_pk,
+        };
+        let request = self.cl.post(url).json(&msg);
+        let response: web_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        bcr_common::core::signature::schnorr_verify_b64(
+            &response.content,
+            &response.signature,
+            &mint_pk.x_only_public_key().0,
+        )?;
+        let payload: web_exchange::OfflineExchangePayload =
+            bcr_common::core::signature::deserialize_borsh_msg(&response.content)?;
+        Ok((payload.proofs, response.signature))
+    }
+
+    pub const CRSATEXCHANGEOFFLINE_EP_V1: &'static str = "/v1/treasury/credit/exchange/offline";
+    pub async fn crsat_exchange_offline(
+        &self,
+        fingerprints: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        mint_pk: secp256k1::PublicKey,
+    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+        let url = self
+            .base
+            .join(Self::CRSATEXCHANGEOFFLINE_EP_V1)
+            .expect("crsat_exchange_offline relative path");
+        let msg = web_exchange::OfflineExchangeRequest {
+            fingerprints,
+            hashes,
+            wallet_pk,
+        };
+        let request = self.cl.post(url).json(&msg);
+        let response: web_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        bcr_common::core::signature::schnorr_verify_b64(
+            &response.content,
+            &response.signature,
+            &mint_pk.x_only_public_key().0,
+        )?;
+        let payload: web_exchange::OfflineExchangePayload =
+            bcr_common::core::signature::deserialize_borsh_msg(&response.content)?;
+        Ok((payload.proofs, response.signature))
     }
 
     pub const TRYSATHTLC_EP_V1: &'static str = "/v1/admin/treasury/debit/try_htlc_swap";

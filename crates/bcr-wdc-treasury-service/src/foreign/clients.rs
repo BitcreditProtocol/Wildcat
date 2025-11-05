@@ -2,11 +2,12 @@
 use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::core::signature::serialize_n_schnorr_sign_borsh_msg;
+use bcr_common::{core::signature::serialize_n_schnorr_sign_borsh_msg, wire::keys as wire_keys};
+use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
 use cdk::wallet::MintConnector;
-use clwdr_client::ClowderRestClient;
+use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -108,9 +109,71 @@ impl foreign::ClowderClient for ClowderCl {
         }
         Err(Error::InvalidInput(format!("{pk} not in the alpha set")))
     }
+
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>> {
         let response = self.clwdr.post_sign_proofs(proofs).await?;
         Ok(response.proofs)
+    }
+
+    async fn can_accept_offline_exchange(
+        &self,
+        fps: Vec<wire_keys::ProofFingerprint>,
+    ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)> {
+        let input_amount = fps.iter().fold(cashu::Amount::ZERO, |acc, fp| {
+            acc + cashu::Amount::from(fp.amount)
+        });
+        let fps_len = fps.len();
+        let fps: Vec<clwdr_model::ProofFingerprint> = fps
+            .into_iter()
+            .map(convert::prooffingerprint_wire2clowder)
+            .collect();
+        let clwdr_model::IntermintOriginResponse { node_id, mint_url } =
+            self.clwdr.post_fingerprints_origin(fps.clone()).await?;
+        let myself = self.clwdr.get_id().await?;
+        if node_id != myself.public_key {
+            return Err(Error::InvalidInput(String::from(
+                "currently not a substitute",
+            )));
+        }
+        let clwdr_model::ValidFingerprints {
+            valid_proofs,
+            amount,
+        } = self.clwdr.post_verify_fingerprints(node_id, fps).await?;
+        if valid_proofs.len() != fps_len || amount != input_amount {
+            return Err(Error::InvalidInput(String::from(
+                "One or more fingerprints are invalid",
+            )));
+        }
+        Ok((mint_url, node_id))
+    }
+
+    async fn get_keyset_info(
+        &self,
+        alpha_pk: &secp256k1::PublicKey,
+        kid: &cashu::Id,
+    ) -> Result<cashu::KeySetInfo> {
+        let cashu::KeysetResponse { mut keysets } =
+            self.clwdr.get_keyset_info(alpha_pk, kid).await?;
+        if keysets.is_empty() {
+            return Err(Error::InvalidInput(String::from(
+                "No keyset info found for given kid",
+            )));
+        }
+        Ok(keysets.remove(0))
+    }
+
+    async fn get_keyset(
+        &self,
+        alpha_pk: &secp256k1::PublicKey,
+        kid: &cashu::Id,
+    ) -> Result<cashu::KeySet> {
+        let cashu::KeysResponse { mut keysets } = self.clwdr.get_keyset(alpha_pk, kid).await?;
+        if keysets.is_empty() {
+            return Err(Error::InvalidInput(String::from(
+                "No keyset info found for given kid",
+            )));
+        }
+        Ok(keysets.remove(0))
     }
 }
 
