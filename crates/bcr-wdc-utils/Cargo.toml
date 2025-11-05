@@ -20,6 +20,7 @@ borsh = {workspace = true}
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
+clwdr-client.workspace = true
 itertools = {workspace = true}
 nostr = {workspace = true}
 rand = {workspace = true, optional  = true}
