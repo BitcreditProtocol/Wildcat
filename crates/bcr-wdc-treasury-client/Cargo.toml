@@ -11,6 +11,7 @@ authorized = ["bcr-wdc-utils/auth"]
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
+bitcoin = {workspace = true}
 cashu.workspace = true
 chrono.workspace = true
 reqwest = {workspace = true, features = ["json"]}

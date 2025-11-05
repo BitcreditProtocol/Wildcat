@@ -4,7 +4,7 @@ use std::str::FromStr;
 use bcr_common::{
     core,
     wire::{
-        bill as wire_bill, contact as wire_contact, identity as wire_identity,
+        bill as wire_bill, contact as wire_contact, identity as wire_identity, keys as wire_keys,
         quotes as wire_quotes,
     },
 };
@@ -14,6 +14,7 @@ use bcr_ebill_core::{
     country::Country, email::Email, identity as ebill_identity, name::Name,
     notification as ebill_notification, zip::Zip,
 };
+use clwdr_client::model as clwdr_model;
 use thiserror::Error;
 // ----- local imports
 
@@ -488,5 +489,19 @@ pub fn sharedbill_ebill2wire(input: BillToShareWithExternalParty) -> wire_quotes
         hash: input.hash,
         signature: input.signature,
         receiver: input.receiver.into(),
+    }
+}
+
+pub fn prooffingerprint_wire2clowder(
+    input: wire_keys::ProofFingerprint,
+) -> clwdr_model::ProofFingerprint {
+    let amount = cashu::Amount::from(input.amount);
+    clwdr_model::ProofFingerprint {
+        amount,
+        keyset_id: input.keyset_id,
+        c: input.c,
+        y: input.y,
+        dleq: input.dleq,
+        witness: input.witness,
     }
 }

@@ -5,6 +5,8 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::wire::keys::ProofFingerprint;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use cashu::{nut00 as cdk00, nut02 as cdk02, Amount};
 use uuid::Uuid;
 // ----- local imports
@@ -88,27 +90,31 @@ impl credit::Repository for InMemoryCreditRepository {
 
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryCrsatRepository {
-    proofs: Arc<Mutex<Vec<(cashu::MintUrl, cdk00::Proof)>>>,
-    htlc: Arc<Mutex<HashMap<String, Vec<(cashu::MintUrl, cdk00::Proof)>>>>,
+pub struct InMemoryOnlineRepository {
+    proofs: Arc<Mutex<Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>,
+    htlc: Arc<Mutex<HashMap<String, Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>>,
 }
 
 #[async_trait]
-impl foreign::Repository for InMemoryCrsatRepository {
-    async fn store(&self, mint: cashu::MintUrl, proofs: Vec<cashu::Proof>) -> Result<()> {
+impl foreign::OnlineRepository for InMemoryOnlineRepository {
+    async fn store(
+        &self,
+        mint: (secp256k1::PublicKey, cashu::MintUrl),
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
         for proof in proofs {
             locked.push((mint.clone(), proof));
         }
         Ok(())
     }
-    async fn list(&self) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+    async fn list(&self) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
         Ok(self.proofs.lock().unwrap().clone())
     }
 
     async fn store_htlc(
         &self,
-        mint: cashu::MintUrl,
+        mint: (secp256k1::PublicKey, cashu::MintUrl),
         hash: &str,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
@@ -119,7 +125,10 @@ impl foreign::Repository for InMemoryCrsatRepository {
         }
         Ok(())
     }
-    async fn search_htlc(&self, hash: &str) -> Result<Vec<(cashu::MintUrl, cashu::Proof)>> {
+    async fn search_htlc(
+        &self,
+        hash: &str,
+    ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
         let locked = self.htlc.lock().unwrap();
         Ok(locked.get(hash).cloned().unwrap_or_default())
     }
@@ -127,6 +136,68 @@ impl foreign::Repository for InMemoryCrsatRepository {
         let mut locked = self.htlc.lock().unwrap();
         for vals in locked.values_mut() {
             vals.retain(|(_, p)| !y.contains(&p.y().expect("proof should have y")));
+        }
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Default, Debug)]
+pub struct InMemoryOfflineRepository {
+    fingerprints:
+        Arc<Mutex<HashMap<Sha256Hash, ((secp256k1::PublicKey, cashu::MintUrl), ProofFingerprint)>>>,
+    proofs: Arc<Mutex<HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>>>>,
+}
+
+#[async_trait]
+impl foreign::OfflineRepository for InMemoryOfflineRepository {
+    async fn store_fps(
+        &self,
+        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        fps: Vec<ProofFingerprint>,
+        hash: Vec<Sha256Hash>,
+    ) -> Result<()> {
+        let mut locked = self.fingerprints.lock().unwrap();
+        for (h, fp) in hash.into_iter().zip(fps.into_iter()) {
+            locked.insert(h, (alpha.clone(), fp));
+        }
+        Ok(())
+    }
+
+    async fn search_fp(
+        &self,
+        hash: &Sha256Hash,
+    ) -> Result<Option<((secp256k1::PublicKey, cashu::MintUrl), ProofFingerprint)>> {
+        let locked = self.fingerprints.lock().unwrap();
+        let val = locked.get(hash).cloned();
+        Ok(val)
+    }
+
+    async fn remove_fps(&self, y: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.fingerprints.lock().unwrap();
+        locked.retain(|_, (_, fp)| !y.contains(&fp.y));
+        Ok(())
+    }
+    async fn store_proofs(
+        &self,
+        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        proof: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        locked.entry(alpha).or_default().extend(proof);
+        Ok(())
+    }
+    async fn load_proofs(
+        &self,
+        alpha: &(secp256k1::PublicKey, cashu::MintUrl),
+    ) -> Result<Vec<cashu::Proof>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(locked.get(alpha).cloned().unwrap_or_default())
+    }
+    async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for proofs in locked.values_mut() {
+            proofs.retain(|p| !ys.contains(&p.y().expect("proof should have y")));
         }
         Ok(())
     }
