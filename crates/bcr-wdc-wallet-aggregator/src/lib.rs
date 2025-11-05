@@ -35,6 +35,7 @@ pub struct AppConfig {
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     clwdr_nats_url: Option<reqwest::Url>,
     clwdr_rest_url: Option<reqwest::Url>,
+    signer_url: reqwest::Url,
     commit_repo_cfg: persistence::surreal::DBCommitmentsConnectionConfig,
 }
 
@@ -60,6 +61,7 @@ impl AppController {
             ebpp_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
+            signer_url,
             commit_repo_cfg,
         } = cfg;
 
@@ -83,10 +85,12 @@ impl AppController {
         let commit_repo = persistence::surreal::DBCommitments::new(commit_repo_cfg)
             .await
             .expect("failed to init commitment repo");
-        let dummy = signer::DummySigner::default();
+        let signer = signer::ClowderSigner::new(signer_url)
+            .await
+            .expect("failed to init signer");
         let commit_srv = Arc::new(commitment::Service {
             repo: Box::new(commit_repo),
-            signer: Box::new(dummy),
+            signer: Box::new(signer),
         });
 
         Ok(Self {
