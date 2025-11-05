@@ -1,10 +1,13 @@
 // ----- standard library imports
+// ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::exchange as web_exchange;
+use bitcoin::base64::prelude::*;
 use cashu::nut03 as cdk03;
-// ----- extra library imports
 // ----- local imports
-use crate::{debit, error::Result, foreign};
+use crate::{debit, error::Result, foreign, AppController};
+
+// ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn redeem<Wlt, WdcSrvc, Repo>(
@@ -53,5 +56,43 @@ pub async fn sat_online_exchange(
         .collect();
     let signatures = ctrl.online_exchange(request.proofs, &exchange_path).await?;
     let response = web_exchange::OnlineExchangeResponse { proofs: signatures };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn crsat_offline_exchange(
+    State(ctrl): State<AppController>,
+    Json(request): Json<web_exchange::OfflineExchangeRequest>,
+) -> Result<Json<web_exchange::OfflineExchangeResponse>> {
+    tracing::debug!("Received request to offline exchange");
+
+    let proofs = ctrl
+        .crsat
+        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
+        .await?;
+    let payload = web_exchange::OfflineExchangePayload { proofs };
+    let serialized = borsh::to_vec(&payload)?;
+    let signature = ctrl.signer.sign_bytes(&serialized).await?;
+    let content = BASE64_STANDARD.encode(&serialized);
+    let response = web_exchange::OfflineExchangeResponse { content, signature };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn sat_offline_exchange(
+    State(ctrl): State<AppController>,
+    Json(request): Json<web_exchange::OfflineExchangeRequest>,
+) -> Result<Json<web_exchange::OfflineExchangeResponse>> {
+    tracing::debug!("Received request to offline exchange");
+
+    let proofs = ctrl
+        .sat
+        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
+        .await?;
+    let payload = web_exchange::OfflineExchangePayload { proofs };
+    let serialized = borsh::to_vec(&payload)?;
+    let signature = ctrl.signer.sign_bytes(&serialized).await?;
+    let content = BASE64_STANDARD.encode(&serialized);
+    let response = web_exchange::OfflineExchangeResponse { content, signature };
     Ok(Json(response))
 }
