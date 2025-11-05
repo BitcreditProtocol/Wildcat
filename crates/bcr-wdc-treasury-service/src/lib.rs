@@ -8,6 +8,7 @@ use axum::{
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::secp256k1;
+use clwdr_client::SignatoryNatsClient;
 // ----- local modules
 mod admin;
 mod credit;
@@ -26,11 +27,13 @@ type ProdCreditRepository = persistence::surreal::CreditRepository;
 type ProdCreditKeysService = credit::KeySrvc;
 type ProdCreditService = credit::Service<ProdCreditRepository, ProdCreditKeysService>;
 type ProdCrsatService = foreign::crsat::Service;
-type ProdCrsatRepository = persistence::surreal::ForeignRepository;
+type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
+type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
 type ProdCrsatKeysClient = foreign::clients::CrsatKeysClient;
 type ProdClowderClient = foreign::clients::ClowderCl;
 type ProdSatService = foreign::sat::Service;
-type ProdSatRepository = persistence::surreal::ForeignRepository;
+type ProdSatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
+type ProdSatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
 type ProdSatKeysClient = foreign::clients::SatKeysClient;
 
 type ProdDebitWallet = debit::CDKWallet;
@@ -44,9 +47,12 @@ pub struct AppConfig {
     cdk_mintd_url: cashu::MintUrl,
     credit_repo: persistence::surreal::CreditConnectionConfig,
     debit_repo: persistence::surreal::DebitConnectionConfig,
-    crsat_repo: persistence::surreal::ForeignConnectionConfig,
-    sat_repo: persistence::surreal::ForeignConnectionConfig,
+    crsatonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
+    crsatoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
+    satonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
+    satoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
     clowder_url: reqwest::Url,
+    signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u64,
@@ -58,6 +64,7 @@ pub struct AppController {
     debit: ProdDebitService,
     crsat: ProdCrsatService,
     sat: ProdSatService,
+    signer: Arc<SignatoryNatsClient>,
 }
 
 impl AppController {
@@ -66,10 +73,13 @@ impl AppController {
             credit_keys_url,
             cdk_mintd_url,
             clowder_url,
+            signer_url,
             credit_repo,
             debit_repo,
-            crsat_repo,
-            sat_repo,
+            crsatonline_repo,
+            crsatoffline_repo,
+            satonline_repo,
+            satoffline_repo,
             sat_wallet,
             wildcat,
             monitor_interval_sec,
@@ -102,32 +112,45 @@ impl AppController {
             .await
             .expect("Failed to initialize monitors");
 
-        let crsatrepo = ProdCrsatRepository::new(crsat_repo)
+        let crsatonlinerepo = ProdCrsatOnlineRepository::new(crsatonline_repo)
             .await
-            .expect("Failed to create crsat repository");
+            .expect("Failed to create crsat online repository");
+        let crsatofflinerepo = ProdCrsatOfflineRepository::new(crsatoffline_repo)
+            .await
+            .expect("Failed to create crsat offline repository");
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url);
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let crsat = ProdCrsatService {
-            repo: Arc::new(crsatrepo),
+            online_repo: Arc::new(crsatonlinerepo),
+            offline_repo: Arc::new(crsatofflinerepo),
             keys: Arc::new(crsatkeys),
             clowder: clowder.clone(),
         };
 
-        let satrepo = ProdSatRepository::new(sat_repo)
+        let satonlinerepo = ProdSatOnlineRepository::new(satonline_repo)
             .await
             .expect("Failed to create sat repository");
+        let satofflinerepo = ProdSatOfflineRepository::new(satoffline_repo)
+            .await
+            .expect("Failed to create sat offline repository");
         let satkeys = ProdSatKeysClient::new(cdk_mintd_url, signing_keys);
         let sat = ProdSatService {
             keys: Arc::new(satkeys),
-            repo: Arc::new(satrepo),
+            online_repo: Arc::new(satonlinerepo),
+            offline_repo: Arc::new(satofflinerepo),
             clowder,
         };
+
+        let signer = SignatoryNatsClient::new(signer_url, None)
+            .await
+            .expect("Failed to create signer");
 
         Self {
             credit,
             debit,
             crsat,
             sat,
+            signer: Arc::new(signer),
         }
     }
 }
@@ -142,6 +165,14 @@ pub fn routes(app: AppController) -> Router {
         .route(
             TreasuryClient::SATEXCHANGEONLINE_EP_V1,
             post(web::sat_online_exchange),
+        )
+        .route(
+            TreasuryClient::CRSATEXCHANGEOFFLINE_EP_V1,
+            post(web::crsat_offline_exchange),
+        )
+        .route(
+            TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
+            post(web::sat_offline_exchange),
         );
     let admin = Router::new()
         .route(

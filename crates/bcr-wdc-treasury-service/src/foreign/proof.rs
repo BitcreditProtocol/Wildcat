@@ -84,17 +84,24 @@ pub trait KeysClient: Send + Sync {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
 }
 
-fn generate_htlc_secret(locktime: TStamp, hash: &str, pk: cashu::PublicKey) -> cdk10::Secret {
-    let tags = vec![
-        vec![String::from("pubkeys"), pk.to_string()],
-        vec![String::from("locktime"), locktime.timestamp().to_string()],
-    ];
+fn generate_htlc_secret(
+    locktime: Option<TStamp>,
+    hash: &str,
+    pk: cashu::PublicKey,
+) -> cdk10::Secret {
+    let mut tags = vec![vec![String::from("pubkeys"), pk.to_string()]];
+    if let Some(locktime) = locktime {
+        tags.push(vec![
+            String::from("locktime"),
+            locktime.timestamp().to_string(),
+        ]);
+    }
     cdk10::Secret::new(cdk10::Kind::HTLC, hash, Some(tags))
 }
 
 pub async fn generate_htlc_proofs(
     amount: cashu::Amount,
-    locktime: TStamp,
+    locktime: Option<TStamp>,
     hash: &str,
     pk: cashu::PublicKey,
     keyset: &cashu::KeySet,

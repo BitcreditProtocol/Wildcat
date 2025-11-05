@@ -4,7 +4,8 @@ use axum::http::StatusCode;
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::{
     nut00::Error as CDK00Error, nut02 as cdk02, nut10::Error as CDK10Error,
-    nut13::Error as CDK13Error, nut20::Error as CDK20Error,
+    nut11::Error as CDK11Error, nut12::Error as CDK12Error, nut13::Error as CDK13Error,
+    nut20::Error as CDK20Error,
 };
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
@@ -30,10 +31,16 @@ pub enum Error {
     CDK00(#[from] CDK00Error),
     #[error("cashu::nut10 {0}")]
     CDK10(#[from] CDK10Error),
-    #[error("cashu::nut13 error {0}")]
+    #[error("cashu::nut11 {0}")]
+    CDK11(#[from] CDK11Error),
+    #[error("cashu::nut12 {0}")]
+    CDK12(#[from] CDK12Error),
+    #[error("cashu::nut13 {0}")]
     CDK13(#[from] CDK13Error),
-    #[error("CDK Wallet error {0}")]
+    #[error("CDK Wallet {0}")]
     CDKWallet(#[from] cdk::Error),
+    #[error("CDK secret {0}")]
+    CDKSecret(#[from] cdk::secret::Error),
     #[error("DB error {0}")]
     DB(#[from] SurrealError),
     #[error("Secp256k1 error {0}")]
@@ -114,8 +121,11 @@ impl axum::response::IntoResponse for Error {
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
