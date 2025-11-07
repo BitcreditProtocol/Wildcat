@@ -42,7 +42,7 @@ impl CDKWallet {
             None,
         )?;
         let mint_url = MintUrl::from_str(&cfg.mint_url)?;
-        let client = cdk::wallet::HttpClient::new(mint_url, None);
+        let client = cdk::wallet::HttpClient::new(mint_url);
         // make the wallet aware of the mint info
         wlt.fetch_mint_info().await.map_err(Error::CDKWallet)?;
         Ok(Self { wlt, client })

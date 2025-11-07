@@ -11,7 +11,7 @@ use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{self, crsat, proof, sat},
+    foreign::{self, crsat, proof, sat, MintConnectorExt},
 };
 
 // ----- end imports
@@ -183,7 +183,7 @@ pub struct SatKeysClient {
 }
 impl SatKeysClient {
     pub fn new(mint_url: cashu::MintUrl, signing_keys: bitcoin::secp256k1::Keypair) -> Self {
-        let cl = cdk::wallet::HttpClient::new(mint_url, None);
+        let cl = cdk::wallet::HttpClient::new(mint_url);
         Self { cl, signing_keys }
     }
 }
@@ -238,5 +238,14 @@ impl sat::KeysClient for SatKeysClient {
         Err(Error::InvalidInput(String::from(
             "No active keyset found on mint",
         )))
+    }
+}
+
+pub struct MintClientFactory {}
+#[async_trait]
+impl foreign::MintClientFactory for MintClientFactory {
+    async fn make_client(&self, mint_url: cashu::MintUrl) -> Result<Box<dyn MintConnectorExt>> {
+        let client = cdk::wallet::HttpClient::new(mint_url);
+        Ok(Box::new(client))
     }
 }

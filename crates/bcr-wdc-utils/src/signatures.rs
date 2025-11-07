@@ -131,8 +131,8 @@ pub enum UnblindError {
     #[error("cashu::dhke {0}")]
     DHKE(#[from] cashu::dhke::Error),
 }
-pub fn unblind_signatures(
-    premints: impl Iterator<Item = cashu::PreMint>,
+pub fn unblind_signatures<'a>(
+    premints: impl Iterator<Item = &'a cashu::PreMint>,
     signatures: impl Iterator<Item = cashu::BlindSignature>,
     keys: &cashu::KeySet,
 ) -> UnblindResult<Vec<cashu::Proof>> {
@@ -162,7 +162,7 @@ pub fn unblind_signatures(
         let c = cashu::dhke::unblind_message(&signature.c, &premint.r, &key)?;
         let mut proof = cashu::Proof::new(signature.amount, keys.id, premint.secret.clone(), c);
         if let Some(dleq) = signature.dleq {
-            proof.dleq = Some(cashu::ProofDleq::new(dleq.e, dleq.s, premint.r));
+            proof.dleq = Some(cashu::ProofDleq::new(dleq.e, dleq.s, premint.r.clone()));
         }
         proofs.push(proof);
     }
