@@ -5,11 +5,13 @@ use async_trait::async_trait;
 use bcr_common::wire::keys as wire_keys;
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use cdk::wallet::MintConnector;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{proof, proofs_vec_to_map, ClowderClient, OfflineRepository, OnlineRepository},
+    foreign::{
+        proof, proofs_vec_to_map, ClowderClient, MintClientFactory, OfflineRepository,
+        OnlineRepository,
+    },
 };
 
 // ----- end imports
@@ -25,6 +27,7 @@ pub struct Service {
     pub offline_repo: Arc<dyn OfflineRepository>,
     pub keys: Arc<dyn KeysClient>,
     pub clowder: Arc<dyn ClowderClient>,
+    pub mint_factory: Arc<dyn MintClientFactory>,
 }
 
 impl Service {
@@ -57,7 +60,7 @@ impl Service {
             premints.combine(premint);
         }
         let signatures = self.keys.sign(&premints.blinded_messages()).await?;
-        let proofs = unblind_signatures(premints, signatures.into_iter(), &keyset)?;
+        let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), &keyset)?;
         self.offline_repo
             .store_fps((foreign_mint_pk, foreign_mint_url), inputs, hashes)
             .await?;
@@ -86,11 +89,11 @@ impl Service {
         };
         let foreign_pk = path_it.next().unwrap();
         let foreign_mint = self.clowder.get_mint_url_from_pk(foreign_pk).await?;
-        let foreign_client = cdk::wallet::HttpClient::new(foreign_mint.clone(), None);
+        let foreign_client = self.mint_factory.make_client(foreign_mint.clone()).await?;
         let (htlc_hash, foreign_locktime) = proof::check_htlc_foreign_proofs(
             *foreign_pk,
             &proofs,
-            &foreign_client,
+            foreign_client.as_ref(),
             self.clowder.as_ref(),
         )
         .await?;
@@ -98,14 +101,14 @@ impl Service {
             .iter()
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
         self.online_repo
-            .store_htlc((*foreign_pk.deref(), foreign_mint), &htlc_hash, proofs)
+            .store_htlc((*foreign_pk.deref(), foreign_mint), htlc_hash, proofs)
             .await?;
         let keyset = self.keys.get_active_keyset().await?;
         let locktime = foreign_locktime - chrono::TimeDelta::minutes(Self::HTLC_BUFFER_MINUTES);
         let proofs = proof::generate_htlc_proofs(
             total,
             Some(locktime),
-            &htlc_hash,
+            htlc_hash,
             *wallet_pk,
             &keyset,
             self.keys.as_ref(),
@@ -115,9 +118,13 @@ impl Service {
     }
 
     pub async fn try_swap_htlc(&self, preimage: &str) -> Result<cashu::Amount> {
-        let online_amount =
-            try_online_htlc_swap(preimage, self.online_repo.as_ref(), self.clowder.as_ref())
-                .await?;
+        let online_amount = try_online_htlc_swap(
+            preimage,
+            self.online_repo.as_ref(),
+            self.clowder.as_ref(),
+            self.mint_factory.as_ref(),
+        )
+        .await?;
         if online_amount > cashu::Amount::ZERO {
             return Ok(online_amount);
         }
@@ -132,10 +139,11 @@ async fn try_online_htlc_swap(
     preimage: &str,
     repo: &dyn OnlineRepository,
     clowder: &dyn ClowderClient,
+    factory: &dyn MintClientFactory,
 ) -> Result<cashu::Amount> {
     let mut grand_total = cashu::Amount::ZERO;
     let hash = Sha256Hash::from_str(preimage).map_err(|e| Error::InvalidInput(e.to_string()))?;
-    let foreign_proofs = repo.search_htlc(&hash.to_string()).await?;
+    let foreign_proofs = repo.search_htlc(&hash).await?;
     let foreign_proofs = proofs_vec_to_map(foreign_proofs);
     for ((mint_pk, mint_url), mut f_proofs) in foreign_proofs {
         let mut f_fingerprints = Vec::with_capacity(f_proofs.len());
@@ -164,14 +172,15 @@ async fn try_online_htlc_swap(
                 "All foreign proofs must have the same keyset_id".to_string(),
             ));
         }
-        let foreign_client = cdk::wallet::HttpClient::new(mint_url.clone(), None);
+        let foreign_client = factory.make_client(mint_url.clone()).await?;
         let keys = foreign_client
             .get_mint_keyset(f_proofs[0].keyset_id)
             .await?;
         let request = cashu::SwapRequest::new(f_proofs, premints.blinded_messages());
         let swap_response = foreign_client.post_swap(request).await?;
-        let proofs = unblind_signatures(premints, swap_response.signatures.into_iter(), &keys)
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let proofs =
+            unblind_signatures(premints.iter(), swap_response.signatures.into_iter(), &keys)
+                .map_err(|e| Error::Internal(e.to_string()))?;
         repo.store((mint_pk, mint_url), proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         grand_total += total;

@@ -1,7 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::client::cdk::MintConnectorExt;
 use bcr_wdc_utils::signatures::unblind_signatures;
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use cashu::nut10 as cdk10;
 // ----- local imports
 use crate::{
@@ -11,27 +13,25 @@ use crate::{
 
 // ----- end imports
 
-pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(String, TStamp)> {
+pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, TStamp)> {
     let Ok(secret) = cdk10::Secret::try_from(p.secret.clone()) else {
         return Err(Error::InvalidInput(String::from("no spending condition")));
     };
-    if !matches!(secret.kind(), cdk10::Kind::HTLC) {
-        return Err(Error::InvalidInput(String::from("non-HTLC")));
-    }
-    let hash = secret.secret_data().data().to_owned();
-    for tag_group in secret.secret_data().tags().unwrap_or(&vec![]) {
-        let empty = String::new();
-        let tag = tag_group.first().unwrap_or(&empty);
-        if tag == "locktime" && tag_group.len() > 2 {
-            let locktime = tag_group[1]
-                .parse::<i64>()
-                .map_err(|_| Error::InvalidInput(String::from("invalid HTLC time tag")))?;
-            let locktime = TStamp::from_timestamp_secs(locktime)
-                .ok_or(Error::InvalidInput(String::from("invalid HTLC time tag")))?;
-            return Ok((hash, locktime));
-        }
-    }
-    Err(Error::InvalidInput(String::from("no HTLC time tag")))
+    let Ok(conditions) = cashu::SpendingConditions::try_from(secret) else {
+        return Err(Error::InvalidInput(String::from("no spending condition")));
+    };
+    let cashu::SpendingConditions::HTLCConditions { data, conditions } = conditions else {
+        return Err(Error::InvalidInput(String::from("no HTLC conditions")));
+    };
+    let Some(cashu::Conditions { locktime, .. }) = conditions else {
+        return Err(Error::InvalidInput(String::from("no HTLC side-conditions")));
+    };
+    let Some(locktime) = locktime else {
+        return Err(Error::InvalidInput(String::from("no HTLC time tag")));
+    };
+    let locktime = TStamp::from_timestamp_secs(locktime as i64)
+        .ok_or(Error::InvalidInput(String::from("invalid HTLC time tag")))?;
+    Ok((data, locktime))
 }
 
 #[async_trait]
@@ -43,8 +43,6 @@ pub trait ClowderClient: Send + Sync {
     ) -> Result<()>;
 }
 
-pub trait MintConnectorExt: cdk::wallet::MintConnector + Send + Sync {}
-impl MintConnectorExt for cdk::wallet::HttpClient {}
 /// check that all proofs:
 /// - are unspent
 /// - have same keyset_id, same htlc hash, same locktime
@@ -54,7 +52,7 @@ pub async fn check_htlc_foreign_proofs(
     proofs: &[cashu::Proof],
     mintcl: &dyn MintConnectorExt,
     clwdcl: &dyn ClowderClient,
-) -> Result<(String, TStamp)> {
+) -> Result<(Sha256Hash, TStamp)> {
     if proofs.is_empty() {
         return Err(Error::InvalidInput(String::from("no proofs")));
     }
@@ -86,35 +84,37 @@ pub trait KeysClient: Send + Sync {
 
 fn generate_htlc_secret(
     locktime: Option<TStamp>,
-    hash: &str,
+    hash: Sha256Hash,
     pk: cashu::PublicKey,
-) -> cdk10::Secret {
-    let mut tags = vec![vec![String::from("pubkeys"), pk.to_string()]];
-    if let Some(locktime) = locktime {
-        tags.push(vec![
-            String::from("locktime"),
-            locktime.timestamp().to_string(),
-        ]);
-    }
-    cdk10::Secret::new(cdk10::Kind::HTLC, hash, Some(tags))
+) -> Result<cdk10::Secret> {
+    let conditions = cashu::Conditions::new(
+        locktime.map(|t| t.timestamp() as u64),
+        Some(vec![pk]),
+        None,
+        None,
+        None,
+        None,
+    )?;
+    let spending_conds = cashu::SpendingConditions::new_htlc(hash.to_string(), Some(conditions))?;
+    let secret = cdk10::Secret::from(spending_conds);
+    Ok(secret)
 }
 
 pub async fn generate_htlc_proofs(
     amount: cashu::Amount,
     locktime: Option<TStamp>,
-    hash: &str,
+    hash: Sha256Hash,
     pk: cashu::PublicKey,
     keyset: &cashu::KeySet,
     keycl: &dyn KeysClient,
 ) -> Result<Vec<cashu::Proof>> {
+    let nut10secret = generate_htlc_secret(locktime, hash, pk)?;
+    let secret = cashu::secret::Secret::try_from(nut10secret)?;
     let amounts = amount.split();
-    let secrets = std::iter::repeat_with(|| generate_htlc_secret(locktime, hash, pk))
-        .map(cashu::secret::Secret::try_from)
-        .take(amounts.len())
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let secrets = vec![secret; amounts.len()];
     let premints = cashu::PreMintSecrets::from_secrets(keyset.id, amounts, secrets)?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
-    let proofs = unblind_signatures(premints, signatures.into_iter(), &keyset)?;
+    let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), &keyset)?;
     Ok(proofs)
 }

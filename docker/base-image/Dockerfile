@@ -14,6 +14,7 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=${CARGO_NET_GIT_FETCH_WITH_CLI}
 
 COPY recipe.json recipe.json
 COPY --chmod=0755 scripts/cargo_git_auth.sh /scripts/cargo_git_auth.sh
+COPY bcr-common bcr-common
 
 RUN --mount=type=secret,id=gh_token,required=false \
     --mount=type=ssh \
