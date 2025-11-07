@@ -47,7 +47,7 @@ bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
 cashu = {version = "=0.13.1", default-features = false}
-cdk = {version = "=0.13"}
+cdk = {version = "=0.13", default-features = false}
 cdk-common = {version = "=0.13.1"}
 cdk-payment-processor = {version = "=0.13.1", default-features = false}
 cdk-redb = {version = "=0.13.1"}

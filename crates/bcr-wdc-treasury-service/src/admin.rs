@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::wire::signatures as wire_signatures;
@@ -102,7 +103,7 @@ where
 }
 
 pub async fn crsat_try_htlc_swap(
-    State(ctrl): State<foreign::crsat::Service>,
+    State(ctrl): State<Arc<foreign::crsat::Service>>,
     Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     tracing::debug!("Received request to try_htlc_swap");

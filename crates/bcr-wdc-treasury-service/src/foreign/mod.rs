@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::{client::cdk::MintConnectorExt, wire::keys as wire_keys};
 pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
@@ -28,12 +28,12 @@ pub trait OnlineRepository: Send + Sync {
     async fn store_htlc(
         &self,
         mint: (secp256k1::PublicKey, cashu::MintUrl),
-        hash: &str,
+        hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
     async fn search_htlc(
         &self,
-        hash: &str,
+        hash: &Sha256Hash,
     ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>;
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
@@ -93,6 +93,11 @@ pub trait ClowderClient: proof::ClowderClient {
     ) -> Result<cashu::KeySet>;
 }
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait MintClientFactory: Send + Sync {
+    async fn make_client(&self, mint_url: cashu::MintUrl) -> Result<Box<dyn MintConnectorExt>>;
+}
 fn proofs_vec_to_map(
     input: Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>,
 ) -> HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> {
@@ -114,4 +119,45 @@ fn fingerprints_vec_to_map(
         map.entry(fp.keyset_id).or_default().push((fp, hash));
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::error::Result;
+    use async_trait::async_trait;
+    use bcr_common::wire::keys as wire_keys;
+
+    mockall::mock! {
+        pub ClowderClient{
+        }
+
+        #[async_trait]
+        impl super::proof::ClowderClient for ClowderClient {
+            async fn check_htlc_proofs(
+                &self,
+                issuer: cashu::PublicKey,
+                proofs: Vec<cashu::Proof>,
+            ) -> Result<()>;
+        }
+        #[async_trait]
+        impl super::ClowderClient for ClowderClient {
+            async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl>;
+            async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey>;
+            async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
+            async fn can_accept_offline_exchange(
+                &self,
+                fps: Vec<wire_keys::ProofFingerprint>,
+            ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)>;
+            async fn get_keyset_info(
+                &self,
+                alpha_pk: &secp256k1::PublicKey,
+                kid: &cashu::Id,
+            ) -> Result<cashu::KeySetInfo>;
+            async fn get_keyset(
+                &self,
+                alpha_pk: &secp256k1::PublicKey,
+                kid: &cashu::Id,
+            ) -> Result<cashu::KeySet>;
+        }
+    }
 }
