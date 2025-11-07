@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_wdc_webapi::exchange as web_exchange;
@@ -27,7 +28,7 @@ where
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn crsat_online_exchange(
-    State(ctrl): State<foreign::crsat::Service>,
+    State(ctrl): State<Arc<foreign::crsat::Service>>,
     Json(request): Json<web_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");

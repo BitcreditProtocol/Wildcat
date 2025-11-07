@@ -62,7 +62,7 @@ pub struct AppConfig {
 pub struct AppController {
     credit: ProdCreditService,
     debit: ProdDebitService,
-    crsat: ProdCrsatService,
+    crsat: Arc<ProdCrsatService>,
     sat: ProdSatService,
     signer: Arc<SignatoryNatsClient>,
 }
@@ -120,12 +120,14 @@ impl AppController {
             .expect("Failed to create crsat offline repository");
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url);
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
-        let crsat = ProdCrsatService {
-            online_repo: Arc::new(crsatonlinerepo),
-            offline_repo: Arc::new(crsatofflinerepo),
-            keys: Arc::new(crsatkeys),
+        let factory = Arc::new(foreign::clients::MintClientFactory {});
+        let crsat = Arc::new(ProdCrsatService {
+            online_repo: Box::new(crsatonlinerepo),
+            offline_repo: Box::new(crsatofflinerepo),
+            keys: Box::new(crsatkeys),
             clowder: clowder.clone(),
-        };
+            mint_factory: factory.clone(),
+        });
 
         let satonlinerepo = ProdSatOnlineRepository::new(satonline_repo)
             .await
@@ -139,6 +141,7 @@ impl AppController {
             online_repo: Arc::new(satonlinerepo),
             offline_repo: Arc::new(satofflinerepo),
             clowder,
+            mint_factory: factory,
         };
 
         let signer = SignatoryNatsClient::new(signer_url, None)
