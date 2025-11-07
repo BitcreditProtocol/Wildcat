@@ -351,7 +351,7 @@ struct ForeignOnlineHtlcProofEntry {
     proof: cashu::Proof,
     mint_url: cashu::MintUrl,
     mint_pk: secp256k1::PublicKey,
-    hash: String,
+    hash: Sha256Hash,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -436,14 +436,14 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
     async fn store_htlc(
         &self,
         (mint_pk, mint_url): (secp256k1::PublicKey, cashu::MintUrl),
-        hash: &str,
+        hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut entries: Vec<ForeignOnlineHtlcProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let id = RecordId::from_table_key(&self.htlcs_table, proof.y()?.to_string());
             let entry = ForeignOnlineHtlcProofEntry {
-                hash: hash.to_string(),
+                hash,
                 id,
                 proof,
                 mint_pk,
@@ -462,13 +462,13 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
 
     async fn search_htlc(
         &self,
-        hash: &str,
+        hash: &Sha256Hash,
     ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
         let htlcs: Vec<ForeignOnlineHtlcProofEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE hash = $hash")
             .bind(("table", self.htlcs_table.clone()))
-            .bind(("hash", hash.to_string()))
+            .bind(("hash", hash.clone()))
             .await
             .map_err(Error::DB)?
             .take(0)
@@ -486,6 +486,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .collect();
         Ok(ret_val)
     }
+
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         for y in ys {
             let rid = RecordId::from_table_key(&self.htlcs_table, y.to_string());

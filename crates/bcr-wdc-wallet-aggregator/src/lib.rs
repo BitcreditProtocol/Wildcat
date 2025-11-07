@@ -65,7 +65,7 @@ impl AppController {
             commit_repo_cfg,
         } = cfg;
 
-        let cdk_client = HttpClient::new(cdk_mint_url, None);
+        let cdk_client = HttpClient::new(cdk_mint_url);
         let keys_client = bcr_common::client::keys::Client::new(keys_client_url);
         let swap_client = bcr_common::client::swap::Client::new(swap_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);

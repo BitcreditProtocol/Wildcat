@@ -92,7 +92,9 @@ impl credit::Repository for InMemoryCreditRepository {
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryOnlineRepository {
     proofs: Arc<Mutex<Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>,
-    htlc: Arc<Mutex<HashMap<String, Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>>,
+    htlc: Arc<
+        Mutex<HashMap<Sha256Hash, Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>,
+    >,
 }
 
 #[async_trait]
@@ -115,11 +117,11 @@ impl foreign::OnlineRepository for InMemoryOnlineRepository {
     async fn store_htlc(
         &self,
         mint: (secp256k1::PublicKey, cashu::MintUrl),
-        hash: &str,
+        hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.htlc.lock().unwrap();
-        let entry = locked.entry(hash.to_string()).or_default();
+        let entry = locked.entry(hash).or_default();
         for proof in proofs {
             entry.push((mint.clone(), proof));
         }
@@ -127,7 +129,7 @@ impl foreign::OnlineRepository for InMemoryOnlineRepository {
     }
     async fn search_htlc(
         &self,
-        hash: &str,
+        hash: &Sha256Hash,
     ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
         let locked = self.htlc.lock().unwrap();
         Ok(locked.get(hash).cloned().unwrap_or_default())
