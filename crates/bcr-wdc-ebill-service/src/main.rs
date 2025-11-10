@@ -28,7 +28,7 @@ async fn main() {
     // parse and create config
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("EBILL"))
+        .add_source(config::Environment::with_prefix("EBILL").separator("__"))
         .build()
         .expect("Failed to build ebill config");
 
