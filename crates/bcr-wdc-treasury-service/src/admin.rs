@@ -113,7 +113,7 @@ pub async fn crsat_try_htlc_swap(
 }
 
 pub async fn sat_try_htlc_swap(
-    State(ctrl): State<foreign::sat::Service>,
+    State(ctrl): State<Arc<foreign::sat::Service>>,
     Json(request): Json<web_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     tracing::debug!("Received request to try_htlc_swap");
