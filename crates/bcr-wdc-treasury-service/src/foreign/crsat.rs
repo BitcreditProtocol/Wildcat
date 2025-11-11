@@ -4,7 +4,7 @@ use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::wire::keys as wire_keys;
 use bcr_wdc_utils::signatures::unblind_signatures;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -175,7 +175,7 @@ async fn try_online_htlc(
     factory: &dyn MintClientFactory,
 ) -> Result<cashu::Amount> {
     let mut gran_total = cashu::Amount::ZERO;
-    let hash = Sha256Hash::from_str(preimage).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    let hash = Sha256Hash::hash(preimage.as_bytes());
     let foreign_proofs = repo.search_htlc(&hash).await?;
     let foreign_proofs = proofs_vec_to_map(foreign_proofs);
 
@@ -226,7 +226,7 @@ async fn try_offline_htlc_swap(
     repo: &dyn OfflineRepository,
     clowder: &dyn ClowderClient,
 ) -> Result<cashu::Amount> {
-    let hash = Sha256Hash::from_str(preimage).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    let hash = Sha256Hash::hash(preimage.as_bytes());
     let Some(((mint_pk, mint_url), fp)) = repo.search_fp(&hash).await? else {
         return Ok(cashu::Amount::ZERO);
     };
@@ -258,10 +258,10 @@ async fn try_offline_htlc_swap(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use bcr_common::core_tests;
     use bitcoin::hex::prelude::*;
-    use cashu::nut10 as cdk10;
     use mockall::predicate::*;
 
     mockall::mock! {
@@ -297,21 +297,22 @@ mod tests {
             }),
         )
         .unwrap();
-        let secret = cdk10::Secret::from(conditions);
-        let serialized = serde_json::to_vec(&secret).unwrap();
-        let keypair = keyset.keys.get(&amount).expect("keys for amount");
-        let (b_, r) =
-            cashu::dhke::blind_message(&serialized, None).expect("cdk_dhke::blind_message");
-        let c_ =
-            cashu::dhke::sign_message(&keypair.secret_key, &b_).expect("cdk_dhke::sign_message");
-        let c =
-            cashu::dhke::unblind_message(&c_, &r, &keypair.public_key).expect("unblind_message");
-        cashu::Proof::new(
-            amount,
+        let premints = cashu::PreMintSecrets::with_conditions(
             keyset.id,
-            cashu::secret::Secret::try_from(secret).unwrap(),
-            c,
+            amount,
+            &cashu::amount::SplitTarget::None,
+            &conditions,
         )
+        .unwrap();
+        assert_eq!(premints.blinded_messages().len(), 1);
+        let blind = premints.blinded_messages()[0].clone();
+        let signature = bcr_common::core::signature::sign_ecash(keyset, &blind).unwrap();
+        bcr_common::core::signature::unblind_ecash_signature(
+            &cashu::KeySet::from(keyset.clone()),
+            premints.into_iter().next().unwrap(),
+            signature,
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -398,7 +399,7 @@ mod tests {
             });
         clowder
             .expect_check_htlc_proofs()
-            .with(eq(foreign_pk.clone()), eq(inputs.clone()))
+            .with(eq(foreign_pk), eq(inputs.clone()))
             .times(1)
             .returning(|_, _| Ok(()));
 
@@ -432,5 +433,254 @@ mod tests {
         };
         let proofs = srvc.online_exchange(inputs, &exchange_path).await.unwrap();
         assert_eq!(2, proofs.len());
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_works() {
+        let onlinerepo = crate::foreign::MockOnlineRepository::new();
+        let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
+        let mut keys = MockKeysClient::new();
+        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let factory = crate::foreign::MockMintClientFactory::new();
+        let foreign_kp = core_tests::generate_random_keypair();
+        let myself_kp = core_tests::generate_random_keypair();
+        let wallet_kp = core_tests::generate_random_keypair();
+        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
+        foreign_info.final_expiry = Some(expiration.timestamp() as u64);
+        let originals = vec![
+            generate_htlc_proof_for_online_exchange(
+                &foreign_keyset,
+                cashu::Amount::from(512),
+                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                cashu::PublicKey::from(wallet_kp.public_key()),
+                cashu::PublicKey::from(myself_kp.public_key()),
+            ),
+            generate_htlc_proof_for_online_exchange(
+                &foreign_keyset,
+                cashu::Amount::from(256),
+                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                cashu::PublicKey::from(wallet_kp.public_key()),
+                cashu::PublicKey::from(myself_kp.public_key()),
+            ),
+        ];
+        let inputs = originals
+            .iter()
+            .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+            .collect::<Vec<_>>();
+        let hashes = originals
+            .iter()
+            .map(|p| Sha256Hash::hash(p.secret.as_bytes()))
+            .collect::<Vec<_>>();
+        let cloned_url = foreign_url.clone();
+        let foreign_pk = foreign_kp.public_key();
+        clowder
+            .expect_can_accept_offline_exchange()
+            .times(1)
+            .with(eq(inputs.clone()))
+            .returning(move |_| Ok((cloned_url.clone(), foreign_pk)));
+        let foreign_kid = foreign_keyset.id;
+        let foreign_pk = foreign_kp.public_key();
+        let foreign_info = cashu::KeySetInfo::from(foreign_info);
+        clowder
+            .expect_get_keyset_info()
+            .with(eq(foreign_pk), eq(foreign_kid))
+            .times(1)
+            .returning(move |_, _| Ok(foreign_info.clone()));
+        let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
+        myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
+        let cloned_keyset = cashu::KeySet::from(myself_keyset.clone());
+        keys.expect_get_keyset_with_expiration()
+            .with(eq(expiration.date_naive()))
+            .times(1)
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        let cloned_keyset = myself_keyset.clone();
+        keys.expect_sign().times(1).returning(move |blinds| {
+            let mut signatures = Vec::with_capacity(blinds.len());
+            for blind in blinds {
+                signatures
+                    .push(bcr_common::core::signature::sign_ecash(&cloned_keyset, blind).unwrap());
+            }
+            Ok(signatures)
+        });
+        offlinerepo
+            .expect_store_fps()
+            .with(
+                eq((foreign_pk, foreign_url.clone())),
+                eq(inputs.clone()),
+                eq(hashes.clone()),
+            )
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+
+        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
+        let srvc = Service {
+            online_repo: Box::new(onlinerepo),
+            offline_repo: Box::new(offlinerepo),
+            keys: Box::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(factory),
+        };
+        let proofs = srvc
+            .offline_exchange(inputs, hashes, wallet_pk)
+            .await
+            .unwrap();
+        assert_eq!(2, proofs.len());
+    }
+
+    #[tokio::test]
+    async fn try_swap_htlc_online() {
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
+        let offlinerepo = crate::foreign::MockOfflineRepository::new();
+        let keys = MockKeysClient::new();
+        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let mut factory = crate::foreign::MockMintClientFactory::new();
+        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_kp = core_tests::generate_random_keypair();
+        let wallet_kp = core_tests::generate_random_keypair();
+        let myself_kp = core_tests::generate_random_keypair();
+        let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let foreign_proof = generate_htlc_proof_for_online_exchange(
+            &foreign_keyset,
+            cashu::Amount::from(256),
+            chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+            cashu::PublicKey::from(wallet_kp.public_key()),
+            cashu::PublicKey::from(myself_kp.public_key()),
+        );
+        let preimage = foreign_proof.secret.to_string();
+        let hash = Sha256Hash::hash(foreign_proof.secret.as_bytes());
+        let search_response = vec![(
+            (foreign_kp.public_key(), foreign_url.clone()),
+            foreign_proof.clone(),
+        )];
+        let myself_sk = cashu::SecretKey::from(myself_kp.secret_key());
+        onlinerepo
+            .expect_search_htlc()
+            .with(eq(hash))
+            .times(1)
+            .returning(move |_| Ok(search_response.clone()));
+        clowder
+            .expect_sign_p2pk_proofs()
+            .times(1)
+            .returning(move |proofs| {
+                let mut proofs = proofs.to_vec();
+                proofs
+                    .iter_mut()
+                    .for_each(|p| p.sign_p2pk(myself_sk.clone()).unwrap());
+                Ok(proofs)
+            });
+        let foreign_kid = foreign_keyset.id;
+        let cloned_keyset = foreign_keyset.clone();
+        factory
+            .expect_make_client()
+            .with(eq(foreign_url.clone()))
+            .times(1)
+            .returning(move |_| {
+                let cloned_keyset = cloned_keyset.clone();
+                let mut foreign_client =
+                    bcr_common::client::cdk::test_utils::MockMintConnector::new();
+                let keyset = cashu::KeySet::from(cloned_keyset.clone());
+                foreign_client
+                    .expect_get_mint_keyset()
+                    .with(eq(foreign_kid))
+                    .times(1)
+                    .returning(move |_| Ok(keyset.clone()));
+                foreign_client
+                    .expect_post_swap()
+                    .times(1)
+                    .returning(move |request| {
+                        let mut signatures = Vec::with_capacity(request.inputs().len());
+                        for blind in request.outputs() {
+                            let signature =
+                                bcr_common::core::signature::sign_ecash(&cloned_keyset, blind)
+                                    .unwrap();
+                            signatures.push(signature);
+                        }
+                        Ok(cashu::SwapResponse { signatures })
+                    });
+                Ok(Box::new(foreign_client))
+            });
+        onlinerepo.expect_store().times(1).returning(|_, _| Ok(()));
+        let foreign_y = foreign_proof.y().unwrap();
+        onlinerepo
+            .expect_remove_htlcs()
+            .with(eq(vec![foreign_y]))
+            .times(1)
+            .returning(|_| Ok(()));
+        let srvc = Service {
+            online_repo: Box::new(onlinerepo),
+            offline_repo: Box::new(offlinerepo),
+            keys: Box::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(factory),
+        };
+        let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
+        assert_eq!(cashu::Amount::from(256), amount);
+    }
+
+    #[tokio::test]
+    async fn try_swap_htlc_offline() {
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
+        let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
+        let keys = MockKeysClient::new();
+        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let factory = crate::foreign::MockMintClientFactory::new();
+        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_kp = core_tests::generate_random_keypair();
+        let wallet_kp = core_tests::generate_random_keypair();
+        let myself_kp = core_tests::generate_random_keypair();
+        let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let foreign_proof = generate_htlc_proof_for_online_exchange(
+            &foreign_keyset,
+            cashu::Amount::from(256),
+            chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+            cashu::PublicKey::from(wallet_kp.public_key()),
+            cashu::PublicKey::from(myself_kp.public_key()),
+        );
+        let preimage = foreign_proof.secret.to_string();
+        let hash = Sha256Hash::hash(foreign_proof.secret.as_bytes());
+        let search_response = (
+            (foreign_kp.public_key(), foreign_url.clone()),
+            bcr_common::wire::keys::ProofFingerprint::try_from(foreign_proof.clone()).unwrap(),
+        );
+        onlinerepo
+            .expect_search_htlc()
+            .with(eq(hash))
+            .times(1)
+            .returning(move |_| Ok(vec![]));
+        offlinerepo
+            .expect_search_fp()
+            .with(eq(hash))
+            .times(1)
+            .returning(move |_| Ok(Some(search_response.clone())));
+        let foreign_kid = foreign_keyset.id;
+        let foreign_pk = foreign_kp.public_key();
+        let cloned_keyset = cashu::KeySet::from(foreign_keyset);
+        clowder
+            .expect_get_keyset()
+            .with(eq(foreign_pk), eq(foreign_kid))
+            .times(1)
+            .returning(move |_, _| Ok(cloned_keyset.clone()));
+        let foreign_y = foreign_proof.y().unwrap();
+        offlinerepo
+            .expect_remove_fps()
+            .with(eq(vec![foreign_y]))
+            .times(1)
+            .returning(|_| Ok(()));
+        offlinerepo
+            .expect_store_proofs()
+            .with(eq((foreign_pk, foreign_url)), always())
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let srvc = Service {
+            online_repo: Box::new(onlinerepo),
+            offline_repo: Box::new(offlinerepo),
+            keys: Box::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(factory),
+        };
+        let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
+        assert_eq!(cashu::Amount::from(256), amount);
     }
 }
