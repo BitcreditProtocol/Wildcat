@@ -45,7 +45,7 @@ pub async fn crsat_online_exchange(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sat_online_exchange(
-    State(ctrl): State<foreign::sat::Service>,
+    State(ctrl): State<Arc<foreign::sat::Service>>,
     Json(request): Json<web_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");
