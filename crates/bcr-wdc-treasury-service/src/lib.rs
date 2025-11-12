@@ -112,36 +112,65 @@ impl AppController {
             .await
             .expect("Failed to initialize monitors");
 
-        let crsatonlinerepo = ProdCrsatOnlineRepository::new(crsatonline_repo)
-            .await
-            .expect("Failed to create crsat online repository");
-        let crsatofflinerepo = ProdCrsatOfflineRepository::new(crsatoffline_repo)
-            .await
-            .expect("Failed to create crsat offline repository");
+        let crsatonlinerepo = Arc::new(
+            ProdCrsatOnlineRepository::new(crsatonline_repo)
+                .await
+                .expect("Failed to create crsat online repository"),
+        );
+        let crsatofflinerepo = Arc::new(
+            ProdCrsatOfflineRepository::new(crsatoffline_repo)
+                .await
+                .expect("Failed to create crsat offline repository"),
+        );
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url);
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
+        let interval = std::time::Duration::from_secs(monitor_interval_sec);
+        let settler = {
+            let online: Arc<dyn foreign::OnlineRepository> = crsatonlinerepo.clone();
+            let offline: Arc<dyn foreign::OfflineRepository> = crsatofflinerepo.clone();
+            let clwdr: Arc<dyn foreign::ClowderClient> = clowder.clone();
+            let fctry: Arc<dyn foreign::MintClientFactory> = factory.clone();
+            Box::new(foreign::settle::Handler::new(
+                &online, &offline, &clwdr, &fctry, interval,
+            ))
+        };
         let crsat = Arc::new(ProdCrsatService {
-            online_repo: Box::new(crsatonlinerepo),
-            offline_repo: Box::new(crsatofflinerepo),
+            online_repo: crsatonlinerepo,
+            offline_repo: crsatofflinerepo,
             keys: Box::new(crsatkeys),
             clowder: clowder.clone(),
             mint_factory: factory.clone(),
+            settler,
         });
 
-        let satonlinerepo = ProdSatOnlineRepository::new(satonline_repo)
-            .await
-            .expect("Failed to create sat repository");
-        let satofflinerepo = ProdSatOfflineRepository::new(satoffline_repo)
-            .await
-            .expect("Failed to create sat offline repository");
+        let satonlinerepo = Arc::new(
+            ProdSatOnlineRepository::new(satonline_repo)
+                .await
+                .expect("Failed to create sat repository"),
+        );
+        let satofflinerepo = Arc::new(
+            ProdSatOfflineRepository::new(satoffline_repo)
+                .await
+                .expect("Failed to create sat offline repository"),
+        );
         let satkeys = ProdSatKeysClient::new(cdk_mintd_url, signing_keys);
+        let settler = {
+            let online: Arc<dyn foreign::OnlineRepository> = satonlinerepo.clone();
+            let offline: Arc<dyn foreign::OfflineRepository> = satofflinerepo.clone();
+            let clwdr: Arc<dyn foreign::ClowderClient> = clowder.clone();
+            let fctry: Arc<dyn foreign::MintClientFactory> = factory.clone();
+            Box::new(foreign::settle::Handler::new(
+                &online, &offline, &clwdr, &fctry, interval,
+            ))
+        };
         let sat = Arc::new(ProdSatService {
             keys: Box::new(satkeys),
-            online_repo: Box::new(satonlinerepo),
-            offline_repo: Box::new(satofflinerepo),
+            online_repo: satonlinerepo,
+            offline_repo: satofflinerepo,
             clowder,
             mint_factory: factory,
+            settler,
         });
 
         let signer = SignatoryNatsClient::new(signer_url, None)
@@ -155,6 +184,11 @@ impl AppController {
             sat,
             signer: Arc::new(signer),
         }
+    }
+
+    pub async fn stop(&self) -> error::Result<()> {
+        self.crsat.stop().await?;
+        self.sat.stop().await
     }
 }
 
