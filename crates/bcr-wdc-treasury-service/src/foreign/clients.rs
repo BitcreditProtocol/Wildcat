@@ -175,6 +175,11 @@ impl foreign::ClowderClient for ClowderCl {
         }
         Ok(keysets.remove(0))
     }
+
+    async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
+        let response = self.clwdr.get_offline(pk).await?;
+        Ok(response.offline)
+    }
 }
 
 pub struct SatKeysClient {
