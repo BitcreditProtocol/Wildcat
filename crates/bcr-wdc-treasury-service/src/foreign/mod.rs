@@ -9,6 +9,7 @@ pub mod clients;
 pub mod crsat;
 mod proof;
 pub mod sat;
+pub mod settle;
 // ----- local imports
 use crate::error::Result;
 
@@ -91,6 +92,7 @@ pub trait ClowderClient: proof::ClowderClient {
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
     ) -> Result<cashu::KeySet>;
+    async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -98,6 +100,14 @@ pub trait ClowderClient: proof::ClowderClient {
 pub trait MintClientFactory: Send + Sync {
     async fn make_client(&self, mint_url: cashu::MintUrl) -> Result<Box<dyn MintConnectorExt>>;
 }
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait OfflineSettleHandler: Send + Sync {
+    fn monitor(&self, mint: (secp256k1::PublicKey, cashu::MintUrl)) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
+}
+
 fn proofs_vec_to_map(
     input: Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>,
 ) -> HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> {
@@ -158,6 +168,7 @@ mod tests {
                 alpha_pk: &secp256k1::PublicKey,
                 kid: &cashu::Id,
             ) -> Result<cashu::KeySet>;
+            async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
         }
     }
 }

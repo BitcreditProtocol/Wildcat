@@ -10,7 +10,7 @@ use crate::{
     error::{Error, Result},
     foreign::{
         proof, proofs_vec_to_map, ClowderClient, MintClientFactory, OfflineRepository,
-        OnlineRepository,
+        OfflineSettleHandler, OnlineRepository,
     },
 };
 
@@ -22,11 +22,12 @@ pub trait KeysClient: proof::KeysClient {
 }
 
 pub struct Service {
-    pub online_repo: Box<dyn OnlineRepository>,
-    pub offline_repo: Box<dyn OfflineRepository>,
+    pub online_repo: Arc<dyn OnlineRepository>,
+    pub offline_repo: Arc<dyn OfflineRepository>,
     pub keys: Box<dyn KeysClient>,
     pub clowder: Arc<dyn ClowderClient>,
     pub mint_factory: Arc<dyn MintClientFactory>,
+    pub settler: Box<dyn OfflineSettleHandler>,
 }
 
 impl Service {
@@ -127,10 +128,18 @@ impl Service {
         if online_amount > cashu::Amount::ZERO {
             return Ok(online_amount);
         }
-        let offline_amount =
-            try_offline_htlc_swap(preimage, self.offline_repo.as_ref(), self.clowder.as_ref())
-                .await?;
+        let offline_amount = try_offline_htlc_swap(
+            preimage,
+            self.offline_repo.as_ref(),
+            self.clowder.as_ref(),
+            self.settler.as_ref(),
+        )
+        .await?;
         Ok(offline_amount)
+    }
+
+    pub async fn stop(&self) -> Result<()> {
+        self.settler.stop().await
     }
 }
 
@@ -191,6 +200,7 @@ async fn try_offline_htlc_swap(
     preimage: &str,
     repo: &dyn OfflineRepository,
     clowder: &dyn ClowderClient,
+    settler: &dyn OfflineSettleHandler,
 ) -> Result<cashu::Amount> {
     let hash = Sha256Hash::hash(preimage.as_bytes());
     let Some(((mint_pk, mint_url), fp)) = repo.search_fp(&hash).await? else {
@@ -218,7 +228,9 @@ async fn try_offline_htlc_swap(
         .ok_or(Error::Internal(String::from("key amount not found")))?;
     proof.verify_dleq(*key)?;
     repo.remove_fps(&[fp.y]).await?;
-    repo.store_proofs((mint_pk, mint_url), vec![proof]).await?;
+    repo.store_proofs((mint_pk, mint_url.clone()), vec![proof])
+        .await?;
+    settler.monitor((mint_pk, mint_url))?;
     Ok(amount)
 }
 
@@ -282,6 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn online_exchange_works() {
+        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = MockKeysClient::new();
@@ -380,11 +393,12 @@ mod tests {
             Ok(signatures)
         });
         let srvc = Service {
-            online_repo: Box::new(onlinerepo),
-            offline_repo: Box::new(offlinerepo),
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(offlinerepo),
             keys: Box::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            settler: Box::new(settler),
         };
         let proofs = srvc.online_exchange(inputs, &exchange_path).await.unwrap();
         assert_eq!(2, proofs.len());
@@ -392,6 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn offline_exchange_works() {
+        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = MockKeysClient::new();
@@ -462,11 +477,12 @@ mod tests {
             .returning(|_, _, _| Ok(()));
         let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
         let srvc = Service {
-            online_repo: Box::new(onlinerepo),
-            offline_repo: Box::new(offlinerepo),
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(offlinerepo),
             keys: Box::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            settler: Box::new(settler),
         };
         let proofs = srvc
             .offline_exchange(inputs, hashes, wallet_pk)
@@ -477,6 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn try_swap_htlc_online() {
+        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = MockKeysClient::new();
@@ -555,11 +572,12 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
         let srvc = Service {
-            online_repo: Box::new(onlinerepo),
-            offline_repo: Box::new(offlinerepo),
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(offlinerepo),
             keys: Box::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            settler: Box::new(settler),
         };
         let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
@@ -567,6 +585,7 @@ mod tests {
 
     #[tokio::test]
     async fn try_swap_htlc_offline() {
+        let mut settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = MockKeysClient::new();
@@ -616,15 +635,21 @@ mod tests {
             .returning(|_| Ok(()));
         offlinerepo
             .expect_store_proofs()
-            .with(eq((foreign_pk, foreign_url)), always())
+            .with(eq((foreign_pk, foreign_url.clone())), always())
             .times(1)
             .returning(|_, _| Ok(()));
+        settler
+            .expect_monitor()
+            .with(eq((foreign_pk, foreign_url)))
+            .times(1)
+            .returning(|_| Ok(()));
         let srvc = Service {
-            online_repo: Box::new(onlinerepo),
-            offline_repo: Box::new(offlinerepo),
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(offlinerepo),
             keys: Box::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            settler: Box::new(settler),
         };
         let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
