@@ -49,7 +49,7 @@ async fn main() {
         .expect("Failed to create secret key from seed");
 
     let app = bcr_wdc_treasury_service::AppController::new(seed, secret, maincfg.appcfg).await;
-    let router = bcr_wdc_treasury_service::routes(app);
+    let router = bcr_wdc_treasury_service::routes(app.clone());
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
         .await
@@ -59,6 +59,8 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("Failed to start server");
+
+    app.stop().await.expect("Failed to stop app");
 }
 
 async fn shutdown_signal() {
