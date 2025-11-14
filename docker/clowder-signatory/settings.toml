@@ -1,0 +1,4 @@
+nats_url = "nats://nats:4222"
+log_level = "INFO"
+public_key = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
+private_key = "4db1676b540644f80b620aa9c7d0ca2a2ecd20ca891934ee540896f92fa3c342"

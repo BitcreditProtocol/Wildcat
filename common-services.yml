@@ -1,5 +1,4 @@
 services:
-
   ######################################################################################## ours
   ebpp:
     image: wildcat/ebpp
@@ -25,7 +24,8 @@ services:
     volumes:
       - ./docker/key-service/config.toml:/key-service/config.toml
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -70,7 +70,8 @@ services:
     volumes:
       - ./docker/quote-service/config.toml:/quote-service/config.toml
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -83,7 +84,8 @@ services:
     volumes:
       - ./docker/eiou-service/config.toml:/eiou-service/config.toml
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -117,7 +119,11 @@ services:
     volumes:
       - ./docker/ebill-service/config.toml:/ebill-service/config.toml
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail",
+        ]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -138,12 +144,46 @@ services:
       - ./docker/balance-collector/config.toml:/balance-collector/config.toml
 
   ######################################################################################## 3rd parties
+  nats:
+    image: nats:2.11.9-alpine
+    command: ["-js"]
+
+  signatory:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    command: ["/clowder/clwdr-signatory"]
+    volumes:
+      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
+    depends_on:
+      nats:
+        condition: service_started
+
+  clowder-node:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    command: ["/clowder/clwdr-node"]
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      nats:
+        condition: service_started
+    ports:
+      - "3010:3010"
+      - 5001:5001/udp
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
     volumes:
       - ./docker/keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
     healthcheck:
-      test: ['CMD-SHELL', '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { java.net.URI uri = java.net.URI.create(args[0]); System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)uri.toURL().openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:9000/health/live']
+      test:
+        [
+          "CMD-SHELL",
+          '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { java.net.URI uri = java.net.URI.create(args[0]); System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)uri.toURL().openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:9000/health/live',
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -158,7 +198,7 @@ services:
       - rocksdb:/data/database.db
     user: ${UID}:${GID}
     healthcheck:
-      test: [ "CMD", "/surreal", "is-ready" ]
+      test: ["CMD", "/surreal", "is-ready"]
       interval: 5s
       retries: 5
 
