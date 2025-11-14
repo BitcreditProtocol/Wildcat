@@ -1,58 +1,57 @@
 services:
-
   ######################################################################################## ours
   ebpp:
     extends:
-        file: common-services.yml
-        service: ebpp
+      file: common-services.yml
+      service: ebpp
     environment:
       - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
 
   key-service:
     extends:
-        file: common-services.yml
-        service: key-service
+      file: common-services.yml
+      service: key-service
 
   swap-service:
     extends:
-        file: common-services.yml
-        service: swap-service
+      file: common-services.yml
+      service: swap-service
 
   treasury-service:
     extends:
-        file: common-services.yml
-        service: treasury-service
+      file: common-services.yml
+      service: treasury-service
 
   quote-service:
     extends:
-        file: common-services.yml
-        service: quote-service
+      file: common-services.yml
+      service: quote-service
 
   eiou-service:
     extends:
-        file: common-services.yml
-        service: eiou-service
+      file: common-services.yml
+      service: eiou-service
 
   wallet-aggregator:
     extends:
-        file: common-services.yml
-        service: wallet-aggregator
+      file: common-services.yml
+      service: wallet-aggregator
 
   ebill-service:
     extends:
-        file: common-services.yml
-        service: ebill-service
+      file: common-services.yml
+      service: ebill-service
 
   balance-collector:
     extends:
-        file: common-services.yml
-        service: balance-collector
+      file: common-services.yml
+      service: balance-collector
 
   ######################################################################################## 3rd parties
   keycloak:
     extends:
-        file: common-services.yml
-        service: keycloak
+      file: common-services.yml
+      service: keycloak
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
@@ -70,16 +69,15 @@ services:
     ports:
       - "8000:8000"
 
-
   surrealdb:
     extends:
-        file: common-services.yml
-        service: surrealdb
+      file: common-services.yml
+      service: surrealdb
 
   bitcoin-core:
     extends:
-        file: common-services.yml
-        service: bitcoin-core
+      file: common-services.yml
+      service: bitcoin-core
     command:
       - -printtoconsole
       - --regtest=1
@@ -89,8 +87,8 @@ services:
 
   electrs:
     extends:
-        file: common-services.yml
-        service: electrs
+      file: common-services.yml
+      service: electrs
     environment:
       ELECTRS_NETWORK: regtest
       ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
@@ -98,19 +96,34 @@ services:
 
   cdk-mintd:
     extends:
-        file: common-services.yml
-        service: cdk-mintd
+      file: common-services.yml
+      service: cdk-mintd
 
   bff-dashboard-service:
     extends:
-        file: common-services.yml
-        service: bff-dashboard-service
+      file: common-services.yml
+      service: bff-dashboard-service
     ports:
-      - "4242:4242"  
+      - "4242:4242"
 
   bff-wallet-service:
     extends:
-        file: common-services.yml
-        service: bff-wallet-service
+      file: common-services.yml
+      service: bff-wallet-service
     ports:
       - "4343:4242"
+
+  signatory:
+    extends:
+      file: common-services.yml
+      service: signatory
+
+  nats:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  clowder-node:
+    extends:
+      file: common-services.yml
+      service: clowder-node

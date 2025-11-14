@@ -1,0 +1,37 @@
+web_bind_address = "0.0.0.0:3010"
+nats_url = "nats://nats:4222"
+log_level = "INFO"
+
+pubsub_server_name = "localhost"
+pubsub_socket_addr = "0.0.0.0:5001"
+pubsub_use_gso = true
+
+[bitcoin_core]
+rpc_url = "http://bitcoin-core:18443"
+rpc_username = "electrs"
+rpc_password = "bitcredit"
+network = "regtest"
+
+[beta_params]
+offline_seconds = 15
+interim_seconds = 90
+rabid_seconds = 3600
+hashchain_buffer_size = 16384
+max_download_length = 8192
+multisig_m_blocks = 3
+offline_frequency_check_seconds = 3
+lock_reduction_per_hop_seconds = 600
+
+# Clowder Configurations
+
+[[nodes]]
+public_key = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
+socket_addr = "clowder-node:5001"
+rest_url = "http://clowder-node:3010"
+server_name = "localhost"
+mint_url = "http://bff-wallet-service:4343"
+
+[[clowders]]
+alpha = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
+betas = [
+]
