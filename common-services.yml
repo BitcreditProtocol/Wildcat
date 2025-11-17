@@ -254,6 +254,48 @@ services:
         condition: service_healthy
       wallet-aggregator:
         condition: service_healthy
+      eic-service:
+        condition: service_healthy
+      ens-service:
+        condition: service_healthy
     volumes:
       - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
     restart: unless-stopped
+
+
+  eic-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-eic-service:nightly
+    command: ["/eic-service/bcr-wdc-eic-service"]
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - EIC_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/wildcat-aux-eic/config.toml:/eic-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ens-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-ens-service:nightly
+    command: ["/ens-service/bcr-wdc-ens-service"]
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/wildcat-aux-ens/config.toml:/ens-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3339/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
