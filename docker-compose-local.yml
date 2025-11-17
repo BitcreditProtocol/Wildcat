@@ -127,3 +127,14 @@ services:
     extends:
       file: common-services.yml
       service: clowder-node
+
+  eic-service:
+    extends:
+      file: common-services.yml
+      service: eic-service
+
+  ens-service:
+    extends:
+      file: common-services.yml
+      service: ens-service
+
