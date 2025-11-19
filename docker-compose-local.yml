@@ -137,4 +137,3 @@ services:
     extends:
       file: common-services.yml
       service: ens-service
-

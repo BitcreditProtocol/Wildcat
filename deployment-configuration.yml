@@ -46,6 +46,28 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
     pull_policy: always
 
+  ######################################################################################## clowder
+
+  signatory:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  clowder-node:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+
+  ######################################################################################## wildcat-auxiliary
+
+  eic-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eic-service:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  ens-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ens-service:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+
   ######################################################################################## bcr-wdc-bootstrap
 
   ebill-service-bootstrap:

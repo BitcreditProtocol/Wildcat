@@ -33,6 +33,8 @@ jobs:
       contents: read
       deployments: write
       id-token: write
+      packages: read
+
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.inputs.environment || github.event_name }}
       cancel-in-progress: true
@@ -96,12 +98,19 @@ jobs:
           service_account: ${{ secrets.GCLOUD_SERVICE_ACCOUNT }}
           token_format: access_token
 
-      - name: Auth w/ registry
+      - name: Auth w/ GAR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Create .env file'
         run: |
@@ -133,13 +142,13 @@ jobs:
           ELECTRS_NETWORK="${{ vars.ELECTRS_NETWORK }}"
           ELECTRS_DAEMON_RPC_ADDR="${{ vars.ELECTRS_DAEMON_RPC_ADDR }}"
           ELECTRS_DAEMON_P2P_ADDR="${{ vars.ELECTRS_DAEMON_P2P_ADDR }}"
-          UID=1000
 
+          UID=1000
           GID=1000
 
           EOF
         working-directory: ${{ env.DEPLOY_PATH }}
-    
+
       - name: Validate compose config
         run: |
           docker compose \
@@ -215,6 +224,8 @@ jobs:
       contents: read
       deployments: write
       id-token: write
+      packages: read
+
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.inputs.environment || github.event_name }}
       cancel-in-progress: true

@@ -54,6 +54,11 @@ services:
       file: common-services.yml
       service: ebill-service
 
+  balance-collector:
+    extends:
+        file: common-services.yml
+        service: balance-collector
+
   bff-wallet-service:
     extends:
         file: common-services.yml
@@ -109,7 +114,31 @@ services:
       ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18332
       ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18333
 
-  balance-collector:
+  ######################################################################################## clowder
+
+  signatory:
     extends:
-        file: common-services.yml
-        service: balance-collector
+      file: common-services.yml
+      service: signatory
+
+  nats:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  clowder-node:
+    extends:
+      file: common-services.yml
+      service: clowder-node
+
+  ######################################################################################## wildcat-auxiliary
+
+  eic-service:
+    extends:
+      file: common-services.yml
+      service: eic-service
+
+  ens-service:
+    extends:
+      file: common-services.yml
+      service: ens-service
