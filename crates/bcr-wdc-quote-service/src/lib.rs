@@ -1,10 +1,12 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::FromRef;
-use axum::routing::{delete, get, post};
-use axum::Router;
-use cashu::{nut00 as cdk00, nut02 as cdk02, nut11 as cdk11, nut12 as cdk12, nut14 as cdk14};
+use axum::{
+    extract::FromRef,
+    routing::{delete, get, post},
+    Router,
+};
+use bcr_common::client::quote::Client as QuoteClient;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -77,23 +79,20 @@ where
         .url("/api-docs/openapi.json", ApiDoc::openapi());
 
     let user_routes = Router::new()
-        .route("/v1/mint/quote/credit", post(web::enquire_quote))
-        .route("/v1/mint/quote/credit/{id}", get(web::lookup_quote))
+        .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
+        .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
         .route("/v1/mint/quote/credit/{id}", delete(web::cancel))
-        .route("/v1/mint/quote/credit/{id}", post(web::resolve_offer));
+        .route(QuoteClient::RESOLVE_EP_V1, post(web::resolve_offer));
 
     let admin_routes = Router::new()
         .route(
             "/v1/admin/credit/quote/pending",
             get(admin::list_pending_quotes),
         )
-        .route("/v1/admin/credit/quote", get(admin::list_quotes))
-        .route("/v1/admin/credit/quote/{id}", get(admin::lookup_quote))
-        .route("/v1/admin/credit/quote/{id}", post(admin::update_quote))
-        .route(
-            "/v1/admin/credit/quote/enable_mint/{id}",
-            post(admin::enable_minting),
-        );
+        .route(QuoteClient::LIST_EP_V1, get(admin::list_quotes))
+        .route(QuoteClient::LOOKUP_EP_V1, get(admin::lookup_quote))
+        .route(QuoteClient::UPDATE_EP_V1, post(admin::update_quote))
+        .route(QuoteClient::ENQUIRE_EP_V1, post(admin::enable_minting));
 
     Router::new()
         .merge(user_routes)
@@ -125,13 +124,13 @@ where
         bcr_common::wire::quotes::UpdateQuoteRequest,
         bcr_common::wire::quotes::UpdateQuoteResponse,
         cashu::Amount,
-        cdk00::BlindSignature,
-        cdk00::BlindedMessage,
-        cdk00::Witness,
-        cdk02::Id,
-        cdk11::P2PKWitness,
-        cdk12::BlindSignatureDleq,
-        cdk14::HTLCWitness,
+        cashu::BlindSignature,
+        cashu::BlindedMessage,
+        cashu::Witness,
+        cashu::Id,
+        cashu::P2PKWitness,
+        cashu::BlindSignatureDleq,
+        cashu::HTLCWitness,
     ),),
     paths(
         crate::admin::enable_minting,
