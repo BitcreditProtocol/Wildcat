@@ -19,11 +19,13 @@ on:
         description: "DANGER: Remove all data?"
         type: boolean
         default: false
-
+  push:
+    branches:
+      - "cleot/**" # test
 jobs:
   deploy-dev:
     name: Deploy to dev
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
 
     permissions:
       contents: read
