@@ -262,7 +262,6 @@ services:
       - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
     restart: unless-stopped
 
-
   eic-service:
     image: ghcr.io/bitcreditprotocol/bcr-wdc-eic-service:nightly
     command: ["/eic-service/bcr-wdc-eic-service"]

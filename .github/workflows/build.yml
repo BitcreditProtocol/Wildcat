@@ -31,9 +31,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
     - name: Create GitHub App token
       id: app-token
       uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
@@ -48,23 +45,30 @@ jobs:
       run: |
         git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
+    - name: Checkout code
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
+
     - name: Authenticate to GCP
       id: auth
-      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
         workload_identity_provider: ${{ secrets.GCLOUD_WIF_PROVIDER }}
         service_account: ${{ secrets.GCLOUD_SERVICE_ACCOUNT }}
         token_format: access_token
 
     - name: Auth w/ registry
-      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
       with:
         registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
         username: oauth2accesstoken
         password: ${{ steps.auth.outputs.access_token }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.0
 
     - name: Build base image (cache + local tar)
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
@@ -85,7 +89,7 @@ jobs:
         outputs: |
           type=docker,dest=${{ env.BASE_TAR }},name=${{ env.BASE_IMAGE_NAME }}
       
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: base-image
         path: "${{ env.BASE_TAR }}"
@@ -101,6 +105,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+      packages: write
     strategy:
       fail-fast: false
       #max-parallel: 1
@@ -127,31 +132,37 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
     - name: Authenticate to GCP
       id: auth
-      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
         workload_identity_provider: ${{ secrets.GCLOUD_WIF_PROVIDER }}
         service_account: ${{ secrets.GCLOUD_SERVICE_ACCOUNT }}
         token_format: access_token
 
-    - name: Auth w/ registry
-      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+    - name: Auth w/ GAR
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
       with:
         registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
         username: oauth2accesstoken
         password: ${{ steps.auth.outputs.access_token }}
 
+    - name: Login to GHCR
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Set up Docker Buildx
       id: buildx
-      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.0
       with:
         driver: docker
 
-
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+    - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
       with:
         name: base-image
         path: .
@@ -161,30 +172,20 @@ jobs:
 
     - id: meta
       name: Metadata for ${{ matrix.service.name }}
-      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
       with:
-        images: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
+        images: |
+          ${{ env.GAR_PATH }}/${{ matrix.service.name }}
+          ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}
         tags: |
           type=semver,pattern={{version}}
 
     - id: push
       name: Build & push ${{ matrix.service.name }}
-      uses: docker/build-push-action@1dc73863535b631f98b2378be8619f83b136f4a0 # v6.17.0
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
         context: .
         file: ${{ matrix.service.dockerfile }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        # Uncomment for per-service cache
-        # cache-from: type=registry,ref=${{ env.GAR_PATH }}/${{ matrix.service.name }}:buildcache
-        # cache-to:   type=registry,ref=${{ env.GAR_PATH }}/${{ matrix.service.name }}:buildcache,mode=max
-
-    # ─────────────────────────────
-    # provenance
-    # ─────────────────────────────
-    - uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
-      with:
-        subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
-        subject-digest: ${{ steps.push.outputs.digest }}
-        push-to-registry: true
