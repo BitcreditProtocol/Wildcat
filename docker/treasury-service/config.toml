@@ -6,8 +6,8 @@ log_level = "DEBUG"
 credit_keys_url = "http://key-service:3338"
 monitor_interval_sec = 30
 cdk_mintd_url = "http://cdk-mintd:8085"
-clowder_url = "https://clowder:3338"
-signer_url = "http://signer-service:3338"
+clowder_url = "nats://nats:4222"
+signer_url = "nats://nats:4222"
 
 [appcfg.credit_repo]
 connection = "ws://surrealdb:8000"
