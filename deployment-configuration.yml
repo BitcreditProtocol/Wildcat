@@ -56,7 +56,6 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
     pull_policy: always
 
-
   ######################################################################################## wildcat-auxiliary
 
   eic-service:
@@ -66,7 +65,6 @@ services:
   ens-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ens-service:${IMAGE_TAG:-latest}
     pull_policy: always
-
 
   ######################################################################################## bcr-wdc-bootstrap
 
