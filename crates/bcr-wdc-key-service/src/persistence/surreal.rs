@@ -280,17 +280,20 @@ impl KeysRepository for DBKeys {
     }
 
     async fn store_mintop(&self, mint_op: MintOperation) -> Result<()> {
+        let uid = mint_op.uid;
         if self.info(mint_op.kid).await?.is_none() {
             return Err(Error::UnknownKeyset(mint_op.kid));
         }
         let entry = convert_to_mintopdbentry(mint_op, &self.mints_table);
-        let _: Vec<MintOpDBEntry> = self
-            .db
-            .insert(&self.mints_table)
-            .content(entry)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        Ok(())
+        let res: SurrealResult<Option<MintOpDBEntry>> =
+            self.db.insert(&entry.id).content(entry).await;
+        match res {
+            Ok(..) => Ok(()),
+            Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
+                Err(Error::MintOpAlreadyExist(uid))
+            }
+            Err(e) => Err(Error::KeysRepository(anyhow!(e))),
+        }
     }
 
     async fn load_mintop(&self, uid: Uuid) -> Result<MintOperation> {
@@ -564,6 +567,24 @@ mod tests {
             minted: Amount::ZERO,
         };
         db.store_mintop(op).await.unwrap();
+    }
+    #[tokio::test]
+    async fn store_mintop_twice() {
+        let db = init_mem_db().await;
+        let keys = keys_test::generate_random_keyset();
+        let kid = keys.0.id;
+        db.store(keys).await.unwrap();
+        let kp = keys_test::generate_random_keypair();
+        let op = MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: Amount::ZERO,
+            minted: Amount::ZERO,
+        };
+        db.store_mintop(op.clone()).await.unwrap();
+        let res = db.store_mintop(op).await;
+        assert!(matches!(res, Err(Error::MintOpAlreadyExist(_))));
     }
 
     #[tokio::test]

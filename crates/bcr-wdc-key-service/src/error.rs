@@ -29,6 +29,8 @@ pub enum Error {
     InvalidGenerateRequest(uuid::Uuid),
     #[error("signature already exists {0}")]
     SignatureAlreadyExists(cdk01::PublicKey),
+    #[error("mint operation already exists {0}")]
+    MintOpAlreadyExist(uuid::Uuid),
 
     #[error("internal {0}")]
     Internal(String),
@@ -39,10 +41,8 @@ impl axum::response::IntoResponse for Error {
         tracing::error!("Error: {}", self);
         let resp = match self {
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::SignatureAlreadyExists(y) => (
-                StatusCode::CONFLICT,
-                format!("Signature {y} already exists"),
-            ),
+            Error::MintOpAlreadyExist(y) => (StatusCode::CONFLICT, self.to_string()),
+            Error::SignatureAlreadyExists(y) => (StatusCode::CONFLICT, self.to_string()),
             Error::InvalidGenerateRequest(_) => (
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid generate request"),
