@@ -90,10 +90,7 @@ impl KeysRepository for InMemoryKeyMap {
         let mut wlocked = self.conditions.write().unwrap();
         let (cs, cs_kid) = &mut *wlocked;
         if cs.contains_key(&mint_op.uid) {
-            return Err(Error::Internal(format!(
-                "MintCondition internal uid already exists {}",
-                mint_op.uid
-            )));
+            return Err(Error::MintOpAlreadyExist(mint_op.uid));
         }
         let uid = mint_op.uid;
         let kid = mint_op.kid;
