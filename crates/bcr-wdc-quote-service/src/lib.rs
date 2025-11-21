@@ -81,7 +81,7 @@ where
     let user_routes = Router::new()
         .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
         .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
-        .route("/v1/mint/quote/credit/{id}", delete(web::cancel))
+        .route(QuoteClient::RESOLVE_EP_V1, delete(web::cancel))
         .route(QuoteClient::RESOLVE_EP_V1, post(web::resolve_offer));
 
     let admin_routes = Router::new()
