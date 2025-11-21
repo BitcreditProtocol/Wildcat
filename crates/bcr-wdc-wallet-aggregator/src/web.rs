@@ -465,7 +465,7 @@ impl KeyClientT for KeysClient {
         let info = self.keyset_info(keyset_id).await;
         match info {
             Ok(_) => Ok(true),
-            Err(KeysError::ResourceNotFound(_)) => Ok(false),
+            Err(KeysError::KeysetIdNotFound(_)) => Ok(false),
             Err(e) => Err(Error::Keys(e)),
         }
     }
