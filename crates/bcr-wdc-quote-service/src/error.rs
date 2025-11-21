@@ -37,12 +37,12 @@ pub enum Error {
         crate::quotes::StatusDiscriminants,
     ),
     #[error("unknown quote id {0}")]
-    UnknownQuoteID(uuid::Uuid),
+    QuoteIDNotFound(uuid::Uuid),
     #[error("Invalid amount: {0}")]
     InvalidAmount(bitcoin::Amount),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
-    #[error("Invalid blindedMessages: {0}")]
+    #[error("Invalid keyset ID: {0}")]
     InvalidKeysetId(cdk02::Id),
     #[error("Internal server error: {0}")]
     InternalServer(String),
@@ -60,7 +60,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, String::from("Invalid input")),
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
-            Error::UnknownQuoteID(_) => (StatusCode::NOT_FOUND, String::from("Quote ID not found")),
+            Error::QuoteIDNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Error::InvalidQuoteStatus(_, _, _) => {
                 (StatusCode::CONFLICT, String::from("Quote invalid status"))
             }

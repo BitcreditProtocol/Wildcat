@@ -6,7 +6,7 @@ use bcr_common::wire::quotes as wire_quotes;
 use crate::{
     error::Result,
     quotes,
-    service::{calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
+    service::{self, calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
 };
 
 /// --------------------------- List quotes
@@ -129,7 +129,16 @@ pub async fn list_quotes(
 }
 
 /// --------------------------- Look up request
-fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
+fn convert_mint_status(status: service::MintingStatus) -> wire_quotes::MintingStatus {
+    match status {
+        service::MintingStatus::Disabled => wire_quotes::MintingStatus::Disabled,
+        service::MintingStatus::Enabled(minted) => wire_quotes::MintingStatus::Enabled { minted },
+    }
+}
+fn convert_to_info_reply(
+    quote: quotes::Quote,
+    minting_status: service::MintingStatus,
+) -> wire_quotes::InfoReply {
     match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::InfoReply::Pending {
             id: quote.id,
@@ -176,6 +185,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
             bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             keyset_id,
+            minting_status: convert_mint_status(minting_status),
         },
         quotes::Status::Rejected { tstamp, discounted } => wire_quotes::InfoReply::Rejected {
             id: quote.id,
@@ -206,7 +216,8 @@ pub async fn lookup_quote(
 
     let now = chrono::Utc::now();
     let quote = ctrl.lookup(id, now).await?;
-    let response = convert_to_info_reply(quote);
+    let minting_status = ctrl.minting_status(id).await?;
+    let response = convert_to_info_reply(quote, minting_status);
     Ok(Json(response))
 }
 
