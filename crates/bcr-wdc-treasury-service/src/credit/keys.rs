@@ -26,7 +26,7 @@ impl KeyService for KeySrvc {
     async fn info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo> {
         match self.0.keyset_info(kid).await {
             Ok(info) => Ok(info),
-            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::KeysetIdNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(e) => Err(Error::KeyClient(e)),
         }
     }
@@ -34,7 +34,7 @@ impl KeyService for KeySrvc {
     async fn keys(&self, kid: cdk02::Id) -> Result<cdk02::KeySet> {
         match self.0.keys(kid).await {
             Ok(keys) => Ok(keys),
-            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::KeysetIdNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(e) => Err(Error::KeyClient(e)),
         }
     }
