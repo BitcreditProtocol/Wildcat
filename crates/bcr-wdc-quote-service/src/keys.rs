@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::client::keys::Client as KeysClient;
+use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -50,6 +50,14 @@ impl KeysHandler for KeysRestHandler {
     }
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
         self.0.sign(msg).await.map_err(Error::KeysHandler)
+    }
+    async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>> {
+        let response = self.0.mint_operation_status(qid).await;
+        match response {
+            Ok(amount) => Ok(Some(amount)),
+            Err(KeysError::MintOpNotFound(_)) => Ok(None),
+            Err(e) => Err(Error::KeysHandler(e)),
+        }
     }
 }
 
