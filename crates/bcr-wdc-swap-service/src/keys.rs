@@ -26,7 +26,7 @@ impl KeysService for RESTClient {
         let response = self.0.keyset_info(*id).await;
         match response {
             Ok(info) => Ok(info),
-            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::KeysetIdNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(e) => Err(Error::KeysClient(e)),
         }
     }
@@ -34,7 +34,7 @@ impl KeysService for RESTClient {
         let response = self.0.sign(blind).await;
         match response {
             Ok(signature) => Ok(signature),
-            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::KeysetIdNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(KeysError::InvalidRequest) => {
                 Err(Error::InvalidBlindedMessage(blind.blinded_secret))
             }
@@ -45,7 +45,7 @@ impl KeysService for RESTClient {
         let response = self.0.verify_proof(proof).await;
         match response {
             Ok(()) => Ok(()),
-            Err(KeysError::ResourceNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
+            Err(KeysError::KeysetIdNotFound(kid)) => Err(Error::UnknownKeyset(kid)),
             Err(KeysError::InvalidRequest) => Err(Error::InvalidProof(proof.secret.clone())),
             Err(e) => Err(Error::KeysClient(e)),
         }
