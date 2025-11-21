@@ -17,6 +17,6 @@ async fn keys_not_found() {
     assert!(response.is_err());
     assert!(matches!(
         response.unwrap_err(),
-        KeysError::ResourceNotFound(_)
+        KeysError::KeysetIdNotFound(_)
     ));
 }

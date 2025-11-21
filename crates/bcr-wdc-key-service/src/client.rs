@@ -15,7 +15,7 @@ pub struct DummyClient {
 impl DummyClient {
     pub async fn keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
         let res = self.keys.keyset(kid).await.expect("InMemoryRepository");
-        res.ok_or(KeysError::ResourceNotFound(kid))
+        res.ok_or(KeysError::KeysetIdNotFound(kid))
             .map(std::convert::Into::into)
     }
     pub async fn list_keyset(&self) -> Result<Vec<cashu::KeySet>> {
@@ -28,7 +28,7 @@ impl DummyClient {
             .info(kid)
             .await
             .expect("InMemoryRepository")
-            .ok_or(KeysError::ResourceNotFound(kid))
+            .ok_or(KeysError::KeysetIdNotFound(kid))
             .map(std::convert::Into::into)
     }
     pub async fn list_keyset_info(&self) -> Result<Vec<cashu::KeySetInfo>> {
@@ -42,7 +42,7 @@ impl DummyClient {
             .keyset(msg.keyset_id)
             .await
             .expect("InMemoryRepository");
-        let keys = res.ok_or(KeysError::ResourceNotFound(msg.keyset_id))?;
+        let keys = res.ok_or(KeysError::KeysetIdNotFound(msg.keyset_id))?;
         bcr_wdc_utils::keys::sign_with_keys(&keys, msg).map_err(|_| KeysError::InvalidRequest)
     }
     pub async fn verify(&self, proof: &cashu::Proof) -> Result<bool> {
@@ -51,7 +51,7 @@ impl DummyClient {
             .keyset(proof.keyset_id)
             .await
             .expect("InMemoryRepository");
-        let keys = res.ok_or(KeysError::ResourceNotFound(proof.keyset_id))?;
+        let keys = res.ok_or(KeysError::KeysetIdNotFound(proof.keyset_id))?;
         bcr_wdc_utils::keys::verify_with_keys(&keys, proof)
             .map_err(|_| KeysError::InvalidRequest)?;
         Ok(true)
