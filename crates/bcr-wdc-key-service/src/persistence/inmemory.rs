@@ -62,7 +62,7 @@ impl KeysRepository for InMemoryKeyMap {
         let mut wlocked = self.keys.write().unwrap();
         let (info, _) = wlocked
             .get_mut(&new.id)
-            .ok_or(Error::UnknownKeyset(new.id))?;
+            .ok_or(Error::KeysetNotFound(new.id))?;
         *info = new;
         Ok(())
     }
@@ -85,7 +85,7 @@ impl KeysRepository for InMemoryKeyMap {
     async fn store_mintop(&self, mint_op: MintOperation) -> Result<()> {
         let rlocked = self.keys.read().unwrap();
         if !rlocked.contains_key(&mint_op.kid) {
-            return Err(Error::UnknownKeyset(mint_op.kid));
+            return Err(Error::KeysetNotFound(mint_op.kid));
         }
         let mut wlocked = self.conditions.write().unwrap();
         let (cs, cs_kid) = &mut *wlocked;
@@ -104,9 +104,7 @@ impl KeysRepository for InMemoryKeyMap {
     async fn load_mintop(&self, uid: Uuid) -> Result<MintOperation> {
         let rlocked = self.conditions.read().unwrap();
         let (cs, _) = &*rlocked;
-        let op = cs
-            .get(&uid)
-            .ok_or(Error::InvalidMintRequest(format!("request unknown {uid}")))?;
+        let op = cs.get(&uid).ok_or(Error::MintOpNotFound(uid))?;
         Ok(op.clone())
     }
     async fn list_mintops(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {

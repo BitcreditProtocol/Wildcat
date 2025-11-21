@@ -19,8 +19,10 @@ pub enum Error {
     #[error("clowder client {0}")]
     ClowderClient(AnyError),
 
+    #[error("MintOp not found {0}")]
+    MintOpNotFound(uuid::Uuid),
     #[error("Unknown keyset {0}")]
-    UnknownKeyset(cdk02::Id),
+    KeysetNotFound(cdk02::Id),
     #[error("Unknown keyset from id {0}")]
     UnknownKeysetFromId(uuid::Uuid),
     #[error("invalid mint request: {0}")]
@@ -41,8 +43,8 @@ impl axum::response::IntoResponse for Error {
         tracing::error!("Error: {}", self);
         let resp = match self {
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::MintOpAlreadyExist(y) => (StatusCode::CONFLICT, self.to_string()),
-            Error::SignatureAlreadyExists(y) => (StatusCode::CONFLICT, self.to_string()),
+            Error::MintOpAlreadyExist(_) => (StatusCode::CONFLICT, self.to_string()),
+            Error::SignatureAlreadyExists(_) => (StatusCode::CONFLICT, self.to_string()),
             Error::InvalidGenerateRequest(_) => (
                 StatusCode::BAD_REQUEST,
                 String::from("Invalid generate request"),
@@ -55,7 +57,8 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::NOT_FOUND,
                 String::from("Unknown keyset from id"),
             ),
-            Error::UnknownKeyset(_) => (StatusCode::NOT_FOUND, String::from("Unknown keyset")),
+            Error::KeysetNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::MintOpNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
 
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SignaturesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

@@ -259,7 +259,7 @@ impl KeysRepository for DBKeys {
         if entry.is_some() {
             Ok(())
         } else {
-            Err(Error::UnknownKeyset(kid))
+            Err(Error::KeysetNotFound(kid))
         }
     }
     async fn infos_for_expiration_date(&self, expire: TStamp) -> Result<Vec<MintKeySetInfo>> {
@@ -282,7 +282,7 @@ impl KeysRepository for DBKeys {
     async fn store_mintop(&self, mint_op: MintOperation) -> Result<()> {
         let uid = mint_op.uid;
         if self.info(mint_op.kid).await?.is_none() {
-            return Err(Error::UnknownKeyset(mint_op.kid));
+            return Err(Error::KeysetNotFound(mint_op.kid));
         }
         let entry = convert_to_mintopdbentry(mint_op, &self.mints_table);
         let res: SurrealResult<Option<MintOpDBEntry>> =
@@ -298,13 +298,12 @@ impl KeysRepository for DBKeys {
 
     async fn load_mintop(&self, uid: Uuid) -> Result<MintOperation> {
         let rid = RecordId::from_table_key(&self.mints_table, uid);
-        let entry: Option<MintOpDBEntry> = self
-            .db
-            .select(rid)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let entry = entry.ok_or(Error::InvalidMintRequest(format!("unknown quote {uid}")))?;
-        Ok(MintOperation::from(entry))
+        let res: SurrealResult<Option<MintOpDBEntry>> = self.db.select(rid.clone()).await;
+        match res {
+            Ok(Some(entry)) => Ok(MintOperation::from(entry)),
+            Ok(None) => Err(Error::MintOpNotFound(uid)),
+            Err(e) => Err(Error::KeysRepository(anyhow!(e))),
+        }
     }
 
     async fn list_mintops(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {
