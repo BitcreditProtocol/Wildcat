@@ -84,7 +84,7 @@ impl WildcatService for WildcatCl {
                 let resp = self.key_cl.deactivate_keyset(kid).await;
                 match resp {
                     Ok(_) => return Ok(kid),
-                    Err(KeysError::ResourceNotFound(_)) => {
+                    Err(KeysError::KeysetIdNotFound(_)) => {
                         continue;
                     }
                     Err(e) => return Err(Error::KeyClient(e)),
