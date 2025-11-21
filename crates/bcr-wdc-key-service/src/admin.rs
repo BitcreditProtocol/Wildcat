@@ -133,3 +133,25 @@ pub async fn new_mintop(
     let response = wire_keys::NewMintOperationResponse {};
     Ok(Json(response))
 }
+
+#[utoipa::path(
+    get,
+    path = Client::NEWMINTOP_EP_V1,
+    params(
+        ("qid" = uuid::Uuid, Path, description = "the quote id this minting operation is associated with")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = cashu::Amount, content_type = "application/json"),
+        (status = 404, description = "resource id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn mintop_status(
+    State(ctrl): State<Service>,
+    Path(qid): Path<uuid::Uuid>,
+) -> Result<Json<cashu::Amount>> {
+    tracing::debug!("Received mint operation status request");
+
+    let amount = ctrl.mintop_status(qid).await?;
+    Ok(Json(amount))
+}

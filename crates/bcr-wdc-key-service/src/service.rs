@@ -87,14 +87,14 @@ impl Service {
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
-        self.keys.info(kid).await?.ok_or(Error::UnknownKeyset(kid))
+        self.keys.info(kid).await?.ok_or(Error::KeysetNotFound(kid))
     }
 
     pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
             .keyset(kid)
             .await?
-            .ok_or(Error::UnknownKeyset(kid))
+            .ok_or(Error::KeysetNotFound(kid))
     }
 
     pub async fn verify_proof(&self, proof: cashu::Proof) -> Result<()> {
@@ -123,7 +123,7 @@ impl Service {
             .keys
             .info(kid)
             .await?
-            .ok_or(Error::UnknownKeyset(kid))?;
+            .ok_or(Error::KeysetNotFound(kid))?;
         info.active = false;
         self.keys.update_info(info.clone()).await?;
         self.clowder.keyset_deactivated(kid).await?;
@@ -162,6 +162,11 @@ impl Service {
         };
         self.keys.store_mintop(new).await?;
         Ok(())
+    }
+
+    pub async fn mintop_status(&self, uid: Uuid) -> Result<cashu::Amount> {
+        let operation = self.keys.load_mintop(uid).await?;
+        Ok(operation.minted)
     }
 
     pub async fn mint(&self, request: &cashu::MintRequest<Uuid>) -> Result<cashu::MintResponse> {
