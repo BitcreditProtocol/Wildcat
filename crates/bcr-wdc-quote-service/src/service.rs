@@ -49,6 +49,10 @@ pub trait Repository {
     async fn store(&self, quote: Quote) -> Result<()>;
 }
 
+pub enum MintingStatus {
+    Disabled,
+    Enabled(cashu::Amount),
+}
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysHandler {
@@ -64,6 +68,7 @@ pub trait KeysHandler {
         target: cashu::Amount,
     ) -> Result<()>;
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
+    async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -192,7 +197,7 @@ impl Service {
     pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::UnknownQuoteID(id));
+            return Err(Error::QuoteIDNotFound(id));
         }
         let mut quote = old.unwrap();
         quote.cancel(submitted)?;
@@ -205,7 +210,7 @@ impl Service {
     pub async fn deny(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::UnknownQuoteID(id));
+            return Err(Error::QuoteIDNotFound(id));
         }
         let mut quote = old.unwrap();
         quote.deny(submitted)?;
@@ -218,7 +223,7 @@ impl Service {
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::UnknownQuoteID(id));
+            return Err(Error::QuoteIDNotFound(id));
         }
         let mut quote = old.unwrap();
         quote.reject(tstamp)?;
@@ -231,7 +236,7 @@ impl Service {
     pub async fn accept(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::UnknownQuoteID(id));
+            return Err(Error::QuoteIDNotFound(id));
         }
         let mut quote = old.unwrap();
         quote.accept(submitted)?;
@@ -246,7 +251,7 @@ impl Service {
             .quotes
             .load(id)
             .await?
-            .ok_or(Error::UnknownQuoteID(id))?;
+            .ok_or(Error::QuoteIDNotFound(id))?;
         let changed = quote.check_expire(now);
         if changed {
             self.quotes
@@ -322,7 +327,7 @@ impl Service {
             .quotes
             .load(qid)
             .await?
-            .ok_or(Error::UnknownQuoteID(qid))?;
+            .ok_or(Error::QuoteIDNotFound(qid))?;
         let Status::Accepted {
             keyset_id,
             discounted,
@@ -351,6 +356,15 @@ impl Service {
             .add_new_mint_operation(qid, keyset_id, minting_pubkey, discounted_amount)
             .await?;
         Ok(())
+    }
+
+    pub async fn minting_status(&self, qid: uuid::Uuid) -> Result<MintingStatus> {
+        let response = self.keys_hndlr.get_minting_status(qid).await;
+        match response {
+            Ok(Some(amount)) => Ok(MintingStatus::Enabled(amount)),
+            Ok(None) => Ok(MintingStatus::Disabled),
+            Err(e) => Err(e),
+        }
     }
 }
 

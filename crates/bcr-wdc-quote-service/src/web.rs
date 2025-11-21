@@ -6,7 +6,11 @@ use bcr_common::{
     wire::quotes as wire_quotes,
 };
 // ----- local imports
-use crate::{error::Result, quotes, service::Service};
+use crate::{
+    error::Result,
+    quotes,
+    service::{self, Service},
+};
 
 // ----- end imports
 
@@ -45,7 +49,16 @@ pub async fn enquire_quote(
 }
 
 /// --------------------------- Look up quote
-fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
+fn convert_mint_status(status: service::MintingStatus) -> wire_quotes::MintingStatus {
+    match status {
+        service::MintingStatus::Disabled => wire_quotes::MintingStatus::Disabled,
+        service::MintingStatus::Enabled(amount) => wire_quotes::MintingStatus::Enabled(amount),
+    }
+}
+fn convert_to_enquire_reply(
+    quote: quotes::Quote,
+    minting_status: service::MintingStatus,
+) -> wire_quotes::StatusReply {
     match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::StatusReply::Pending,
         quotes::Status::Canceled { tstamp } => wire_quotes::StatusReply::Canceled { tstamp },
@@ -75,6 +88,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
             keyset_id,
             discounted,
             minting_pubkey,
+            minting_status: convert_mint_status(minting_status),
         },
     }
 }
@@ -98,7 +112,8 @@ pub async fn lookup_quote(
 
     let now = chrono::Utc::now();
     let quote = ctrl.lookup(id, now).await?;
-    Ok(Json(convert_to_enquire_reply(quote)))
+    let mint_status = ctrl.minting_status(id).await?;
+    Ok(Json(convert_to_enquire_reply(quote, mint_status)))
 }
 
 /// --------------------------- Resolve quote offer
@@ -152,6 +167,7 @@ pub async fn cancel(
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
     let quote = ctrl.lookup(id, now).await?;
-    let reply = convert_to_enquire_reply(quote);
+    let status = ctrl.minting_status(id).await?;
+    let reply = convert_to_enquire_reply(quote, status);
     Ok(Json(reply))
 }
