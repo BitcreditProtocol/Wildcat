@@ -130,6 +130,9 @@ services:
     extends:
       file: common-services.yml
       service: clowder-node
+    environment:
+      CLWDR_BITCOIN_CORE__RPC_URL: http://bitcoin-core:18332
+      CLWDR_BITCOIN_CORE__NETWORK: testnet
 
   ######################################################################################## wildcat-auxiliary
 
