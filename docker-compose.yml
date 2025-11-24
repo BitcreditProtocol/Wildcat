@@ -1,5 +1,4 @@
 services:
-
   eiou-service:
     extends:
       file: common-services.yml
@@ -71,7 +70,7 @@ services:
       file: common-services.yml
       service: bff-dashboard-service
     ports:
-      - "4242:4242"  
+      - "4242:4242"
 
   bitcoin-core:
     extends:
@@ -131,8 +130,8 @@ services:
       file: common-services.yml
       service: clowder-node
     environment:
-      CLWDR_BITCOIN_CORE__RPC_URL: http://bitcoin-core:18332
-      CLWDR_BITCOIN_CORE__NETWORK: testnet
+      CLWDR__BITCOIN_CORE__RPC_URL: http://bitcoin-core:18332
+      CLWDR__BITCOIN_CORE__NETWORK: testnet
 
   ######################################################################################## wildcat-auxiliary
 
