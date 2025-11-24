@@ -31,7 +31,15 @@ rest_url = "http://clowder-node:3010"
 server_name = "localhost"
 mint_url = "http://bff-wallet-service:4343"
 
+[[nodes]]
+public_key = "022a2ad6548211a0eff9a61c236194ae4c3c2f10fd35446108794a76d220786c2b"
+socket_addr = "192.168.1.216:5001"
+rest_url = "http://192.168.1.216:3010"
+server_name = "localhost"
+mint_url = "http://192.168.1.216:4343"
+
 [[clowders]]
 alpha = "03cb06ec77436e0eec6ddd4e89b180c1bcb9d54586b75ef8307bd71187f3d30cda"
 betas = [
+    "022a2ad6548211a0eff9a61c236194ae4c3c2f10fd35446108794a76d220786c2b"
 ]
