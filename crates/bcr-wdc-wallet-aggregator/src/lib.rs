@@ -146,7 +146,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/id", get(web::get_clowder_id))
         .route("/v1/path", post(web::post_clowder_path))
         .route("/v1/exchange", post(web::post_exchange))
-        .route("/v1/betas", post(web::get_clowder_betas))
+        .route("/v1/betas", get(web::get_clowder_betas))
         .with_state(app)
         .merge(swagger);
     Ok(router)
