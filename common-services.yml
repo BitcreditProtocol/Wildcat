@@ -170,6 +170,8 @@ services:
     depends_on:
       nats:
         condition: service_started
+      bitcoin-core:
+        condition: service_healthy
     ports:
       - "3010:3010"
       - 5001:5001/udp
