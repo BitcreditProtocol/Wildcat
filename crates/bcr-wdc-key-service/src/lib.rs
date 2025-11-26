@@ -95,6 +95,7 @@ where
         .route(KeysClient::SIGN_EP_V1, post(admin::sign_blind))
         .route(KeysClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
         .route(KeysClient::MINTOPSTATUS_EP_V1, get(admin::mintop_status))
+        .route(KeysClient::LISTMINTOPS_EP_V1, get(admin::list_mintops))
         .route(KeysClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
         .route(
             KeysClient::VERIFY_FINGERPRINT_EP_V1,
@@ -130,6 +131,8 @@ where
     ),),
     paths(
         admin::deactivate,
+        admin::list_mintops,
+        admin::mintop_status,
         admin::sign_blind,
         admin::verify_proof,
         web::list_keys,
