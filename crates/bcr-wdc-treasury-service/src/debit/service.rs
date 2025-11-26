@@ -37,7 +37,6 @@ pub trait Wallet: Clone + Send {
 #[async_trait]
 pub trait WildcatService: Clone + Send {
     async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
-    async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id>;
     async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
 }
 
@@ -87,7 +86,6 @@ where
                 ebill_id,
                 self.wallet.clone(),
                 self.repo.clone(),
-                self.wdc.clone(),
                 self.monitor_interval,
             ));
         }
@@ -120,7 +118,6 @@ where
             ebill_cloned,
             self.wallet.clone(),
             self.repo.clone(),
-            self.wdc.clone(),
             self.monitor_interval,
         ));
         Ok(quote)
@@ -196,7 +193,6 @@ async fn monitor_quote(
     ebill_id: BillId,
     wlt: impl Wallet,
     repo: impl Repository,
-    wdc: impl WildcatService,
     interval: tokio::time::Duration,
 ) {
     loop {
@@ -208,13 +204,6 @@ async fn monitor_quote(
         };
         if !matches!(status, cashu::MintQuoteState::Paid) {
             tracing::info!("Quote {qid} is not paid yet, retrying...");
-            continue;
-        }
-        let result = wdc.deactivate_keyset_for_ebill(&ebill_id).await;
-        if let Err(e) = result {
-            tracing::warn!(
-                "Failed to deactivate keyset for ebill {ebill_id} after minting quote {qid}: {e}"
-            );
             continue;
         }
         let result = repo.delete_quote(qid.clone()).await;
@@ -263,7 +252,6 @@ mod tests {
         #[async_trait]
         impl super::WildcatService for WildcatService {
             async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
-            async fn deactivate_keyset_for_ebill(&self, ebill_id: &BillId) -> Result<cdk02::Id>;
             async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
         }
     }
