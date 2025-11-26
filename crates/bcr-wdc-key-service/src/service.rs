@@ -169,6 +169,10 @@ impl Service {
         Ok(operation.minted)
     }
 
+    pub async fn list_mintops_for_kid(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {
+        self.keys.list_mintops(kid).await
+    }
+
     pub async fn mint(&self, request: &cashu::MintRequest<Uuid>) -> Result<cashu::MintResponse> {
         // basic checks
         if request.signature.is_none() {
