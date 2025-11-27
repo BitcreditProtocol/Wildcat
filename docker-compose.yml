@@ -130,7 +130,7 @@ services:
       file: common-services.yml
       service: clowder-node
     environment:
-      CLWDR__ELECTRUM_CONFIG__RPC_URL: http://electrs:50001
+      CLWDR__ELECTRUM_CONFIG__RPC_URL: tcp://electrs:50001
       CLWDR__ELECTRUM_CONFIG__NETWORK: testnet
 
   ######################################################################################## wildcat-auxiliary
