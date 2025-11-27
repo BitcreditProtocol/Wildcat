@@ -40,7 +40,9 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
     pull_policy: always
     ports:
-      - "3338:3338"  
+      - "3338:3338"
+    environment:
+      - EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS=${EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS}
 
   balance-collector:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
@@ -61,10 +63,16 @@ services:
   eic-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eic-service:${IMAGE_TAG:-latest}
     pull_policy: always
+    environment:
+      - EIC__APPCFG__MAILJET_CONFIG__API_KEY=${EIC__APPCFG__MAILJET_CONFIG__API_KEY}
+      - EIC__APPCFG__MAILJET_CONFIG__API_SECRET_KEY=${EIC__APPCFG__MAILJET_CONFIG__API_SECRET_KEY}
 
   ens-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ens-service:${IMAGE_TAG:-latest}
     pull_policy: always
+    environment:
+      - ENS__APPCFG__MAILJET_CONFIG__API_KEY=${ENS__APPCFG__MAILJET_CONFIG__API_KEY}
+      - ENS__APPCFG__MAILJET_CONFIG__API_SECRET_KEY=${ENS__APPCFG__MAILJET_CONFIG__API_SECRET_KEY}
 
   ######################################################################################## bcr-wdc-bootstrap
 
@@ -105,6 +113,12 @@ services:
     volumes:
       - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
       - ${DATA_PATH}/bitcoin-core/:/home/bitcoin/data
+    command:
+      - -printtoconsole
+      - ${BITCOIN_NETWORK_COMMAND_ARG:--testnet=1}
+      - -conf=/home/bitcoin/bitcoin.conf
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "${BITCOIN_CLI_NETWORK_ARG:--testnet}", "getconnectioncount"]
 
 networks:
   default:
