@@ -6,10 +6,8 @@ pubsub_server_name = "localhost"
 pubsub_socket_addr = "0.0.0.0:5001"
 pubsub_use_gso = true
 
-[bitcoin_core]
-rpc_url = "http://bitcoin-core:18443"
-rpc_username = "electrs"
-rpc_password = "bitcredit"
+[electrum_config]
+rpc_url = "tcp://electrs:50001"
 network = "regtest"
 
 [beta_params]

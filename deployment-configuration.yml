@@ -40,7 +40,9 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
     pull_policy: always
     ports:
-      - "3338:3338"  
+      - "3338:3338"
+    environment:
+      - 
 
   balance-collector:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
