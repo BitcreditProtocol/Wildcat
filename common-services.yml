@@ -168,10 +168,12 @@ services:
       timeout: 10s
       retries: 5
     depends_on:
+      signatory:
+        condition: service_started
       nats:
         condition: service_started
-      bitcoin-core:
-        condition: service_healthy
+      electrs:
+        condition: service_started
     ports:
       - "3010:3010"
       - 5001:5001/udp
