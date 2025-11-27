@@ -302,8 +302,14 @@ jobs:
           ELECTRS_DAEMON_RPC_ADDR=${{ vars.ELECTRS_DAEMON_RPC_ADDR }}
           ELECTRS_DAEMON_P2P_ADDR=${{ vars.ELECTRS_DAEMON_P2P_ADDR }}
 
-          # Nostr Relay Configuration
+          # EBILL_SERVICE Nostr Relay Configuration
           EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS = ${{ vars.EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS }}
+
+          # MAILJET EMAIL API
+          EIC__APPCFG__MAILJET_CONFIG__API_KEY=${{ secrets.MAILJET_API_KEY }}
+          EIC__APPCFG__MAILJET_CONFIG__API_SECRET_KEY=${{ secrets.MAILJET_API_SECRET_KEY }}
+          ENS__APPCFG__MAILJET_CONFIG__API_KEY=${{ secrets.MAILJET_API_KEY }}
+          ENS__APPCFG__MAILJET_CONFIG__API_SECRET_KEY=${{ secrets.MAILJET_API_SECRET_KEY }}
 
           UID=1000
           GID=1000
