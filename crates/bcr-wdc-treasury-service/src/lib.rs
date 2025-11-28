@@ -13,6 +13,7 @@ use clwdr_client::SignatoryNatsClient;
 mod admin;
 mod credit;
 mod debit;
+mod devmode;
 mod error;
 mod foreign;
 mod persistence;
@@ -65,6 +66,7 @@ pub struct AppController {
     crsat: Arc<ProdCrsatService>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
+    dev: Arc<devmode::Service>,
 }
 
 impl AppController {
@@ -122,7 +124,7 @@ impl AppController {
                 .await
                 .expect("Failed to create crsat offline repository"),
         );
-        let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url);
+        let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url.clone());
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
         let interval = std::time::Duration::from_secs(monitor_interval_sec);
@@ -154,7 +156,7 @@ impl AppController {
                 .await
                 .expect("Failed to create sat offline repository"),
         );
-        let satkeys = ProdSatKeysClient::new(cdk_mintd_url, signing_keys);
+        let satkeys = ProdSatKeysClient::new(cdk_mintd_url.clone(), signing_keys);
         let settler = {
             let online: Arc<dyn foreign::OnlineRepository> = satonlinerepo.clone();
             let offline: Arc<dyn foreign::OfflineRepository> = satofflinerepo.clone();
@@ -177,12 +179,17 @@ impl AppController {
             .await
             .expect("Failed to create signer");
 
+        let dev = devmode::Service {
+            crkeys: bcr_common::client::keys::Client::new(credit_keys_url),
+            dbmint: cdk::wallet::HttpClient::new(cdk_mintd_url),
+        };
         Self {
             credit,
             debit,
             crsat,
             sat,
             signer: Arc::new(signer),
+            dev: Arc::new(dev),
         }
     }
 
@@ -207,6 +214,7 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::CRSATEXCHANGEOFFLINE_EP_V1,
             post(web::crsat_offline_exchange),
         )
+        .route("/v1/free_money", post(devmode::free_money))
         .route(
             TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
             post(web::sat_offline_exchange),
