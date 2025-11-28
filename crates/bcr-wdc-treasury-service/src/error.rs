@@ -17,6 +17,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
+    #[error("bcr_common::signature::ecash {0}")]
+    BcrEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("bcr_common::signature::borsh {0}")]
     BcrBorshSignature(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("borsh {0}")]
@@ -132,6 +134,7 @@ impl axum::response::IntoResponse for Error {
             Error::Unblind(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
         };
         resp.into_response()
     }
