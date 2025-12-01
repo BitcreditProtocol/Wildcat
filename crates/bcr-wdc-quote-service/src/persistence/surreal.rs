@@ -2,8 +2,7 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_ebill_core::bill::BillId;
-use bcr_ebill_core::NodeId;
+use bcr_common::core::{BillId, NodeId};
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
 use uuid::Uuid;
