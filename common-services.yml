@@ -110,26 +110,6 @@ services:
       start_period: 60s
       start_interval: 3s
 
-  ebill-service:
-    image: wildcat/ebill-service
-    pull_policy: never
-    depends_on:
-      surrealdb:
-        condition: service_healthy
-    volumes:
-      - ./docker/ebill-service/config.toml:/ebill-service/config.toml
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-      start_interval: 3s
-
   balance-collector:
     image: wildcat/balance-collector
     pull_policy: never
@@ -144,39 +124,6 @@ services:
       - ./docker/balance-collector/config.toml:/balance-collector/config.toml
 
   ######################################################################################## 3rd parties
-  nats:
-    image: nats:2.11.9-alpine
-    command: ["-js"]
-
-  signatory:
-    image: ghcr.io/bitcreditprotocol/clowder:nightly
-    command: ["/clowder/clwdr-signatory"]
-    volumes:
-      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
-    depends_on:
-      nats:
-        condition: service_started
-
-  clowder-node:
-    image: ghcr.io/bitcreditprotocol/clowder:nightly
-    command: ["/clowder/clwdr-node"]
-    volumes:
-      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      signatory:
-        condition: service_started
-      nats:
-        condition: service_started
-      electrs:
-        condition: service_started
-    ports:
-      - "3010:3010"
-      - 5001:5001/udp
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.0
@@ -266,6 +213,27 @@ services:
       - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
     restart: unless-stopped
 
+  ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-ebill-service:nightly
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/wildcat-aux-ebill-service/config.toml:/ebill-service/config.toml
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
   eic-service:
     image: ghcr.io/bitcreditprotocol/bcr-wdc-eic-service:nightly
     command: ["/eic-service/bcr-wdc-eic-service"]
@@ -302,3 +270,38 @@ services:
       start_period: 60s
       start_interval: 3s
 
+  ######################################################################################## clowder
+
+  nats:
+    image: nats:2.11.9-alpine
+    command: ["-js"]
+
+  signatory:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    command: ["/clowder/clwdr-signatory"]
+    volumes:
+      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
+    depends_on:
+      nats:
+        condition: service_started
+
+  clowder-node:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    command: ["/clowder/clwdr-node"]
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      signatory:
+        condition: service_started
+      nats:
+        condition: service_started
+      electrs:
+        condition: service_started
+    ports:
+      - "3010:3010"
+      - 5001:5001/udp
