@@ -12,7 +12,6 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     service::{KeysRepository, MintOperation, SignaturesRepository},
-    TStamp,
 };
 
 // ----- end imports
@@ -66,13 +65,12 @@ impl KeysRepository for InMemoryKeyMap {
         *info = new;
         Ok(())
     }
-    async fn infos_for_expiration_date(&self, expire: TStamp) -> Result<Vec<MintKeySetInfo>> {
+    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
-        let tstamp = expire.timestamp() as u64;
         let infos = rlocked
             .values()
             .filter_map(|(info, _)| {
-                if info.final_expiry.unwrap_or_default() > tstamp {
+                if info.final_expiry.unwrap_or_default() >= expire {
                     Some(info)
                 } else {
                     None
