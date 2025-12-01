@@ -9,7 +9,6 @@ resolver = "2"
 members = [
     "crates/bcr-wdc-balance-collector",
     "crates/bcr-wdc-e2e-tests",
-    "crates/bcr-wdc-ebill-service",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
     "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
     "crates/bcr-wdc-key-service",
@@ -27,10 +26,7 @@ async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.6.0"}
-bcr-ebill-api = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
-bcr-ebill-transport = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.4.12"}
-bcr-wdc-ebill-service = {path = "./crates/bcr-wdc-ebill-service"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
 bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
@@ -47,7 +43,7 @@ bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
 cashu = {version = "=0.13.1", default-features = false}
-cdk = {version = "=0.13", default-features = false}
+cdk = {version = "=0.13.1", default-features = false}
 cdk-common = {version = "=0.13.1"}
 cdk-payment-processor = {version = "=0.13.1", default-features = false}
 cdk-redb = {version = "=0.13.1"}
@@ -57,13 +53,11 @@ config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
 mockall = {version = "0.13"}
-nostr = {version = "0.43"}
 rand = {version = "0.8"}
 reqwest = {version = "0.12"}
 secp256k1 = {version = "0.29"}
 serde = {version = "1"}
 serde_json = {version = "1"}
-serde_repr = {version= "0.1"}
 strum = {version = "0.27"}
 surrealdb = {version = "2.2"}
 thiserror = {version = "2"}

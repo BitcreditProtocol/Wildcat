@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_ebill_core::bill::BillId;
-use bcr_ebill_core::NodeId;
+use bcr_common::core::{BillId, NodeId};
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
