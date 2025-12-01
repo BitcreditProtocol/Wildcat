@@ -80,8 +80,7 @@ pub async fn get_keyset_for_date(
 ) -> Result<Json<cashu::Id>> {
     tracing::debug!("Received get_keyset_for_date request");
 
-    let tstamp = date.and_time(chrono::NaiveTime::default()).and_utc();
-    let kid = ctrl.get_keyset_id_for_date(tstamp).await?;
+    let kid = ctrl.get_keyset_id_for_date(date).await?;
     Ok(Json(kid))
 }
 

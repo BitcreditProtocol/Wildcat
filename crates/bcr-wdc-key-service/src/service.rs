@@ -11,7 +11,6 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     factory::Factory,
-    TStamp,
 };
 
 // ----- end imports
@@ -35,7 +34,7 @@ pub trait KeysRepository: Send + Sync {
     async fn list_info(&self) -> Result<Vec<MintKeySetInfo>>;
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
     async fn update_info(&self, info: MintKeySetInfo) -> Result<()>;
-    async fn infos_for_expiration_date(&self, expire: TStamp) -> Result<Vec<MintKeySetInfo>>;
+    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
     async fn store_mintop(&self, mint_operation: MintOperation) -> Result<()>;
     async fn load_mintop(&self, uid: Uuid) -> Result<MintOperation>;
     async fn list_mintops(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
@@ -70,15 +69,20 @@ pub struct Service {
 }
 
 impl Service {
-    pub async fn get_keyset_id_for_date(&self, date: TStamp) -> Result<cashu::Id> {
-        let mut infos = self.keys.infos_for_expiration_date(date).await?;
-        let tstamp = std::cmp::max(date.timestamp() as u64, 0);
-        infos.retain(|info| info.final_expiry.unwrap_or_default() > tstamp);
-        infos.sort_by_key(|info| info.final_expiry.expect("none is filtered out"));
-        if !infos.is_empty() {
-            return Ok(infos.first().expect("infos not empty").id);
+    pub async fn get_keyset_id_for_date(&self, date: chrono::NaiveDate) -> Result<cashu::Id> {
+        let datetime = date
+            .and_hms_opt(0, 0, 0)
+            .expect("get_keyset_id_for_date with 00:00:00 time")
+            .and_utc();
+        let tstamp = std::cmp::max(datetime.timestamp(), 0) as u64;
+        let infos = self.keys.infos_for_expiration_date(tstamp).await?;
+        let info = infos
+            .iter()
+            .find(|info| info.final_expiry.unwrap_or_default() == tstamp);
+        if let Some(info) = info {
+            return Ok(info.id);
         }
-        let new_keyset = self.keygen.generate(date);
+        let new_keyset = self.keygen.generate(datetime);
         let kid = new_keyset.0.id;
         let kset = new_keyset.1.clone();
         self.keys.store(new_keyset).await?;
@@ -247,9 +251,6 @@ mod tests {
         let seed = bip39::Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
             .unwrap()
             .to_seed("");
-        let maturity = chrono::DateTime::parse_from_rfc3339("2029-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc();
         let factory = Factory::new(&seed, DerivationPath::default());
 
         let service = TestKeysService {
@@ -258,9 +259,10 @@ mod tests {
             keygen: factory,
             clowder: Arc::new(crate::clowder::DummyClowderClient),
         };
-        let qid = Uuid::new_v4();
-        let kp = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
+        let maturity = chrono::NaiveDate::from_ymd_opt(2029, 1, 1).unwrap();
         let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
+        let qid = Uuid::new_v4();
+        let kp = bcr_common::core_tests::generate_random_keypair();
         service
             .new_minting_operation(qid, kid, kp.public_key().into(), amount)
             .await
@@ -333,5 +335,17 @@ mod tests {
         };
         request.sign(kp.secret_key().into()).unwrap();
         service.mint(&request).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn infos_for_expiration_date() {
+        let (service, _, _, _) = setup_test_service(cashu::Amount::from(1000)).await;
+        let mut keys = bcr_common::core_tests::generate_random_ecash_keyset();
+        let date = chrono::NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        keys.0.final_expiry = Some(1767139200);
+        keys.1.final_expiry = Some(1767139200);
+        service.keys.store(keys.clone()).await.unwrap();
+        let kid = service.get_keyset_id_for_date(date).await.unwrap();
+        assert_eq!(kid, keys.0.id);
     }
 }

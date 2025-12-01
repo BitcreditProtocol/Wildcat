@@ -16,7 +16,6 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     service::{KeysRepository, MintOperation, SignaturesRepository},
-    TStamp,
 };
 
 // ----- end imports
@@ -91,7 +90,7 @@ fn convert_to_keysdbentry(entry: KeysetEntry, table: &str) -> KeysDBEntry {
 }
 impl std::convert::From<KeysDBEntry> for KeysetEntry {
     fn from(dbk: KeysDBEntry) -> Self {
-        let KeysDBEntry { info, keys, .. } = dbk;
+        let KeysDBEntry { info, keys, id: _ } = dbk;
         let info = MintKeySetInfo::from(info);
         let mut keysmap: BTreeMap<Amount, cdk01::MintKeyPair> = BTreeMap::default();
         for (val, keypair) in keys.into_iter() {
@@ -262,15 +261,14 @@ impl KeysRepository for DBKeys {
             Err(Error::KeysetNotFound(kid))
         }
     }
-    async fn infos_for_expiration_date(&self, expire: TStamp) -> Result<Vec<MintKeySetInfo>> {
-        let tstamp = expire.timestamp();
+    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let infos: Vec<KeysInfoDBEntry> = self
             .db
             // WARNING: https://github.com/surrealdb/surrealdb/issues/6405
             // .query("SELECT info FROM type::table($table) WHERE info.final_expiry > $tstamp ORDER BY info.final_expiry ASC")
-            .query("SELECT VALUE info FROM type::table($table) WHERE info.final_expiry >= $tstamp")
+            .query("SELECT VALUE info FROM type::table($table) WHERE info.final_expiry >= $expire")
             .bind(("table", self.keys_table.clone()))
-            .bind(("tstamp", tstamp))
+            .bind(("expire", expire))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
@@ -536,17 +534,11 @@ mod tests {
         keys1.1.final_expiry = keys1.0.final_expiry;
         db.store(keys1).await.unwrap();
 
-        let res = db
-            .infos_for_expiration_date(TStamp::from_timestamp(10, 0).unwrap())
-            .await
-            .unwrap();
+        let res = db.infos_for_expiration_date(10).await.unwrap();
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].final_expiry, Some(10));
         assert_eq!(res[1].final_expiry, Some(30));
-        let res = db
-            .infos_for_expiration_date(TStamp::from_timestamp(20, 0).unwrap())
-            .await
-            .unwrap();
+        let res = db.infos_for_expiration_date(20).await.unwrap();
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].final_expiry, Some(30));
     }
