@@ -124,8 +124,6 @@ jobs:
             dockerfile: docker/wallet-aggregator/Dockerfile
           - name: bcr-wdc-ebpp
             dockerfile: docker/ebpp/Dockerfile
-          - name: bcr-wdc-ebill-service
-            dockerfile: docker/ebill-service/Dockerfile
           - name: bcr-wdc-eiou-service
             dockerfile: docker/eiou-service/Dockerfile
           - name: bcr-wdc-balance-collector
