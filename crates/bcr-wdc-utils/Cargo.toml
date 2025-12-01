@@ -22,7 +22,6 @@ cdk-common = {workspace = true}
 chrono.workspace = true
 clwdr-client.workspace = true
 itertools = {workspace = true}
-nostr = {workspace = true}
 rand = {workspace = true, optional  = true}
 reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
