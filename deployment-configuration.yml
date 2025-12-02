@@ -108,6 +108,8 @@ services:
   surrealdb:
     volumes:
       - ${DATA_PATH}/surrealdb:/data
+    ports:
+      - "8000:8000"
 
   bitcoin-core:
     volumes:
