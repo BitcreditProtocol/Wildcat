@@ -121,8 +121,10 @@ async fn mint_debit(
     request.sign(sk)?;
     let response = client.post_mint(request).await?;
     let mut proofs = Vec::with_capacity(response.signatures.len());
-    for (sig, pre) in response.signatures.into_iter().zip(premints.into_iter()) {
-        let proof = unblind_ecash_signature(&keys, pre, sig)?;
+    // WARNING: due to a bug in `into_iter()` in cashu 0.13.1 we need to `iter()` and clone the secret
+    // fixed in 0.14.0
+    for (sig, pre) in response.signatures.into_iter().zip(premints.iter()) {
+        let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
         proofs.push(proof);
     }
     Ok(Token::new_cashu(mint_url, proofs, None, keys.unit.clone()))
