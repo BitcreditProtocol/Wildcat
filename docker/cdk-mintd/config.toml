@@ -5,6 +5,9 @@ listen_host = "0.0.0.0"
 listen_port = 8085
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
+[info.logging]
+console_level = "debug"
+
 [info.http_cache]
 backend = "memory"
 ttl = 60
