@@ -29,6 +29,7 @@ use cdk_common::{
 use futures::Stream;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -179,11 +180,11 @@ impl MintPayment for Service {
                     return Err(PaymentError::InvoiceAlreadyPaid);
                 }
                 let foreign = payment::ForeignPayment {
-                    reqid: PaymentIdentifier::PaymentId(rand::random()),
+                    reqid: PaymentIdentifier::CustomId(Uuid::new_v4().to_string()),
                     nonce: payload.nonce.clone(),
                     amount,
                 };
-                let reqid = PaymentIdentifier::PaymentId(rand::random());
+                let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
                 self.payrepo.store_foreign(foreign).await?;
                 return Ok(CreateIncomingPaymentResponse {
                     request_lookup_id: reqid,
@@ -226,7 +227,7 @@ impl MintPayment for Service {
             .unix_expiry
             .and_then(|u| chrono::DateTime::from_timestamp(u as i64, 0));
         let request = payment::IncomingRequest {
-            reqid: PaymentIdentifier::PaymentId(rand::random()),
+            reqid: PaymentIdentifier::CustomId(Uuid::new_v4().to_string()),
             payment_type,
             amount,
             expiration,
@@ -273,7 +274,7 @@ impl MintPayment for Service {
         let uri = parse_to_bip21_uri(&description, self.onchain.network())?;
         let fees_btc = self.onchain.estimate_fees().await?;
         let fee = Amount::from(fees_btc.to_sat());
-        let reqid = PaymentIdentifier::PaymentId(rand::random());
+        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
         let outgoing = payment::OutgoingRequest::new(reqid, uri, fees_btc)?;
         let response = PaymentQuoteResponse {
             request_lookup_id: Some(outgoing.reqid.clone()),
@@ -299,8 +300,7 @@ impl MintPayment for Service {
         let OutgoingPaymentOptions::Bolt11(options) = options else {
             return Err(PaymentError::UnsupportedPaymentOption);
         };
-        let reqid =
-            PaymentIdentifier::new("payment_id", &options.bolt11.description().to_string())?;
+        let reqid = PaymentIdentifier::CustomId(options.bolt11.description().to_string());
         let outgoing = self.payrepo.load_outgoing(&reqid).await;
         let mut request = match outgoing {
             Ok(request) => match request.status {
@@ -697,7 +697,7 @@ mod tests {
 
     #[tokio::test]
     async fn make_payment_alreadypaid() {
-        let reqid = PaymentIdentifier::PaymentId(rand::random());
+        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
         let onchain = Arc::new(MockOnChainWallet::new());
         let mut payrepo = MockPaymentRepository::new();
         let cloned_reqid = reqid.clone();
@@ -745,7 +745,7 @@ mod tests {
 
     #[tokio::test]
     async fn make_payment_pending() {
-        let reqid = PaymentIdentifier::PaymentId(rand::random());
+        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
         let onchain = MockOnChainWallet::new();
         let mut payrepo = MockPaymentRepository::new();
         let cloned_reqid = reqid.clone();
@@ -793,7 +793,7 @@ mod tests {
 
     #[tokio::test]
     async fn make_payment_quoteandrequestamountsdonotmatch() {
-        let reqid = PaymentIdentifier::PaymentId(rand::random());
+        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
         let mut onchain = MockOnChainWallet::new();
         onchain.expect_network().returning(|| btc::Network::Testnet);
         let mut payrepo = MockPaymentRepository::new();
