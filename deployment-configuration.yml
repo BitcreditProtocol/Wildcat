@@ -8,10 +8,16 @@ services:
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ${DATA_PATH}/ebpp/:/data/
+    environment:
+      - EBPP_MNEMONIC=${MINT_SEED_PHRASE}
+      - EBPP__APPCFG__ONCHAIN__NETWORK=testnet
+      - EBPP__APPCFG__ONCHAIN__STORE_PATH=/data/testnet
 
   key-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
     pull_policy: always
+    environment:
+      - KEY_SERVICE_MNEMONIC=${MINT_SEED_PHRASE}
 
   swap-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-swap-service:${IMAGE_TAG:-latest}
@@ -23,6 +29,8 @@ services:
     volumes:
       - ./docker/treasury-service/config.toml:/treasury-service/config.toml
       - ${DATA_PATH}/treasury-service/:/data/
+    environment:
+      - TREASURY_SERVICE_MNEMONIC=${MINT_SEED_PHRASE}
 
   quote-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-quote-service:${IMAGE_TAG:-latest}
@@ -42,7 +50,7 @@ services:
     ports:
       - "3338:3338"
     environment:
-      - EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS=${EBILL_SERVICE__APPCFG__NOSTR_CCFG__RELAYS}
+      - EBILL__APPCFG__NOSTR_CFG__RELAYS=${EBILL__APPCFG__NOSTR_CFG__RELAYS}
 
   balance-collector:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
@@ -66,6 +74,7 @@ services:
     environment:
       - EIC__APPCFG__MAILJET_CONFIG__API_KEY=${EIC__APPCFG__MAILJET_CONFIG__API_KEY}
       - EIC__APPCFG__MAILJET_CONFIG__API_SECRET_KEY=${EIC__APPCFG__MAILJET_CONFIG__API_SECRET_KEY}
+      - EIC_MNEMONIC=${MINT_SEED_PHRASE}
 
   ens-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ens-service:${IMAGE_TAG:-latest}
@@ -110,6 +119,10 @@ services:
       - ${DATA_PATH}/surrealdb:/data
     ports:
       - "8000:8000"
+
+  cdk-mintd:
+    environment:
+      - CDK_MINTD_MNEMONIC=${MINT_SEED_PHRASE}
 
   bitcoin-core:
     volumes:
