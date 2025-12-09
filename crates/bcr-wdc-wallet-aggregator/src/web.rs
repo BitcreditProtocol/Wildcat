@@ -5,10 +5,9 @@ use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     client::keys::{Client as KeysClient, Error as KeysError},
-    wire::swap as wire_swap,
+    wire::{exchange as wire_exchange, swap as wire_swap},
 };
 use bcr_wdc_treasury_client::TreasuryClient;
-use bcr_wdc_webapi::exchange as web_exchange;
 use cashu::MintVersion;
 use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
@@ -369,11 +368,10 @@ pub async fn get_clowder_betas(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
-#[allow(dead_code, unused_variables)]
 pub async fn post_exchange(
     State(ctrl): State<AppController>,
-    Json(request): Json<web_exchange::OnlineExchangeRequest>,
-) -> Result<Json<web_exchange::OnlineExchangeResponse>> {
+    Json(request): Json<wire_exchange::OnlineExchangeRequest>,
+) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
     if request.exchange_path.len() < 3 {
         return Err(Error::Invalid(String::from(
             "minimum exchange path [alpha_pk, this_mint_pk, wallet_pk] not met",
@@ -387,7 +385,7 @@ pub async fn post_exchange(
         pk: request.exchange_path[0],
     };
     let input_type = determine_input_type(&clowder_keys, &request.proofs).await?;
-    let web_exchange::OnlineExchangeRequest {
+    let wire_exchange::OnlineExchangeRequest {
         proofs,
         exchange_path,
     } = request;
@@ -403,7 +401,7 @@ pub async fn post_exchange(
                 .await?
         }
     };
-    let response = web_exchange::OnlineExchangeResponse { proofs };
+    let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
 }
 
