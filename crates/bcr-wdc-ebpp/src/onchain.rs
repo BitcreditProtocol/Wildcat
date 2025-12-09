@@ -35,8 +35,8 @@ pub struct WalletConfig {
     network: Network,
     store_path: std::path::PathBuf,
     stop_gap: usize,
-    max_confirmation_blocks: usize,
-    avg_transaction_size_bytes: usize,
+    target_confirmation_blocks: usize,
+    avg_transaction_size_bytes: u64,
 }
 
 #[async_trait]
@@ -55,8 +55,8 @@ pub struct Wallet<ElectrumApi> {
     repo: Box<dyn PrivateKeysRepository>,
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     stop_gap: usize,                   // number of unused addresses to stop scanning
-    max_confirmation_blocks: usize,    // number of blocks to confirm a transaction
-    avg_transaction_size_bytes: usize, // transaction size in bytes used to estimate fees
+    target_confirmation_blocks: usize, // number of blocks to confirm a transaction
+    avg_transaction_size_bytes: u64,   // transaction size in bytes used to estimate fees
 }
 
 impl<ElectrumApi> Wallet<ElectrumApi> {
@@ -70,7 +70,8 @@ where
     ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
-    const MIN_FEE_RATE_BTC_PER_KBYTE: f64 = 0.000005; // minimum fee rate in btc/KByte
+    const MIN_FEE_RATE_SAT_BYTE: f64 = 1.0; // minimum fee rate in sat/byte
+    const BTC_KBYTE_TO_SAT_BYTE: f64 = 100_000.0;
     const BATCH_SIZE: usize = 15;
 
     pub async fn new(
@@ -134,7 +135,7 @@ where
             electrum_client,
             network: cfg.network,
             stop_gap: cfg.stop_gap,
-            max_confirmation_blocks: cfg.max_confirmation_blocks,
+            target_confirmation_blocks: cfg.target_confirmation_blocks,
             avg_transaction_size_bytes: cfg.avg_transaction_size_bytes,
         })
     }
@@ -260,19 +261,16 @@ where
     }
     async fn estimate_fees(&self) -> Result<btc::Amount> {
         let cloned = self.electrum_client.clone();
-        let max_confirmation_blocks = self.max_confirmation_blocks;
-        let avg_transaction_size = self.avg_transaction_size_bytes;
-        let raw_fee_rate: f64 = timed_spawn_blocking("Wallet::estimate_fees", move || {
+        let max_confirmation_blocks = self.target_confirmation_blocks;
+        let fee_rate_btc_kbyte: f64 = timed_spawn_blocking("Wallet::estimate_fees", move || {
             cloned.inner.estimate_fee(max_confirmation_blocks)
         })
         .await??;
-        let fee_rate = if raw_fee_rate > Self::MIN_FEE_RATE_BTC_PER_KBYTE {
-            raw_fee_rate
-        } else {
-            Self::MIN_FEE_RATE_BTC_PER_KBYTE
-        };
-        let fee = fee_rate * avg_transaction_size as f64 / 1000.0;
-        let amount = Amount::from_btc(fee)?;
+        let fee_rate_sat_byte = Self::MIN_FEE_RATE_SAT_BYTE
+            .max(fee_rate_btc_kbyte * Self::BTC_KBYTE_TO_SAT_BYTE)
+            .round() as u64;
+        let fee = fee_rate_sat_byte * self.avg_transaction_size_bytes;
+        let amount = Amount::from_sat(fee);
         Ok(amount)
     }
 
