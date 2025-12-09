@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::wire::{exchange as wire_exchange, keys as wire_keys};
 use bcr_wdc_webapi::{
     exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
 };
@@ -148,12 +148,12 @@ impl TreasuryClient {
             .base
             .join(Self::SATEXCHANGEONLINE_EP_V1)
             .expect("sat_exchange_online relative path");
-        let msg = web_exchange::OnlineExchangeRequest {
+        let msg = wire_exchange::OnlineExchangeRequest {
             proofs,
             exchange_path,
         };
         let request = self.cl.post(url).json(&msg);
-        let response: web_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
+        let response: wire_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
         Ok(response.proofs)
     }
 
@@ -167,12 +167,12 @@ impl TreasuryClient {
             .base
             .join(Self::CRSATEXCHANGEONLINE_EP_V1)
             .expect("crsat_exchange_online relative path");
-        let msg = web_exchange::OnlineExchangeRequest {
+        let msg = wire_exchange::OnlineExchangeRequest {
             proofs,
             exchange_path,
         };
         let request = self.cl.post(url).json(&msg);
-        let response: web_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
+        let response: wire_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
         Ok(response.proofs)
     }
 
@@ -188,19 +188,19 @@ impl TreasuryClient {
             .base
             .join(Self::SATEXCHANGEOFFLINE_EP_V1)
             .expect("sat_exchange_offline relative path");
-        let msg = web_exchange::OfflineExchangeRequest {
+        let msg = wire_exchange::OfflineExchangeRequest {
             fingerprints,
             hashes,
             wallet_pk,
         };
         let request = self.cl.post(url).json(&msg);
-        let response: web_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        let response: wire_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
         bcr_common::core::signature::schnorr_verify_b64(
             &response.content,
             &response.signature,
             &mint_pk.x_only_public_key().0,
         )?;
-        let payload: web_exchange::OfflineExchangePayload =
+        let payload: wire_exchange::OfflineExchangePayload =
             bcr_common::core::signature::deserialize_borsh_msg(&response.content)?;
         Ok((payload.proofs, response.signature))
     }
@@ -217,19 +217,19 @@ impl TreasuryClient {
             .base
             .join(Self::CRSATEXCHANGEOFFLINE_EP_V1)
             .expect("crsat_exchange_offline relative path");
-        let msg = web_exchange::OfflineExchangeRequest {
+        let msg = wire_exchange::OfflineExchangeRequest {
             fingerprints,
             hashes,
             wallet_pk,
         };
         let request = self.cl.post(url).json(&msg);
-        let response: web_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        let response: wire_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
         bcr_common::core::signature::schnorr_verify_b64(
             &response.content,
             &response.signature,
             &mint_pk.x_only_public_key().0,
         )?;
-        let payload: web_exchange::OfflineExchangePayload =
+        let payload: wire_exchange::OfflineExchangePayload =
             bcr_common::core::signature::deserialize_borsh_msg(&response.content)?;
         Ok((payload.proofs, response.signature))
     }
