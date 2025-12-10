@@ -377,7 +377,7 @@ mod tests {
 
     use super::*;
     use bcr_common::{core_tests, wire_tests};
-    use bcr_ebill_core::contact::BillParticipant;
+    use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_utils};
     use mockall::predicate::*;
     use rand::Rng;
