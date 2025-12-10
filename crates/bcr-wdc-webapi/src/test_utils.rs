@@ -2,15 +2,16 @@
 use std::str::FromStr;
 // ----- extra library imports
 use bcr_common::{core::BillId, core_tests, wire::quotes as wire_quotes, wire_tests};
-use bcr_ebill_core::{
-    address::Address,
+use bcr_ebill_core::protocol::{
     blockchain::bill::{
-        block::BillIssueBlockData, create_bill_to_share_with_external_party, BillBlockchain,
+        block::{BillIssueBlockData, BillSignerIdentityProofBlockdata},
+        create_bill_to_share_with_external_party,
+        participant::{BillIdentParticipant, BillParticipant},
+        BillBlockchain,
     },
-    city::City,
-    country::Country,
-    date::Date,
-    util::BcrKeys,
+    crypto::BcrKeys,
+    Address, City, Country, Date, EmailIdentityProofData, PostalAddress, SignedIdentityProof, Sum,
+    Timestamp,
 };
 use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
 use bitcoin::{self as btc, secp256k1 as secp, Amount};
@@ -26,8 +27,7 @@ pub fn generate_random_bill_enquire_request(
     payee_kp: Option<secp::Keypair>,
     amount: Option<btc::Amount>,
 ) -> (wire_quotes::EnquireRequest, secp::Keypair) {
-    let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key())
-        .expect("valid key");
+    let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key());
     let bill_id = BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
     let (_, drawee) = wire_tests::random_identity_public_data();
     let (drawer_key_pair, drawer) = wire_tests::random_identity_public_data();
@@ -41,13 +41,15 @@ pub fn generate_random_bill_enquire_request(
     };
     let default_amount = Amount::from_sat(rand::thread_rng().gen_range(1000..100000));
     let amount = amount.unwrap_or(default_amount);
-    let core_drawer: bcr_ebill_core::contact::BillIdentParticipant =
+    let core_drawer: BillIdentParticipant =
         convert::billidentparticipant_wire2ebill(drawer).unwrap();
-    let core_drawee: bcr_ebill_core::contact::BillIdentParticipant =
+    let core_drawee: BillIdentParticipant =
         convert::billidentparticipant_wire2ebill(drawee).unwrap();
-    let core_payee: bcr_ebill_core::contact::BillIdentParticipant =
-        convert::billidentparticipant_wire2ebill(payee).unwrap();
-    let now = chrono::Utc::now().timestamp() as u64;
+    let core_payee: BillIdentParticipant = convert::billidentparticipant_wire2ebill(payee).unwrap();
+    let now = chrono::Utc::now();
+    let created_at = Timestamp::new(10000).unwrap();
+    let (id_proof, email_proof) =
+        signed_identity_proof_test(core_drawer.clone(), signing_key.clone(), created_at.clone());
     let bill_chain = BillBlockchain::new(
         &BillIssueBlockData {
             id: bill_id.clone(),
@@ -55,38 +57,42 @@ pub fn generate_random_bill_enquire_request(
             city_of_issuing: City::new("Vienna").unwrap(),
             drawee: core_drawee.into(),
             drawer: core_drawer.into(),
-            payee: bcr_ebill_core::contact::BillParticipant::Ident(core_payee).into(),
-            currency: "sat".to_string(),
-            sum: amount.to_sat(),
+            payee: BillParticipant::Ident(core_payee).into(),
+            sum: Sum::new_sat(amount.to_sat()).unwrap(),
             maturity_date: random_date(),
             issue_date: random_date(),
             country_of_payment: Country::AT,
             city_of_payment: City::new("Vienna").unwrap(),
             files: vec![],
             signatory: None,
-            signing_timestamp: now,
-            signing_address: bcr_ebill_core::PostalAddress {
+            signing_timestamp: now.into(),
+            signing_address: PostalAddress {
                 country: Country::AT,
                 city: City::new("Vienna").unwrap(),
                 zip: None,
                 address: Address::new("Address").unwrap(),
             },
+            signer_identity_proof: BillSignerIdentityProofBlockdata {
+                node_id: email_proof.node_id,
+                company_node_id: None,
+                email: email_proof.email,
+                created_at: email_proof.created_at,
+                signature: id_proof.signature,
+                witness: id_proof.witness,
+            },
         },
-        BcrKeys::from_private_key(&drawer_key_pair.secret_key()).expect("valid key"),
+        BcrKeys::from_private_key(&drawer_key_pair.secret_key()),
         None,
         bill_keys.clone(),
-        now,
+        now.into(),
     )
     .expect("can create bill chain");
     let bill_to_share = create_bill_to_share_with_external_party(
         &bill_id,
         &bill_chain,
-        &bcr_ebill_core::bill::BillKeys {
-            private_key: bill_keys.get_private_key(),
-            public_key: bill_keys.pub_key(),
-        },
+        &BcrKeys::from_private_key(&bill_keys.get_private_key()),
         &receiver_pk.inner,
-        &BcrKeys::from_private_key(&signing_key.secret_key()).expect("valid_key"),
+        &BcrKeys::from_private_key(&signing_key.secret_key()),
         &[],
     )
     .expect("can create sharable bill");
@@ -118,4 +124,19 @@ pub fn random_date() -> Date {
     let days = chrono::Duration::days(rng.gen_range(0..365));
     let random_date = start + days;
     Date::new(random_date.date_naive().to_string()).unwrap()
+}
+
+pub fn signed_identity_proof_test(
+    identity: BillIdentParticipant,
+    signer: secp::Keypair,
+    created_at: Timestamp,
+) -> (SignedIdentityProof, EmailIdentityProofData) {
+    let data = EmailIdentityProofData {
+        node_id: identity.node_id.clone(),
+        company_node_id: None,
+        email: identity.email.unwrap(),
+        created_at,
+    };
+    let proof = data.sign(&identity.node_id, &signer.secret_key()).unwrap();
+    (proof, data)
 }
