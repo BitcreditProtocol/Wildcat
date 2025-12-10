@@ -59,7 +59,7 @@ impl ClowderSigner {
 #[async_trait]
 impl commitment::Signer for ClowderSigner {
     async fn sign(&self, content: &[u8]) -> Result<bitcoin::secp256k1::schnorr::Signature> {
-        let signature = self.0.sign_bytes(content).await?;
+        let signature = self.0.sign_schnorr_preimage(content).await?;
         Ok(signature)
     }
 }
