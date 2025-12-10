@@ -73,7 +73,7 @@ pub async fn crsat_offline_exchange(
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;
-    let signature = ctrl.signer.sign_bytes(&serialized).await?;
+    let signature = ctrl.signer.sign_schnorr_preimage(&serialized).await?;
     let content = BASE64_STANDARD.encode(&serialized);
     let response = wire_exchange::OfflineExchangeResponse { content, signature };
     Ok(Json(response))
@@ -92,7 +92,7 @@ pub async fn sat_offline_exchange(
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;
-    let signature = ctrl.signer.sign_bytes(&serialized).await?;
+    let signature = ctrl.signer.sign_schnorr_preimage(&serialized).await?;
     let content = BASE64_STANDARD.encode(&serialized);
     let response = wire_exchange::OfflineExchangeResponse { content, signature };
     Ok(Json(response))
