@@ -324,7 +324,7 @@ mod tests {
     use super::*;
     use crate::{quotes::BillInfo, service};
     use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
-    use bcr_ebill_core::contact::BillParticipant;
+    use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
     use surrealdb::RecordId;
 
@@ -548,9 +548,7 @@ mod tests {
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
-            bill_drawee_id: Some(convert::nodeid_wire2ebill(
-                random_identity_public_data().1.node_id,
-            )),
+            bill_drawee_id: Some(random_identity_public_data().1.node_id),
             ..Default::default()
         };
         let res = db.list_light(filters, None).await.unwrap();
