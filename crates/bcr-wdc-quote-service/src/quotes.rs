@@ -1,7 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::{core::BillId, wire::quotes as wire_quotes};
-use bcr_ebill_core::contact::{BillIdentParticipant, BillParticipant};
+use bcr_ebill_core::protocol::blockchain::bill::participant::{
+    BillIdentParticipant, BillParticipant,
+};
 use bcr_wdc_utils::convert;
 use bitcoin::Amount;
 use strum::Display;
