@@ -101,6 +101,7 @@ impl AppController {
             .expect("Failed to create repository");
         let signing_keys =
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
+        tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
         let debit = ProdDebitService {
             wallet,
