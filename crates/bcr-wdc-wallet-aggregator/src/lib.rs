@@ -115,6 +115,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
     for _ in 0..ATTEMPTS {
         let res = app.cdk_client.get_mint_info().await;
         if res.is_ok() {
+            tracing::debug!("cdk-mint is up");
             break;
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -125,6 +126,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         for info in keyset_lists.keysets {
             if info.active {
                 let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
+                tracing::debug!("posting active keyset to clowder {}", info.id);
                 clwdr.post_keyset(keyset).await?;
             }
         }
