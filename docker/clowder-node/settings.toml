@@ -1,6 +1,6 @@
 web_bind_address = "0.0.0.0:3010"
 nats_url = "nats://nats:4222"
-log_level = "INFO"
+log_level = "DEBUG"
 
 pubsub_server_name = "localhost"
 pubsub_socket_addr = "0.0.0.0:5001"
