@@ -19,6 +19,7 @@ default_url = "http://localhost:8080"
 
 [appcfg.dev_mode_config]
 on = true
+disable_mandatory_email_confirmations = true
 
 [appcfg]
 bitcoin_network = "testnet"
