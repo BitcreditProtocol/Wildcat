@@ -101,11 +101,13 @@ impl foreign::ClowderClient for ClowderCl {
 
     async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl> {
         let response = self.clwdr.get_alphas().await?;
-        for idx in 0..response.node_ids.len() {
-            let alpha_pk = cashu::PublicKey::from(response.node_ids[idx]);
-            if alpha_pk == *pk {
-                return Ok(response.mint_urls[idx].clone());
-            }
+
+        let mint = response
+            .mints
+            .iter()
+            .find(|mint| cashu::PublicKey::from(mint.node_id) == *pk);
+        if let Some(mint) = mint {
+            return Ok(mint.mint.clone());
         }
         Err(Error::InvalidInput(format!("{pk} not in the alpha set")))
     }
