@@ -12,6 +12,7 @@ services:
       - EBPP_MNEMONIC=${MINT_SEED_PHRASE}
       - EBPP__APPCFG__ONCHAIN__NETWORK=testnet
       - EBPP__APPCFG__ONCHAIN__STORE_PATH=/data/testnet
+      - EBPP__APPCFG__TREASURY_SERVICE_PUBLIC_KEY=${EBPP__APPCFG__TREASURY_SERVICE_PUBLIC_KEY}
 
   key-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
