@@ -19,6 +19,8 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+      clowder-node:
+        condition: service_healthy
     environment:
       - KEY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
@@ -213,6 +215,12 @@ services:
       - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
     restart: unless-stopped
 
+  nats:
+    image: nats:2.11.9-alpine
+    volumes:
+      - ./docker/nats/nats-server.conf:/etc/nats/nats-server.conf
+    command: ["-c", "/etc/nats/nats-server.conf"]
+
   ######################################################################################## wildcat-auxiliary
 
   ebill-service:
@@ -274,10 +282,6 @@ services:
       start_interval: 3s
 
   ######################################################################################## clowder
-
-  nats:
-    image: nats:2.11.9-alpine
-    command: ["-js"]
 
   signatory:
     image: ghcr.io/bitcreditprotocol/clowder:nightly
