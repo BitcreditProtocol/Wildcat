@@ -72,17 +72,6 @@ services:
     ports:
       - "4242:4242"
 
-  bitcoin-core:
-    extends:
-      file: common-services.yml
-      service: bitcoin-core
-    command:
-      - -printtoconsole
-      - --testnet=1
-      - -conf=/home/bitcoin/bitcoin.conf
-    healthcheck:
-      test: ["CMD", "bitcoin-cli", "--testnet", "getconnectioncount"]
-
   keycloak:
     extends:
       file: common-services.yml
@@ -104,15 +93,6 @@ services:
     ports:
       - "8080:8080"
 
-  electrs:
-    extends:
-      file: common-services.yml
-      service: electrs
-    environment:
-      ELECTRS_NETWORK: testnet
-      ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18332
-      ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18333
-
   ######################################################################################## clowder
 
   signatory:
@@ -129,9 +109,11 @@ services:
     extends:
       file: common-services.yml
       service: clowder-node
-    environment:
-      CLWDR__ELECTRUM_CONFIG__RPC_URL: tcp://electrs:50001
-      CLWDR__ELECTRUM_CONFIG__NETWORK: testnet
+    depends_on:
+      signatory:
+        condition: service_started
+      nats:
+        condition: service_started
 
   ######################################################################################## wildcat-auxiliary
 
