@@ -127,6 +127,13 @@ services:
     extends:
       file: common-services.yml
       service: clowder-node
+    depends_on:
+      signatory:
+        condition: service_started
+      nats:
+        condition: service_started
+      electrs:
+        condition: service_started
 
   eic-service:
     extends:
