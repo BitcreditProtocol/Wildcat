@@ -88,8 +88,10 @@ async fn mint_credit(
     let signatures: Vec<cashu::BlindSignature> =
         joined.await.into_iter().collect::<KeysResult<_>>()?;
     let mut proofs = Vec::with_capacity(signatures.len());
-    for (sig, pre) in signatures.into_iter().zip(premints.into_iter()) {
-        let proof = unblind_ecash_signature(&keys, pre, sig)?;
+    for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
+        // WARNING: due to a bug in `into_iter()` in cashu 0.13.1 we need to `iter()` and clone the secret
+        // fixed in 0.14.0
+        let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
         proofs.push(proof);
     }
     Ok(Token::new_bitcr(mint_url, proofs, None, keys.unit.clone()))
