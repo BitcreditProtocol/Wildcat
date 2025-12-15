@@ -13,6 +13,7 @@ services:
       - EBPP__APPCFG__ONCHAIN__NETWORK=testnet
       - EBPP__APPCFG__ONCHAIN__STORE_PATH=/data/testnet
       - EBPP__APPCFG__TREASURY_SERVICE_PUBLIC_KEY=${EBPP__APPCFG__TREASURY_SERVICE_PUBLIC_KEY}
+      - EBPP__APPCFG__ELECTRUM_URL=100.107.165.30:50001
 
   key-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-key-service:${IMAGE_TAG:-latest}
@@ -66,6 +67,9 @@ services:
   clowder-node:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
     pull_policy: always
+    environment:
+      - CLWDR__ELECTRUM_CONFIG__RPC_URL=tcp://100.107.165.30:50001
+      - CLWDR__ELECTRUM_CONFIG__NETWORK=testnet
 
   ######################################################################################## wildcat-auxiliary
 
