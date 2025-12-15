@@ -304,13 +304,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    depends_on:
-      signatory:
-        condition: service_started
-      nats:
-        condition: service_started
-      electrs:
-        condition: service_started
     ports:
       - "3010:3010"
       - 5001:5001/udp
