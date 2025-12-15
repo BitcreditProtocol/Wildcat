@@ -129,17 +129,6 @@ services:
     environment:
       - CDK_MINTD_MNEMONIC=${MINT_SEED_PHRASE}
 
-  bitcoin-core:
-    volumes:
-      - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
-      - ${DATA_PATH}/bitcoin-core/:/home/bitcoin/data
-    command:
-      - -printtoconsole
-      - ${BITCOIN_NETWORK_COMMAND_ARG:--testnet=1}
-      - -conf=/home/bitcoin/bitcoin.conf
-    healthcheck:
-      test: ["CMD", "bitcoin-cli", "${BITCOIN_CLI_NETWORK_ARG:--testnet}", "getconnectioncount"]
-
 networks:
   default:
     external: true
