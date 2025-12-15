@@ -5,8 +5,6 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
-      electrs:
-        condition: service_started
     environment:
       - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
