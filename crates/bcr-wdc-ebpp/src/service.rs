@@ -1,5 +1,6 @@
 // ----- standard library imports
 use std::{
+    collections::HashMap,
     pin::Pin,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -100,6 +101,7 @@ pub struct Service {
     payment_notifier: Arc<Mutex<Option<mpsc::Sender<Event>>>>,
     interval: Duration,
     notif_cancel_token: Arc<Mutex<CancellationToken>>,
+    dev_payments: Arc<Mutex<HashMap<PaymentIdentifier, cashu::Amount>>>,
 }
 
 impl Service {
@@ -119,6 +121,7 @@ impl Service {
             payment_notifier,
             interval: refresh_interval,
             notif_cancel_token: Arc::new(Mutex::new(CancellationToken::new())),
+            dev_payments: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -207,8 +210,13 @@ impl MintPayment for Service {
             }
             ParsedDescription::Dev => {
                 let idx: u32 = rand::random();
+                let pid = PaymentIdentifier::Label(format!("dev{idx}"));
+                self.dev_payments
+                    .lock()
+                    .unwrap()
+                    .insert(pid.clone(), options.amount);
                 return Ok(CreateIncomingPaymentResponse {
-                    request_lookup_id: PaymentIdentifier::Label(format!("dev{idx}")),
+                    request_lookup_id: pid,
                     request: String::new(),
                     expiry: None,
                 });
@@ -395,15 +403,13 @@ impl MintPayment for Service {
     ) -> PaymentResult<Vec<WaitPaymentResponse>> {
         let _span = tracing::debug_span!("check_incoming_payment_status");
 
-        if let PaymentIdentifier::Label(label) = payment_identifier {
-            if label.starts_with("dev") {
-                return Ok(vec![WaitPaymentResponse {
-                    payment_identifier: payment_identifier.clone(),
-                    payment_amount: cashu::Amount::from(1000),
-                    unit: CurrencyUnit::Sat,
-                    payment_id: label.to_string(),
-                }]);
-            }
+        if let Some(amount) = self.dev_payments.lock().unwrap().get(payment_identifier) {
+            return Ok(vec![WaitPaymentResponse {
+                payment_identifier: payment_identifier.clone(),
+                payment_amount: *amount,
+                unit: CurrencyUnit::Sat,
+                payment_id: String::from("devmode"),
+            }]);
         }
 
         let mut response = Vec::new();
@@ -413,7 +419,7 @@ impl MintPayment for Service {
                 payment_identifier: foreign.reqid,
                 payment_amount: cashu::Amount::from(foreign.amount.to_sat()),
                 unit: CurrencyUnit::Sat,
-                payment_id: "foreign_ecash".to_string(),
+                payment_id: String::from("foreign_ecash"),
             });
             return Ok(response);
         }
