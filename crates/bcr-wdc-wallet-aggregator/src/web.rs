@@ -207,8 +207,12 @@ pub async fn post_swap(
             "Swap request rejected due to commitment",
         )));
     }
-    let input_type = determine_input_type(&ctrl.keys_client, request.inputs()).await?;
-    let output_type = determine_output_type(&ctrl.keys_client, request.outputs()).await?;
+    let keyscl = KeysClients {
+        credit: ctrl.keys_client.clone(),
+        debit: ctrl.cdk_client.clone(),
+    };
+    let input_type = determine_input_type(&keyscl, request.inputs()).await?;
+    let output_type = determine_output_type(&keyscl, request.outputs()).await?;
     let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs().clone();
     let blinded_messages = request.outputs();
@@ -455,16 +459,27 @@ fn io_to_swap(input: InputType, output: OutputType) -> Result<SwapType> {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 trait KeyClientT {
-    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool>;
+    // returns the currency unit for the given keyset id
+    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit>;
+}
+
+struct KeysClients {
+    credit: KeysClient,
+    debit: cdk::wallet::HttpClient,
 }
 #[async_trait]
-impl KeyClientT for KeysClient {
-    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool> {
-        let info = self.keyset_info(keyset_id).await;
-        match info {
-            Ok(_) => Ok(true),
-            Err(KeysError::KeysetIdNotFound(_)) => Ok(false),
-            Err(e) => Err(Error::Keys(e)),
+impl KeyClientT for KeysClients {
+    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit> {
+        let cr_response = self.credit.keyset_info(keyset_id).await;
+        match cr_response {
+            Ok(info) => return Ok(info.unit),
+            Err(KeysError::KeysetIdNotFound(_)) => {}
+            Err(e) => return Err(Error::Keys(e)),
+        }
+        let db_response = self.debit.get_mint_keyset(keyset_id).await;
+        match db_response {
+            Ok(info) => return Ok(info.unit),
+            Err(e) => return Err(Error::Cdk(e)),
         }
     }
 }
@@ -474,17 +489,12 @@ pub struct ForeignKeyClientWithClowder {
 }
 #[async_trait]
 impl KeyClientT for ForeignKeyClientWithClowder {
-    async fn belongs_to(&self, keyset_id: cashu::Id) -> Result<bool> {
-        let info = self.clwdr_cl.get_keyset(&self.pk, &keyset_id).await;
-        match info {
-            Ok(_) => Ok(true),
-            Err(clwdr_client::ClowderClientError::Http(err))
-                if err.status() == Some(axum::http::StatusCode::NOT_FOUND) =>
-            {
-                Ok(false)
-            }
-            Err(e) => Err(Error::ClowderClient(e)),
-        }
+    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit> {
+        let keys = self.clwdr_cl.get_keyset(&self.pk, &keyset_id).await?;
+        let Some(keyset) = keys.keysets.first() else {
+            return Err(Error::Invalid(format!("keyset {keyset_id} not found")));
+        };
+        Ok(keyset.unit.clone())
     }
 }
 
@@ -495,20 +505,23 @@ async fn determine_input_type(
     let unique_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
     let requests: JoinAll<_> = unique_kids
         .into_iter()
-        .map(|kid| key_cl.belongs_to(kid))
+        .map(|kid| key_cl.currency(kid))
         .collect();
     let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
-    let all_crsat = responses.iter().cloned().all(std::convert::identity);
-    let all_sat = responses.iter().all(|b| !b);
-    if all_crsat {
-        Ok(InputType::CrSat)
-    } else if all_sat {
-        Ok(InputType::Sat)
-    } else {
-        Err(Error::Invalid(String::from(
-            "mixed credit/debit inputs not allowed",
-        )))
+    let all_sats = responses
+        .iter()
+        .all(|unit| *unit == cashu::CurrencyUnit::Sat);
+    if all_sats {
+        return Ok(InputType::Sat);
     }
+    let crsat = cashu::CurrencyUnit::Custom(String::from("crsat"));
+    let all_crsat = responses.iter().all(|unit| *unit == crsat);
+    if all_crsat {
+        return Ok(InputType::CrSat);
+    }
+    Err(Error::InvalidInput(String::from(
+        "mixed credit/debit inputs not allowed",
+    )))
 }
 
 async fn determine_output_type(
@@ -518,20 +531,23 @@ async fn determine_output_type(
     let unique_kids = outputs.iter().map(|b| b.keyset_id).collect::<HashSet<_>>();
     let requests: JoinAll<_> = unique_kids
         .into_iter()
-        .map(|kid| key_cl.belongs_to(kid))
+        .map(|kid| key_cl.currency(kid))
         .collect();
     let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
-    let all_crsat = responses.iter().cloned().all(std::convert::identity);
-    let all_sat = responses.iter().all(|b| !b);
-    if all_crsat {
-        Ok(OutputType::CrSat)
-    } else if all_sat {
-        Ok(OutputType::Sat)
-    } else {
-        Err(Error::Invalid(String::from(
-            "mixed credit/debit output not allowed",
-        )))
+    let all_sats = responses
+        .iter()
+        .all(|unit| *unit == cashu::CurrencyUnit::Sat);
+    if all_sats {
+        return Ok(OutputType::Sat);
     }
+    let crsat = cashu::CurrencyUnit::Custom(String::from("crsat"));
+    let all_crsat = responses.iter().all(|unit| *unit == crsat);
+    if all_crsat {
+        return Ok(OutputType::CrSat);
+    }
+    Err(Error::InvalidInput(String::from(
+        "mixed credit/debit outputs not allowed",
+    )))
 }
 
 async fn test_for_htlc(
@@ -568,10 +584,10 @@ mod tests {
         let mut client = MockKeyClientT::new();
         let sat_kid = sat_keyset.id;
         client
-            .expect_belongs_to()
+            .expect_currency()
             .times(1)
             .with(eq(sat_kid))
-            .returning(|_| Ok(false));
+            .returning(|_| Ok(cashu::CurrencyUnit::Sat));
         let inputtype = determine_input_type(&client, &inputs).await.unwrap();
         assert!(matches!(inputtype, InputType::Sat));
     }
@@ -588,10 +604,10 @@ mod tests {
         let mut client = MockKeyClientT::new();
         let sat_kid = sat_keyset.id;
         client
-            .expect_belongs_to()
+            .expect_currency()
             .times(1)
             .with(eq(sat_kid))
-            .returning(|_| Ok(false));
+            .returning(|_| Ok(cashu::CurrencyUnit::Sat));
 
         let outputtype = determine_output_type(&client, &outputs).await.unwrap();
         assert!(matches!(outputtype, OutputType::Sat));
@@ -604,9 +620,9 @@ mod tests {
         let inputs = signatures_test::generate_proofs(&keyset, &amounts);
         let mut client = MockKeyClientT::new();
         client
-            .expect_belongs_to()
+            .expect_currency()
             .times(1)
-            .returning(move |_| Ok(true));
+            .returning(move |_| Ok(cashu::CurrencyUnit::Custom(String::from("crsat"))));
         let inputtype = determine_input_type(&client, &inputs).await.unwrap();
         assert!(matches!(inputtype, InputType::CrSat));
     }
@@ -622,9 +638,9 @@ mod tests {
                 .collect();
         let mut client = MockKeyClientT::new();
         client
-            .expect_belongs_to()
+            .expect_currency()
             .times(1)
-            .returning(move |_| Ok(true));
+            .returning(move |_| Ok(cashu::CurrencyUnit::Custom(String::from("crsat"))));
         let outputtype = determine_output_type(&client, &outputs).await.unwrap();
         assert!(matches!(outputtype, OutputType::CrSat));
     }
