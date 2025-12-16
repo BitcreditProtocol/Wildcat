@@ -30,7 +30,7 @@ reqwest = {workspace = true}
 serde.workspace = true
 surrealdb = {workspace = true}
 thiserror.workspace = true
-tokio.workspace = true
+tokio = {workspace = true, features = ["signal"]}
 tower-http = { version = "0.6.2" }
 tracing = {workspace = true }
 tracing-log = {workspace = true}
