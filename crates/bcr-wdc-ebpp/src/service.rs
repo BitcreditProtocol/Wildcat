@@ -408,18 +408,19 @@ impl MintPayment for Service {
                 payment_identifier: payment_identifier.clone(),
                 payment_amount: *amount,
                 unit: CurrencyUnit::Sat,
-                payment_id: String::from("devmode"),
+                payment_id: payment_identifier.to_string(),
             }]);
         }
 
         let mut response = Vec::new();
         let foreign = self.payrepo.check_foreign_reqid(payment_identifier).await?;
         if let Some(foreign) = foreign {
+            let payment_id = foreign.reqid.to_string();
             response.push(WaitPaymentResponse {
                 payment_identifier: foreign.reqid,
                 payment_amount: cashu::Amount::from(foreign.amount.to_sat()),
                 unit: CurrencyUnit::Sat,
-                payment_id: String::from("foreign_ecash"),
+                payment_id,
             });
             return Ok(response);
         }
