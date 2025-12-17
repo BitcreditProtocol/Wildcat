@@ -173,7 +173,7 @@ impl MintPayment for Service {
         let parsed_description = ParsedDescription::parse(&options.description.unwrap_or_default());
         let payment_type = match parsed_description {
             ParsedDescription::ForeignECash(request) => {
-                tracing::trace!("Parsed foreign ecash request",);
+                tracing::debug!("Parsed foreign ecash request",);
                 let payload: web_exchange::RequestToMintFromForeigneCashPayload =
                     deserialize_borsh_msg(&request.payload).map_err(Error::from)?;
                 schnorr_verify_b64(&request.payload, &request.signature, &self.treasury_pubkey)
@@ -182,18 +182,19 @@ impl MintPayment for Service {
                 if foreign.is_some() {
                     return Err(PaymentError::InvoiceAlreadyPaid);
                 }
+                let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
+                let response = CreateIncomingPaymentResponse {
+                    request_lookup_id: reqid.clone(),
+                    request: String::new(),
+                    expiry: None,
+                };
                 let foreign = payment::ForeignPayment {
-                    reqid: PaymentIdentifier::CustomId(Uuid::new_v4().to_string()),
+                    reqid,
                     nonce: payload.nonce.clone(),
                     amount,
                 };
-                let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
                 self.payrepo.store_foreign(foreign).await?;
-                return Ok(CreateIncomingPaymentResponse {
-                    request_lookup_id: reqid,
-                    request: String::new(),
-                    expiry: None,
-                });
+                return Ok(response);
             }
             ParsedDescription::EbillRequestToPay(request) => {
                 tracing::trace!("Parsed EBill request",);
