@@ -6,7 +6,7 @@ FROM ${WILDCAT_BASE_IMAGE} AS rust-builder
 ##############################
 FROM debian:bookworm-slim
 RUN apt-get update \
-  && apt-get install --quiet --no-install-recommends --no-install-suggests --yes openssl curl \
+  && apt-get install --quiet --no-install-recommends --no-install-suggests --yes openssl curl ca-certificates \
   && apt-get clean \
   && rm --recursive --force /var/lib/apt/lists/*
 
