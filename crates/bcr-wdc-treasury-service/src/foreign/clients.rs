@@ -221,26 +221,7 @@ impl proof::KeysClient for SatKeysClient {
             pubkey: Some(pk),
         };
         let quote = self.cl.post_mint_quote(request).await?;
-        let mut attempts = 0;
-        while let Err(e) = self.cl.get_mint_quote_status(&quote.quote).await {
-            tracing::warn!(
-                "waiting for mint quote id: {} to be ready, got error: {}",
-                quote.quote,
-                e
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            attempts += 1;
-            if attempts >= 5 {
-                break;
-            }
-        }
-        if attempts >= 5 {
-            return Err(Error::InvalidInput(format!(
-                "mint quote id: {} not ready after max attempts",
-                quote.quote
-            )));
-        }
-        tracing::info!("minting sat foreign quote id: {}", quote.quote);
+        tracing::debug!("minting sat foreign quote id: {}", quote.quote);
         let mut request = cashu::MintRequest {
             quote: quote.quote,
             outputs: blinds.to_vec(),
