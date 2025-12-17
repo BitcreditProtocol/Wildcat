@@ -115,6 +115,6 @@ pub async fn generate_htlc_proofs(
     let premints = cashu::PreMintSecrets::from_secrets(keyset.id, amounts, secrets)?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
-    let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), &keyset)?;
+    let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), keyset)?;
     Ok(proofs)
 }
