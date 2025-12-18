@@ -95,7 +95,8 @@ fn generate_htlc_secret(
         None,
         None,
     )?;
-    let spending_conds = cashu::SpendingConditions::new_htlc(hash.to_string(), Some(conditions))?;
+    let spending_conds =
+        cashu::SpendingConditions::new_htlc_hash(&hash.to_string(), Some(conditions))?;
     let secret = cdk10::Secret::from(spending_conds);
     Ok(secret)
 }
