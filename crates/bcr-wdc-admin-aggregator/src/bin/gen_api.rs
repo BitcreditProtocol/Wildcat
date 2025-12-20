@@ -1,4 +1,4 @@
-use bcr_wdc_quote_service::ApiDoc;
+use bcr_wdc_admin_aggregator::ApiDoc;
 
 fn main() {
     let yml = ApiDoc::generate_yml().unwrap();

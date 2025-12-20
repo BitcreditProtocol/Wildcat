@@ -27,17 +27,6 @@ where
     }
 }
 /// --------------------------- crsat chart
-#[utoipa::path(
-    get,
-    path = "/v1/admin/crsat/chart",
-    params(
-        ("start" = chrono::NaiveDate, Query, description = "start date for the chart"),
-        ("end" = Option<chrono::NaiveDate>, Query, description = "end date for the chart, defaults to today"),
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = web_wallet::CandleChart, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn crsat_chart<DB>(
     State(ctrl): State<Service<DB>>,
@@ -62,17 +51,6 @@ where
 }
 
 /// --------------------------- sat chart
-#[utoipa::path(
-    get,
-    path = "/v1/admin/sat/chart",
-    params(
-        ("start" = chrono::NaiveDate, Query, description = "start date for the chart"),
-        ("end" = Option<chrono::NaiveDate>, Query, description = "end date for the chart, defaults to today"),
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = web_wallet::CandleChart, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sat_chart<DB>(
     State(ctrl): State<Service<DB>>,
@@ -97,17 +75,6 @@ where
 }
 
 /// --------------------------- btc onchain chart
-#[utoipa::path(
-    get,
-    path = "/v1/admin/btc/chart",
-    params(
-        ("start" = chrono::NaiveDate, Query, description = "start date for the chart"),
-        ("end" = Option<chrono::NaiveDate>, Query, description = "end date for the chart, defaults to today"),
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = web_wallet::CandleChart, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn btc_chart<DB>(
     State(ctrl): State<Service<DB>>,
@@ -132,17 +99,6 @@ where
 }
 
 /// --------------------------- e-IOU chart
-#[utoipa::path(
-    get,
-    path = "/v1/admin/eiou/chart",
-    params(
-        ("start" = chrono::NaiveDate, Query, description = "start date for the chart"),
-        ("end" = Option<chrono::NaiveDate>, Query, description = "end date for the chart, defaults to today"),
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = web_wallet::CandleChart, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn eiou_chart<DB>(
     State(ctrl): State<Service<DB>>,

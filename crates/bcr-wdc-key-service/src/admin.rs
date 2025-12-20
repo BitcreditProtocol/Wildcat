@@ -1,19 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::{client::keys::Client, wire::keys as wire_keys};
+use bcr_common::wire::keys as wire_keys;
 // ----- local imports
 use crate::{error::Result, service};
 
-#[utoipa::path(
-    post,
-    path = Client::SIGN_EP_V1,
-    request_body(content = cashu::BlindedMessage, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = cashu::BlindSignature, content_type = "application/json"),
-        (status = 404, description = "keyset id not  found"),
-    )
-)]
+// ----- end imports
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sign_blind(
     State(ctrl): State<service::Service>,
@@ -24,15 +17,6 @@ pub async fn sign_blind(
     ctrl.sign_blind(&blind).await.map(Json)
 }
 
-#[utoipa::path(
-    post,
-    path = Client::VERIFY_PROOF_EP_V1,
-    request_body(content = cashu::Proof, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = bool, content_type = "application/json"),
-        (status = 400, description = "proof verification failed"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn verify_proof(
     State(ctrl): State<service::Service>,
@@ -43,15 +27,6 @@ pub async fn verify_proof(
     ctrl.verify_proof(proof).await
 }
 
-#[utoipa::path(
-    post,
-    path = Client::VERIFY_FINGERPRINT_EP_V1,
-    request_body(content = wire_keys::ProofFingerprint, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = bool, content_type = "application/json"),
-        (status = 400, description = "proof verification failed"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn verify_fingerprint(
     State(ctrl): State<service::Service>,
@@ -62,17 +37,6 @@ pub async fn verify_fingerprint(
     ctrl.verify_fingerprint(fp.into()).await
 }
 
-#[utoipa::path(
-    get,
-    path = Client::KEYSFOREXPIRATION_EP_V1,
-    params(
-        ("date" = chrono::NaiveDate, Path, description = "The expiration date")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = cashu::Id, content_type = "application/json"),
-        (status = 404, description = "keyset id not found"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_keyset_for_date(
     State(ctrl): State<service::Service>,
@@ -84,15 +48,6 @@ pub async fn get_keyset_for_date(
     Ok(Json(kid))
 }
 
-#[utoipa::path(
-    post,
-    path = Client::DEACTIVATEKEYSET_EP_V1,
-    request_body(content = wire_keys::DeactivateKeysetRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = wire_keys::DeactivateKeysetResponse, content_type = "application/json"),
-        (status = 404, description = "keyset id not found"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn deactivate(
     State(ctrl): State<service::Service>,
@@ -105,15 +60,6 @@ pub async fn deactivate(
     Ok(Json(response))
 }
 
-#[utoipa::path(
-    post,
-    path = Client::NEWMINTOP_EP_V1,
-    request_body(content = wire_keys::NewMintOperationRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = wire_keys::NewMintOperationResponse, content_type = "application/json"),
-        (status = 404, description = "keyset id not found"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn new_mintop(
     State(ctrl): State<service::Service>,
@@ -132,17 +78,6 @@ pub async fn new_mintop(
     Ok(Json(response))
 }
 
-#[utoipa::path(
-    get,
-    path = Client::NEWMINTOP_EP_V1,
-    params(
-        ("qid" = uuid::Uuid, Path, description = "the quote id this minting operation is associated with")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = cashu::Amount, content_type = "application/json"),
-        (status = 404, description = "resource id not found"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mintop_status(
     State(ctrl): State<service::Service>,
@@ -154,16 +89,6 @@ pub async fn mintop_status(
     Ok(Json(amount))
 }
 
-#[utoipa::path(
-    get,
-    path = Client::LISTMINTOPS_EP_V1,
-    params(
-        ("kid" = cashu::Id, Path, description = "the keyset id to list minting operations for")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = Vec<cashu::Amount>, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_mintops(
     State(ctrl): State<service::Service>,

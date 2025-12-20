@@ -5,8 +5,8 @@ use axum::extract::{Json, State};
 use bcr_common::{
     client::keys::{Client as KeysClient, Result as KeysResult},
     core::signature::unblind_ecash_signature,
+    wallet::Token,
 };
-use bcr_wallet_lib::wallet::Token;
 use cdk::wallet::{HttpClient, MintConnector};
 use futures::future::JoinAll;
 // ----- local imports

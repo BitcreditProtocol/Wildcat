@@ -6,9 +6,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{client::keys::Client as KeysClient, wire::keys as wire_keys};
+use bcr_common::client::keys::Client as KeysClient;
 use bitcoin::bip32 as btc32;
-use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 #[cfg(feature = "test-utils")]
@@ -76,9 +75,6 @@ where
     Cntrlr: Send + Sync + Clone + 'static,
     service::Service: FromRef<Cntrlr>,
 {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
-
     let web = Router::new()
         .route(KeysClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
         .route(KeysClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
@@ -103,47 +99,8 @@ where
         )
         .route(KeysClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate));
 
-    Router::new()
-        .merge(web)
-        .merge(admin)
-        .with_state(ctrl)
-        .merge(swagger)
+    Router::new().merge(web).merge(admin).with_state(ctrl)
 }
-
-#[derive(utoipa::OpenApi)]
-#[openapi(
-    components(schemas(
-        wire_keys::DeactivateKeysetRequest,
-        wire_keys::DeactivateKeysetResponse,
-        wire_keys::KeysetMintCondition,
-        cashu::BlindSignature,
-        cashu::BlindedMessage,
-        cashu::Proof,
-        cashu::KeysResponse,
-        cashu::Id,
-        cashu::KeySet,
-        cashu::KeySetInfo,
-        cashu::KeysetResponse,
-        cashu::MintRequest<String>,
-        cashu::MintResponse,
-        cashu::RestoreRequest,
-        cashu::RestoreResponse,
-    ),),
-    paths(
-        admin::deactivate,
-        admin::list_mintops,
-        admin::mintop_status,
-        admin::sign_blind,
-        admin::verify_proof,
-        web::list_keys,
-        web::list_keysets,
-        web::lookup_keys,
-        web::lookup_keyset,
-        web::mint_ebill,
-        web::restore,
-    )
-)]
-struct ApiDoc;
 
 #[cfg(feature = "test-utils")]
 pub use crate::service::MintOperation;
