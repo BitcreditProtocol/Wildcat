@@ -10,7 +10,6 @@ async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-ebill-core = {workspace = true}
-bcr-wallet-lib = {git = "https://github.com/BitcreditProtocol/Wallet-Core.git", branch = "master"}
 bcr-wdc-treasury-client = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = { workspace = true}

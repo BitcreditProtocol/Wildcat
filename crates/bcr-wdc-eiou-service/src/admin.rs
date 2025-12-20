@@ -8,15 +8,6 @@ use crate::{error::Result, AppController};
 // ----- end imports
 
 /// --------------------------- get e-IOU balance
-#[utoipa::path(
-    get,
-    path = "/v1/eiou/balance",
-    params(
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = web_eiou::BalanceResponse, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(_ctrl))]
 pub async fn balance(
     State(_ctrl): State<AppController>,

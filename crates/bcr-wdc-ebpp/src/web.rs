@@ -10,15 +10,6 @@ use crate::service::Service;
 // ----- end imports
 
 /// --------------------------- Look up keysets info
-#[utoipa::path(
-    get,
-    path = "/v1/ebpp/onchain/network",
-    params(
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = Network, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn network(State(ctrl): State<Arc<Service>>) -> Result<Json<Network>> {
     tracing::debug!("Received network request");

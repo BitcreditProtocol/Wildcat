@@ -15,15 +15,6 @@ use crate::{
 // ----- end imports
 
 ///--------------------------- Enquire mint quote
-#[utoipa::path(
-    post,
-    path = "/v1/mint/credit/quote",
-    request_body(content = wire_quotes::EnquireRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Quote request admitted", body = wire_quotes::EnquireReply, content_type = "application/json"),
-        (status = 404, description = "Quote request not accepted"),
-    )
-)]
 pub async fn enquire_quote(
     State(ctrl): State<Service>,
     Json(signed_request): Json<wire_quotes::SignedEnquireRequest>,
@@ -93,17 +84,6 @@ fn convert_to_enquire_reply(
     }
 }
 
-#[utoipa::path(
-    get,
-    path = "/v1/mint/credit/quote/{id}",
-    params(
-        ("id" = Uuid, Path, description = "The quote id")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::StatusReply, content_type = "application/json"),
-        (status = 404, description = "Quote id not  found"),
-    )
-)]
 pub async fn lookup_quote(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
@@ -117,19 +97,6 @@ pub async fn lookup_quote(
 }
 
 /// --------------------------- Resolve quote offer
-#[utoipa::path(
-    post,
-    path = "/v1/mint/credit/quote/{id}",
-    params(
-        ("id" = Uuid, Path, description = "The quote id")
-    ),
-    request_body(content = wire_quotes::ResolveOffer, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response"),
-        (status = 404, description = "Quote not found"),
-        (status = 409, description = "Quote already resolved"),
-    )
-)]
 pub async fn resolve_offer(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
@@ -146,18 +113,6 @@ pub async fn resolve_offer(
 }
 
 /// --------------------------- Cancel quote inquiry
-#[utoipa::path(
-    delete,
-    path = "/v1/credit/quote/{id}",
-    params(
-        ("id" = Uuid, Path, description = "The quote id")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::StatusReply, content_type = "application/json"),
-        (status = 404, description = "Quote not found"),
-        (status = 409, description = "Quote already resolved"),
-    )
-)]
 pub async fn cancel(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
