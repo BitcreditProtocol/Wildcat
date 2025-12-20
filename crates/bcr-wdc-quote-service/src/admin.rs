@@ -10,16 +10,6 @@ use crate::{
 };
 
 /// --------------------------- List quotes
-#[utoipa::path(
-    get,
-    path = "/v1/admin/credit/quote/pending",
-    params(
-        ("since" = Option<chrono::NaiveDateTime>, Query, description = "only quote requests younger than `since`")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::ListReply, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_pending_quotes(
     State(ctrl): State<Service>,
@@ -104,14 +94,6 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
     (filters, sort)
 }
 
-#[utoipa::path(
-    get,
-    path = "/v1/admin/credit/quote",
-    params(wire_quotes::ListParam),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::ListReplyLight, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<Service>,
@@ -196,17 +178,6 @@ fn convert_to_info_reply(
     }
 }
 
-#[utoipa::path(
-    get,
-    path = "/v1/admin/credit/quote/{id}",
-    params(
-        ("id" = String, Path, description = "The quote id")
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::InfoReply, content_type = "application/json"),
-        (status = 404, description = "Quote id not  found"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_quote(
     State(ctrl): State<Service>,
@@ -221,17 +192,6 @@ pub async fn lookup_quote(
     Ok(Json(response))
 }
 
-#[utoipa::path(
-    post,
-    path = "/v1/admin/credit/quote/{id}",
-    params(
-        ("id" = String, Path, description = "The quote id")
-    ),
-    request_body(content = wire_quotes::UpdateQuoteRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::UpdateQuoteResponse, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn update_quote(
     State(ctrl): State<Service>,
@@ -254,17 +214,6 @@ pub async fn update_quote(
     Ok(Json(response))
 }
 
-#[utoipa::path(
-    post,
-    path = "/v1/admin/credit/quote/enable_mint/{id}",
-    params(
-        ("id" = String, Path, description = "The quote id")
-    ),
-    request_body(content =wire_quotes::EnableMintingRequest , content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = wire_quotes::EnableMintingResponse, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn enable_minting(
     State(ctrl): State<Service>,

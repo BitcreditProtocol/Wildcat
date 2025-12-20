@@ -2,13 +2,12 @@
 // ----- extra library imports
 use bitcoin::secp256k1;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 // ----- local imports
 
 // ----- end imports
 
 ///--------------------------- HtlcSwapAttemptRequest
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HtlcSwapAttemptRequest {
     pub preimage: String,
 }

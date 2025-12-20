@@ -7,7 +7,6 @@ use axum::{
     Router,
 };
 use bcr_common::client::quote::Client as QuoteClient;
-use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod ebill;
@@ -75,9 +74,6 @@ where
     service::Service: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
-
     let user_routes = Router::new()
         .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
         .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
@@ -101,61 +97,6 @@ where
         .merge(user_routes)
         .merge(admin_routes)
         .with_state(ctrl)
-        .merge(swagger)
-}
-
-#[derive(utoipa::OpenApi)]
-#[openapi(
-    components(schemas(
-        bcr_common::wire::bill::BillIdentParticipant,
-        bcr_common::wire::bill::BillParticipant,
-        bcr_common::wire::contact::ContactType,
-        bcr_common::wire::identity::PostalAddress,
-        bcr_common::wire::quotes::BillInfo,
-        bcr_common::wire::quotes::EnableMintingRequest,
-        bcr_common::wire::quotes::EnableMintingResponse,
-        bcr_common::wire::quotes::EnquireReply,
-        bcr_common::wire::quotes::InfoReply,
-        bcr_common::wire::quotes::LightInfo,
-        bcr_common::wire::quotes::ListReply,
-        bcr_common::wire::quotes::ListReplyLight,
-        bcr_common::wire::quotes::ListSort,
-        bcr_common::wire::quotes::ResolveOffer,
-        bcr_common::wire::quotes::SignedEnquireRequest,
-        bcr_common::wire::quotes::StatusReply,
-        bcr_common::wire::quotes::StatusReplyDiscriminants,
-        bcr_common::wire::quotes::UpdateQuoteRequest,
-        bcr_common::wire::quotes::UpdateQuoteResponse,
-        cashu::Amount,
-        cashu::BlindSignature,
-        cashu::BlindedMessage,
-        cashu::Witness,
-        cashu::Id,
-        cashu::P2PKWitness,
-        cashu::BlindSignatureDleq,
-        cashu::HTLCWitness,
-    ),),
-    paths(
-        crate::admin::enable_minting,
-        crate::admin::list_pending_quotes,
-        crate::admin::list_quotes,
-        crate::admin::lookup_quote,
-        crate::admin::update_quote,
-        crate::web::cancel,
-        crate::web::enquire_quote,
-        crate::web::lookup_quote,
-        crate::web::resolve_offer,
-    )
-)]
-pub struct ApiDoc;
-
-impl ApiDoc {
-    pub fn generate_yml() -> Option<String> {
-        ApiDoc::openapi().to_yaml().ok()
-    }
-    pub fn generate_json() -> Option<String> {
-        ApiDoc::openapi().to_pretty_json().ok()
-    }
 }
 
 #[cfg(feature = "test-utils")]
@@ -195,12 +136,4 @@ pub mod test_utils {
         axum_test::TestServer::new_with_config(routes(cntrl), cfg)
             .expect("failed to start test server")
     }
-}
-#[test]
-fn it_should_successfully_generate_openapi_docs() {
-    let yml = ApiDoc::generate_yml();
-    assert!(yml.is_some());
-
-    let json = ApiDoc::generate_json();
-    assert!(json.is_some());
 }

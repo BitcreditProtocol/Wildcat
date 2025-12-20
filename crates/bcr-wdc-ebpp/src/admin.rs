@@ -10,15 +10,6 @@ use crate::service::Service;
 // ----- end imports
 
 /// --------------------------- Look up keysets info
-#[utoipa::path(
-    get,
-    path = "/v1/admin/ebpp/onchain/balance",
-    params(
-    ),
-    responses (
-        (status = 200, description = "Successful response", body = Balance, content_type = "application/json"),
-    )
-)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn balance(State(ctrl): State<Arc<Service>>) -> Result<Json<Balance>> {
     tracing::debug!("Received balance");

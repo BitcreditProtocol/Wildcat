@@ -1,0 +1,26 @@
+[package]
+name = "bcr-wdc-admin-aggregator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum = {workspace = true, features = ["macros"]}
+axum-test = {workspace = true, optional = true}
+bcr-common = {workspace = true, features = ["authorized"]}
+cashu = {workspace = true, features = ["swagger"]}
+clwdr-client = {workspace = true}
+config = {workspace = true}
+futures = {workspace = true}
+mime = {workspace = true}
+secp256k1 = {workspace = true}
+serde  = {workspace = true}
+thiserror.workspace = true
+tokio = {workspace = true, features = ["signal"]}
+tracing = {workspace = true, features = ["log"]}
+tracing-log = {workspace = true}
+tracing-subscriber = {workspace = true}
+utoipa = {workspace = true, features = ["axum_extras", "yaml"]}
+utoipa-swagger-ui = {workspace = true, features = ["axum"]}
+uuid.workspace = true
