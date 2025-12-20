@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
