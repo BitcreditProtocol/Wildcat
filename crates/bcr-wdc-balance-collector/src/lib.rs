@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::{extract::FromRef, routing::get, Router};
-use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod error;
@@ -57,31 +56,11 @@ impl AppController {
 }
 
 pub fn routes(ctrl: AppController) -> Router {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
-
     let admin = Router::new()
         .route("/v1/admin/crsat/chart", get(admin::crsat_chart))
         .route("/v1/admin/sat/chart", get(admin::sat_chart))
         .route("/v1/admin/btc/chart", get(admin::btc_chart))
         .route("/v1/admin/eiou/chart", get(admin::eiou_chart));
 
-    Router::new().merge(admin).with_state(ctrl).merge(swagger)
+    Router::new().merge(admin).with_state(ctrl)
 }
-
-#[derive(utoipa::OpenApi)]
-#[openapi(
-    components(schemas(
-        bcr_wdc_webapi::wallet::Balance,
-        bcr_wdc_webapi::wallet::Candle,
-        bcr_wdc_webapi::wallet::CandleChart,
-        bcr_wdc_webapi::wallet::ECashBalance,
-    ),),
-    paths(
-        admin::crsat_chart,
-        admin::sat_chart,
-        admin::btc_chart,
-        admin::eiou_chart,
-    )
-)]
-struct ApiDoc;

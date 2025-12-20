@@ -6,11 +6,9 @@ use axum::{
     extract::FromRef,
     routing::{get, Router},
 };
-use bcr_wdc_webapi::wallet::Balance;
 use bdk_wallet::{bitcoin as btc, miniscript::ToPublicKey};
 use cdk_payment_processor::PaymentProcessorServer;
 use serde_with::serde_as;
-use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod ebill;
@@ -107,8 +105,6 @@ impl AppController {
 }
 
 pub fn routes(ctrl: AppController) -> Router {
-    let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
     let admin = Router::new().nest(
         "/v1/admin/ebpp/",
         Router::new().route("/onchain/balance", get(admin::balance)),
@@ -117,13 +113,5 @@ pub fn routes(ctrl: AppController) -> Router {
         "/v1/ebpp",
         Router::new().route("/onchain/network", get(web::network)),
     );
-    Router::new()
-        .merge(admin)
-        .merge(web)
-        .with_state(ctrl)
-        .merge(swagger)
+    Router::new().merge(admin).merge(web).with_state(ctrl)
 }
-
-#[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(Balance),), paths(admin::balance))]
-struct ApiDoc;

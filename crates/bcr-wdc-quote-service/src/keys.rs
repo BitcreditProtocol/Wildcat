@@ -54,7 +54,7 @@ impl KeysHandler for KeysRestHandler {
     async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>> {
         let response = self.0.mint_operation_status(qid).await;
         match response {
-            Ok(amount) => Ok(Some(amount)),
+            Ok(status) => Ok(Some(status.current)),
             Err(KeysError::MintOpNotFound(_)) => Ok(None),
             Err(e) => Err(Error::KeysHandler(e)),
         }
