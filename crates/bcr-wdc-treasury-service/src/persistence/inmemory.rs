@@ -22,6 +22,7 @@ pub struct InMemoryCreditRepository {
     secrets: Arc<Mutex<HashMap<Uuid, cdk00::PreMintSecrets>>>,
     signatures: Arc<Mutex<HashMap<Uuid, Vec<cdk00::BlindSignature>>>>,
     proofs: Arc<Mutex<HashMap<cdk02::Id, Vec<cdk00::Proof>>>>,
+    onchain_melts: Arc<Mutex<HashMap<Uuid, bcr_common::wire::melt::MeltQuoteOnchainRequest>>>,
 }
 
 #[async_trait]
@@ -85,6 +86,27 @@ impl credit::Repository for InMemoryCreditRepository {
             map.insert(*kid, total);
         }
         Ok(map.into_iter().collect())
+    }
+
+    async fn store_onchain_melt(
+        &self,
+        quote_id: Uuid,
+        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+    ) -> Result<()> {
+        self.onchain_melts.lock().unwrap().insert(quote_id, request);
+        Ok(())
+    }
+
+    async fn load_onchain_melt(
+        &self,
+        quote_id: Uuid,
+    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
+        self.onchain_melts
+            .lock()
+            .unwrap()
+            .get(&quote_id)
+            .cloned()
+            .ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
 }
 

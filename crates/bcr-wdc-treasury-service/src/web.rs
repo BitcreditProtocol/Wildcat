@@ -2,12 +2,12 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
-use bcr_common::wire::exchange as wire_exchange;
+use bcr_common::wire::{exchange as wire_exchange, melt as wire_melt};
+use bcr_wdc_webapi::melt as web_melt;
 use bitcoin::base64::prelude::*;
 use cashu::nut03 as cdk03;
 // ----- local imports
-use crate::{debit, error::Result, foreign, AppController};
-
+use crate::{credit, debit, error::Result, foreign, AppController};
 // ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -96,4 +96,35 @@ pub async fn sat_offline_exchange(
     let content = BASE64_STANDARD.encode(&serialized);
     let response = wire_exchange::OfflineExchangeResponse { content, signature };
     Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn store_onchain_melt<Repo, KeySrvc>(
+    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
+    Json(request): Json<web_melt::StoreOnchainMeltRequest>,
+) -> Result<Json<web_melt::StoreOnchainMeltResponse>>
+where
+    Repo: credit::Repository,
+{
+    tracing::debug!("Received request to store onchain melt");
+
+    let quote_id = uuid::Uuid::new_v4();
+    ctrl.repo
+        .store_onchain_melt(quote_id, request.melt_request)
+        .await?;
+    Ok(Json(web_melt::StoreOnchainMeltResponse { quote_id }))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn load_onchain_melt<Repo, KeySrvc>(
+    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
+    Json(request): Json<web_melt::LoadOnchainMeltRequest>,
+) -> Result<Json<wire_melt::MeltQuoteOnchainRequest>>
+where
+    Repo: credit::Repository,
+{
+    tracing::debug!("Received request to load onchain melt");
+
+    let melt_request = ctrl.repo.load_onchain_melt(request.quote_id).await?;
+    Ok(Json(melt_request))
 }

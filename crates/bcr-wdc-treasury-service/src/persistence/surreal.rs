@@ -24,6 +24,7 @@ pub struct CreditConnectionConfig {
     pub secrets: String,
     pub signatures: String,
     pub proofs: String,
+    pub onchain_melts: String,
 }
 
 // cashu::PreMint is not Deserialize
@@ -123,10 +124,11 @@ struct DBEntryBalance {
 
 #[derive(Debug, Clone)]
 pub struct CreditRepository {
-    db: Surreal<Any>,
+    db: surrealdb::Surreal<surrealdb::engine::any::Any>,
     secrets: String,
     signatures: String,
     proofs: String,
+    onchain_melts: String,
 }
 
 impl CreditRepository {
@@ -140,6 +142,7 @@ impl CreditRepository {
             secrets: config.secrets,
             signatures: config.signatures,
             proofs: config.proofs,
+            onchain_melts: config.onchain_melts,
         })
     }
 
@@ -203,6 +206,28 @@ impl CreditRepository {
             ret_val.push((keyset_id, amount));
         }
         Ok(ret_val)
+    }
+
+    async fn store_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+    ) -> SurrealResult<()> {
+        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+            self.db.insert(rid).content(request).await?;
+        Ok(())
+    }
+
+    async fn load_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+    ) -> SurrealResult<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
+        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let result: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+            self.db.select(rid).await?;
+        result
+            .ok_or_else(|| surrealdb::Error::Api(surrealdb::error::Api::Query("not found".into())))
     }
 }
 
@@ -275,6 +300,24 @@ impl credit::Repository for CreditRepository {
     async fn list_balance_by_keyset_id(&self) -> Result<Vec<(cashu::Id, Amount)>> {
         let balances = self.list_balance_by_keyset_id().await.map_err(Error::DB)?;
         Ok(balances)
+    }
+
+    async fn store_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+    ) -> Result<()> {
+        self.store_onchain_melt(quote_id, request)
+            .await
+            .map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn load_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
+        self.load_onchain_melt(quote_id).await.map_err(Error::DB)
     }
 }
 
@@ -685,6 +728,7 @@ mod tests {
             secrets: "secrets".to_string(),
             signatures: "signatures".to_string(),
             proofs: "proofs".to_string(),
+            onchain_melts: "onchain_melts".to_string(),
         }
     }
 

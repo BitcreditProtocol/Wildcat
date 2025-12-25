@@ -144,6 +144,8 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
         .route("/v1/commitment", post(web::post_commit))
+        .route("/v1/melt/quote/onchain", post(web::melt_quote_onchain))
+        .route("/v1/melt/onchain", post(web::melt_onchain))
         // Clowder Endpoints
         .route("/v1/id", get(web::get_clowder_id))
         .route("/v1/path", post(web::post_clowder_path))

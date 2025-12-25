@@ -219,6 +219,14 @@ pub fn routes(app: AppController) -> Router {
         .route(
             TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
             post(web::sat_offline_exchange),
+        )
+        .route(
+            TreasuryClient::STOREONCHAINMELT_EP_V1,
+            post(web::store_onchain_melt),
+        )
+        .route(
+            TreasuryClient::LOADONCHAINMELT_EP_V1,
+            post(web::load_onchain_melt),
         );
     let admin = Router::new()
         .route(
