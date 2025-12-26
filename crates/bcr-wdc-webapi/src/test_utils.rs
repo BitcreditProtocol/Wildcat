@@ -49,7 +49,7 @@ pub fn generate_random_bill_enquire_request(
     let now = chrono::Utc::now();
     let created_at = Timestamp::new(10000).unwrap();
     let (id_proof, email_proof) =
-        signed_identity_proof_test(core_drawer.clone(), signing_key.clone(), created_at.clone());
+        signed_identity_proof_test(core_drawer.clone(), signing_key, created_at);
     let bill_chain = BillBlockchain::new(
         &BillIssueBlockData {
             id: bill_id.clone(),

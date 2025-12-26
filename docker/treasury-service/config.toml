@@ -23,6 +23,8 @@ connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "treasury-debit"
 table = "mint_quotes"
+onchain_melts = "onchain_melts"
+onchain_mints = "onchain_mints"
 
 [appcfg.crsatonline_repo]
 connection = "ws://surrealdb:8000"

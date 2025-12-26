@@ -12,6 +12,7 @@ use cdk::wallet::{HttpClient, MintConnector};
 use futures::future::JoinAll;
 // ----- local imports
 use crate::error::Result;
+
 // ----- end imports
 
 pub struct Service {

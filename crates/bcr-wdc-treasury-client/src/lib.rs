@@ -1,7 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::wire::{exchange as wire_exchange, keys as wire_keys};
-use bcr_wdc_webapi::{exchange as web_exchange, signatures as web_signatures, wallet as web_wallet};
+use bcr_wdc_webapi::{
+    exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
+};
 use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature};
 use thiserror::Error;
 use uuid::Uuid;
@@ -257,5 +259,4 @@ impl TreasuryClient {
         let response = self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
     }
-
 }

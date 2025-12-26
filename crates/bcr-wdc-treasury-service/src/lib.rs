@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::secp256k1;
-use clwdr_client::{ClowderNatsClient, SignatoryNatsClient};
+use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
 mod credit;
@@ -68,6 +68,8 @@ pub struct AppController {
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
     clwdr_nats: Option<Arc<ClowderNatsClient>>,
+    clwdr_rest: Arc<ClowderRestClient>,
+    dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
 }
 
@@ -129,6 +131,7 @@ impl AppController {
                 .expect("Failed to create crsat offline repository"),
         );
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url.clone());
+        let clwdr_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
         let interval = std::time::Duration::from_secs(monitor_interval_sec);
@@ -193,9 +196,10 @@ impl AppController {
             None
         };
 
+        let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let dev = devmode::Service {
             crkeys: bcr_common::client::keys::Client::new(credit_keys_url),
-            dbmint: cdk::wallet::HttpClient::new(cdk_mintd_url),
+            dbmint: dbmint.clone(),
         };
         Self {
             credit,
@@ -204,6 +208,8 @@ impl AppController {
             sat,
             signer: Arc::new(signer),
             clwdr_nats,
+            clwdr_rest,
+            dbmint,
             dev: Arc::new(dev),
         }
     }
@@ -235,7 +241,13 @@ pub fn routes(app: AppController) -> Router {
             post(web::sat_offline_exchange),
         )
         .route("/v1/melt/quote/onchain", post(web::melt_quote_onchain))
-        .route("/v1/melt/onchain", post(web::melt_onchain));
+        .route("/v1/melt/onchain", post(web::melt_onchain))
+        .route("/v1/mint/quote/onchain", post(web::mint_quote_onchain))
+        .route(
+            "/v1/mint/quote/onchain/{quote_id}",
+            get(web::get_mint_quote_onchain),
+        )
+        .route("/v1/mint/onchain", post(web::mint_onchain));
     let admin = Router::new()
         .route(
             "/v1/admin/treasury/debit/request_to_mint_from_ebill",

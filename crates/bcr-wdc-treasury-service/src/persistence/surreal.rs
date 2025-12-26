@@ -123,7 +123,7 @@ struct DBEntryBalance {
 
 #[derive(Debug, Clone)]
 pub struct CreditRepository {
-    db: surrealdb::Surreal<surrealdb::engine::any::Any>,
+    db: Surreal<Any>,
     secrets: String,
     signatures: String,
     proofs: String,
@@ -285,6 +285,7 @@ pub struct DebitConnectionConfig {
     pub database: String,
     pub table: String,
     pub onchain_melts: String,
+    pub onchain_mints: String,
 }
 
 #[derive(Debug, Clone)]
@@ -292,6 +293,7 @@ pub struct DebitRepository {
     db: Surreal<Any>,
     table: String,
     onchain_melts: String,
+    onchain_mints: String,
 }
 impl DebitRepository {
     pub async fn new(config: DebitConnectionConfig) -> SurrealResult<Self> {
@@ -303,6 +305,7 @@ impl DebitRepository {
             db: db_connection,
             table: config.table,
             onchain_melts: config.onchain_melts,
+            onchain_mints: config.onchain_mints,
         })
     }
 }
@@ -345,8 +348,12 @@ impl debit::Repository for DebitRepository {
         request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
-            self.db.insert(rid).content(request).await.map_err(Error::DB)?;
+        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> = self
+            .db
+            .insert(rid)
+            .content(request)
+            .await
+            .map_err(Error::DB)?;
         Ok(())
     }
 
@@ -356,6 +363,27 @@ impl debit::Repository for DebitRepository {
     ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
         let result: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+            self.db.select(rid).await.map_err(Error::DB)?;
+        result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
+    }
+
+    async fn store_onchain_mint(
+        &self,
+        quote_id: uuid::Uuid,
+        data: debit::ClowderMintQuoteOnchain,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
+        let _: Option<debit::ClowderMintQuoteOnchain> =
+            self.db.insert(rid).content(data).await.map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn load_onchain_mint(
+        &self,
+        quote_id: uuid::Uuid,
+    ) -> Result<debit::ClowderMintQuoteOnchain> {
+        let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
+        let result: Option<debit::ClowderMintQuoteOnchain> =
             self.db.select(rid).await.map_err(Error::DB)?;
         result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
@@ -492,7 +520,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .db
             .query("SELECT * FROM type::table($table) WHERE hash = $hash")
             .bind(("table", self.htlcs_table.clone()))
-            .bind(("hash", hash.clone()))
+            .bind(("hash", *hash))
             .await
             .map_err(Error::DB)?
             .take(0)
@@ -661,7 +689,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             .query("SELECT * FROM type::table($table) WHERE mint_url = $mint_url AND mint_pk = $mint_pk")
             .bind(("table", self.proofs_table.clone()))
             .bind(("mint_url", mint_url.clone()))
-            .bind(("mint_pk", mint_pk.clone()))
+            .bind(("mint_pk", *mint_pk))
             .await
             .map_err(Error::DB)?
             .take(0)
@@ -777,6 +805,7 @@ mod tests {
             db: sdb,
             table: String::from("test"),
             onchain_melts: String::from("onchain_melts"),
+            onchain_mints: String::from("onchain_mints"),
         }
     }
 

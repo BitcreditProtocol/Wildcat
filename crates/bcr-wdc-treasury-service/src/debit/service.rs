@@ -18,6 +18,15 @@ use crate::{
 
 // ----- end imports
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClowderMintQuoteOnchain {
+    pub clowder_quote: uuid::Uuid,
+    pub cdk_quote: uuid::Uuid,
+    pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    pub amount: Amount,
+    pub expiry: u64,
+}
+
 #[async_trait]
 pub trait Wallet: Clone + Send {
     async fn mint_quote(
@@ -60,6 +69,12 @@ pub trait Repository: Clone + Send {
         &self,
         quote_id: uuid::Uuid,
     ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+    async fn store_onchain_mint(
+        &self,
+        quote_id: uuid::Uuid,
+        data: ClowderMintQuoteOnchain,
+    ) -> Result<()>;
+    async fn load_onchain_mint(&self, quote_id: uuid::Uuid) -> Result<ClowderMintQuoteOnchain>;
 }
 
 #[derive(Clone)]
@@ -276,6 +291,8 @@ mod tests {
             async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
             async fn store_onchain_melt(&self, quote_id: uuid::Uuid, request: bcr_common::wire::melt::MeltQuoteOnchainRequest) -> Result<()>;
             async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+            async fn store_onchain_mint(&self, quote_id: uuid::Uuid, data: super::ClowderMintQuoteOnchain) -> Result<()>;
+            async fn load_onchain_mint(&self, quote_id: uuid::Uuid) -> Result<super::ClowderMintQuoteOnchain>;
         }
     }
 

@@ -209,6 +209,7 @@ impl MintPayment for Service {
                 let recipient = self.onchain.add_descriptor(&output).await?;
                 payment::PaymentType::EBill(recipient)
             }
+            ParsedDescription::ClowderOnchain(uuid) => payment::PaymentType::ClowderOnchain(uuid),
             ParsedDescription::Dev => {
                 let idx: u32 = rand::random();
                 let pid = PaymentIdentifier::Label(format!("dev{idx}"));
@@ -230,8 +231,6 @@ impl MintPayment for Service {
                 payment::PaymentType::OnChain(recipient)
             }
         };
-        let mut uri = bip21::Uri::new(payment_type.recipient());
-        uri.amount = Some(amount);
         let expiration = options
             .unix_expiry
             .and_then(|u| chrono::DateTime::from_timestamp(u as i64, 0));
@@ -244,24 +243,34 @@ impl MintPayment for Service {
         };
         let reqid = request.reqid.clone();
         let recipient = request.payment_type.recipient();
+        let request_str = recipient
+            .as_ref()
+            .map(|r| {
+                let mut uri = bip21::Uri::new(r.clone());
+                uri.amount = Some(amount);
+                uri.to_string()
+            })
+            .unwrap_or_default();
         self.payrepo.store_incoming(request).await?;
-        let locked_notifier = self.payment_notifier.lock().unwrap();
-        if let Some(sender) = &*locked_notifier {
-            let token = CancellationToken::new();
-            let cloned = token.clone();
-            tokio::spawn(notify_payment(
-                self.onchain.clone(),
-                recipient,
-                amount,
-                sender.clone(),
-                self.interval,
-                cloned,
-            ));
+        if let Some(recipient) = recipient {
+            let locked_notifier = self.payment_notifier.lock().unwrap();
+            if let Some(sender) = &*locked_notifier {
+                let token = CancellationToken::new();
+                let cloned = token.clone();
+                tokio::spawn(notify_payment(
+                    self.onchain.clone(),
+                    recipient,
+                    amount,
+                    sender.clone(),
+                    self.interval,
+                    cloned,
+                ));
+            }
         }
         let response = CreateIncomingPaymentResponse {
             expiry: options.unix_expiry,
             request_lookup_id: reqid,
-            request: uri.to_string(),
+            request: request_str,
         };
         Ok(response)
     }
@@ -428,20 +437,25 @@ impl MintPayment for Service {
         // nothing to look at, proceed
         let mut request = self.payrepo.load_incoming(payment_identifier).await?;
         if request.status == MintQuoteState::Unpaid {
-            request.status = check_incoming_payment(
-                &request.payment_type.recipient(),
-                request.amount,
-                self.onchain.as_ref(),
-            )
-            .await?;
+            request.status = if let Some(recipient) = request.payment_type.recipient() {
+                check_incoming_payment(&recipient, request.amount, self.onchain.as_ref()).await?
+            } else {
+                MintQuoteState::Paid
+            };
             self.payrepo.update_incoming(request.clone()).await?;
         }
         if request.status == MintQuoteState::Paid {
+            let payment_id = request
+                .payment_type
+                .recipient()
+                .map(|a| a.to_string())
+                .or_else(|| request.payment_type.clowder_quote().map(|u| u.to_string()))
+                .unwrap_or_default();
             response.push(WaitPaymentResponse {
                 payment_identifier: payment_identifier.clone(),
                 payment_amount: cashu::Amount::from(request.amount.to_sat()),
                 unit: CurrencyUnit::Sat,
-                payment_id: request.payment_type.recipient().to_string(),
+                payment_id,
             });
         }
         Ok(response)
@@ -543,6 +557,7 @@ enum ParsedDescription {
     Dev,
     EbillRequestToPay(wire_signatures::SignedRequestToMintFromEBillDesc),
     ForeignECash(web_exchange::RequestToMintFromForeigneCash),
+    ClowderOnchain(Uuid),
     None,
 }
 impl ParsedDescription {
@@ -555,6 +570,12 @@ impl ParsedDescription {
             serde_json::from_str::<web_exchange::RequestToMintFromForeigneCash>(input)
         {
             Self::ForeignECash(foreign_ecash_request)
+        } else if let Some(uuid_str) = input.strip_prefix("clowder:") {
+            if let Ok(uuid) = Uuid::parse_str(uuid_str) {
+                Self::ClowderOnchain(uuid)
+            } else {
+                Self::None
+            }
         } else if input == "it's me, Mario" {
             Self::Dev
         } else {
