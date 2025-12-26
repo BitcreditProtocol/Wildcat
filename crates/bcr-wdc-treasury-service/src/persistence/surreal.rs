@@ -24,7 +24,6 @@ pub struct CreditConnectionConfig {
     pub secrets: String,
     pub signatures: String,
     pub proofs: String,
-    pub onchain_melts: String,
 }
 
 // cashu::PreMint is not Deserialize
@@ -128,7 +127,6 @@ pub struct CreditRepository {
     secrets: String,
     signatures: String,
     proofs: String,
-    onchain_melts: String,
 }
 
 impl CreditRepository {
@@ -142,7 +140,6 @@ impl CreditRepository {
             secrets: config.secrets,
             signatures: config.signatures,
             proofs: config.proofs,
-            onchain_melts: config.onchain_melts,
         })
     }
 
@@ -206,28 +203,6 @@ impl CreditRepository {
             ret_val.push((keyset_id, amount));
         }
         Ok(ret_val)
-    }
-
-    async fn store_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
-    ) -> SurrealResult<()> {
-        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
-            self.db.insert(rid).content(request).await?;
-        Ok(())
-    }
-
-    async fn load_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> SurrealResult<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
-        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let result: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
-            self.db.select(rid).await?;
-        result
-            .ok_or_else(|| surrealdb::Error::Api(surrealdb::error::Api::Query("not found".into())))
     }
 }
 
@@ -301,24 +276,6 @@ impl credit::Repository for CreditRepository {
         let balances = self.list_balance_by_keyset_id().await.map_err(Error::DB)?;
         Ok(balances)
     }
-
-    async fn store_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
-    ) -> Result<()> {
-        self.store_onchain_melt(quote_id, request)
-            .await
-            .map_err(Error::DB)?;
-        Ok(())
-    }
-
-    async fn load_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
-        self.load_onchain_melt(quote_id).await.map_err(Error::DB)
-    }
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -327,12 +284,14 @@ pub struct DebitConnectionConfig {
     pub namespace: String,
     pub database: String,
     pub table: String,
+    pub onchain_melts: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct DebitRepository {
     db: Surreal<Any>,
     table: String,
+    onchain_melts: String,
 }
 impl DebitRepository {
     pub async fn new(config: DebitConnectionConfig) -> SurrealResult<Self> {
@@ -343,6 +302,7 @@ impl DebitRepository {
         Ok(Self {
             db: db_connection,
             table: config.table,
+            onchain_melts: config.onchain_melts,
         })
     }
 }
@@ -377,6 +337,27 @@ impl debit::Repository for DebitRepository {
             .take(0)
             .map_err(Error::DB)?;
         Ok(entries)
+    }
+
+    async fn store_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+            self.db.insert(rid).content(request).await.map_err(Error::DB)?;
+        Ok(())
+    }
+
+    async fn load_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
+        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let result: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+            self.db.select(rid).await.map_err(Error::DB)?;
+        result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
 }
 
@@ -728,7 +709,6 @@ mod tests {
             secrets: "secrets".to_string(),
             signatures: "signatures".to_string(),
             proofs: "proofs".to_string(),
-            onchain_melts: "onchain_melts".to_string(),
         }
     }
 
@@ -796,6 +776,7 @@ mod tests {
         DebitRepository {
             db: sdb,
             table: String::from("test"),
+            onchain_melts: String::from("onchain_melts"),
         }
     }
 

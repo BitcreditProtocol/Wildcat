@@ -1,10 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::melt as wire_melt;
 use bcr_common::wire::{exchange as wire_exchange, keys as wire_keys};
-use bcr_wdc_webapi::{
-    exchange as web_exchange, melt as web_melt, signatures as web_signatures, wallet as web_wallet,
-};
+use bcr_wdc_webapi::{exchange as web_exchange, signatures as web_signatures, wallet as web_wallet};
 use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature};
 use thiserror::Error;
 use uuid::Uuid;
@@ -261,33 +258,4 @@ impl TreasuryClient {
         Ok(response)
     }
 
-    pub const STOREONCHAINMELT_EP_V1: &'static str = "/v1/treasury/store_onchain_melt";
-    pub async fn store_onchain_melt(
-        &self,
-        melt_request: wire_melt::MeltQuoteOnchainRequest,
-    ) -> Result<uuid::Uuid> {
-        let url = self
-            .base
-            .join(Self::STOREONCHAINMELT_EP_V1)
-            .expect("store_onchain_melt relative path");
-        let msg = web_melt::StoreOnchainMeltRequest { melt_request };
-        let request = self.cl.post(url).json(&msg);
-        let response: web_melt::StoreOnchainMeltResponse = request.send().await?.json().await?;
-        Ok(response.quote_id)
-    }
-
-    pub const LOADONCHAINMELT_EP_V1: &'static str = "/v1/treasury/load_onchain_melt";
-    pub async fn load_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<wire_melt::MeltQuoteOnchainRequest> {
-        let url = self
-            .base
-            .join(Self::LOADONCHAINMELT_EP_V1)
-            .expect("load_onchain_melt relative path");
-        let msg = web_melt::LoadOnchainMeltRequest { quote_id };
-        let request = self.cl.post(url).json(&msg);
-        let response: wire_melt::MeltQuoteOnchainRequest = request.send().await?.json().await?;
-        Ok(response)
-    }
 }

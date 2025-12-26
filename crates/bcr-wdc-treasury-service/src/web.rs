@@ -3,11 +3,12 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::wire::{exchange as wire_exchange, melt as wire_melt};
-use bcr_wdc_webapi::melt as web_melt;
 use bitcoin::base64::prelude::*;
 use cashu::nut03 as cdk03;
+use uuid::Uuid;
 // ----- local imports
-use crate::{credit, debit, error::Result, foreign, AppController};
+use crate::debit::Repository;
+use crate::{debit, error::Result, foreign, AppController};
 // ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -99,32 +100,55 @@ pub async fn sat_offline_exchange(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn store_onchain_melt<Repo, KeySrvc>(
-    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
-    Json(request): Json<web_melt::StoreOnchainMeltRequest>,
-) -> Result<Json<web_melt::StoreOnchainMeltResponse>>
+pub async fn melt_quote_onchain<Wlt, WdcSrvc, Repo>(
+    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
+    Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
+) -> Result<Json<cashu::nuts::MeltQuoteBolt11Response<String>>>
 where
-    Repo: credit::Repository,
+    Repo: debit::Repository,
 {
-    tracing::debug!("Received request to store onchain melt");
-
-    let quote_id = uuid::Uuid::new_v4();
+    let expiry = chrono::Utc::now().timestamp() + 86400;
+    let quote_id = Uuid::new_v4();
     ctrl.repo
-        .store_onchain_melt(quote_id, request.melt_request)
+        .store_onchain_melt(quote_id, request.clone())
         .await?;
-    Ok(Json(web_melt::StoreOnchainMeltResponse { quote_id }))
+    Ok(Json(cashu::nuts::MeltQuoteBolt11Response {
+        quote: quote_id.to_string(),
+        fee_reserve: cashu::Amount::ZERO,
+        paid: Some(false),
+        payment_preimage: None,
+        change: None,
+        amount: request.request.amount,
+        unit: Some(request.unit),
+        request: None,
+        state: cashu::nuts::MeltQuoteState::Unpaid,
+        expiry: expiry as u64,
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn load_onchain_melt<Repo, KeySrvc>(
-    State(ctrl): State<credit::Service<Repo, KeySrvc>>,
-    Json(request): Json<web_melt::LoadOnchainMeltRequest>,
-) -> Result<Json<wire_melt::MeltQuoteOnchainRequest>>
-where
-    Repo: credit::Repository,
-{
-    tracing::debug!("Received request to load onchain melt");
-
-    let melt_request = ctrl.repo.load_onchain_melt(request.quote_id).await?;
-    Ok(Json(melt_request))
+pub async fn melt_onchain(
+    State(ctrl): State<AppController>,
+    Json(request): Json<cashu::MeltRequest<String>>,
+) -> Result<Json<()>> {
+    let quote_id_str = request.quote_id();
+    let quote_id = Uuid::parse_str(quote_id_str)
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
+    let onchain_request = ctrl.debit.repo.load_onchain_melt(quote_id).await?;
+    let inputs = request.inputs();
+    if inputs.is_empty() {
+        return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
+    }
+    let total_proofs = request
+        .inputs_amount()
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?;
+    if total_proofs != onchain_request.request.amount {
+        return Err(crate::error::Error::InvalidInput(String::from(
+            "Requested amount mismatch",
+        )));
+    }
+    if let Some(clowder) = ctrl.clwdr_nats {
+        clowder.melt_onchain(request, onchain_request).await?;
+    }
+    Ok(Json(()))
 }

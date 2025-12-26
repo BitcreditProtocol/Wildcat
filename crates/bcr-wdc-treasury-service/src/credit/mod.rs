@@ -27,16 +27,6 @@ pub trait Repository {
 
     async fn store_proofs(&self, proofs: Vec<cdk00::Proof>) -> Result<()>;
     async fn list_balance_by_keyset_id(&self) -> Result<Vec<(cdk02::Id, Amount)>>;
-
-    async fn store_onchain_melt(
-        &self,
-        quote_id: Uuid,
-        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
-    ) -> Result<()>;
-    async fn load_onchain_melt(
-        &self,
-        quote_id: Uuid,
-    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
 }
 
 #[cfg_attr(test, mockall::automock)]

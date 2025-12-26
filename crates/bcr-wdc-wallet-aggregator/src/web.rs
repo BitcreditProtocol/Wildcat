@@ -11,7 +11,6 @@ use bcr_wdc_treasury_client::TreasuryClient;
 use cashu::MintVersion;
 use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
-use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -408,83 +407,6 @@ pub async fn post_exchange(
     };
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn melt_quote_onchain(
-    State(ctrl): State<AppController>,
-    Json(request): Json<bcr_common::wire::melt::MeltQuoteOnchainRequest>,
-) -> Result<Json<cashu::nuts::MeltQuoteBolt11Response<String>>> {
-    let expiry = chrono::Utc::now().timestamp() + 86400;
-
-    let quote_id = ctrl
-        .treasury_client
-        .store_onchain_melt(request.clone())
-        .await
-        .map_err(|e| Error::Treasury(e))?;
-
-    let id = quote_id.to_string();
-
-    Ok(Json(cashu::nuts::MeltQuoteBolt11Response {
-        quote: id,
-        fee_reserve: cashu::Amount::ZERO,
-        paid: Some(false),
-        payment_preimage: None,
-        change: None,
-        amount: request.request.amount,
-        unit: Some(request.unit),
-        request: None,
-        state: cashu::nuts::MeltQuoteState::Unpaid,
-        expiry: expiry as u64,
-    }))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn melt_onchain(
-    State(ctrl): State<AppController>,
-    Json(request): Json<cashu::MeltRequest<String>>,
-) -> Result<Json<()>> {
-    tracing::info!("Melt onchain request received");
-
-    let quote_id_str = request.quote_id();
-    let quote_id = Uuid::parse_str(quote_id_str)
-        .map_err(|_| Error::InvalidInput(String::from("Invalid quote ID")))?;
-
-    let onchain_request = ctrl
-        .treasury_client
-        .load_onchain_melt(quote_id)
-        .await
-        .map_err(|e| Error::Treasury(e))?;
-
-    let inputs = request.inputs();
-    if inputs.is_empty() {
-        return Err(Error::InvalidInput(String::from("No inputs")));
-    }
-
-    let total_blinds = request.output_amount().unwrap_or(cashu::Amount::ZERO);
-
-    let total_proofs = request
-        .inputs_amount()
-        .map_err(|_| Error::InvalidInput(String::from("No amount for inputs")))?;
-
-    tracing::info!(
-        "Melt request Total proofs to burn {} change {}",
-        total_proofs,
-        total_blinds
-    );
-
-    if total_proofs != onchain_request.request.amount {
-        tracing::warn!("Total proofs amount does not match the quoted amount");
-        return Err(Error::InvalidInput(String::from(
-            "Requested amount mismatch",
-        )));
-    }
-
-    if let Some(clowder) = ctrl.clwdr_stream_client {
-        clowder.melt_onchain(request, onchain_request).await?;
-    }
-
-    Ok(Json(()))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
