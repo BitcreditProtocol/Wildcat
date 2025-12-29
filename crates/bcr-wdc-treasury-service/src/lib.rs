@@ -58,6 +58,7 @@ pub struct AppConfig {
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u64,
+    quote_expiry_seconds: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -90,6 +91,7 @@ impl AppController {
             sat_wallet,
             wildcat,
             monitor_interval_sec,
+            quote_expiry_seconds,
         } = cfg;
         let repo = ProdCreditRepository::new(credit_repo)
             .await
@@ -114,6 +116,7 @@ impl AppController {
             wdc,
             repo,
             monitor_interval,
+            quote_expiry_seconds: quote_expiry_seconds,
         };
         debit
             .init_monitors_for_past_ebills()

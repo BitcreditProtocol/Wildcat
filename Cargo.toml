@@ -26,7 +26,7 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", branch = "stefan/melt"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.6.0"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.5.0"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-eiou-client = {path = "./crates/bcr-wdc-eiou-client"}
@@ -38,7 +38,7 @@ bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
 bdk_core = {version = "0.6"}
 bdk_electrum = {version = "0.23"}
-bdk_wallet = {version = "2.0"}
+bdk_wallet = {version = "2.3"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}

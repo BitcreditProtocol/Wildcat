@@ -108,23 +108,8 @@ pub async fn melt_quote_onchain<Wlt, WdcSrvc, Repo>(
 where
     Repo: debit::Repository,
 {
-    let expiry = chrono::Utc::now().timestamp() + 86400;
-    let quote_id = Uuid::new_v4();
-    ctrl.repo
-        .store_onchain_melt(quote_id, request.clone())
-        .await?;
-    Ok(Json(cashu::nuts::MeltQuoteBolt11Response {
-        quote: quote_id.to_string(),
-        fee_reserve: cashu::Amount::ZERO,
-        paid: Some(false),
-        payment_preimage: None,
-        change: None,
-        amount: request.request.amount,
-        unit: Some(request.unit),
-        request: None,
-        state: cashu::nuts::MeltQuoteState::Unpaid,
-        expiry: expiry as u64,
-    }))
+    let response = ctrl.create_onchain_melt_quote(request).await?;
+    Ok(Json(response))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -132,23 +117,28 @@ pub async fn melt_onchain(
     State(ctrl): State<AppController>,
     Json(request): Json<cashu::MeltRequest<String>>,
 ) -> Result<Json<()>> {
+    tracing::info!("Received melt_onchain request");
     let quote_id_str = request.quote_id();
     let quote_id = Uuid::parse_str(quote_id_str)
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
+    tracing::info!("Loading onchain melt quote with ID {}", quote_id);
     let onchain_request = ctrl.debit.repo.load_onchain_melt(quote_id).await?;
     let inputs = request.inputs();
     if inputs.is_empty() {
         return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
     }
-    let total_proofs = request
+
+    let total_proofs: u64 = request
         .inputs_amount()
-        .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?;
-    if total_proofs != onchain_request.request.amount {
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?
+        .into();
+    if total_proofs != onchain_request.request.amount.to_sat() {
         return Err(crate::error::Error::InvalidInput(String::from(
             "Requested amount mismatch",
         )));
     }
     if let Some(clowder) = ctrl.clwdr_nats {
+        tracing::info!("Requesting onchain clowder melt transaction");
         clowder.melt_onchain(request, onchain_request).await?;
     }
     Ok(Json(()))
@@ -167,10 +157,10 @@ pub async fn mint_quote_onchain(
         .request_mint_address(&clowder_quote.to_string())
         .await?;
 
-    let expiry = (chrono::Utc::now().timestamp() + 86400) as u64;
+    let expiry = (chrono::Utc::now().timestamp() + ctrl.debit.quote_expiry_seconds as i64) as u64;
     let description = format!("clowder:{}", clowder_quote);
     let quote_request = cashu::MintQuoteBolt11Request {
-        amount: request.amount,
+        amount: cashu::Amount::from(request.amount.to_sat()),
         unit: cashu::CurrencyUnit::Sat,
         description: Some(description),
         pubkey: None,
@@ -183,7 +173,7 @@ pub async fn mint_quote_onchain(
         clowder_quote,
         cdk_quote,
         address: address_response.address.clone(),
-        amount: request.amount,
+        amount: cashu::Amount::from(request.amount.to_sat()),
         expiry,
     };
     ctrl.debit.repo.store_onchain_mint(cdk_quote, data).await?;
@@ -203,18 +193,7 @@ pub async fn get_mint_quote_onchain(
     Path(quote_id): Path<String>,
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
     tracing::debug!("Received get_mint_quote_onchain request");
-
-    let cdk_quote = Uuid::parse_str(&quote_id)
-        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
-
-    let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
-    let response = wire_mint::MintQuoteOnchainResponse {
-        quote: data.cdk_quote,
-        address: data.address,
-        amount: data.amount,
-        expiry: data.expiry,
-    };
-
+    let response = ctrl.debit.get_onchain_mint_quote(&quote_id).await?;
     Ok(Json(response))
 }
 

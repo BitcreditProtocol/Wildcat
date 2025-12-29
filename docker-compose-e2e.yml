@@ -1,67 +1,65 @@
 services:
-
   key-service:
     extends:
-        file: common-services.yml
-        service: key-service
+      file: common-services.yml
+      service: key-service
 
   treasury-service:
     extends:
-        file: common-services.yml
-        service: treasury-service
+      file: common-services.yml
+      service: treasury-service
 
   swap-service:
     extends:
-        file: common-services.yml
-        service: swap-service
+      file: common-services.yml
+      service: swap-service
 
   quote-service:
     extends:
-        file: common-services.yml
-        service: quote-service
+      file: common-services.yml
+      service: quote-service
 
   wallet-aggregator:
     extends:
-        file: common-services.yml
-        service: wallet-aggregator
+      file: common-services.yml
+      service: wallet-aggregator
 
   surrealdb:
     extends:
-        file: common-services.yml
-        service: surrealdb
+      file: common-services.yml
+      service: surrealdb
     ports:
       - "8000:8000"
 
-
   cdk-mintd:
     extends:
-        file: common-services.yml
-        service: cdk-mintd
+      file: common-services.yml
+      service: cdk-mintd
 
   ebpp:
     extends:
-        file: common-services.yml
-        service: ebpp
+      file: common-services.yml
+      service: ebpp
 
   ebill-service:
     extends:
-        file: common-services.yml
-        service: ebill-service
+      file: common-services.yml
+      service: ebill-service
 
   bff-wallet-service:
     extends:
-        file: common-services.yml
-        service: bff-wallet-service
+      file: common-services.yml
+      service: bff-wallet-service
 
   bff-dashboard-service:
     extends:
-        file: common-services.yml
-        service: bff-dashboard-service
+      file: common-services.yml
+      service: bff-dashboard-service
 
   bitcoin-core:
     extends:
-        file: common-services.yml
-        service: bitcoin-core
+      file: common-services.yml
+      service: bitcoin-core
     command:
       - -printtoconsole
       - --regtest=1
@@ -71,8 +69,8 @@ services:
 
   electrs:
     extends:
-        file: common-services.yml
-        service: electrs
+      file: common-services.yml
+      service: electrs
     environment:
       ELECTRS_NETWORK: regtest
       ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
@@ -80,8 +78,8 @@ services:
 
   keycloak:
     extends:
-        file: common-services.yml
-        service: keycloak
+      file: common-services.yml
+      service: keycloak
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
