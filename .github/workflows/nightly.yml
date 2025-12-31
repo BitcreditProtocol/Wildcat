@@ -122,6 +122,8 @@ jobs:
             dockerfile: docker/quote-service/Dockerfile
           - name: bcr-wdc-wallet-aggregator
             dockerfile: docker/wallet-aggregator/Dockerfile
+          - name: bcr-wdc-admin-aggregator
+            dockerfile: docker/admin-aggregator/Dockerfile
           - name: bcr-wdc-ebpp
             dockerfile: docker/ebpp/Dockerfile
           - name: bcr-wdc-eiou-service

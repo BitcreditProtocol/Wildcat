@@ -25,7 +25,7 @@ services:
       - ./docker/key-service/config.toml:/key-service/config.toml
     healthcheck:
       test:
-        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
       interval: 10s
       timeout: 10s
       retries: 20
@@ -71,24 +71,12 @@ services:
       - ./docker/quote-service/config.toml:/quote-service/config.toml
     healthcheck:
       test:
-        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
       interval: 10s
       timeout: 10s
       retries: 20
       start_period: 60s
       start_interval: 3s
-
-  eiou-service:
-    image: wildcat/eiou-service
-    pull_policy: never
-    volumes:
-      - ./docker/eiou-service/config.toml:/eiou-service/config.toml
-    healthcheck:
-      test:
-        ["CMD", "curl", "--fail", "http://localhost:3338/api-docs/openapi.json"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
 
   wallet-aggregator:
     image: wildcat/wallet-aggregator
@@ -110,18 +98,27 @@ services:
       start_period: 60s
       start_interval: 3s
 
-  balance-collector:
-    image: wildcat/balance-collector
+  admin-aggregator:
+    image: wildcat/admin-aggregator
     pull_policy: never
     depends_on:
-      surrealdb:
+      key-service:
         condition: service_healthy
-      treasury-service:
-        condition: service_started
-      ebpp:
-        condition: service_started
+      quote-service:
+        condition: service_healthy
+      ebill-service:
+        condition: service_healthy
+      clowder-node:
+        condition: service_healthy
     volumes:
-      - ./docker/balance-collector/config.toml:/balance-collector/config.toml
+      - ./docker/admin-aggregator/config.toml:/admin-aggregator/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
 
   ######################################################################################## 3rd parties
 
@@ -185,10 +182,7 @@ services:
     image: envoyproxy/envoy:v1.33.0
     depends_on:
       - keycloak
-      - quote-service
-      - treasury-service
-      - key-service
-      - ebpp
+      - admin-aggregator
     volumes:
       - ./docker/bff-dashboard-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
     command: >

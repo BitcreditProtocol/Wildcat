@@ -29,30 +29,8 @@ static_resources:
                           allow_credentials: true
                           max_age: "1728000"
                       routes:
-                        - match: { prefix: "/v1/admin/credit" }
-                          route: { cluster: quote_service }
-                        - match: { prefix: "/v1/admin/treasury" }
-                          route: { cluster: treasury_service }
-                        - match: { prefix: "/v1/admin/keysets" }
-                          route:
-                            cluster: key_service
-                            prefix_rewrite: "/v1/keysets"
-                        - match: { prefix: "/v1/admin/keys" }
-                          route: { cluster: key_service }
-                        - match: { prefix: "/v1/admin/eiou" }
-                          route: { cluster: eiou_service }
-                        - match: { prefix: "/v1/admin/ebpp" }
-                          route: { cluster: ebpp_service }
-                        - match: { prefix: "/v1/admin/ebill" }
-                          route: { cluster: ebill_service }
-                        - match: { prefix: "/v1/admin/identity/detail" }
-                          route: {cluster: ebill_service}
-                        - match: { prefix: "/v1/admin/bill/payment_status" }
-                          route: {cluster: ebill_service}
-                        - match: { prefix: "/v1/admin/info" }
-                          route:
-                            cluster: wallet_aggregator
-                            prefix_rewrite: "/v1/info"
+                        - match: { prefix: "/v1/admin" }
+                          route: { cluster: admin_aggregator }
                 http_filters:
                   - name: envoy.filters.http.cors
                     typed_config:
@@ -159,69 +137,17 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
-    - name: quote_service
+    - name: admin_aggregator
       connect_timeout: 5s
       type: STRICT_DNS
       load_assignment:
-        cluster_name: quote_service
+        cluster_name: admin_aggregator
         endpoints:
           - lb_endpoints:
               - endpoint:
                   address:
                     socket_address:
-                      address: quote-service
-                      port_value: 3338
-
-    - name: treasury_service
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: treasury_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: treasury-service
-                      port_value: 3338
-
-    - name: key_service
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: key_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: key-service
-                      port_value: 3338
-
-    - name: eiou_service
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: eiou_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: eiou-service
-                      port_value: 3338
-
-    - name: ebpp_service
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: ebpp_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: ebpp
+                      address: admin-aggregator
                       port_value: 3338
 
     - name: keycloak_service
@@ -236,32 +162,6 @@ static_resources:
                     socket_address:
                       address: keycloak
                       port_value: 8080
-
-    - name: ebill_service
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: ebill_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: ebill-service
-                      port_value: 3338
-
-    - name: wallet_aggregator
-      connect_timeout: 5s
-      type: STRICT_DNS
-      load_assignment:
-        cluster_name: wallet_aggregator
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: wallet-aggregator
-                      port_value: 3338
 
 admin:
   access_log_path: /tmp/admin_access.log
