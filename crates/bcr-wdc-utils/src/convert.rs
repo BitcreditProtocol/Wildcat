@@ -1,8 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::wire::{
-    bill as wire_bill, contact as wire_contact, identity as wire_identity, keys as wire_keys,
-    quotes as wire_quotes,
+    bill as wire_bill, contact as wire_contact, identity as wire_identity, quotes as wire_quotes,
 };
 use bcr_ebill_core::protocol::{
     blockchain::bill::{
@@ -12,7 +11,6 @@ use bcr_ebill_core::protocol::{
     },
     Address, City, Country, Email, Name, PostalAddress, ProtocolValidationError, Zip,
 };
-use clwdr_client::model as clwdr_model;
 use thiserror::Error;
 // ----- local imports
 
@@ -147,19 +145,5 @@ pub fn sharedbill_ebill2wire(input: BillToShareWithExternalParty) -> wire_quotes
         hash: input.hash.to_string(),
         signature: input.signature.to_string(),
         receiver: input.receiver.into(),
-    }
-}
-
-pub fn prooffingerprint_wire2clowder(
-    input: wire_keys::ProofFingerprint,
-) -> clwdr_model::ProofFingerprint {
-    let amount = cashu::Amount::from(input.amount);
-    clwdr_model::ProofFingerprint {
-        amount,
-        keyset_id: input.keyset_id,
-        c: input.c,
-        y: input.y,
-        dleq: input.dleq,
-        witness: input.witness,
     }
 }
