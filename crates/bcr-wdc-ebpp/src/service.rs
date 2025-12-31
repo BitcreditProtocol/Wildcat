@@ -255,8 +255,7 @@ impl MintPayment for Service {
         if let Some(recipient) = recipient {
             let locked_notifier = self.payment_notifier.lock().unwrap();
             if let Some(sender) = &*locked_notifier {
-                let token = CancellationToken::new();
-                let cloned = token.clone();
+                let cloned = self.notif_cancel_token.lock().unwrap().clone();
                 tokio::spawn(notify_payment(
                     self.onchain.clone(),
                     recipient,
