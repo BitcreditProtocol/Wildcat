@@ -1,5 +1,4 @@
 services:
-
   ######################################################################################## bcr-wdc
 
   ebpp:
@@ -70,6 +69,11 @@ services:
     environment:
       - CLWDR__ELECTRUM_CONFIG__RPC_URL=tcp://100.107.165.30:50001
       - CLWDR__ELECTRUM_CONFIG__NETWORK=testnet
+    ports:
+      - "3010:3010"
+      - 5001:5001/udp
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
 
   ######################################################################################## wildcat-auxiliary
 
@@ -117,7 +121,7 @@ services:
             -d '$MINT_IDENTITY'
         echo -e "\n========== Finish Node ID Config ==========\n"
 
- ######################################################################################## 3rd parties
+  ######################################################################################## 3rd parties
 
   surrealdb:
     volumes:

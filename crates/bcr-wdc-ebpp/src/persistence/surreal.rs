@@ -117,12 +117,14 @@ impl PrivateKeysRepository for DBPrivateKeys {
 pub enum PaymentTypeDBEntry {
     OnChain(btc::Address<btc::address::NetworkUnchecked>),
     EBill(btc::Address<btc::address::NetworkUnchecked>),
+    ClowderOnchain(uuid::Uuid),
 }
 impl std::convert::From<PaymentType> for PaymentTypeDBEntry {
     fn from(pt: PaymentType) -> Self {
         match pt {
             PaymentType::OnChain(addr) => PaymentTypeDBEntry::OnChain(addr.into_unchecked()),
             PaymentType::EBill(addr) => PaymentTypeDBEntry::EBill(addr.into_unchecked()),
+            PaymentType::ClowderOnchain(uuid) => PaymentTypeDBEntry::ClowderOnchain(uuid),
         }
     }
 }
@@ -140,6 +142,7 @@ fn into_payment_type(pt: PaymentTypeDBEntry, network: btc::Network) -> Result<Pa
                 .map_err(Error::BTCAddressParse)?;
             Ok(PaymentType::EBill(addr))
         }
+        PaymentTypeDBEntry::ClowderOnchain(uuid) => Ok(PaymentType::ClowderOnchain(uuid)),
     }
 }
 

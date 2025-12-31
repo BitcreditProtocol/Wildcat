@@ -4,12 +4,13 @@ use std::{collections::HashSet, time::Duration};
 use async_trait::async_trait;
 use bcr_common::{
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
-    wire::signatures as wire_signatures,
+    wire::{melt as wire_melt, mint as wire_mint, signatures as wire_signatures},
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::Amount;
 use cdk::nuts::nut00 as cdk00;
 use cdk::nuts::nut02 as cdk02;
+use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -17,6 +18,15 @@ use crate::{
 };
 
 // ----- end imports
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClowderMintQuoteOnchain {
+    pub clowder_quote: uuid::Uuid,
+    pub cdk_quote: uuid::Uuid,
+    pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    pub amount: Amount,
+    pub expiry: u64,
+}
 
 #[async_trait]
 pub trait Wallet: Clone + Send {
@@ -51,6 +61,21 @@ pub trait Repository: Clone + Send {
     async fn store_quote(&self, quote: MintQuote) -> Result<()>;
     async fn delete_quote(&self, qid: String) -> Result<()>;
     async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
+    async fn store_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+    ) -> Result<()>;
+    async fn load_onchain_melt(
+        &self,
+        quote_id: uuid::Uuid,
+    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+    async fn store_onchain_mint(
+        &self,
+        quote_id: uuid::Uuid,
+        data: ClowderMintQuoteOnchain,
+    ) -> Result<()>;
+    async fn load_onchain_mint(&self, quote_id: uuid::Uuid) -> Result<ClowderMintQuoteOnchain>;
 }
 
 #[derive(Clone)]
@@ -60,6 +85,7 @@ pub struct Service<Wlt, WdcSrvc, Repo> {
     pub signing_keys: bitcoin::secp256k1::Keypair,
     pub repo: Repo,
     pub monitor_interval: tokio::time::Duration,
+    pub quote_expiry_seconds: u64,
 }
 
 impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
@@ -68,6 +94,50 @@ where
 {
     pub async fn balance(&self) -> Result<Amount> {
         self.wallet.balance().await
+    }
+}
+
+impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
+where
+    Repo: Repository,
+{
+    pub async fn create_onchain_melt_quote(
+        &self,
+        request: wire_melt::MeltQuoteOnchainRequest,
+    ) -> Result<cashu::nuts::MeltQuoteBolt11Response<String>> {
+        let expiry = chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64;
+        let quote_id = Uuid::new_v4();
+        tracing::info!("Creating onchain melt quote with ID {}", quote_id);
+        self.repo
+            .store_onchain_melt(quote_id, request.clone())
+            .await?;
+        Ok(cashu::nuts::MeltQuoteBolt11Response {
+            quote: quote_id.to_string(),
+            fee_reserve: Amount::ZERO,
+            paid: Some(false),
+            payment_preimage: None,
+            change: None,
+            amount: Amount::from(request.request.amount.to_sat()),
+            unit: Some(request.unit),
+            request: None,
+            state: cashu::nuts::MeltQuoteState::Unpaid,
+            expiry: expiry as u64,
+        })
+    }
+
+    pub async fn get_onchain_mint_quote(
+        &self,
+        quote_id: &str,
+    ) -> Result<wire_mint::MintQuoteOnchainResponse> {
+        let cdk_quote = Uuid::parse_str(quote_id)
+            .map_err(|_| Error::InvalidInput(String::from("Invalid quote ID")))?;
+        let data = self.repo.load_onchain_mint(cdk_quote).await?;
+        Ok(wire_mint::MintQuoteOnchainResponse {
+            quote: data.cdk_quote,
+            address: data.address,
+            amount: bitcoin::Amount::from_sat(data.amount.into()),
+            expiry: data.expiry,
+        })
     }
 }
 
@@ -265,6 +335,10 @@ mod tests {
             async fn store_quote(&self, quote: MintQuote) -> Result<()>;
             async fn delete_quote(&self, qid: String) -> Result<()>;
             async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
+            async fn store_onchain_melt(&self, quote_id: uuid::Uuid, request: bcr_common::wire::melt::MeltQuoteOnchainRequest) -> Result<()>;
+            async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+            async fn store_onchain_mint(&self, quote_id: uuid::Uuid, data: super::ClowderMintQuoteOnchain) -> Result<()>;
+            async fn load_onchain_mint(&self, quote_id: uuid::Uuid) -> Result<super::ClowderMintQuoteOnchain>;
         }
     }
 
@@ -325,6 +399,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
         let quote = service
             .mint_from_ebill(
@@ -350,6 +425,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
 
         let (_, keyset) = generate_keyset();
@@ -374,6 +450,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
 
         let (_, keyset) = generate_keyset();
@@ -395,6 +472,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
 
         let (_, keyset) = generate_keyset();
@@ -433,6 +511,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
 
         let (_, keyset) = generate_keyset();
@@ -461,6 +540,7 @@ mod tests {
             wdc,
             repo,
             monitor_interval: tokio::time::Duration::from_secs(5),
+            quote_expiry_seconds: 3600,
         };
 
         let (_, keyset) = generate_keyset();
