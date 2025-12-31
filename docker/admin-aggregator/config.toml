@@ -1,0 +1,9 @@
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+[appcfg]
+keys_url = "http://key-service:3338"
+quotes_url = "http://quote-service:3338"
+ebill_url = "http://ebill-service:3338"
+clwdr_url = "http://clowder-node:3010"

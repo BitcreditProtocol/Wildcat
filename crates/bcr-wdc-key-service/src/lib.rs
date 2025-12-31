@@ -76,6 +76,7 @@ where
     service::Service: FromRef<Cntrlr>,
 {
     let web = Router::new()
+        .route("/health", get(get_health))
         .route(KeysClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
         .route(KeysClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
         .route(KeysClient::KEYS_EP_V1, get(web::lookup_keys))
@@ -100,6 +101,10 @@ where
         .route(KeysClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
+}
+
+async fn get_health() -> &'static str {
+    "{ \"status\": \"OK\" }"
 }
 
 #[cfg(feature = "test-utils")]
