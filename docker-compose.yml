@@ -1,9 +1,4 @@
 services:
-  eiou-service:
-    extends:
-      file: common-services.yml
-      service: eiou-service
-
   key-service:
     extends:
       file: common-services.yml
@@ -29,6 +24,11 @@ services:
       file: common-services.yml
       service: wallet-aggregator
 
+  admin-aggregator:
+    extends:
+      file: common-services.yml
+      service: admin-aggregator
+
   surrealdb:
     extends:
       file: common-services.yml
@@ -52,11 +52,6 @@ services:
     extends:
       file: common-services.yml
       service: ebill-service
-
-  balance-collector:
-    extends:
-      file: common-services.yml
-      service: balance-collector
 
   bff-wallet-service:
     extends:
