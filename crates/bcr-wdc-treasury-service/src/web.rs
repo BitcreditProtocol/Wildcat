@@ -152,9 +152,13 @@ pub async fn mint_quote_onchain(
     tracing::info!("Received mint_quote_onchain request");
 
     let clowder_quote = Uuid::new_v4();
+    // TODO update mint quote onchain to provide keyset id
+    // Which can be used later to select correct frost multisig
+    let dummy_kid = cashu::Id::from_bytes(&[0_u8; 32])
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
     let address_response = ctrl
         .clwdr_rest
-        .request_mint_address(&clowder_quote.to_string())
+        .request_mint_address(clowder_quote, dummy_kid)
         .await?;
 
     let expiry = (chrono::Utc::now().timestamp() + ctrl.debit.quote_expiry_seconds as i64) as u64;
@@ -208,19 +212,28 @@ pub async fn mint_onchain(
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
     let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
 
+    let kid = request
+        .outputs
+        .first()
+        .ok_or(crate::error::Error::InvalidInput(String::from(
+            "Missing output",
+        )))?
+        .keyset_id;
+
     let payment_response = ctrl
         .clwdr_rest
-        .verify_mint_payment(&data.clowder_quote.to_string(), 1)
+        .verify_mint_payment(data.clowder_quote, kid, 1)
         .await?;
 
     tracing::info!("Clowder payment check {:?} sats", payment_response.amount);
 
-    let outputs_amount = request
+    let outputs_amount: u64 = request
         .outputs
         .iter()
-        .fold(cashu::Amount::ZERO, |acc, o| acc + o.amount);
+        .fold(cashu::Amount::ZERO, |acc, o| acc + o.amount)
+        .into();
 
-    if outputs_amount > payment_response.amount {
+    if outputs_amount > payment_response.amount.to_sat() {
         return Err(crate::error::Error::InvalidInput(format!(
             "Amount mismatch: outputs {}, insufficient payment {}",
             outputs_amount, payment_response.amount

@@ -2,7 +2,6 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
-use bcr_common::wallet::Token;
 use bcr_common::{
     client::keys::{Client as KeysClient, Result as KeysResult},
     core::signature::unblind_ecash_signature,

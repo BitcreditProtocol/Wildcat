@@ -116,7 +116,7 @@ impl AppController {
             wdc,
             repo,
             monitor_interval,
-            quote_expiry_seconds: quote_expiry_seconds,
+            quote_expiry_seconds,
         };
         debit
             .init_monitors_for_past_ebills()
