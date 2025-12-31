@@ -38,7 +38,7 @@ bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
 bdk_core = {version = "0.6"}
 bdk_electrum = {version = "0.23"}
-bdk_wallet = {version = "2.0"}
+bdk_wallet = {version = "2.3"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
@@ -49,7 +49,7 @@ cdk-common = {version = "=0.13.1"}
 cdk-payment-processor = {version = "=0.13.1", default-features = false}
 cdk-redb = {version = "=0.13.1"}
 chrono = {version = "0.4"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "f5c2009"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "9b6e3b2b9acf5c7710a395674575a7491231fb07"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}

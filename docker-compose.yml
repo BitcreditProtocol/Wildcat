@@ -109,6 +109,11 @@ services:
         condition: service_started
       nats:
         condition: service_started
+    ports:
+      - "3010:3010"
+      - 5001:5001/udp
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
 
   ######################################################################################## wildcat-auxiliary
 
