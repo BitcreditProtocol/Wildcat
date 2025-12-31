@@ -55,6 +55,7 @@ impl AppController {
 }
 
 pub mod endpoints {
+    pub const HEALTH: &str = "/health";
     // Keys-Client
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
@@ -84,6 +85,7 @@ pub fn routes(ctrl: AppController) -> Router {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
     let admin = Router::new()
+        .route(endpoints::HEALTH, get(admin::get_health))
         // keys service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
@@ -160,6 +162,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_clowder::AlphaStateResponse,
     ),),
     paths(
+        admin::get_health,
         // keys service
         admin::get_keyset_info,
         admin::list_keyset_infos,

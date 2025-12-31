@@ -20,6 +20,19 @@ use crate::{endpoints, error::Result, AppController};
 
 #[utoipa::path(
     get,
+    path = endpoints::HEALTH,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_health() -> &'static str {
+    "{ \"status\": \"OK\" }"
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::KEYSET_INFO,
     params(
         ("kid" = cashu::Id, Path, description = "the keyset id of the information")
