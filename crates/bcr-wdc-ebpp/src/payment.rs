@@ -3,6 +3,7 @@
 use bdk_wallet::bitcoin as btc;
 use cashu::{MeltQuoteState, MintQuoteState};
 use cdk_common::payment::PaymentIdentifier;
+use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
 
@@ -21,31 +22,34 @@ pub struct IncomingRequest {
 pub enum PaymentType {
     OnChain(btc::Address),
     EBill(btc::Address),
+    ClowderOnchain(Uuid),
 }
 impl PaymentType {
-    pub fn recipient(&self) -> btc::Address {
+    pub fn recipient(&self) -> Option<btc::Address> {
         match self {
-            PaymentType::EBill(add) => add.clone(),
-            PaymentType::OnChain(add) => add.clone(),
+            PaymentType::EBill(add) => Some(add.clone()),
+            PaymentType::OnChain(add) => Some(add.clone()),
+            PaymentType::ClowderOnchain(_) => None,
+        }
+    }
+
+    pub fn clowder_quote(&self) -> Option<Uuid> {
+        match self {
+            PaymentType::ClowderOnchain(uuid) => Some(*uuid),
+            _ => None,
         }
     }
 }
 
 impl std::fmt::Display for IncomingRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let uri = match &self.payment_type {
-            PaymentType::OnChain(address) => {
-                let mut uri: bip21::Uri = bip21::Uri::new(address.clone());
-                uri.amount = Some(self.amount);
-                uri
-            }
-            PaymentType::EBill(address) => {
-                let mut uri: bip21::Uri = bip21::Uri::new(address.clone());
-                uri.amount = Some(self.amount);
-                uri
-            }
-        };
-        write!(f, "{uri}")
+        if let Some(address) = self.payment_type.recipient() {
+            let mut uri: bip21::Uri = bip21::Uri::new(address);
+            uri.amount = Some(self.amount);
+            write!(f, "{uri}")
+        } else {
+            Ok(())
+        }
     }
 }
 

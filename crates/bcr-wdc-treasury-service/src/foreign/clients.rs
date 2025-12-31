@@ -3,7 +3,6 @@ use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{core::signature::serialize_n_schnorr_sign_borsh_msg, wire::keys as wire_keys};
-use bcr_wdc_utils::convert;
 use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
 use cdk::wallet::MintConnector;
@@ -96,6 +95,7 @@ impl foreign::ClowderClient for ClowderCl {
     async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey> {
         let response = self.clwdr.get_id().await?;
         let pk = bitcoin::PublicKey::from(response.public_key);
+
         Ok(pk)
     }
 
@@ -125,10 +125,7 @@ impl foreign::ClowderClient for ClowderCl {
             acc + cashu::Amount::from(fp.amount)
         });
         let fps_len = fps.len();
-        let fps: Vec<clwdr_model::ProofFingerprint> = fps
-            .into_iter()
-            .map(convert::prooffingerprint_wire2clowder)
-            .collect();
+        let fps: Vec<clwdr_model::ProofFingerprint> = fps.into_iter().collect();
         let clwdr_model::IntermintOriginResponse { node_id, mint_url } =
             self.clwdr.post_fingerprints_origin(fps.clone()).await?;
         let myself = self.clwdr.get_id().await?;

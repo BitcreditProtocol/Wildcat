@@ -8,6 +8,8 @@ monitor_interval_sec = 30
 cdk_mintd_url = "http://cdk-mintd:8085"
 clowder_url = "http://clowder-node:3010"
 signer_url = "nats://nats:4222"
+quote_expiry_seconds = 86400
+clwdr_nats_url = "nats://nats:4222"
 
 [appcfg.credit_repo]
 connection = "ws://surrealdb:8000"
@@ -23,6 +25,8 @@ connection = "ws://surrealdb:8000"
 namespace = "test"
 database = "treasury-debit"
 table = "mint_quotes"
+onchain_melts = "onchain_melts"
+onchain_mints = "onchain_mints"
 
 [appcfg.crsatonline_repo]
 connection = "ws://surrealdb:8000"

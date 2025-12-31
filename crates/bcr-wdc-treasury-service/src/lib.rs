@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::secp256k1;
-use clwdr_client::SignatoryNatsClient;
+use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
 mod credit;
@@ -53,10 +53,12 @@ pub struct AppConfig {
     satonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
     satoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
     clowder_url: reqwest::Url,
+    clwdr_nats_url: Option<reqwest::Url>,
     signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u64,
+    quote_expiry_seconds: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -66,6 +68,9 @@ pub struct AppController {
     crsat: Arc<ProdCrsatService>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
+    clwdr_nats: Option<Arc<ClowderNatsClient>>,
+    clwdr_rest: Arc<ClowderRestClient>,
+    dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
 }
 
@@ -75,6 +80,7 @@ impl AppController {
             credit_keys_url,
             cdk_mintd_url,
             clowder_url,
+            clwdr_nats_url,
             signer_url,
             credit_repo,
             debit_repo,
@@ -85,6 +91,7 @@ impl AppController {
             sat_wallet,
             wildcat,
             monitor_interval_sec,
+            quote_expiry_seconds,
         } = cfg;
         let repo = ProdCreditRepository::new(credit_repo)
             .await
@@ -109,6 +116,7 @@ impl AppController {
             wdc,
             repo,
             monitor_interval,
+            quote_expiry_seconds,
         };
         debit
             .init_monitors_for_past_ebills()
@@ -126,6 +134,7 @@ impl AppController {
                 .expect("Failed to create crsat offline repository"),
         );
         let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url.clone());
+        let clwdr_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
         let interval = std::time::Duration::from_secs(monitor_interval_sec);
@@ -180,9 +189,20 @@ impl AppController {
             .await
             .expect("Failed to create signer");
 
+        let clwdr_nats = if let Some(url) = clwdr_nats_url {
+            Some(Arc::new(
+                ClowderNatsClient::new(url, false)
+                    .await
+                    .expect("Failed to create clowder nats client"),
+            ))
+        } else {
+            None
+        };
+
+        let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let dev = devmode::Service {
             crkeys: bcr_common::client::keys::Client::new(credit_keys_url),
-            dbmint: cdk::wallet::HttpClient::new(cdk_mintd_url),
+            dbmint: dbmint.clone(),
         };
         Self {
             credit,
@@ -190,6 +210,9 @@ impl AppController {
             crsat,
             sat,
             signer: Arc::new(signer),
+            clwdr_nats,
+            clwdr_rest,
+            dbmint,
             dev: Arc::new(dev),
         }
     }
@@ -219,7 +242,15 @@ pub fn routes(app: AppController) -> Router {
         .route(
             TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
             post(web::sat_offline_exchange),
-        );
+        )
+        .route("/v1/melt/quote/onchain", post(web::melt_quote_onchain))
+        .route("/v1/melt/onchain", post(web::melt_onchain))
+        .route("/v1/mint/quote/onchain", post(web::mint_quote_onchain))
+        .route(
+            "/v1/mint/quote/onchain/{quote_id}",
+            get(web::get_mint_quote_onchain),
+        )
+        .route("/v1/mint/onchain", post(web::mint_onchain));
     let admin = Router::new()
         .route(
             "/v1/admin/treasury/debit/request_to_mint_from_ebill",

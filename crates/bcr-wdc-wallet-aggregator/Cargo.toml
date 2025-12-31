@@ -37,6 +37,7 @@ tracing-log = {workspace = true}
 tracing-subscriber = {workspace = true}
 utoipa = {workspace = true, features = ["axum_extras"]}
 utoipa-swagger-ui = {workspace = true, features = ["axum"]}
+uuid = {workspace = true}
 
 [dev-dependencies]
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
