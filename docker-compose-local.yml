@@ -30,25 +30,20 @@ services:
       file: common-services.yml
       service: quote-service
 
-  eiou-service:
-    extends:
-      file: common-services.yml
-      service: eiou-service
-
   wallet-aggregator:
     extends:
       file: common-services.yml
       service: wallet-aggregator
 
+  admin-aggregator:
+    extends:
+      file: common-services.yml
+      service: admin-aggregator
+
   ebill-service:
     extends:
       file: common-services.yml
       service: ebill-service
-
-  balance-collector:
-    extends:
-      file: common-services.yml
-      service: balance-collector
 
   ######################################################################################## 3rd parties
   keycloak:

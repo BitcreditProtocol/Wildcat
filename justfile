@@ -34,6 +34,9 @@ build-docker-quote-service: build-docker-base-image
 build-docker-wallet-aggregator: build-docker-base-image
     docker build -t wildcat/wallet-aggregator -f docker/wallet-aggregator/Dockerfile .
 
+build-docker-admin-aggregator: build-docker-base-image
+    docker build -t wildcat/admin-aggregator -f docker/admin-aggregator/Dockerfile .
+
 build-docker-ebpp: build-docker-base-image
     docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
 
@@ -46,10 +49,10 @@ build-docker-balance-collector: build-docker-base-image
 build-docker-e2e-tests: build-docker-base-image
     docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
 
-build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-ebpp build-docker-eiou-service build-docker-balance-collector
+build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator build-docker-ebpp
 
 openapi-generate-docs:
-  @cargo run --package bcr-wdc-quote-service --bin gen_api
+  @cargo run --package bcr-wdc-admin-aggregator --bin gen_api
 
 openapi-validate-docs:
   # make sure you have "schemathesis" installed (`pip3 install schemathesis`)

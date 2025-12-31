@@ -75,6 +75,7 @@ where
     Cntrlr: Send + Sync + Clone + 'static,
 {
     let user_routes = Router::new()
+        .route("/health", get(get_health))
         .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
         .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
         .route(QuoteClient::RESOLVE_EP_V1, delete(web::cancel))
@@ -97,6 +98,10 @@ where
         .merge(user_routes)
         .merge(admin_routes)
         .with_state(ctrl)
+}
+
+async fn get_health() -> &'static str {
+    "{ \"status\": \"OK\" }"
 }
 
 #[cfg(feature = "test-utils")]

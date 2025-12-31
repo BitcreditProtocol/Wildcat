@@ -61,6 +61,8 @@ jobs:
       run: docker build -t wildcat/quote-service -f docker/quote-service/Dockerfile .
     - name: Build Docker Wallet Aggregator
       run: docker build -t wildcat/wallet-aggregator -f docker/wallet-aggregator/Dockerfile .
+    - name: Build Docker Admin Aggregator
+      run: docker build -t wildcat/admin-aggregator -f docker/admin-aggregator/Dockerfile .
     - name: Build Docker EBPP
       run: docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
     - name: Build Docker E2E Tests
