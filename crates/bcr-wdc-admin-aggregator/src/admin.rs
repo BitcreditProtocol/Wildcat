@@ -10,7 +10,7 @@ use bcr_common::{
     core::BillId,
     wire::{
         bill as wire_bill, clowder as wire_clowder, identity as wire_identity, keys as wire_keys,
-        quotes as wire_quotes,
+        quotes as wire_quotes, signatures as wire_signatures,
     },
 };
 // ----- local imports
@@ -366,12 +366,15 @@ pub async fn get_ebill_attachment(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn post_ebill_reqtopay(
     State(ctrl): State<AppController>,
-    Json(req): Json<wire_bill::RequestToPayBitcreditBillPayload>,
-) -> Result<()> {
-    tracing::debug!("Received ebill request to pay for {}", req.bill_id);
+    Json(req): Json<wire_signatures::RequestToMintFromEBillRequest>,
+) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
+    tracing::debug!("Received ebill request to pay for {}", req.ebill_id);
 
-    ctrl.ebill_cl.request_to_pay_bill(&req).await?;
-    Ok(())
+    let response = ctrl
+        .treasury_cl
+        .request_to_pay_ebill(req.ebill_id, req.amount, req.deadline)
+        .await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(

@@ -6,6 +6,7 @@ use bcr_common::client::{
     ebill::Error as EbillClientError, keys::Error as KeysClientError,
     quote::Error as QuotesClientError,
 };
+use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports
@@ -15,6 +16,8 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("TreasuryClient: {0}")]
+    TreasuryClient(#[from] TreasuryClientError),
     #[error("ClowderClient: {0}")]
     ClowderClient(#[from] ClowderClientError),
     #[error("EbillClient: {0}")]

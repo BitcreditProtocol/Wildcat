@@ -65,7 +65,7 @@ where
 
 // ----- sat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn request_mint_from_ebill<Wlt, WdcSrvc, Repo>(
+pub async fn request_to_pay_ebill<Wlt, WdcSrvc, Repo>(
     State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
     Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
 ) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>>

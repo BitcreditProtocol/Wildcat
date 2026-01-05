@@ -253,8 +253,8 @@ pub fn routes(app: AppController) -> Router {
         .route("/v1/mint/onchain", post(web::mint_onchain));
     let admin = Router::new()
         .route(
-            "/v1/admin/treasury/debit/request_to_mint_from_ebill",
-            post(admin::request_mint_from_ebill),
+            TreasuryClient::REQTOPAY_EP_V1,
+            post(admin::request_to_pay_ebill),
         )
         .route(
             TreasuryClient::GENERATEBLINDS_EP_V1,
