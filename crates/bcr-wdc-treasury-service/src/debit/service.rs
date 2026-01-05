@@ -165,7 +165,7 @@ where
     pub async fn mint_from_ebill(
         &self,
         ebill_id: BillId,
-        amount: Amount,
+        amount: bitcoin::Amount,
         deadline: TStamp,
     ) -> Result<cdk::wallet::MintQuote> {
         let request = wire_signatures::RequestToMintFromEBillDesc {
@@ -176,6 +176,7 @@ where
             serialize_n_schnorr_sign_borsh_msg(&request, &self.signing_keys)?;
         let signed_request =
             wire_signatures::SignedRequestToMintFromEBillDesc { content, signature };
+        let amount = Amount::from(amount.to_sat());
         let quote = self.wallet.mint_quote(amount, signed_request).await?;
         let mint_quote = MintQuote {
             qid: quote.id.clone(),
@@ -352,7 +353,8 @@ mod tests {
 
     #[tokio::test]
     async fn mint_from_ebill() {
-        let amount = Amount::from(1000_u64);
+        let btc_amount = bitcoin::Amount::from_sat(1000);
+        let amount = cashu::Amount::from(btc_amount.to_sat());
         let ebill_id =
             BillId::from_str("bitcrt285psGq4Lz4fEQwfM3We5HPznJq8p1YvRaddszFaU5dY").unwrap();
         let mut wdc = MockWildcatService::new();
@@ -404,7 +406,7 @@ mod tests {
         let quote = service
             .mint_from_ebill(
                 ebill_id,
-                amount,
+                btc_amount,
                 TStamp::from_str("2026-01-01T00:00:00Z").unwrap(),
             )
             .await
