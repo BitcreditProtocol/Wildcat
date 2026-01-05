@@ -94,6 +94,16 @@ services:
     extends:
       file: common-services.yml
       service: signatory
+    volumes:
+      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
+
+  # Signatory for Beta node
+  signatory-beta:
+    extends:
+      file: common-services.yml
+      service: signatory
+    volumes:
+      - ./docker/clowder-signatory/settings_beta.toml:/clowder/settings.toml
 
   nats:
     extends:
@@ -109,11 +119,27 @@ services:
         condition: service_started
       nats:
         condition: service_started
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
     ports:
       - "3010:3010"
       - 5001:5001/udp
+
+  # Beta node for mint
+  clowder-beta:
+    extends:
+      file: common-services.yml
+      service: clowder-node
+    depends_on:
+      signatory-beta:
+        condition: service_started
+      nats:
+        condition: service_started
     volumes:
-      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
+      - ./docker/clowder-node/settings_beta.toml:/clowder/settings.toml
+    ports:
+      - "3011:3011"
+      - 5002:5002/udp
 
   ######################################################################################## wildcat-auxiliary
 
