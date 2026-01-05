@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_common::wire::{
     bill as wire_bill, clowder as wire_clowder, identity as wire_identity, keys as wire_keys,
-    quotes as wire_quotes,
+    quotes as wire_quotes, signatures as wire_signatures,
 };
 use utoipa::OpenApi;
 // ----- local modules
@@ -23,6 +23,7 @@ pub struct AppConfig {
     pub quotes_url: bcr_common::client::Url,
     pub ebill_url: bcr_common::client::Url,
     pub clowder_url: bcr_common::client::Url,
+    pub treasury_url: bcr_wdc_treasury_client::Url,
 }
 
 #[derive(Clone, FromRef)]
@@ -31,6 +32,7 @@ pub struct AppController {
     pub quotes_cl: bcr_common::client::quote::Client,
     pub ebill_cl: bcr_common::client::ebill::Client,
     pub clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
+    pub treasury_cl: bcr_wdc_treasury_client::TreasuryClient,
 }
 
 impl AppController {
@@ -40,16 +42,19 @@ impl AppController {
             quotes_url,
             ebill_url,
             clowder_url,
+            treasury_url,
         } = cfg;
         let keys_cl = bcr_common::client::keys::Client::new(keys_url);
         let quotes_cl = bcr_common::client::quote::Client::new(quotes_url);
         let ebill_cl = bcr_common::client::ebill::Client::new(ebill_url);
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
+        let treasury_cl = bcr_wdc_treasury_client::TreasuryClient::new(treasury_url);
         AppController {
             keys_cl,
             quotes_cl,
             ebill_cl,
             clwdr_cl: Arc::new(clwdr_cl),
+            treasury_cl,
         }
     }
 }
@@ -73,12 +78,13 @@ pub mod endpoints {
     pub const LIST_EBILLS: &str = "/v1/admin/ebill/bills";
     pub const GET_EBILL_ENDORSEMENTS: &str = "/v1/admin/ebill/endorsements/{bid}";
     pub const GET_EBILL_ATTACHMENT: &str = "/v1/admin/ebill/attachments/{bid}/{fname}";
-    pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/ebill/reqtopay";
     // Clowder-Client
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
     pub const GET_CLOWDER_BETAS: &str = "/v1/admin/clowder/betas";
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
+    // Treasury-Client
+    pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/ebill/reqtopay";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -115,10 +121,6 @@ pub fn routes(ctrl: AppController) -> Router {
             endpoints::GET_EBILL_ATTACHMENT,
             get(admin::get_ebill_attachment),
         )
-        .route(
-            endpoints::POST_EBILL_REQTOPAY,
-            post(admin::post_ebill_reqtopay),
-        )
         // clowder service
         .route(
             endpoints::GET_CLOWDER_ALPHAS,
@@ -132,6 +134,11 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::GET_CLOWDER_STATUS,
             get(admin::get_clowder_status),
+        )
+        // treasury service
+        .route(
+            endpoints::POST_EBILL_REQTOPAY,
+            post(admin::post_ebill_reqtopay),
         );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
@@ -155,11 +162,13 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_identity::Identity,
         wire_bill::BitcreditBill,
         wire_bill::Endorsement,
-        wire_bill::RequestToPayBitcreditBillPayload,
         // clowder service
         wire_clowder::ConnectedMintsResponse,
         wire_clowder::PerceivedState,
         wire_clowder::AlphaStateResponse,
+        // treasury service
+        wire_signatures::RequestToMintFromEBillRequest,
+        wire_signatures::RequestToMintFromEBillResponse,
     ),),
     paths(
         admin::get_health,
@@ -180,12 +189,13 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::list_ebills,
         admin::get_ebill_endorsements,
         admin::get_ebill_attachment,
-        admin::post_ebill_reqtopay,
         // clowder service
         admin::get_clowder_alphas,
         admin::get_clowder_betas,
         admin::get_clowder_mystatus,
         admin::get_clowder_status,
+        // treasury service
+        admin::post_ebill_reqtopay,
     )
 )]
 pub struct ApiDoc;

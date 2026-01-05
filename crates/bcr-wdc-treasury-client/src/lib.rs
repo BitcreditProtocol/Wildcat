@@ -1,10 +1,13 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::{exchange as wire_exchange, keys as wire_keys};
+use bcr_common::{
+    core::BillId,
+    wire::{exchange as wire_exchange, keys as wire_keys, signatures as wire_signatures},
+};
 use bcr_wdc_webapi::{
     exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
 };
-use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature};
+use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature, Amount};
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local modules
@@ -110,6 +113,29 @@ impl TreasuryClient {
         let request = self.cl.post(url).json(&msg);
         let response: cashu::SwapResponse = request.send().await?.json().await?;
         Ok(response.signatures)
+    }
+
+    pub const REQTOPAY_EP_V1: &str = "/v1/admin/treasury/debit/request_to_pay_ebill";
+    #[cfg(feature = "authorized")]
+    pub async fn request_to_pay_ebill(
+        &self,
+        ebill_id: BillId,
+        amount: Amount,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Result<wire_signatures::RequestToMintFromEBillResponse> {
+        let request = wire_signatures::RequestToMintFromEBillRequest {
+            ebill_id,
+            amount,
+            deadline,
+        };
+        let url = self
+            .base
+            .join(Self::REQTOPAY_EP_V1)
+            .expect("request_to_pay_ebill relative path");
+        let req = self.cl.post(url).json(&request);
+        let response: wire_signatures::RequestToMintFromEBillResponse =
+            self.auth.authorize(req).send().await?.json().await?;
+        Ok(response)
     }
 
     pub const CRSATBALANCE_EP_V1: &'static str = "/v1/admin/treasury/credit/balance";
