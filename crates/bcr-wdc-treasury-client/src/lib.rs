@@ -165,11 +165,11 @@ impl TreasuryClient {
     }
 
     pub const SATEXCHANGEONLINE_EP_V1: &'static str = "/v1/treasury/debit/exchange/online";
-    pub async fn sat_exchange_online(
+    pub async fn sat_exchange_online_raw(
         &self,
         proofs: Vec<cashu::Proof>,
         exchange_path: Vec<secp256k1::PublicKey>,
-    ) -> Result<Vec<cashu::Proof>> {
+    ) -> Result<wire_exchange::OnlineExchangeResponse> {
         let url = self
             .base
             .join(Self::SATEXCHANGEONLINE_EP_V1)
@@ -180,15 +180,24 @@ impl TreasuryClient {
         };
         let request = self.cl.post(url).json(&msg);
         let response: wire_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
-        Ok(response.proofs)
+        Ok(response)
     }
 
-    pub const CRSATEXCHANGEONLINE_EP_V1: &'static str = "/v1/treasury/credit/exchange/online";
-    pub async fn crsat_exchange_online(
+    pub async fn sat_exchange_online(
         &self,
         proofs: Vec<cashu::Proof>,
         exchange_path: Vec<secp256k1::PublicKey>,
     ) -> Result<Vec<cashu::Proof>> {
+        let response = self.sat_exchange_online_raw(proofs, exchange_path).await?;
+        Ok(response.proofs)
+    }
+
+    pub const CRSATEXCHANGEONLINE_EP_V1: &'static str = "/v1/treasury/credit/exchange/online";
+    pub async fn crsat_exchange_online_raw(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        exchange_path: Vec<secp256k1::PublicKey>,
+    ) -> Result<wire_exchange::OnlineExchangeResponse> {
         let url = self
             .base
             .join(Self::CRSATEXCHANGEONLINE_EP_V1)
@@ -199,17 +208,27 @@ impl TreasuryClient {
         };
         let request = self.cl.post(url).json(&msg);
         let response: wire_exchange::OnlineExchangeResponse = request.send().await?.json().await?;
+        Ok(response)
+    }
+
+    pub async fn crsat_exchange_online(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        exchange_path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>> {
+        let response = self
+            .crsat_exchange_online_raw(proofs, exchange_path)
+            .await?;
         Ok(response.proofs)
     }
 
     pub const SATEXCHANGEOFFLINE_EP_V1: &'static str = "/v1/treasury/debit/exchange/offline";
-    pub async fn sat_exchange_offline(
+    pub async fn sat_exchange_offline_raw(
         &self,
         fingerprints: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         wallet_pk: cashu::PublicKey,
-        mint_pk: secp256k1::PublicKey,
-    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+    ) -> Result<wire_exchange::OfflineExchangeResponse> {
         let url = self
             .base
             .join(Self::SATEXCHANGEOFFLINE_EP_V1)
@@ -221,6 +240,19 @@ impl TreasuryClient {
         };
         let request = self.cl.post(url).json(&msg);
         let response: wire_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        Ok(response)
+    }
+
+    pub async fn sat_exchange_offline(
+        &self,
+        fingerprints: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        mint_pk: secp256k1::PublicKey,
+    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+        let response = self
+            .sat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
+            .await?;
         bcr_common::core::signature::schnorr_verify_b64(
             &response.content,
             &response.signature,
@@ -232,13 +264,12 @@ impl TreasuryClient {
     }
 
     pub const CRSATEXCHANGEOFFLINE_EP_V1: &'static str = "/v1/treasury/credit/exchange/offline";
-    pub async fn crsat_exchange_offline(
+    pub async fn crsat_exchange_offline_raw(
         &self,
         fingerprints: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         wallet_pk: cashu::PublicKey,
-        mint_pk: secp256k1::PublicKey,
-    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+    ) -> Result<wire_exchange::OfflineExchangeResponse> {
         let url = self
             .base
             .join(Self::CRSATEXCHANGEOFFLINE_EP_V1)
@@ -250,6 +281,19 @@ impl TreasuryClient {
         };
         let request = self.cl.post(url).json(&msg);
         let response: wire_exchange::OfflineExchangeResponse = request.send().await?.json().await?;
+        Ok(response)
+    }
+
+    pub async fn crsat_exchange_offline(
+        &self,
+        fingerprints: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        mint_pk: secp256k1::PublicKey,
+    ) -> Result<(Vec<cashu::Proof>, Signature)> {
+        let response = self
+            .crsat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
+            .await?;
         bcr_common::core::signature::schnorr_verify_b64(
             &response.content,
             &response.signature,
