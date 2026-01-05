@@ -296,6 +296,3 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    ports:
-      - "3010:3010"
-      - 5001:5001/udp
