@@ -211,7 +211,8 @@ pub async fn post_swap(
         credit: ctrl.keys_client.clone(),
         debit: ctrl.cdk_client.clone(),
     };
-    let input_type = determine_input_type(&keyscl, request.inputs()).await?;
+    let input_type =
+        determine_input_type(&keyscl, request.inputs().iter().map(|p| p.keyset_id)).await?;
     let output_type = determine_output_type(&keyscl, request.outputs()).await?;
     let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs().clone();
@@ -372,7 +373,7 @@ pub async fn get_clowder_betas(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
-pub async fn post_exchange(
+pub async fn post_online_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
@@ -388,7 +389,8 @@ pub async fn post_exchange(
         clwdr_cl: rest_clwdr.clone(),
         pk: request.exchange_path[0],
     };
-    let input_type = determine_input_type(&clowder_keys, &request.proofs).await?;
+    let input_type =
+        determine_input_type(&clowder_keys, request.proofs.iter().map(|p| p.keyset_id)).await?;
     let wire_exchange::OnlineExchangeRequest {
         proofs,
         exchange_path,
@@ -406,6 +408,47 @@ pub async fn post_exchange(
         }
     };
     let response = wire_exchange::OnlineExchangeResponse { proofs };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
+pub async fn post_offline_exchange(
+    State(ctrl): State<AppController>,
+    Json(request): Json<wire_exchange::OfflineExchangeRequest>,
+) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
+    let Some(rest_clwdr) = ctrl.clwdr_rest_client.as_ref() else {
+        return Err(Error::ClowderClientNoInit);
+    };
+
+    let origin = rest_clwdr
+        .post_fingerprints_origin(request.fingerprints.clone())
+        .await?;
+    let clowder_keys = ForeignKeyClientWithClowder {
+        clwdr_cl: rest_clwdr.clone(),
+        pk: origin.node_id,
+    };
+    let input_type = determine_input_type(
+        &clowder_keys,
+        request.fingerprints.iter().map(|fp| fp.keyset_id),
+    )
+    .await?;
+    let wire_exchange::OfflineExchangeRequest {
+        fingerprints,
+        hashes,
+        wallet_pk,
+    } = request;
+    let response = match input_type {
+        InputType::Sat => {
+            ctrl.treasury_client
+                .sat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
+                .await?
+        }
+        InputType::CrSat => {
+            ctrl.treasury_client
+                .crsat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
+                .await?
+        }
+    };
     Ok(Json(response))
 }
 
@@ -500,9 +543,9 @@ impl KeyClientT for ForeignKeyClientWithClowder {
 
 async fn determine_input_type(
     key_cl: &impl KeyClientT,
-    inputs: &[cashu::Proof],
+    inputs: impl std::iter::Iterator<Item = cashu::Id>,
 ) -> Result<InputType> {
-    let unique_kids = inputs.iter().map(|p| p.keyset_id).collect::<HashSet<_>>();
+    let unique_kids = inputs.collect::<HashSet<_>>();
     let requests: JoinAll<_> = unique_kids
         .into_iter()
         .map(|kid| key_cl.currency(kid))
@@ -588,7 +631,9 @@ mod tests {
             .times(1)
             .with(eq(sat_kid))
             .returning(|_| Ok(cashu::CurrencyUnit::Sat));
-        let inputtype = determine_input_type(&client, &inputs).await.unwrap();
+        let inputtype = determine_input_type(&client, inputs.iter().map(|p| p.keyset_id))
+            .await
+            .unwrap();
         assert!(matches!(inputtype, InputType::Sat));
     }
 
@@ -623,7 +668,9 @@ mod tests {
             .expect_currency()
             .times(1)
             .returning(move |_| Ok(cashu::CurrencyUnit::Custom(String::from("crsat"))));
-        let inputtype = determine_input_type(&client, &inputs).await.unwrap();
+        let inputtype = determine_input_type(&client, inputs.iter().map(|p| p.keyset_id))
+            .await
+            .unwrap();
         assert!(matches!(inputtype, InputType::CrSat));
     }
 
