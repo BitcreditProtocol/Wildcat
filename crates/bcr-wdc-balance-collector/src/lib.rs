@@ -47,7 +47,6 @@ impl AppController {
     }
 
     pub async fn collect_balances(&self, tstamp: TStamp) -> Result<()> {
-        self.service.collect_crsat_balance(tstamp).await?;
         self.service.collect_sat_balance(tstamp).await?;
         self.service.collect_onchain_balance(tstamp).await?;
         self.service.collect_eiou_balance(tstamp).await?;
