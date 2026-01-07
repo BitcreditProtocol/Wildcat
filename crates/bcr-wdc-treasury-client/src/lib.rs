@@ -4,12 +4,9 @@ use bcr_common::{
     core::BillId,
     wire::{exchange as wire_exchange, keys as wire_keys, signatures as wire_signatures},
 };
-use bcr_wdc_webapi::{
-    exchange as web_exchange, signatures as web_signatures, wallet as web_wallet,
-};
+use bcr_wdc_webapi::{exchange as web_exchange, wallet as web_wallet};
 use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1::schnorr::Signature, Amount};
 use thiserror::Error;
-use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 pub use reqwest::Url;
@@ -63,42 +60,6 @@ impl TreasuryClient {
         Ok(())
     }
 
-    pub const GENERATEBLINDS_EP_V1: &'static str = "/v1/admin/treasury/credit/generate_blinds";
-    #[cfg(feature = "authorized")]
-    pub async fn generate_blinds(
-        &self,
-        kid: cashu::Id,
-        amount: cashu::Amount,
-    ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)> {
-        let msg = web_signatures::GenerateBlindedMessagesRequest { kid, total: amount };
-        let url = self
-            .base
-            .join(Self::GENERATEBLINDS_EP_V1)
-            .expect("generate_blinds relative path");
-        let request = self.cl.post(url).json(&msg);
-        let response: web_signatures::GenerateBlindedMessagesResponse =
-            self.auth.authorize(request).send().await?.json().await?;
-        Ok((response.request_id, response.messages))
-    }
-
-    pub const STORESIGNATURES_EP_V1: &'static str = "/v1/admin/treasury/credit/store_signatures";
-    #[cfg(feature = "authorized")]
-    pub async fn store_signatures(
-        &self,
-        rid: uuid::Uuid,
-        signatures: Vec<cashu::BlindSignature>,
-    ) -> Result<()> {
-        let msg = web_signatures::StoreBlindSignaturesRequest { rid, signatures };
-        let url = self
-            .base
-            .join(Self::STORESIGNATURES_EP_V1)
-            .expect("store_signatures relative path");
-        let request = self.cl.post(url).json(&msg);
-        let response = self.auth.authorize(request).send().await?;
-        response.error_for_status()?;
-        Ok(())
-    }
-
     pub const REDEEM_EP_V1: &'static str = "/v1/treasury/redeem";
     pub async fn redeem(
         &self,
@@ -135,19 +96,6 @@ impl TreasuryClient {
         let req = self.cl.post(url).json(&request);
         let response: wire_signatures::RequestToMintFromEBillResponse =
             self.auth.authorize(req).send().await?.json().await?;
-        Ok(response)
-    }
-
-    pub const CRSATBALANCE_EP_V1: &'static str = "/v1/admin/treasury/credit/balance";
-    #[cfg(feature = "authorized")]
-    pub async fn crsat_balance(&self) -> Result<web_wallet::ECashBalance> {
-        let url = self
-            .base
-            .join(Self::CRSATBALANCE_EP_V1)
-            .expect("crsat balance relative path");
-        let request = self.cl.get(url);
-        let response: web_wallet::ECashBalance =
-            self.auth.authorize(request).send().await?.json().await?;
         Ok(response)
     }
 
