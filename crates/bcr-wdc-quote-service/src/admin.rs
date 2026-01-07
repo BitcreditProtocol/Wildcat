@@ -23,15 +23,16 @@ pub async fn list_pending_quotes(
 
 fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo {
     let status = match quote.status {
-        quotes::StatusDiscriminants::Pending => wire_quotes::StatusReplyDiscriminants::Pending,
-        quotes::StatusDiscriminants::Canceled => wire_quotes::StatusReplyDiscriminants::Canceled,
-        quotes::StatusDiscriminants::Offered => wire_quotes::StatusReplyDiscriminants::Offered,
+        quotes::StatusDiscriminants::Pending => wire_quotes::InfoReplyDiscriminants::Pending,
+        quotes::StatusDiscriminants::Canceled => wire_quotes::InfoReplyDiscriminants::Canceled,
+        quotes::StatusDiscriminants::Offered => wire_quotes::InfoReplyDiscriminants::Offered,
         quotes::StatusDiscriminants::OfferExpired => {
-            wire_quotes::StatusReplyDiscriminants::OfferExpired
+            wire_quotes::InfoReplyDiscriminants::OfferExpired
         }
-        quotes::StatusDiscriminants::Denied => wire_quotes::StatusReplyDiscriminants::Denied,
-        quotes::StatusDiscriminants::Rejected => wire_quotes::StatusReplyDiscriminants::Rejected,
-        quotes::StatusDiscriminants::Accepted => wire_quotes::StatusReplyDiscriminants::Accepted,
+        quotes::StatusDiscriminants::Denied => wire_quotes::InfoReplyDiscriminants::Denied,
+        quotes::StatusDiscriminants::Rejected => wire_quotes::InfoReplyDiscriminants::Rejected,
+        quotes::StatusDiscriminants::Accepted => wire_quotes::InfoReplyDiscriminants::Accepted,
+        quotes::StatusDiscriminants::MintingEnabled => wire_quotes::InfoReplyDiscriminants::Minting,
     };
     wire_quotes::LightInfo {
         id: quote.id,
@@ -54,26 +55,29 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
     } = params;
     let status = match status {
         None => None,
-        Some(wire_quotes::StatusReplyDiscriminants::Pending) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Pending) => {
             Some(quotes::StatusDiscriminants::Pending)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::Canceled) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Canceled) => {
             Some(quotes::StatusDiscriminants::Canceled)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::Offered) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Offered) => {
             Some(quotes::StatusDiscriminants::Offered)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::OfferExpired) => {
+        Some(wire_quotes::InfoReplyDiscriminants::OfferExpired) => {
             Some(quotes::StatusDiscriminants::OfferExpired)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::Denied) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Denied) => {
             Some(quotes::StatusDiscriminants::Denied)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::Rejected) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Rejected) => {
             Some(quotes::StatusDiscriminants::Rejected)
         }
-        Some(wire_quotes::StatusReplyDiscriminants::Accepted) => {
+        Some(wire_quotes::InfoReplyDiscriminants::Accepted) => {
             Some(quotes::StatusDiscriminants::Accepted)
+        }
+        Some(wire_quotes::InfoReplyDiscriminants::Minting) => {
+            Some(quotes::StatusDiscriminants::MintingEnabled)
         }
     };
     let sort = match sort {
@@ -167,13 +171,22 @@ fn convert_to_info_reply(
             bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             keyset_id,
-            minting_status: convert_mint_status(minting_status),
         },
         quotes::Status::Rejected { tstamp, discounted } => wire_quotes::InfoReply::Rejected {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
             tstamp,
+        },
+        quotes::Status::MintingEnabled { keyset_id, fee, .. } => wire_quotes::InfoReply::Minting {
+            id: quote.id,
+            bill: wire_quotes::BillInfo::from(quote.bill),
+            keyset_id,
+            discounted: bitcoin::Amount::from_sat(
+                fee.value().expect("fee token value missing").into(),
+            ),
+            fee,
+            minting_status: convert_mint_status(minting_status),
         },
     }
 }

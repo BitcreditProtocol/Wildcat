@@ -15,7 +15,6 @@ mod keys;
 mod persistence;
 mod quotes;
 mod service;
-mod wallet;
 mod web;
 // ----- local imports
 
@@ -26,15 +25,14 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
 
 pub type ProdKeysHandler = keys::KeysRestHandler;
-pub type ProdWallet = wallet::Client;
 pub type ProdQuotingService = service::Service;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     quotes: persistence::surreal::ConnectionConfig,
     keys: keys::KeysRestConfig,
-    wallet: wallet::WalletConfig,
     ebill_client: ebill::EBillClientConfig,
+    mint_url: cashu::MintUrl,
 }
 
 #[derive(Clone, FromRef)]
@@ -47,21 +45,20 @@ impl AppController {
         let AppConfig {
             quotes,
             keys,
-            wallet,
             ebill_client,
+            mint_url,
         } = cfg;
         let quotes_repository = ProdQuoteRepository::new(quotes)
             .await
             .expect("DB connection to quotes failed");
 
         let keys_hndlr = ProdKeysHandler::new(keys);
-        let wallet = ProdWallet::new(wallet);
         let ebill = ebill::EBillClient::new(ebill_client);
         let quoting_service = ProdQuotingService {
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             quotes: Arc::new(quotes_repository),
             ebill: Arc::new(ebill),
+            mint_url,
         };
 
         Self {

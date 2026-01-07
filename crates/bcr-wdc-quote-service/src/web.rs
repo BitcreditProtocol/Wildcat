@@ -58,12 +58,12 @@ fn convert_to_enquire_reply(
             keyset_id,
             ttl,
             discounted,
-            minting_pubkey,
+            wallet_pubkey,
         } => wire_quotes::StatusReply::Offered {
             keyset_id,
             expiration_date: ttl,
             discounted,
-            minting_pubkey,
+            minting_pubkey: wallet_pubkey,
         },
         quotes::Status::OfferExpired { tstamp, discounted } => {
             wire_quotes::StatusReply::OfferExpired { tstamp, discounted }
@@ -74,11 +74,23 @@ fn convert_to_enquire_reply(
         quotes::Status::Accepted {
             keyset_id,
             discounted,
-            minting_pubkey,
+            wallet_pubkey,
         } => wire_quotes::StatusReply::Accepted {
             keyset_id,
             discounted,
-            minting_pubkey,
+            minting_pubkey: wallet_pubkey,
+            minting_status: convert_mint_status(minting_status),
+        },
+        quotes::Status::MintingEnabled {
+            keyset_id,
+            wallet_pubkey,
+            fee,
+        } => wire_quotes::StatusReply::Accepted {
+            keyset_id,
+            discounted: bitcoin::Amount::from_sat(
+                fee.value().expect("fee token to have a value").into(),
+            ),
+            minting_pubkey: wallet_pubkey,
             minting_status: convert_mint_status(minting_status),
         },
     }
