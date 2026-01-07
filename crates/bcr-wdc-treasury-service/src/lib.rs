@@ -11,7 +11,6 @@ use bitcoin::secp256k1;
 use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
-mod credit;
 mod debit;
 mod devmode;
 mod error;
@@ -24,9 +23,6 @@ mod web;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
-type ProdCreditRepository = persistence::surreal::CreditRepository;
-type ProdCreditKeysService = credit::KeySrvc;
-type ProdCreditService = credit::Service<ProdCreditRepository, ProdCreditKeysService>;
 type ProdCrsatService = foreign::crsat::Service;
 type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
@@ -46,7 +42,6 @@ type ProdDebitService = debit::Service<ProdDebitWallet, ProdWildcatClient, ProdD
 pub struct AppConfig {
     credit_keys_url: reqwest::Url,
     cdk_mintd_url: cashu::MintUrl,
-    credit_repo: persistence::surreal::CreditConnectionConfig,
     debit_repo: persistence::surreal::DebitConnectionConfig,
     crsatonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
     crsatoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
@@ -63,7 +58,6 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    credit: ProdCreditService,
     debit: ProdDebitService,
     crsat: Arc<ProdCrsatService>,
     sat: Arc<ProdSatService>,
@@ -82,7 +76,6 @@ impl AppController {
             clowder_url,
             clwdr_nats_url,
             signer_url,
-            credit_repo,
             debit_repo,
             crsatonline_repo,
             crsatoffline_repo,
@@ -93,11 +86,6 @@ impl AppController {
             monitor_interval_sec,
             quote_expiry_seconds,
         } = cfg;
-        let repo = ProdCreditRepository::new(credit_repo)
-            .await
-            .expect("Failed to create repository");
-        let keys = ProdCreditKeysService::new(credit_keys_url.clone());
-        let credit = ProdCreditService { repo, keys };
 
         let wallet = ProdDebitWallet::new(sat_wallet, seed)
             .await
@@ -205,7 +193,6 @@ impl AppController {
             dbmint: dbmint.clone(),
         };
         Self {
-            credit,
             debit,
             crsat,
             sat,
@@ -255,18 +242,6 @@ pub fn routes(app: AppController) -> Router {
         .route(
             TreasuryClient::REQTOPAY_EP_V1,
             post(admin::request_to_pay_ebill),
-        )
-        .route(
-            TreasuryClient::GENERATEBLINDS_EP_V1,
-            post(admin::generate_blinds),
-        )
-        .route(
-            TreasuryClient::STORESIGNATURES_EP_V1,
-            post(admin::store_signatures),
-        )
-        .route(
-            TreasuryClient::CRSATBALANCE_EP_V1,
-            get(admin::crsat_balance),
         )
         .route(
             TreasuryClient::TRYCRSATHTLC_EP_V1,
