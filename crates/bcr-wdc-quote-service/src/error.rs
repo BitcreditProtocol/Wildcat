@@ -24,7 +24,7 @@ pub enum Error {
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
     #[error("keys handler error {0}")]
-    KeysHandler(bcr_common::client::keys::Error),
+    KeysHandler(#[from] bcr_common::client::keys::Error),
     #[error("wallet error {0}")]
     Wallet(WalletError),
     #[error("ebill client error {0}")]

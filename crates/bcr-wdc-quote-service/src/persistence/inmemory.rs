@@ -10,8 +10,9 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::Result,
+    persistence::Repository,
     quotes,
-    service::{ListFilters, Repository, SortOrder},
+    service::{ListFilters, SortOrder},
     TStamp,
 };
 
@@ -65,6 +66,17 @@ impl Repository for QuotesIDMap {
         let result = m.get_mut(&qid);
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::Offered { .. }) {
+                old.status = new;
+            }
+        }
+        Ok(())
+    }
+
+    async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
+        let mut m = self.quotes.write().unwrap();
+        let result = m.get_mut(&qid);
+        if let Some(old) = result {
+            if matches!(old.status, quotes::Status::Accepted { .. }) {
                 old.status = new;
             }
         }

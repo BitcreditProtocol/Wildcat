@@ -9,8 +9,9 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
+    persistence::Repository,
     quotes,
-    service::{ListFilters, Repository, SortOrder},
+    service::{ListFilters, SortOrder},
     TStamp,
 };
 
@@ -245,13 +246,16 @@ impl Repository for DBQuotes {
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        let before = before.ok_or(Error::QuotesRepository(anyhow!(
-            "Quote not found or not pending"
-        )))?;
-        if !matches!(before.status, quotes::Status::Pending { .. }) {
-            return Err(Error::QuotesRepository(anyhow!("Quote not pending")));
+        match before {
+            Some(QuoteDBEntry {
+                status: quotes::Status::Pending { .. },
+                ..
+            }) => Ok(()),
+            Some(_) => Err(Error::QuotesRepository(anyhow!("Quote not pending"))),
+            None => Err(Error::QuotesRepository(anyhow!(
+                "Quote not found or not pending"
+            ))),
         }
-        Ok(())
     }
 
     async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
@@ -266,16 +270,40 @@ impl Repository for DBQuotes {
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        if before.is_none() {
-            return Err(Error::QuotesRepository(anyhow!(
+        match before {
+            Some(QuoteDBEntry {
+                status: quotes::Status::Offered { .. },
+                ..
+            }) => Ok(()),
+            Some(_) => Err(Error::QuotesRepository(anyhow!("Quote not offered"))),
+            None => Err(Error::QuotesRepository(anyhow!(
                 "Quote not found or not offered"
-            )));
+            ))),
         }
-        let before = before.unwrap();
-        if !matches!(before.status, quotes::Status::Offered { .. }) {
-            return Err(Error::QuotesRepository(anyhow!("Quote not offered")));
+    }
+
+    async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
+        let recordid = surrealdb::RecordId::from_table_key(&self.table, qid);
+        let before: Option<QuoteDBEntry> = self
+            .db
+            .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
+            .bind(("rid", recordid))
+            .bind(("new", new))
+            .bind(("status", quotes::StatusDiscriminants::Accepted))
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
+        match before {
+            Some(QuoteDBEntry {
+                status: quotes::Status::Accepted { .. },
+                ..
+            }) => Ok(()),
+            Some(_) => Err(Error::QuotesRepository(anyhow!("Quote not accepted"))),
+            None => Err(Error::QuotesRepository(anyhow!(
+                "Quote not found or not accepted"
+            ))),
         }
-        Ok(())
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
@@ -373,7 +401,7 @@ mod tests {
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -384,7 +412,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
-            minting_pubkey: keys_test::publics()[0],
+            wallet_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_ok());
@@ -417,7 +445,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
-            minting_pubkey: keys_test::publics()[0],
+            wallet_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_pending(quote.id, quote.status).await;
         assert!(res.is_err());
@@ -440,7 +468,7 @@ mod tests {
                 keyset_id: keys_test::generate_random_keysetid(),
                 ttl: TStamp::default(),
                 discounted: bitcoin::Amount::default(),
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
         };
         let dbquote = QuoteDBEntry::from(quote.clone());
@@ -450,7 +478,7 @@ mod tests {
         quote.status = quotes::Status::Accepted {
             keyset_id: keys_test::generate_random_keysetid(),
             discounted: bitcoin::Amount::default(),
-            minting_pubkey: keys_test::publics()[0],
+            wallet_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_ok());
@@ -481,7 +509,7 @@ mod tests {
             keyset_id: keys_test::generate_random_keysetid(),
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
-            minting_pubkey: keys_test::publics()[0],
+            wallet_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
         assert!(res.is_err());
@@ -501,7 +529,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid,
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
@@ -572,7 +600,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
@@ -587,7 +615,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid2,
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
@@ -602,7 +630,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid3,
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
@@ -642,7 +670,7 @@ mod tests {
         let entry = QuoteDBEntry {
             qid: qid1,
             status: quotes::Status::Pending {
-                minting_pubkey: keys_test::publics()[0],
+                wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),

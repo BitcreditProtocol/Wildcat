@@ -4,15 +4,21 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     core::{BillId, NodeId},
+    wallet::Token,
     wire::quotes as wire_quotes,
 };
 use bitcoin::Amount;
 use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::quotes::{BillInfo, LightQuote, Quote, Status, StatusDiscriminants};
-use crate::TStamp;
+use crate::{
+    error::{Error, Result},
+    persistence::Repository,
+    quotes::{BillInfo, LightQuote, Quote, Status, StatusDiscriminants},
+    TStamp,
+};
+
+// ----- end imports
 
 // ---------- required traits
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -33,33 +39,18 @@ pub enum SortOrder {
     BillMaturityDateDesc,
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait Repository {
-    async fn load(&self, id: uuid::Uuid) -> Result<Option<Quote>>;
-    async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
-    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
-    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>>;
-    async fn list_light(
-        &self,
-        filters: ListFilters,
-        sort: Option<SortOrder>,
-    ) -> Result<Vec<LightQuote>>;
-    async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<Quote>>;
-    async fn store(&self, quote: Quote) -> Result<()>;
-}
-
 pub enum MintingStatus {
     Disabled,
     Enabled(cashu::Amount),
 }
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysHandler {
+pub trait KeysHandler: Send + Sync {
     async fn get_keyset_with_redemption_date(
         &self,
         redemption_date: chrono::NaiveDate,
     ) -> Result<cashu::Id>;
+    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet>;
     async fn add_new_mint_operation(
         &self,
         qid: Uuid,
@@ -80,29 +71,13 @@ pub trait EBillNode: Sync {
     ) -> Result<wire_quotes::BillInfo>;
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait Wallet {
-    async fn get_blinds(
-        &self,
-        kid: cashu::Id,
-        amount: Amount,
-    ) -> Result<(Uuid, Vec<cashu::BlindedMessage>)>;
-
-    async fn store_signatures(
-        &self,
-        rid: Uuid,
-        signatures: Vec<cashu::BlindSignature>,
-    ) -> Result<()>;
-}
-
 // ---------- Service
 #[derive(Clone)]
 pub struct Service {
     pub keys_hndlr: Arc<dyn KeysHandler + Send + Sync>,
     pub quotes: Arc<dyn Repository + Send + Sync>,
-    pub wallet: Arc<dyn Wallet + Send + Sync>,
     pub ebill: Arc<dyn EBillNode + Send + Sync>,
+    pub mint_url: cashu::MintUrl,
 }
 
 impl Service {
@@ -188,6 +163,11 @@ impl Service {
             | Some(Quote {
                 id,
                 status: Status::Accepted { .. },
+                ..
+            }) => Ok(*id),
+            Some(Quote {
+                id,
+                status: Status::MintingEnabled { .. },
                 ..
             }) => Ok(*id),
             None => self.new_quote(bill, pub_key, submitted).await,
@@ -323,7 +303,7 @@ impl Service {
     }
 
     pub async fn enable_minting(&self, qid: uuid::Uuid) -> Result<()> {
-        let quote = self
+        let mut quote = self
             .quotes
             .load(qid)
             .await?
@@ -331,7 +311,7 @@ impl Service {
         let Status::Accepted {
             keyset_id,
             discounted,
-            minting_pubkey,
+            wallet_pubkey,
         } = quote.status
         else {
             return Err(Error::InvalidQuoteStatus(
@@ -340,20 +320,24 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
-        let fees = quote.bill.sum - discounted;
-        let (fees_blinds_id, fees_blinds) = self.wallet.get_blinds(keyset_id, fees).await?;
-        let joined: JoinAll<_> = fees_blinds
-            .iter()
-            .map(|blind| self.keys_hndlr.sign(blind))
-            .collect();
-        let signatures_fees: Vec<cashu::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
-        self.wallet
-            .store_signatures(fees_blinds_id, signatures_fees)
-            .await?;
+        let fees_amount = quote.bill.sum - discounted;
+        let fees_amount = cashu::Amount::from(fees_amount.to_sat());
+        let keys = self.keys_hndlr.get_keys(keyset_id).await?;
+        let fees_token = mint_fees(
+            self.keys_hndlr.as_ref(),
+            fees_amount,
+            keys,
+            self.mint_url.clone(),
+            &quote.bill.id,
+        )
+        .await?;
         let discounted_amount = cashu::Amount::from(discounted.to_sat());
+        quote.start_minting(fees_token)?;
+        self.quotes
+            .update_status_if_accepted(quote.id, quote.status)
+            .await?;
         self.keys_hndlr
-            .add_new_mint_operation(qid, keyset_id, minting_pubkey, discounted_amount)
+            .add_new_mint_operation(qid, keyset_id, wallet_pubkey, discounted_amount)
             .await?;
         Ok(())
     }
@@ -372,15 +356,45 @@ pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super:
     now + chrono::Duration::days(2)
 }
 
+async fn mint_fees(
+    keyscl: &dyn KeysHandler,
+    fees_amount: cashu::Amount,
+    keys: cashu::KeySet,
+    mint_url: cashu::MintUrl,
+    billid: &BillId,
+) -> Result<Token> {
+    let premints =
+        cashu::PreMintSecrets::random(keys.id, fees_amount, &cashu::amount::SplitTarget::None)
+            .map_err(|e| {
+                Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}"))
+            })?;
+    let blinds = premints.blinded_messages();
+    let joined: JoinAll<_> = blinds.iter().map(|blind| keyscl.sign(blind)).collect();
+    let signatures: Vec<cashu::BlindSignature> = joined.await.into_iter().collect::<Result<_>>()?;
+    let mut proofs = Vec::new();
+    for (signature, premint) in signatures.into_iter().zip(premints.iter()) {
+        let proof =
+            bcr_common::core::signature::unblind_ecash_signature(&keys, premint.clone(), signature)
+                .map_err(|e| Error::InternalServer(e.to_string()))?;
+        proofs.push(proof);
+    }
+    let token = Token::new_bitcr(mint_url, proofs, Some(billid.to_string()), keys.unit);
+    Ok(token)
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use crate::persistence::MockRepository;
     use bcr_common::{core_tests, wire_tests};
     use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_utils};
     use mockall::predicate::*;
     use rand::Rng;
+    use std::str::FromStr;
+
+    pub const TEST_URL: &str = "http://localhost:8000";
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
@@ -414,15 +428,14 @@ mod tests {
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let rnd_bill = generate_random_bill();
         let service = Service {
             quotes: Arc::new(quotes),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test = service
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
@@ -434,7 +447,7 @@ mod tests {
     async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let minting_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
@@ -444,7 +457,7 @@ mod tests {
             )
             .returning(move |_, _| {
                 Ok(vec![Quote {
-                    status: Status::Pending { minting_pubkey },
+                    status: Status::Pending { wallet_pubkey },
                     id,
                     bill: cloned.clone(),
                     submitted: chrono::Utc::now(),
@@ -452,17 +465,16 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: Arc::new(repo),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
-            .enquire(rnd_bill, minting_pubkey, chrono::Utc::now())
+            .enquire(rnd_bill, wallet_pubkey, chrono::Utc::now())
             .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
@@ -491,14 +503,13 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: Arc::new(repo),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -509,7 +520,7 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let minting_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = keys_utils::publics()[0];
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
@@ -524,7 +535,7 @@ mod tests {
                         keyset_id,
                         ttl: now + chrono::Duration::days(1),
                         discounted: rnd_bill.sum,
-                        minting_pubkey,
+                        wallet_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -533,19 +544,15 @@ mod tests {
             });
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: Arc::new(repo),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
-        let test_id = service
-            .enquire(rnd_bill, minting_pubkey, now)
-            .await
-            .unwrap();
+        let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
     }
 
@@ -555,7 +562,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let minting_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         repo.expect_search_by_bill()
@@ -569,7 +576,7 @@ mod tests {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
-                        minting_pubkey,
+                        wallet_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -579,17 +586,16 @@ mod tests {
         repo.expect_update_status_if_offered()
             .returning(|_, _| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: Arc::new(repo),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
-            .enquire(rnd_bill, minting_pubkey, now + chrono::Duration::seconds(1))
+            .enquire(rnd_bill, wallet_pubkey, now + chrono::Duration::seconds(1))
             .await
             .unwrap();
         assert_eq!(id, test_id);
@@ -601,7 +607,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = keys_utils::generate_random_keysetid();
-        let minting_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         repo.expect_search_by_bill()
@@ -615,7 +621,7 @@ mod tests {
                         keyset_id,
                         ttl: now,
                         discounted: rnd_bill.sum,
-                        minting_pubkey,
+                        wallet_pubkey,
                     },
                     id,
                     bill: cloned.clone(),
@@ -626,17 +632,16 @@ mod tests {
             .returning(|_, _| Ok(()));
         repo.expect_store().returning(|_| Ok(()));
         let keys_hndlr = MockKeysHandler::new();
-        let wallet = MockWallet::new();
         let ebill = MockEBillNode::new();
 
         let service = Service {
             quotes: Arc::new(repo),
             keys_hndlr: Arc::new(keys_hndlr),
-            wallet: Arc::new(wallet),
             ebill: Arc::new(ebill),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
-        let test_id = service.enquire(rnd_bill, minting_pubkey, submitted).await;
+        let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
     }

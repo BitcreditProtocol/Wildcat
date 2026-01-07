@@ -73,7 +73,7 @@ impl From<BillInfo> for wire_quotes::BillInfo {
 #[serde(tag = "status")]
 pub enum Status {
     Pending {
-        minting_pubkey: cashu::PublicKey,
+        wallet_pubkey: cashu::PublicKey,
     },
     Canceled {
         tstamp: TStamp,
@@ -85,7 +85,7 @@ pub enum Status {
         keyset_id: cashu::Id,
         ttl: TStamp,
         discounted: bitcoin::Amount,
-        minting_pubkey: cashu::PublicKey,
+        wallet_pubkey: cashu::PublicKey,
     },
     OfferExpired {
         discounted: bitcoin::Amount,
@@ -98,7 +98,12 @@ pub enum Status {
     Accepted {
         discounted: bitcoin::Amount,
         keyset_id: cashu::Id,
-        minting_pubkey: cashu::PublicKey,
+        wallet_pubkey: cashu::PublicKey,
+    },
+    MintingEnabled {
+        keyset_id: cashu::Id,
+        wallet_pubkey: cashu::PublicKey,
+        fee: bcr_common::wallet::Token,
     },
 }
 
@@ -118,9 +123,9 @@ pub struct LightQuote {
 }
 
 impl Quote {
-    pub fn new(bill: BillInfo, minting_pubkey: cashu::PublicKey, submitted: TStamp) -> Self {
+    pub fn new(bill: BillInfo, wallet_pubkey: cashu::PublicKey, submitted: TStamp) -> Self {
         Self {
-            status: Status::Pending { minting_pubkey },
+            status: Status::Pending { wallet_pubkey },
             id: Uuid::new_v4(),
             bill,
             submitted,
@@ -159,7 +164,7 @@ impl Quote {
         ttl: TStamp,
         discounted: bitcoin::Amount,
     ) -> Result<()> {
-        let Status::Pending { minting_pubkey, .. } = self.status else {
+        let Status::Pending { wallet_pubkey, .. } = self.status else {
             return Err(Error::InvalidQuoteStatus(
                 self.id,
                 StatusDiscriminants::Pending,
@@ -171,7 +176,7 @@ impl Quote {
             keyset_id,
             ttl,
             discounted,
-            minting_pubkey,
+            wallet_pubkey,
         };
         Ok(())
     }
@@ -211,19 +216,53 @@ impl Quote {
             Status::Offered {
                 keyset_id,
                 discounted,
-                minting_pubkey,
+                wallet_pubkey,
                 ..
             } => {
                 self.status = Status::Accepted {
                     keyset_id,
                     discounted,
-                    minting_pubkey,
+                    wallet_pubkey,
                 }
             }
             _ => {
                 return Err(Error::InvalidQuoteStatus(
                     self.id,
                     StatusDiscriminants::Offered,
+                    StatusDiscriminants::from(self.status.clone()),
+                ))
+            }
+        };
+        Ok(())
+    }
+
+    pub fn start_minting(&mut self, fee: bcr_common::wallet::Token) -> Result<()> {
+        match self.status {
+            Status::Accepted {
+                keyset_id,
+                wallet_pubkey,
+                discounted,
+            } => {
+                let calculated_fees = self.bill.sum - discounted;
+                let fee_token_value: u64 = fee
+                    .value()
+                    .map_err(|e| Error::InternalServer(format!("fee.value() error: {e}")))?
+                    .into();
+                if fee_token_value != calculated_fees.to_sat() {
+                    return Err(Error::InternalServer(format!(
+                        "fee.value() {fee_token_value} != discounted {discounted}",
+                    )));
+                }
+                self.status = Status::MintingEnabled {
+                    keyset_id,
+                    wallet_pubkey,
+                    fee,
+                }
+            }
+            _ => {
+                return Err(Error::InvalidQuoteStatus(
+                    self.id,
+                    StatusDiscriminants::MintingEnabled,
                     StatusDiscriminants::from(self.status.clone()),
                 ))
             }
