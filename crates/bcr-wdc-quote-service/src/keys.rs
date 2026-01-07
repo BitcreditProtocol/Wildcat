@@ -31,10 +31,12 @@ impl KeysHandler for KeysRestHandler {
         &self,
         redemption_date: chrono::NaiveDate,
     ) -> Result<cashu::Id> {
-        self.0
-            .keys_for_expiration(redemption_date)
-            .await
-            .map_err(Error::KeysHandler)
+        let kid = self.0.keys_for_expiration(redemption_date).await?;
+        Ok(kid)
+    }
+    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet> {
+        let keyset = self.0.keys(keyset_id).await?;
+        Ok(keyset)
     }
     async fn add_new_mint_operation(
         &self,
@@ -43,13 +45,12 @@ impl KeysHandler for KeysRestHandler {
         pk: cashu::PublicKey,
         target: cashu::Amount,
     ) -> Result<()> {
-        self.0
-            .new_mint_operation(qid, kid, pk, target)
-            .await
-            .map_err(Error::KeysHandler)
+        self.0.new_mint_operation(qid, kid, pk, target).await?;
+        Ok(())
     }
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        self.0.sign(msg).await.map_err(Error::KeysHandler)
+        let signatures = self.0.sign(msg).await?;
+        Ok(signatures)
     }
     async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>> {
         let response = self.0.mint_operation_status(qid).await;
