@@ -10,7 +10,6 @@ use bcr_common::{
     wire::{identity as wire_identity, quotes as wire_quotes},
 };
 use bcr_wdc_treasury_client::TreasuryClient;
-use bcr_wdc_webapi::wallet as web_wallet;
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::de::DeserializeOwned;
@@ -199,9 +198,6 @@ impl Service<AdminService> {
             .list(wire_quotes::ListParam::default())
             .await
             .map_err(Into::into)
-    }
-    pub async fn admin_balance_credit(&self) -> Result<web_wallet::ECashBalance> {
-        self.treasury_cl.crsat_balance().await.map_err(Into::into)
     }
     pub async fn admin_ebill_identity_details(&self) -> Result<wire_identity::Identity> {
         self.ebill_cl.get_identity().await.map_err(Into::into)
