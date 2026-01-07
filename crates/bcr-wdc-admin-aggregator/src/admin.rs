@@ -357,6 +357,25 @@ pub async fn get_ebill_attachment(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_CLOWDER_COVERAGE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::ConnectedMintsResponse , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_clowder_coverage(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::ConnectedMintsResponse>> {
+    tracing::debug!("Received clowder alphas request");
+
+    let response = ctrl.clwdr_cl.get_alphas().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_CLOWDER_ALPHAS,
     params(
     ),

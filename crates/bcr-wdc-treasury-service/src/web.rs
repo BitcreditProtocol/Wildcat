@@ -2,6 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
+use bcr_common::wire::clowder::events;
 use bcr_common::wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint};
 use bitcoin::base64::prelude::*;
 use cashu::nut03 as cdk03;
@@ -104,7 +105,7 @@ pub async fn sat_offline_exchange(
 pub async fn melt_quote_onchain<Wlt, WdcSrvc, Repo>(
     State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
-) -> Result<Json<cashu::nuts::MeltQuoteBolt11Response<String>>>
+) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>>
 where
     Repo: debit::Repository,
 {
@@ -115,14 +116,12 @@ where
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_onchain(
     State(ctrl): State<AppController>,
-    Json(request): Json<cashu::MeltRequest<String>>,
-) -> Result<Json<()>> {
+    Json(request): Json<cashu::MeltRequest<uuid::Uuid>>,
+) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
     tracing::info!("Received melt_onchain request");
-    let quote_id_str = request.quote_id();
-    let quote_id = Uuid::parse_str(quote_id_str)
-        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
+    let quote_id = request.quote_id();
     tracing::info!("Loading onchain melt quote with ID {}", quote_id);
-    let onchain_request = ctrl.debit.repo.load_onchain_melt(quote_id).await?;
+    let onchain_request = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
     let inputs = request.inputs();
     if inputs.is_empty() {
         return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
@@ -139,9 +138,38 @@ pub async fn melt_onchain(
     }
     if let Some(clowder) = ctrl.clwdr_nats {
         tracing::info!("Requesting onchain clowder melt transaction");
-        clowder.melt_onchain(request, onchain_request).await?;
+        let melt_resp = clowder
+            .melt_onchain(events::MeltOnchainRequest {
+                quote: *quote_id,
+                address: onchain_request.request.address,
+                amount: onchain_request.request.amount,
+            })
+            .await?;
+        let resp = wire_melt::MeltQuoteOnchainResponse {
+            txid: Some(melt_resp.txid),
+            quote: *quote_id,
+            fee_reserve: bitcoin::Amount::ZERO,
+            change: None,
+            amount: onchain_request.request.amount,
+            unit: Some(onchain_request.unit.clone()),
+            state: cashu::nuts::MeltQuoteState::Paid,
+            expiry: 0, // TODO fetch stored expiry
+        };
+        return Ok(Json(resp));
     }
-    Ok(Json(()))
+
+    let resp = wire_melt::MeltQuoteOnchainResponse {
+        txid: None,
+        quote: *quote_id,
+        fee_reserve: bitcoin::Amount::ZERO,
+        change: None,
+        amount: onchain_request.request.amount,
+        unit: Some(onchain_request.unit),
+        state: cashu::nuts::MeltQuoteState::Unpaid,
+        expiry: 0, // TODO fetch stored expiry
+    };
+
+    Ok(Json(resp))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -154,7 +182,7 @@ pub async fn mint_quote_onchain(
     let clowder_quote = Uuid::new_v4();
     // TODO update mint quote onchain to provide keyset id
     // Which can be used later to select correct frost multisig
-    let dummy_kid = cashu::Id::from_bytes(&[0_u8; 32])
+    let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
     let address_response = ctrl
         .clwdr_rest
@@ -247,6 +275,20 @@ pub async fn mint_onchain(
     };
     let response = ctrl.dbmint.post_mint(mint_request).await?;
     tracing::info!("Response signatures {:?}", response);
+
+    if let Some(clowder) = ctrl.clwdr_nats {
+        let req = events::MintOnchainRequest {
+            keyset_id: kid,
+            quote_id: data.clowder_quote,
+            mint_signature: "".into(), // TODO
+            amount: cashu::Amount::from(outputs_amount),
+            expiry: data.expiry,
+        };
+        let resp = events::MintOnchainResponse {
+            signatures: response.signatures.clone(),
+        };
+        clowder.mint_onchain(req, resp).await?;
+    }
 
     Ok(Json(response))
 }

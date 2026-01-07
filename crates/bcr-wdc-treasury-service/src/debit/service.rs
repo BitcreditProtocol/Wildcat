@@ -104,22 +104,20 @@ where
     pub async fn create_onchain_melt_quote(
         &self,
         request: wire_melt::MeltQuoteOnchainRequest,
-    ) -> Result<cashu::nuts::MeltQuoteBolt11Response<String>> {
+    ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
         let expiry = chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64;
         let quote_id = Uuid::new_v4();
         tracing::info!("Creating onchain melt quote with ID {}", quote_id);
         self.repo
             .store_onchain_melt(quote_id, request.clone())
             .await?;
-        Ok(cashu::nuts::MeltQuoteBolt11Response {
-            quote: quote_id.to_string(),
-            fee_reserve: Amount::ZERO,
-            paid: Some(false),
-            payment_preimage: None,
+        Ok(wire_melt::MeltQuoteOnchainResponse {
+            txid: None,
+            quote: quote_id,
+            fee_reserve: bitcoin::Amount::ZERO,
             change: None,
-            amount: Amount::from(request.request.amount.to_sat()),
+            amount: bitcoin::Amount::from_sat(request.request.amount.to_sat()),
             unit: Some(request.unit),
-            request: None,
             state: cashu::nuts::MeltQuoteState::Unpaid,
             expiry: expiry as u64,
         })

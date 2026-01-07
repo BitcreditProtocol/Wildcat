@@ -82,6 +82,7 @@ pub mod endpoints {
     // Clowder-Client
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
     pub const GET_CLOWDER_BETAS: &str = "/v1/admin/clowder/betas";
+    pub const GET_CLOWDER_COVERAGE: &str = "/v1/admin/clowder/coverage";
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client

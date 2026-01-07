@@ -49,7 +49,7 @@ cdk-common = {version = "=0.13.1"}
 cdk-payment-processor = {version = "=0.13.1", default-features = false}
 cdk-redb = {version = "=0.13.1"}
 chrono = {version = "0.4"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "9b6e3b2b9acf5c7710a395674575a7491231fb07"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "102d0ae3e2733e129527c04d2c510c5836b68c15"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
@@ -75,4 +75,4 @@ uuid = {version = "1"}
 
 # due to https://github.com/rust-lang/cargo/issues/5478 we need to use a different source
 [patch."https://github.com/BitcreditProtocol/bcr-common.git"]
-bcr-common = {path = "./bcr-common"}
+bcr-common = {path = "../bcr-common"}
