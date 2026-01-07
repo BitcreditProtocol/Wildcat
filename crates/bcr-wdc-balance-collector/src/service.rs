@@ -40,11 +40,6 @@ impl<DB> Service<DB>
 where
     DB: BalanceRepository + Send + Sync,
 {
-    pub async fn collect_crsat_balance(&self, tstamp: TStamp) -> Result<()> {
-        let balance = self.treasury.crsat_balance().await?;
-        self.db.store_crsat(tstamp, balance.amount).await
-    }
-
     pub async fn collect_sat_balance(&self, tstamp: TStamp) -> Result<()> {
         let balance = self.treasury.sat_balance().await?;
         self.db.store_sat(tstamp, balance.amount).await
