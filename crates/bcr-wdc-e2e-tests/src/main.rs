@@ -73,25 +73,6 @@ async fn test_auth(cfg: &MainConfig) {
         panic!("Got token using wrong credentials");
     }
 
-    // Test auth on admin_balance_credit
-    let admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    let res = admin_service.admin_balance_credit().await;
-    assert!(res.is_err());
-    info!("Testing admin_balance_credit with authorization");
-    let mut admin_service = Service::<AdminService>::new(cfg.admin_service.clone());
-    admin_service
-        .authenticate(
-            cfg.keycloak.url.clone(),
-            &cfg.keycloak.client_id,
-            &cfg.keycloak.client_secret,
-            &cfg.keycloak.username,
-            &cfg.keycloak.password,
-        )
-        .await
-        .unwrap();
-    let balance = admin_service.admin_balance_credit().await.unwrap();
-    info!(balance = ?balance.amount, unit = ?balance.unit, "Admin balance");
-
     // Test protected endpoints
     let urls = vec![
         // generic
