@@ -13,6 +13,7 @@ use bcr_common::{
         quotes as wire_quotes, signatures as wire_signatures,
     },
 };
+use bcr_wdc_webapi::wallet as web_wallet;
 // ----- local imports
 use crate::{endpoints, error::Result, AppController};
 
@@ -355,29 +356,6 @@ pub async fn get_ebill_attachment(
 }
 
 #[utoipa::path(
-    post,
-    path = endpoints::POST_EBILL_REQTOPAY,
-    request_body(content = wire_bill::RequestToPayBitcreditBillPayload, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response"),
-        (status = 404, description = "bill id not found"),
-    )
-)]
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn post_ebill_reqtopay(
-    State(ctrl): State<AppController>,
-    Json(req): Json<wire_signatures::RequestToMintFromEBillRequest>,
-) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
-    tracing::debug!("Received ebill request to pay for {}", req.ebill_id);
-
-    let response = ctrl
-        .treasury_cl
-        .request_to_pay_ebill(req.ebill_id, req.amount, req.deadline)
-        .await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
     get,
     path = endpoints::GET_CLOWDER_ALPHAS,
     params(
@@ -454,4 +432,44 @@ pub async fn get_clowder_status(
 
     let state = ctrl.clwdr_cl.get_status(pk).await?;
     Ok(Json(state))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::POST_EBILL_REQTOPAY,
+    request_body(content = wire_bill::RequestToPayBitcreditBillPayload, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response"),
+        (status = 404, description = "bill id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn post_ebill_reqtopay(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_signatures::RequestToMintFromEBillRequest>,
+) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
+    tracing::debug!("Received ebill request to pay for {}", req.ebill_id);
+
+    let response = ctrl
+        .treasury_cl
+        .request_to_pay_ebill(req.ebill_id, req.amount, req.deadline)
+        .await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_SAT_BALANCE,
+    responses (
+        (status = 200, description = "Successful response"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_sat_balance(
+    State(ctrl): State<AppController>,
+) -> Result<Json<web_wallet::ECashBalance>> {
+    tracing::debug!("Received request for treasury sat balance");
+
+    let response = ctrl.treasury_cl.sat_balance().await?;
+    Ok(Json(response))
 }
