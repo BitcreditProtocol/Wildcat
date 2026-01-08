@@ -152,10 +152,10 @@ pub async fn post_enable_redemption(
 pub async fn get_quote(
     State(ctrl): State<AppController>,
     Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<wire_quotes::StatusReply>> {
+) -> Result<Json<wire_quotes::InfoReply>> {
     tracing::debug!("Received credit quote request for {qid}");
 
-    let status = ctrl.quotes_cl.lookup(qid).await?;
+    let status = ctrl.quotes_cl.admin_lookup(qid).await?;
     Ok(Json(status))
 }
 
