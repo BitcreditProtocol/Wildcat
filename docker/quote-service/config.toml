@@ -2,6 +2,8 @@
 bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
+[appcfg]
+mint_url = "http://bff-wallet-service:4343"
 
 [appcfg.quotes]
 connection = "ws://surrealdb:8000"
