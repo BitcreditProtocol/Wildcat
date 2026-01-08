@@ -393,6 +393,34 @@ pub async fn get_clowder_betas(
     Ok(Json(response))
 }
 
+/// Returns coverage information about the local mint
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_COVERAGE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::Coverage , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_clowder_coverage(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::Coverage>> {
+    tracing::debug!("Received clowder coverage request");
+
+    let supply = ctrl.clwdr_cl.get_mint_circulating_supply().await?;
+    let collateral = ctrl.clwdr_cl.get_mint_collateral().await?;
+
+    Ok(Json(wire_clowder::Coverage {
+        debit_circulating_supply: supply.debit,
+        credit_circulating_supply: supply.credit,
+        onchain_collateral: collateral.onchain,
+        ebill_collateral: collateral.ebill,
+        eiou_collateral: collateral.eiou,
+    }))
+}
+
 #[utoipa::path(
     get,
     path = endpoints::GET_CLOWDER_MYSTATUS,
