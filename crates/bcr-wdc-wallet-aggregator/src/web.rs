@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     client::keys::{Client as KeysClient, Error as KeysError},
-    wire::{exchange as wire_exchange, swap as wire_swap},
+    wire::{clowder::messages, exchange as wire_exchange, swap as wire_swap},
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use cashu::MintVersion;
@@ -216,7 +216,7 @@ pub async fn post_swap(
     let output_type = determine_output_type(&keyscl, request.outputs()).await?;
     let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs().clone();
-    let blinded_messages = request.outputs();
+    let blinded_messages = request.outputs().clone();
     let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
 
@@ -239,7 +239,14 @@ pub async fn post_swap(
     };
 
     if let Some(clwdr_client) = ctrl.clwdr_stream_client {
-        clwdr_client.mint_swap(proofs, signatures.clone()).await?;
+        let req = messages::SwapRequest {
+            proofs,
+            blinds: blinded_messages.clone(),
+        };
+        let resp = messages::SwapResponse {
+            signatures: signatures.clone(),
+        };
+        clwdr_client.mint_swap(req, resp).await?;
     }
 
     let response = cashu::SwapResponse { signatures };
