@@ -122,6 +122,12 @@ pub async fn melt_onchain(
     let quote_id = request.quote_id();
     tracing::info!("Loading onchain melt quote with ID {}", quote_id);
     let onchain_data = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
+    let current_time = chrono::Utc::now().timestamp() as u64;
+    if current_time > onchain_data.expiry {
+        return Err(crate::error::Error::InvalidInput(String::from(
+            "Melt quote has expired",
+        )));
+    }
     let inputs = request.inputs();
     if inputs.is_empty() {
         return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
@@ -143,6 +149,7 @@ pub async fn melt_onchain(
                 quote: *quote_id,
                 address: onchain_data.request.request.address,
                 amount: onchain_data.request.request.amount,
+                proofs: inputs.clone(),
             })
             .await?;
         let resp = wire_melt::MeltQuoteOnchainResponse {
@@ -239,6 +246,12 @@ pub async fn mint_onchain(
     let cdk_quote = Uuid::parse_str(&request.quote)
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
     let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
+    let current_time = chrono::Utc::now().timestamp() as u64;
+    if current_time > data.expiry {
+        return Err(crate::error::Error::InvalidInput(String::from(
+            "Mint quote has expired",
+        )));
+    }
 
     let kid = request
         .outputs
