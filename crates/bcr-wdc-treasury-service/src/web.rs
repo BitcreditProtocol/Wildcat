@@ -118,9 +118,9 @@ pub async fn melt_onchain(
     State(ctrl): State<AppController>,
     Json(request): Json<cashu::MeltRequest<uuid::Uuid>>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    tracing::info!("Received melt_onchain request");
+    tracing::debug!("Received melt_onchain request");
     let quote_id = request.quote_id();
-    tracing::info!("Loading onchain melt quote with ID {}", quote_id);
+    tracing::debug!("Loading onchain melt quote with ID {}", quote_id);
     let onchain_data = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
     let current_time = chrono::Utc::now().timestamp() as u64;
     if current_time > onchain_data.expiry {
@@ -143,7 +143,7 @@ pub async fn melt_onchain(
         )));
     }
     if let Some(clowder) = ctrl.clwdr_nats {
-        tracing::info!("Requesting onchain clowder melt transaction");
+        tracing::debug!("Requesting onchain clowder melt transaction");
         let melt_resp = clowder
             .melt_onchain(messages::MeltOnchainRequest {
                 quote: *quote_id,
@@ -184,7 +184,7 @@ pub async fn mint_quote_onchain(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_mint::MintQuoteOnchainRequest>,
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
-    tracing::info!("Received mint_quote_onchain request");
+    tracing::debug!("Received mint_quote_onchain request");
 
     let clowder_quote = Uuid::new_v4();
     // TODO update mint quote onchain to provide keyset id
@@ -266,7 +266,7 @@ pub async fn mint_onchain(
         .verify_mint_payment(data.clowder_quote, kid, 1)
         .await?;
 
-    tracing::info!("Clowder payment check {:?} sats", payment_response.amount);
+    tracing::debug!("Clowder payment check {:?} sats", payment_response.amount);
 
     let outputs_amount: u64 = request
         .outputs
@@ -287,7 +287,6 @@ pub async fn mint_onchain(
         signature: None,
     };
     let response = ctrl.dbmint.post_mint(mint_request).await?;
-    tracing::info!("Response signatures {:?}", response);
 
     if let Some(clowder) = ctrl.clwdr_nats {
         let req = messages::MintOnchainRequest {
@@ -300,6 +299,7 @@ pub async fn mint_onchain(
             signatures: response.signatures.clone(),
         };
         clowder.mint_onchain(req, resp).await?;
+        tracing::debug!("Sent mint to clowder");
     }
 
     Ok(Json(response))
