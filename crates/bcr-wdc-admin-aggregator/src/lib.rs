@@ -10,6 +10,7 @@ use bcr_common::wire::{
     bill as wire_bill, clowder as wire_clowder, identity as wire_identity, keys as wire_keys,
     quotes as wire_quotes, signatures as wire_signatures,
 };
+use bcr_wdc_webapi::wallet as web_wallet;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -85,6 +86,7 @@ pub mod endpoints {
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/ebill/reqtopay";
+    pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -139,7 +141,8 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::POST_EBILL_REQTOPAY,
             post(admin::post_ebill_reqtopay),
-        );
+        )
+        .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance));
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
 
@@ -169,6 +172,7 @@ pub fn routes(ctrl: AppController) -> Router {
         // treasury service
         wire_signatures::RequestToMintFromEBillRequest,
         wire_signatures::RequestToMintFromEBillResponse,
+        web_wallet::ECashBalance,
     ),),
     paths(
         admin::get_health,
@@ -196,6 +200,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_status,
         // treasury service
         admin::post_ebill_reqtopay,
+        admin::get_sat_balance
     )
 )]
 pub struct ApiDoc;
