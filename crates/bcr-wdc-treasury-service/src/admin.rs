@@ -7,7 +7,6 @@ use bcr_wdc_webapi::{exchange as web_exchange, wallet as web_wallet};
 use cashu::{self as cdk};
 // ----- local imports
 use crate::{debit, error::Result, foreign};
-
 // ----- end imports
 
 // ----- sat APIs

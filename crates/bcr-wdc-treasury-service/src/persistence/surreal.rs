@@ -131,24 +131,17 @@ impl debit::Repository for DebitRepository {
     async fn store_onchain_melt(
         &self,
         quote_id: uuid::Uuid,
-        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
+        data: debit::OnchainMeltQuote,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let _: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> = self
-            .db
-            .insert(rid)
-            .content(request)
-            .await
-            .map_err(Error::DB)?;
+        let _: Option<debit::OnchainMeltQuote> =
+            self.db.insert(rid).content(data).await.map_err(Error::DB)?;
         Ok(())
     }
 
-    async fn load_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest> {
+    async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<debit::OnchainMeltQuote> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let result: Option<bcr_common::wire::melt::MeltQuoteOnchainRequest> =
+        let result: Option<debit::OnchainMeltQuote> =
             self.db.select(rid).await.map_err(Error::DB)?;
         result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
