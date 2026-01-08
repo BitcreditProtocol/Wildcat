@@ -2,7 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::wire::clowder::events;
+use bcr_common::wire::clowder::messages;
 use bcr_common::wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint};
 use bitcoin::base64::prelude::*;
 use cashu::nut03 as cdk03;
@@ -139,7 +139,7 @@ pub async fn melt_onchain(
     if let Some(clowder) = ctrl.clwdr_nats {
         tracing::info!("Requesting onchain clowder melt transaction");
         let melt_resp = clowder
-            .melt_onchain(events::MeltOnchainRequest {
+            .melt_onchain(messages::MeltOnchainRequest {
                 quote: *quote_id,
                 address: onchain_request.request.address,
                 amount: onchain_request.request.amount,
@@ -277,14 +277,14 @@ pub async fn mint_onchain(
     tracing::info!("Response signatures {:?}", response);
 
     if let Some(clowder) = ctrl.clwdr_nats {
-        let req = events::MintOnchainRequest {
+        let req = messages::MintOnchainRequest {
             keyset_id: kid,
             quote_id: data.clowder_quote,
             mint_signature: "".into(), // TODO
             amount: cashu::Amount::from(outputs_amount),
             expiry: data.expiry,
         };
-        let resp = events::MintOnchainResponse {
+        let resp = messages::MintOnchainResponse {
             signatures: response.signatures.clone(),
         };
         clowder.mint_onchain(req, resp).await?;

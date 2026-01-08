@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::wire::clowder::events::{KeysetCreationRequest, KeysetCreationResponse};
+use bcr_common::wire::clowder::messages::{KeysetCreationRequest, KeysetCreationResponse};
 use cashu::mint_url::MintUrl;
 use cdk::{wallet::MintConnector, HttpClient};
 use utoipa::OpenApi;

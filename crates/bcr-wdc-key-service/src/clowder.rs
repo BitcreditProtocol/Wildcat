@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::clowder::events;
+use bcr_common::wire::clowder::messages;
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
@@ -53,12 +53,12 @@ pub struct ClowderCl(ClowderNatsClient);
 #[async_trait]
 impl ClowderClient for ClowderCl {
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()> {
-        let req = events::KeysetCreationRequest {
+        let req = messages::KeysetCreationRequest {
             id: keyset.id,
             expiry: keyset.final_expiry.unwrap_or(0_u64),
             unit: keyset.unit.clone(),
         };
-        let resp = events::KeysetCreationResponse {
+        let resp = messages::KeysetCreationResponse {
             public_keys: keyset.keys.keys().clone(),
             id: keyset.id,
             expiry: keyset.final_expiry.unwrap_or(0_u64),
@@ -73,7 +73,7 @@ impl ClowderClient for ClowderCl {
 
     async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()> {
         self.0
-            .deactivate_keyset(events::KeysetDeactivationRequest { id: kid })
+            .deactivate_keyset(messages::KeysetDeactivationRequest { id: kid })
             .await
             .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
         Ok(())

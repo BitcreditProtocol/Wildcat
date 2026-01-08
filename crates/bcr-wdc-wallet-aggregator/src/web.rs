@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     client::keys::{Client as KeysClient, Error as KeysError},
-    wire::{clowder::events, exchange as wire_exchange, swap as wire_swap},
+    wire::{clowder::messages, exchange as wire_exchange, swap as wire_swap},
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use cashu::MintVersion;
@@ -239,11 +239,11 @@ pub async fn post_swap(
     };
 
     if let Some(clwdr_client) = ctrl.clwdr_stream_client {
-        let req = events::SwapRequest {
+        let req = messages::SwapRequest {
             proofs,
             blinds: blinded_messages.clone(),
         };
-        let resp = events::SwapResponse {
+        let resp = messages::SwapResponse {
             signatures: signatures.clone(),
         };
         clwdr_client.mint_swap(req, resp).await?;
