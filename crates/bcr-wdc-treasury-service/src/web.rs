@@ -121,7 +121,7 @@ pub async fn melt_onchain(
     tracing::info!("Received melt_onchain request");
     let quote_id = request.quote_id();
     tracing::info!("Loading onchain melt quote with ID {}", quote_id);
-    let onchain_request = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
+    let onchain_data = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
     let inputs = request.inputs();
     if inputs.is_empty() {
         return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
@@ -131,7 +131,7 @@ pub async fn melt_onchain(
         .inputs_amount()
         .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?
         .into();
-    if total_proofs != onchain_request.request.amount.to_sat() {
+    if total_proofs != onchain_data.request.request.amount.to_sat() {
         return Err(crate::error::Error::InvalidInput(String::from(
             "Requested amount mismatch",
         )));
@@ -141,8 +141,8 @@ pub async fn melt_onchain(
         let melt_resp = clowder
             .melt_onchain(messages::MeltOnchainRequest {
                 quote: *quote_id,
-                address: onchain_request.request.address,
-                amount: onchain_request.request.amount,
+                address: onchain_data.request.request.address,
+                amount: onchain_data.request.request.amount,
             })
             .await?;
         let resp = wire_melt::MeltQuoteOnchainResponse {
@@ -150,10 +150,10 @@ pub async fn melt_onchain(
             quote: *quote_id,
             fee_reserve: bitcoin::Amount::ZERO,
             change: None,
-            amount: onchain_request.request.amount,
-            unit: Some(onchain_request.unit.clone()),
+            amount: onchain_data.request.request.amount,
+            unit: Some(onchain_data.request.unit.clone()),
             state: cashu::nuts::MeltQuoteState::Paid,
-            expiry: 0, // TODO fetch stored expiry
+            expiry: onchain_data.expiry,
         };
         return Ok(Json(resp));
     }
@@ -163,10 +163,10 @@ pub async fn melt_onchain(
         quote: *quote_id,
         fee_reserve: bitcoin::Amount::ZERO,
         change: None,
-        amount: onchain_request.request.amount,
-        unit: Some(onchain_request.unit),
+        amount: onchain_data.request.request.amount,
+        unit: Some(onchain_data.request.unit),
         state: cashu::nuts::MeltQuoteState::Unpaid,
-        expiry: 0, // TODO fetch stored expiry
+        expiry: onchain_data.expiry,
     };
 
     Ok(Json(resp))
@@ -280,7 +280,6 @@ pub async fn mint_onchain(
         let req = messages::MintOnchainRequest {
             keyset_id: kid,
             quote_id: data.clowder_quote,
-            mint_signature: "".into(), // TODO
             amount: cashu::Amount::from(outputs_amount),
             expiry: data.expiry,
         };

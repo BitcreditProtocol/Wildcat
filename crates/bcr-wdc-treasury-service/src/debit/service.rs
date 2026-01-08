@@ -28,6 +28,12 @@ pub struct ClowderMintQuoteOnchain {
     pub expiry: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OnchainMeltQuote {
+    pub request: wire_melt::MeltQuoteOnchainRequest,
+    pub expiry: u64,
+}
+
 #[async_trait]
 pub trait Wallet: Clone + Send {
     async fn mint_quote(
@@ -61,15 +67,9 @@ pub trait Repository: Clone + Send {
     async fn store_quote(&self, quote: MintQuote) -> Result<()>;
     async fn delete_quote(&self, qid: String) -> Result<()>;
     async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
-    async fn store_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-        request: bcr_common::wire::melt::MeltQuoteOnchainRequest,
-    ) -> Result<()>;
-    async fn load_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+    async fn store_onchain_melt(&self, quote_id: uuid::Uuid, data: OnchainMeltQuote)
+        -> Result<()>;
+    async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<OnchainMeltQuote>;
     async fn store_onchain_mint(
         &self,
         quote_id: uuid::Uuid,
@@ -105,12 +105,14 @@ where
         &self,
         request: wire_melt::MeltQuoteOnchainRequest,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        let expiry = chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64;
+        let expiry = (chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64) as u64;
         let quote_id = Uuid::new_v4();
         tracing::info!("Creating onchain melt quote with ID {}", quote_id);
-        self.repo
-            .store_onchain_melt(quote_id, request.clone())
-            .await?;
+        let data = OnchainMeltQuote {
+            request: request.clone(),
+            expiry,
+        };
+        self.repo.store_onchain_melt(quote_id, data).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
             txid: None,
             quote: quote_id,
@@ -119,7 +121,7 @@ where
             amount: bitcoin::Amount::from_sat(request.request.amount.to_sat()),
             unit: Some(request.unit),
             state: cashu::nuts::MeltQuoteState::Unpaid,
-            expiry: expiry as u64,
+            expiry,
         })
     }
 
@@ -334,8 +336,8 @@ mod tests {
             async fn store_quote(&self, quote: MintQuote) -> Result<()>;
             async fn delete_quote(&self, qid: String) -> Result<()>;
             async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
-            async fn store_onchain_melt(&self, quote_id: uuid::Uuid, request: bcr_common::wire::melt::MeltQuoteOnchainRequest) -> Result<()>;
-            async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<bcr_common::wire::melt::MeltQuoteOnchainRequest>;
+            async fn store_onchain_melt(&self, quote_id: uuid::Uuid, data: super::OnchainMeltQuote) -> Result<()>;
+            async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<super::OnchainMeltQuote>;
             async fn store_onchain_mint(&self, quote_id: uuid::Uuid, data: super::ClowderMintQuoteOnchain) -> Result<()>;
             async fn load_onchain_mint(&self, quote_id: uuid::Uuid) -> Result<super::ClowderMintQuoteOnchain>;
         }
