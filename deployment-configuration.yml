@@ -37,28 +37,12 @@ services:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-quote-service:${IMAGE_TAG:-latest}
     pull_policy: always
 
-  eiou-service:
-    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eiou-service:${IMAGE_TAG:-latest}
-    pull_policy: always
-
   wallet-aggregator:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-wallet-aggregator:${IMAGE_TAG:-latest}
     pull_policy: always
 
   admin-aggregator:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-admin-aggregator:${IMAGE_TAG:-latest}
-    pull_policy: always
-
-  ebill-service:
-    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
-    pull_policy: always
-    ports:
-      - "3338:3338"
-    environment:
-      - EBILL__APPCFG__NOSTR_CFG__RELAYS=${EBILL__APPCFG__NOSTR_CFG__RELAYS}
-
-  balance-collector:
-    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-balance-collector:${IMAGE_TAG:-latest}
     pull_policy: always
 
   ######################################################################################## clowder
@@ -80,6 +64,14 @@ services:
       - ./docker/clowder-node/settings.toml:/clowder/settings.toml
 
   ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-ebill-service:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports:
+      - "3338:3338"
+    environment:
+      - EBILL__APPCFG__NOSTR_CFG__RELAYS=${EBILL__APPCFG__NOSTR_CFG__RELAYS}
 
   eic-service:
     image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/bcr-wdc-eic-service:${IMAGE_TAG:-latest}
@@ -124,6 +116,26 @@ services:
             -H "Content-Type: application/json" \
             -d '$MINT_IDENTITY'
         echo -e "\n========== Finish Node ID Config ==========\n"
+
+ ######################################################################################## dashboard
+
+  dashboard-ui:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-dashboard-ui:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports:
+      - "8181:80"
+    environment:
+      - VITE_API_BASE_URL=${DASHBOARD_VITE_API_BASE_URL}
+      - VITE_KEYCLOAK_URL=${DASHBOARD_VITE_KEYCLOAK_URL}
+      - VITE_KEYCLOAK_REALM=${DASHBOARD_VITE_KEYCLOAK_REALM}
+      - VITE_KEYCLOAK_CLIENT_ID=${DASHBOARD_VITE_KEYCLOAK_CLIENT_ID}
+      - VITE_API_MOCKING_ENABLED=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   ######################################################################################## 3rd parties
 
