@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::wire::clowder::messages;
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
@@ -16,15 +17,14 @@ pub enum ClowderClientConfig {
     Dummy,
     ClowderNats {
         url: reqwest::Url,
-        wait_ack: bool,
     },
 }
 
 pub async fn build_clowder_client(cfg: ClowderClientConfig) -> Result<Box<dyn ClowderClient>> {
     match cfg {
         ClowderClientConfig::Dummy => Ok(Box::new(DummyClowderClient)),
-        ClowderClientConfig::ClowderNats { url, wait_ack } => {
-            let client = ClowderNatsClient::new(url, wait_ack)
+        ClowderClientConfig::ClowderNats { url } => {
+            let client = ClowderNatsClient::new(url)
                 .await
                 .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
             Ok(Box::new(ClowderCl(client)))
@@ -53,15 +53,27 @@ pub struct ClowderCl(ClowderNatsClient);
 #[async_trait]
 impl ClowderClient for ClowderCl {
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()> {
+        let req = messages::KeysetCreationRequest {
+            id: keyset.id,
+            expiry: keyset.final_expiry.unwrap_or(0_u64),
+            unit: keyset.unit.clone(),
+        };
+        let resp = messages::KeysetCreationResponse {
+            public_keys: keyset.keys.keys().clone(),
+            id: keyset.id,
+            expiry: keyset.final_expiry.unwrap_or(0_u64),
+            unit: keyset.unit,
+        };
         self.0
-            .post_keyset(keyset)
+            .post_keyset(req, resp)
             .await
             .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
         Ok(())
     }
+
     async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()> {
         self.0
-            .deactivate_keyset(kid)
+            .deactivate_keyset(messages::KeysetDeactivationRequest { id: kid })
             .await
             .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
         Ok(())

@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use bcr_common::wire::clowder::messages::{KeysetCreationRequest, KeysetCreationResponse};
 use cashu::mint_url::MintUrl;
 use cdk::{wallet::MintConnector, HttpClient};
 use utoipa::OpenApi;
@@ -72,9 +73,7 @@ impl AppController {
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
         let clwdr_stream_client = if let Some(url) = clwdr_nats_url {
-            Some(Arc::new(
-                clwdr_client::ClowderNatsClient::new(url, false).await?,
-            ))
+            Some(Arc::new(clwdr_client::ClowderNatsClient::new(url).await?))
         } else {
             None
         };
@@ -127,7 +126,18 @@ pub async fn routes(app: AppController) -> Result<Router> {
             if info.active {
                 let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
                 tracing::debug!("posting active keyset to clowder {}", info.id);
-                clwdr.post_keyset(keyset).await?;
+                let req = KeysetCreationRequest {
+                    id: info.id,
+                    expiry: info.final_expiry.unwrap_or(0),
+                    unit: info.unit.clone(),
+                };
+                let resp = KeysetCreationResponse {
+                    public_keys: keyset.keys.keys().clone(),
+                    id: info.id,
+                    expiry: info.final_expiry.unwrap_or(0),
+                    unit: info.unit,
+                };
+                clwdr.post_keyset(req, resp).await?;
             }
         }
     }

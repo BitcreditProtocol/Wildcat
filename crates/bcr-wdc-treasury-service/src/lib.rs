@@ -179,7 +179,7 @@ impl AppController {
 
         let clwdr_nats = if let Some(url) = clwdr_nats_url {
             Some(Arc::new(
-                ClowderNatsClient::new(url, false)
+                ClowderNatsClient::new(url)
                     .await
                     .expect("Failed to create clowder nats client"),
             ))
