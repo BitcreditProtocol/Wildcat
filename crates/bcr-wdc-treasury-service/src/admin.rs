@@ -7,7 +7,6 @@ use bcr_wdc_webapi::{exchange as web_exchange, wallet as web_wallet};
 use cashu::{self as cdk};
 // ----- local imports
 use crate::{debit, error::Result, foreign};
-
 // ----- end imports
 
 // ----- sat APIs
@@ -24,7 +23,11 @@ where
     tracing::debug!("Received request to mint from ebill");
 
     let quote = ctrl
-        .mint_from_ebill(request.ebill_id, request.amount, request.deadline)
+        .mint_from_ebill(
+            request.ebill_id,
+            cashu::Amount::from(request.amount.to_sat()),
+            request.deadline,
+        )
         .await?;
     let response = wire_signatures::RequestToMintFromEBillResponse {
         request_id: quote.id,
