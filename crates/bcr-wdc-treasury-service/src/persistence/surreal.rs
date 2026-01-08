@@ -134,12 +134,8 @@ impl debit::Repository for DebitRepository {
         data: debit::OnchainMeltQuote,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let _: Option<debit::OnchainMeltQuote> = self
-            .db
-            .insert(rid)
-            .content(data)
-            .await
-            .map_err(Error::DB)?;
+        let _: Option<debit::OnchainMeltQuote> =
+            self.db.insert(rid).content(data).await.map_err(Error::DB)?;
         Ok(())
     }
 
