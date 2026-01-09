@@ -185,7 +185,7 @@ fn convert_to_info_reply(
             discounted: bitcoin::Amount::from_sat(
                 fee.value().expect("fee token value missing").into(),
             ),
-            fee,
+            fee: fee.to_string(),
             minting_status: convert_mint_status(minting_status),
         },
     }
