@@ -2,7 +2,10 @@
 use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{core::signature::serialize_n_schnorr_sign_borsh_msg, wire::keys as wire_keys};
+use bcr_common::{
+    core::signature::serialize_n_schnorr_sign_borsh_msg,
+    wire::{clowder as wire_clowder, keys as wire_keys},
+};
 use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
 use cdk::wallet::MintConnector;
@@ -126,10 +129,16 @@ impl foreign::ClowderClient for ClowderCl {
         });
         let fps_len = fps.len();
         let fps: Vec<clwdr_model::ProofFingerprint> = fps.into_iter().collect();
-        let clwdr_model::IntermintOriginResponse { node_id, mint_url } =
-            self.clwdr.post_fingerprints_origin(fps.clone()).await?;
+        let clwdr_model::IntermintOriginResponse {
+            node_id: origin_id,
+            mint_url: origin_url,
+        } = self.clwdr.post_fingerprints_origin(fps.clone()).await?;
+        let wire_clowder::ConnectedMintResponse {
+            node_id: substitute_id,
+            ..
+        } = self.clwdr.get_substitute(origin_id).await?;
         let myself = self.clwdr.get_id().await?;
-        if node_id != myself.public_key {
+        if substitute_id != myself.public_key {
             return Err(Error::InvalidInput(String::from(
                 "currently not a substitute",
             )));
@@ -137,13 +146,13 @@ impl foreign::ClowderClient for ClowderCl {
         let clwdr_model::ValidFingerprints {
             valid_proofs,
             amount,
-        } = self.clwdr.post_verify_fingerprints(node_id, fps).await?;
+        } = self.clwdr.post_verify_fingerprints(origin_id, fps).await?;
         if valid_proofs.len() != fps_len || amount != input_amount {
             return Err(Error::InvalidInput(String::from(
                 "One or more fingerprints are invalid",
             )));
         }
-        Ok((mint_url, node_id))
+        Ok((origin_url, origin_id))
     }
 
     async fn get_keyset_info(
