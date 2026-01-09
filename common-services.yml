@@ -67,6 +67,8 @@ services:
         condition: service_started
       ebill-service:
         condition: service_healthy
+      clowder-node:
+        condition: service_healthy
     volumes:
       - ./docker/quote-service/config.toml:/quote-service/config.toml
     healthcheck:

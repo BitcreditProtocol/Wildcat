@@ -22,6 +22,7 @@ bitcoin.workspace = true
 borsh.workspace = true
 cashu = {workspace = true, features = ["swagger"]}
 chrono.workspace = true
+clwdr-client.workspace = true
 config.workspace = true
 futures.workspace = true
 reqwest = {workspace = true}
