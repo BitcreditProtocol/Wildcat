@@ -430,6 +430,7 @@ pub async fn get_clowder_local_coverage(
     ),
     responses (
         (status = 200, description = "Successful response", body = wire_clowder::Coverage , content_type = "application/json"),
+        (status = 404, description = "public key not found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
