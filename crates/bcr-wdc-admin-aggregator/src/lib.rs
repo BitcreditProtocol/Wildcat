@@ -82,7 +82,8 @@ pub mod endpoints {
     // Clowder-Client
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
     pub const GET_CLOWDER_BETAS: &str = "/v1/admin/clowder/betas";
-    pub const GET_CLOWDER_COVERAGE: &str = "/v1/admin/clowder/coverage";
+    pub const GET_CLOWDER_LOCAL_COVERAGE: &str = "/v1/admin/clowder/coverage";
+    pub const GET_CLOWDER_FOREIGN_COVERAGE: &str = "/v1/admin/clowder/coverage/{pk}";
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client
@@ -131,8 +132,12 @@ pub fn routes(ctrl: AppController) -> Router {
         )
         .route(endpoints::GET_CLOWDER_BETAS, get(admin::get_clowder_betas))
         .route(
-            endpoints::GET_CLOWDER_COVERAGE,
-            get(admin::get_clowder_coverage),
+            endpoints::GET_CLOWDER_LOCAL_COVERAGE,
+            get(admin::get_clowder_local_coverage),
+        )
+        .route(
+            endpoints::GET_CLOWDER_FOREIGN_COVERAGE,
+            get(admin::get_clowder_foreign_coverage),
         )
         .route(
             endpoints::GET_CLOWDER_MYSTATUS,
@@ -202,7 +207,8 @@ pub fn routes(ctrl: AppController) -> Router {
         // clowder service
         admin::get_clowder_alphas,
         admin::get_clowder_betas,
-        admin::get_clowder_coverage,
+        admin::get_clowder_local_coverage,
+        admin::get_clowder_foreign_coverage,
         admin::get_clowder_mystatus,
         admin::get_clowder_status,
         // treasury service

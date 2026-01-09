@@ -396,7 +396,7 @@ pub async fn get_clowder_betas(
 /// Returns coverage information about the local mint
 #[utoipa::path(
     get,
-    path = endpoints::GET_CLOWDER_COVERAGE,
+    path = endpoints::GET_CLOWDER_LOCAL_COVERAGE,
     params(
     ),
     responses (
@@ -404,7 +404,7 @@ pub async fn get_clowder_betas(
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_clowder_coverage(
+pub async fn get_clowder_local_coverage(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_clowder::Coverage>> {
     tracing::debug!("Received clowder coverage request");
@@ -418,6 +418,38 @@ pub async fn get_clowder_coverage(
         onchain_collateral: collateral.onchain,
         ebill_collateral: collateral.ebill,
         eiou_collateral: collateral.eiou,
+    }))
+}
+
+/// Returns coverage information about an alpha mint this local mint is verifying in beta capacity
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_FOREIGN_COVERAGE,
+    params(
+        ("pk" = String, Path, description = "the public key of the mint to get the status for")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::Coverage , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_clowder_foreign_coverage(
+    State(ctrl): State<AppController>,
+    Path(pk): Path<secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::Coverage>> {
+    tracing::debug!("Received clowder coverage request");
+
+    let supply = ctrl.clwdr_cl.get_circulating_supply(pk).await?;
+    let btc_amt = ctrl.clwdr_cl.get_collateral_onchain(pk).await?.amount;
+    let ebill_amt = ctrl.clwdr_cl.get_collateral_ebill(pk).await?.amount;
+    let eiou_amt = ctrl.clwdr_cl.get_collateral_eiou(pk).await?.amount;
+
+    Ok(Json(wire_clowder::Coverage {
+        debit_circulating_supply: supply.debit,
+        credit_circulating_supply: supply.credit,
+        onchain_collateral: btc_amt,
+        ebill_collateral: ebill_amt,
+        eiou_collateral: eiou_amt,
     }))
 }
 
