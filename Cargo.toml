@@ -49,7 +49,7 @@ cdk-common = {version = "=0.13.1"}
 cdk-payment-processor = {version = "=0.13.1", default-features = false}
 cdk-redb = {version = "=0.13.1"}
 chrono = {version = "0.4"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "2ca3bf4c2b5fc71e81e06c4c0e3abf07abf19880"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "1bd3347db07498ce2db539acfb7020edc9115551"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
