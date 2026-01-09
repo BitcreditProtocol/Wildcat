@@ -103,7 +103,8 @@ pub enum Status {
     MintingEnabled {
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
-        fee: bcr_common::wallet::Token,
+        discounted: bitcoin::Amount,
+        fee: String,
     },
 }
 
@@ -256,7 +257,8 @@ impl Quote {
                 self.status = Status::MintingEnabled {
                     keyset_id,
                     wallet_pubkey,
-                    fee,
+                    discounted,
+                    fee: fee.to_string(),
                 }
             }
             _ => {
