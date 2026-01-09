@@ -84,12 +84,11 @@ fn convert_to_enquire_reply(
         quotes::Status::MintingEnabled {
             keyset_id,
             wallet_pubkey,
-            fee,
+            discounted,
+            ..
         } => wire_quotes::StatusReply::Accepted {
             keyset_id,
-            discounted: bitcoin::Amount::from_sat(
-                fee.value().expect("fee token to have a value").into(),
-            ),
+            discounted,
             minting_pubkey: wallet_pubkey,
             minting_status: convert_mint_status(minting_status),
         },

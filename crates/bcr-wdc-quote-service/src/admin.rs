@@ -178,14 +178,17 @@ fn convert_to_info_reply(
             discounted,
             tstamp,
         },
-        quotes::Status::MintingEnabled { keyset_id, fee, .. } => wire_quotes::InfoReply::Minting {
+        quotes::Status::MintingEnabled {
+            keyset_id,
+            fee,
+            discounted,
+            ..
+        } => wire_quotes::InfoReply::Minting {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
             keyset_id,
-            discounted: bitcoin::Amount::from_sat(
-                fee.value().expect("fee token value missing").into(),
-            ),
-            fee: fee.to_string(),
+            discounted,
+            fee,
             minting_status: convert_mint_status(minting_status),
         },
     }
