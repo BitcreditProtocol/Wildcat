@@ -144,7 +144,7 @@ pub async fn post_enable_redemption(
         ("qid" = uuid::Uuid, Path, description = "the quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::StatusReply , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::InfoReply , content_type = "application/json"),
         (status = 404, description = "quote id not found"),
     )
 )]
@@ -437,9 +437,9 @@ pub async fn get_clowder_status(
 #[utoipa::path(
     post,
     path = endpoints::POST_EBILL_REQTOPAY,
-    request_body(content = wire_bill::RequestToPayBitcreditBillPayload, content_type = "application/json"),
+    request_body(content = wire_signatures::RequestToMintFromEBillRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response"),
+        (status = 200, description = "Successful response", body = wire_signatures::RequestToMintFromEBillResponse, content_type = "application/json"),
         (status = 404, description = "bill id not found"),
     )
 )]
@@ -461,7 +461,7 @@ pub async fn post_ebill_reqtopay(
     get,
     path = endpoints::GET_SAT_BALANCE,
     responses (
-        (status = 200, description = "Successful response"),
+        (status = 200, description = "Successful response", body = web_wallet::ECashBalance, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
