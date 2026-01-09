@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use bcr_common::client::quote::Client as QuoteClient;
+use bcr_common::{client::quote::Client as QuoteClient, wire::clowder as wire_clowder};
 // ----- local modules
 mod admin;
 mod ebill;
@@ -32,7 +32,7 @@ pub struct AppConfig {
     quotes: persistence::surreal::ConnectionConfig,
     keys: keys::KeysRestConfig,
     ebill_client: ebill::EBillClientConfig,
-    mint_url: cashu::MintUrl,
+    clowder_rest_url: reqwest::Url,
 }
 
 #[derive(Clone, FromRef)]
@@ -46,12 +46,19 @@ impl AppController {
             quotes,
             keys,
             ebill_client,
-            mint_url,
+            clowder_rest_url,
         } = cfg;
         let quotes_repository = ProdQuoteRepository::new(quotes)
             .await
             .expect("DB connection to quotes failed");
 
+        let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_rest_url);
+        let wire_clowder::PublicKeyResponse { public_key } =
+            clwdr_cl.get_id().await.expect("Failed to get Clowder ID");
+        let clwdr_client::model::MintUrlResponse { mint_url, .. } = clwdr_cl
+            .get_mint_url(public_key)
+            .await
+            .expect("Failed to get mint URL");
         let keys_hndlr = ProdKeysHandler::new(keys);
         let ebill = ebill::EBillClient::new(ebill_client);
         let quoting_service = ProdQuotingService {

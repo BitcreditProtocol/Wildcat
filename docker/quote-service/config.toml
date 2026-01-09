@@ -3,7 +3,7 @@ bind_address = "0.0.0.0:3338"
 log_level = "DEBUG"
 
 [appcfg]
-mint_url = "http://bff-wallet-service:4343"
+clowder_rest_url = "http://clowder-node:3010"
 
 [appcfg.quotes]
 connection = "ws://surrealdb:8000"
@@ -13,9 +13,6 @@ table = "quotes"
 
 [appcfg.keys]
 base_url = "http://key-service:3338"
-
-[appcfg.wallet]
-base_url = "http://treasury-service:3338"
 
 [appcfg.ebill_client]
 base_url = "http://ebill-service:3338"
