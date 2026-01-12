@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, Weak};
 use async_trait::async_trait;
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -51,10 +51,11 @@ impl Handler {
 impl OfflineSettleHandler for Handler {
     fn monitor(&self, mint: (secp256k1::PublicKey, cashu::MintUrl)) -> Result<()> {
         {
-            let monitored = self.monitored.lock().unwrap();
+            let mut monitored = self.monitored.lock().unwrap();
             if monitored.contains(&mint.0) {
                 return Ok(());
             }
+            monitored.push(mint.0);
         }
         let handle = tokio::spawn(monitor(
             mint.clone(),
@@ -68,10 +69,6 @@ impl OfflineSettleHandler for Handler {
         {
             let mut handles = self.handles.lock().unwrap();
             handles.push(handle);
-        }
-        {
-            let mut monitored = self.monitored.lock().unwrap();
-            monitored.push(mint.0);
         }
         Ok(())
     }
@@ -95,14 +92,17 @@ async fn monitor(
     pause: Duration,
     cancel: CancellationToken,
 ) {
+    debug!("Starting offline monitor for {}", mint.1);
     loop {
         tokio::select! {
                 _ = cancel.cancelled() => {
+                    debug!("Monitor cancelled, abandoning {}", mint.1);
                     break;
                 }
                 _ = tokio::time::sleep(pause) => {
             }
         }
+        debug!("Checking offline status for {}", mint.1);
         let Some(clowder) = clowder.upgrade() else {
             warn!("ClowderClient upgrade failed, abandoning {}", mint.1);
             break;
@@ -153,6 +153,10 @@ async fn monitor(
                 warn!("get_mint_keyset failed {}, retry later", mint.1);
                 continue;
             };
+            debug!(
+                "Settling proofs totaling {total} at {} with keysetID {kid}",
+                mint.1
+            );
             let Ok(premints) =
                 cashu::PreMintSecrets::random(kid, total, &cashu::amount::SplitTarget::None)
             else {
@@ -183,6 +187,7 @@ async fn monitor(
             if offline_repo.remove_proofs(&ys).await.is_err() {
                 warn!("remove_proofs failed {}", mint.1);
             }
+            info!("successfully settled {total} at {}", mint.1);
         }
         break;
     }
