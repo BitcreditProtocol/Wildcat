@@ -63,6 +63,19 @@ services:
     volumes:
       - ./docker/clowder-node/settings.toml:/clowder/settings.toml
 
+  ######################################################################################## clowder-beta
+
+  signatory-beta:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  clowder-beta:
+    image: europe-west1-docker.pkg.dev/bitcr-shared/bitcr-wildcat-dev/clowder:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      - CLWDR__ELECTRUM_CONFIG__RPC_URL=tcp://100.107.165.30:50001
+      - CLWDR__ELECTRUM_CONFIG__NETWORK=testnet
+
   ######################################################################################## wildcat-auxiliary
 
   ebill-service:
