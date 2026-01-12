@@ -170,10 +170,12 @@ async fn monitor(
                 continue;
             };
             let mut news = Vec::with_capacity(response.signatures.len());
-            for (premint, signature) in premints.into_iter().zip(response.signatures.into_iter()) {
+            for (signature, premint) in response.signatures.into_iter().zip(premints.iter()) {
                 let amount = signature.amount;
                 let Ok(proof) = bcr_common::core::signature::unblind_ecash_signature(
-                    &keyset, premint, signature,
+                    &keyset,
+                    premint.clone(),
+                    signature,
                 ) else {
                     error!("unblind_ecash_signature failed {}, lost {}", mint.1, amount);
                     continue;
