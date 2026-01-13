@@ -357,6 +357,28 @@ pub async fn get_ebill_attachment(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_EBILL_PAYMENTSTATUS,
+    params(
+        ("bid" = String, Path, description = "the ebill id"),
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_bill::SimplifiedBillPaymentStatus, content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_ebill_paymentstatus(
+    State(ctrl): State<AppController>,
+    Path(bid): Path<BillId>,
+) -> Result<Json<wire_bill::SimplifiedBillPaymentStatus>> {
+    tracing::debug!("Received ebill payment status request for {bid}");
+
+    let status = ctrl.ebill_cl.get_payment_status(bid).await?;
+    Ok(Json(status))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_CLOWDER_ALPHAS,
     params(
     ),
