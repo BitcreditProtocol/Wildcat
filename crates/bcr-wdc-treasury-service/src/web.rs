@@ -222,6 +222,7 @@ pub async fn mint_quote_onchain(
         address: address_response.address,
         amount: request.amount,
         expiry,
+        state: Some(cashu::MintQuoteState::Unpaid),
     };
     Ok(Json(wallet_response))
 }
@@ -232,8 +233,38 @@ pub async fn get_mint_quote_onchain(
     Path(quote_id): Path<String>,
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
     tracing::debug!("Received get_mint_quote_onchain request");
-    let response = ctrl.debit.get_onchain_mint_quote(&quote_id).await?;
-    Ok(Json(response))
+
+    let cdk_quote = Uuid::parse_str(&quote_id)
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
+    let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
+
+    let cdk_status = ctrl.dbmint.get_mint_quote_status(&quote_id).await?;
+
+    // CDK and the payment processor don't know payment status
+    let state = if cdk_status.state == cashu::MintQuoteState::Issued {
+        cashu::MintQuoteState::Issued
+    } else {
+        let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
+            .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
+        let payment = ctrl
+            .clwdr_rest
+            .verify_mint_payment(data.clowder_quote, dummy_kid, ctrl.min_confirmations)
+            .await?;
+
+        if payment.amount.to_sat() >= data.amount.into() {
+            cashu::MintQuoteState::Paid
+        } else {
+            cashu::MintQuoteState::Unpaid
+        }
+    };
+
+    Ok(Json(wire_mint::MintQuoteOnchainResponse {
+        quote: data.cdk_quote,
+        address: data.address,
+        amount: bitcoin::Amount::from_sat(data.amount.into()),
+        expiry: data.expiry,
+        state: Some(state),
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -263,7 +294,7 @@ pub async fn mint_onchain(
 
     let payment_response = ctrl
         .clwdr_rest
-        .verify_mint_payment(data.clowder_quote, kid, 1)
+        .verify_mint_payment(data.clowder_quote, kid, ctrl.min_confirmations)
         .await?;
 
     tracing::debug!("Clowder payment check {:?} sats", payment_response.amount);
