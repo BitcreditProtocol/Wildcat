@@ -136,6 +136,7 @@ where
             address: data.address,
             amount: bitcoin::Amount::from_sat(data.amount.into()),
             expiry: data.expiry,
+            state: None,
         })
     }
 }

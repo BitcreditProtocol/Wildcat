@@ -54,6 +54,7 @@ pub struct AppConfig {
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u64,
     quote_expiry_seconds: u64,
+    min_confirmations: u32,
 }
 
 #[derive(Clone, FromRef)]
@@ -66,6 +67,7 @@ pub struct AppController {
     clwdr_rest: Arc<ClowderRestClient>,
     dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
+    min_confirmations: u32,
 }
 
 impl AppController {
@@ -85,6 +87,7 @@ impl AppController {
             wildcat,
             monitor_interval_sec,
             quote_expiry_seconds,
+            min_confirmations,
         } = cfg;
 
         let wallet = ProdDebitWallet::new(sat_wallet, seed)
@@ -201,6 +204,7 @@ impl AppController {
             clwdr_rest,
             dbmint,
             dev: Arc::new(dev),
+            min_confirmations,
         }
     }
 
