@@ -10,17 +10,6 @@ use crate::{
 };
 
 /// --------------------------- List quotes
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_pending_quotes(
-    State(ctrl): State<Service>,
-    Query(req): Query<wire_quotes::ListPendingQueryRequest>,
-) -> Result<Json<wire_quotes::ListReply>> {
-    tracing::debug!("Received request to list pending quotes");
-
-    let quotes = ctrl.list_pendings(req.since).await?;
-    Ok(Json(wire_quotes::ListReply { quotes }))
-}
-
 fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo {
     let status = match quote.status {
         quotes::StatusDiscriminants::Pending => wire_quotes::InfoReplyDiscriminants::Pending,

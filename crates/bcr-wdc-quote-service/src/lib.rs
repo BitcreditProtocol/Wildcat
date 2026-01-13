@@ -86,10 +86,6 @@ where
         .route(QuoteClient::RESOLVE_EP_V1, post(web::resolve_offer));
 
     let admin_routes = Router::new()
-        .route(
-            "/v1/admin/credit/quote/pending",
-            get(admin::list_pending_quotes),
-        )
         .route(QuoteClient::LIST_EP_V1, get(admin::list_quotes))
         .route("/v1/admin/credit/quote/{qid}", get(admin::lookup_quote))
         .route(QuoteClient::UPDATE_EP_V1, post(admin::update_quote))
