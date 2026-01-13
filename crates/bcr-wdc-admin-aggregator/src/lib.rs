@@ -79,6 +79,8 @@ pub mod endpoints {
     pub const LIST_EBILLS: &str = "/v1/admin/ebill/bills";
     pub const GET_EBILL_ENDORSEMENTS: &str = "/v1/admin/ebill/endorsements/{bid}";
     pub const GET_EBILL_ATTACHMENT: &str = "/v1/admin/ebill/attachments/{bid}/{fname}";
+    pub const GET_EBILL_PAYMENTSTATUS: &str = "/v1/admin/ebill/payment_status/{bid}";
+
     // Clowder-Client
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
     pub const GET_CLOWDER_BETAS: &str = "/v1/admin/clowder/betas";
@@ -124,6 +126,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::GET_EBILL_ATTACHMENT,
             get(admin::get_ebill_attachment),
+        )
+        .route(
+            endpoints::GET_EBILL_PAYMENTSTATUS,
+            get(admin::get_ebill_paymentstatus),
         )
         // clowder service
         .route(
@@ -175,6 +181,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_identity::Identity,
         wire_bill::BitcreditBill,
         wire_bill::Endorsement,
+        wire_bill::SimplifiedBillPaymentStatus,
         // clowder service
         wire_clowder::ConnectedMintsResponse,
         wire_clowder::PerceivedState,
@@ -204,6 +211,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::list_ebills,
         admin::get_ebill_endorsements,
         admin::get_ebill_attachment,
+        admin::get_ebill_paymentstatus,
         // clowder service
         admin::get_clowder_alphas,
         admin::get_clowder_betas,
