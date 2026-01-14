@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::{clowder::messages, quotes::BillInfo};
+use bcr_common::{core::BillId, wire::clowder::messages};
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
@@ -51,7 +51,7 @@ impl ClowderClient for DummyClowderClient {
         _keyset_id: cashu::Id,
         _quote_id: uuid::Uuid,
         _amount: cashu::Amount,
-        _info: BillInfo,
+        _bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
         Ok(signatures)
@@ -94,7 +94,7 @@ impl ClowderClient for ClowderCl {
         keyset_id: cashu::Id,
         quote_id: uuid::Uuid,
         amount: cashu::Amount,
-        info: BillInfo,
+        bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
         let resp = self
@@ -104,7 +104,7 @@ impl ClowderClient for ClowderCl {
                     amount,
                     keyset_id,
                     quote_id,
-                    info,
+                    bill_id,
                 },
                 messages::MintEbillResponse { signatures },
             )

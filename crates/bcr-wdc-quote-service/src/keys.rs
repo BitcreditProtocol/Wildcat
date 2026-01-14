@@ -2,7 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
-use bcr_common::wire::quotes as wire_quotes;
+use bcr_common::core::BillId;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
@@ -45,9 +45,9 @@ impl KeysHandler for KeysRestHandler {
         kid: cashu::Id,
         pk: cashu::PublicKey,
         target: cashu::Amount,
-        bill_info: wire_quotes::BillInfo,
+        bill_id: BillId,
     ) -> Result<()> {
-        self.0.new_mint_operation(qid, kid, pk, target, bill_info).await?;
+        self.0.new_mint_operation(qid, kid, pk, target, bill_id).await?;
         Ok(())
     }
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
@@ -112,7 +112,7 @@ pub mod test_utils {
             _kid: cashu::Id,
             _pk: cashu::PublicKey,
             _target: cashu::Amount,
-            _bill_info: wire_quotes::BillInfo,
+            _bill_id: bcr_common::core::BillId,
         ) -> Result<()> {
             Ok(())
         }
