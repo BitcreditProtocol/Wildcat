@@ -2,18 +2,12 @@ services:
   ######################################################################################## ours
   ebpp:
     image: wildcat/ebpp
-    depends_on:
-      surrealdb:
-        condition: service_healthy
-    environment:
-      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
     volumes:
       - ./docker/ebpp/config.toml:/ebpp/config.toml
       - ./.docker_data/ebpp/:/data/
 
   key-service:
     image: wildcat/key-service
-    pull_policy: never
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -32,7 +26,6 @@ services:
 
   swap-service:
     image: wildcat/swap-service
-    pull_policy: never
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -43,7 +36,6 @@ services:
 
   treasury-service:
     image: wildcat/treasury-service
-    pull_policy: never
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -57,7 +49,6 @@ services:
 
   quote-service:
     image: wildcat/quote-service
-    pull_policy: never
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -82,7 +73,6 @@ services:
 
   wallet-aggregator:
     image: wildcat/wallet-aggregator
-    pull_policy: never
     depends_on:
       key-service:
         condition: service_healthy
@@ -102,7 +92,6 @@ services:
 
   admin-aggregator:
     image: wildcat/admin-aggregator
-    pull_policy: never
     depends_on:
       key-service:
         condition: service_healthy
