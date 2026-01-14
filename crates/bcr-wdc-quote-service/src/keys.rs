@@ -47,7 +47,9 @@ impl KeysHandler for KeysRestHandler {
         target: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()> {
-        self.0.new_mint_operation(qid, kid, pk, target, bill_id).await?;
+        self.0
+            .new_mint_operation(qid, kid, pk, target, bill_id)
+            .await?;
         Ok(())
     }
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {

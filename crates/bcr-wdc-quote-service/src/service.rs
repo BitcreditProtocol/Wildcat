@@ -338,7 +338,13 @@ impl Service {
             .update_status_if_accepted(quote.id, quote.status)
             .await?;
         self.keys_hndlr
-            .add_new_mint_operation(qid, keyset_id, wallet_pubkey, discounted_amount, quote.bill.id.clone())
+            .add_new_mint_operation(
+                qid,
+                keyset_id,
+                wallet_pubkey,
+                discounted_amount,
+                quote.bill.id.clone(),
+            )
             .await?;
         Ok(())
     }

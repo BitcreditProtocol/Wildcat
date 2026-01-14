@@ -242,7 +242,13 @@ impl Service {
 
         let signatures = self
             .clowder
-            .mint_ebill(keyset.id, request.quote, output_amount, operation.bill_id.clone(), signatures)
+            .mint_ebill(
+                keyset.id,
+                request.quote,
+                output_amount,
+                operation.bill_id.clone(),
+                signatures,
+            )
             .await?;
 
         Ok(cashu::MintResponse { signatures })
@@ -279,7 +285,13 @@ mod tests {
         let qid = Uuid::new_v4();
         let kp = bcr_common::core_tests::generate_random_keypair();
         service
-            .new_minting_operation(qid, kid, kp.public_key().into(), amount, bcr_common::core_tests::random_bill_id())
+            .new_minting_operation(
+                qid,
+                kid,
+                kp.public_key().into(),
+                amount,
+                bcr_common::core_tests::random_bill_id(),
+            )
             .await
             .unwrap();
         (service, kid, qid, kp)
