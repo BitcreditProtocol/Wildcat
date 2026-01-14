@@ -5,47 +5,52 @@ services:
       file: common-services.yml
       service: ebpp
     depends_on:
+      surrealdb:
+        condition: service_healthy
       electrs:
         condition: service_started
     environment:
       - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    pull_policy: never
 
   key-service:
     extends:
       file: common-services.yml
       service: key-service
+    pull_policy: never
 
   swap-service:
     extends:
       file: common-services.yml
       service: swap-service
+    pull_policy: never
 
   treasury-service:
     extends:
       file: common-services.yml
       service: treasury-service
+    pull_policy: never
 
   quote-service:
     extends:
       file: common-services.yml
       service: quote-service
+    pull_policy: never
 
   wallet-aggregator:
     extends:
       file: common-services.yml
       service: wallet-aggregator
+    pull_policy: never
 
   admin-aggregator:
     extends:
       file: common-services.yml
       service: admin-aggregator
-
-  ebill-service:
-    extends:
-      file: common-services.yml
-      service: ebill-service
+    pull_policy: never
 
   ######################################################################################## 3rd parties
+
   keycloak:
     extends:
       file: common-services.yml
@@ -111,6 +116,35 @@ services:
     ports:
       - "4343:4242"
 
+  nats:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  nats-beta:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    extends:
+      file: common-services.yml
+      service: ebill-service
+
+  eic-service:
+    extends:
+      file: common-services.yml
+      service: eic-service
+
+  ens-service:
+    extends:
+      file: common-services.yml
+      service: ens-service
+
+  ######################################################################################## clowder
+
   signatory:
     extends:
       file: common-services.yml
@@ -123,16 +157,6 @@ services:
       service: signatory
     volumes:
       - ./docker/clowder-signatory/settings_beta.toml:/clowder/settings.toml
-
-  nats:
-    extends:
-      file: common-services.yml
-      service: nats
-
-  nats-beta:
-    extends:
-      file: common-services.yml
-      service: nats
 
   clowder-node:
     extends:
@@ -168,13 +192,3 @@ services:
     ports:
       - "3011:3011"
       - 5002:5002/udp
-
-  eic-service:
-    extends:
-      file: common-services.yml
-      service: eic-service
-
-  ens-service:
-    extends:
-      file: common-services.yml
-      service: ens-service
