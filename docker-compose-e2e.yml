@@ -1,28 +1,67 @@
 services:
+  ######################################################################################## ours
+  ebpp:
+    extends:
+      file: common-services.yml
+      service: ebpp
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    pull_policy: never
+
   key-service:
     extends:
       file: common-services.yml
       service: key-service
-
-  treasury-service:
-    extends:
-      file: common-services.yml
-      service: treasury-service
+    pull_policy: never
 
   swap-service:
     extends:
       file: common-services.yml
       service: swap-service
+    pull_policy: never
+
+  treasury-service:
+    extends:
+      file: common-services.yml
+      service: treasury-service
+    pull_policy: never
 
   quote-service:
     extends:
       file: common-services.yml
       service: quote-service
+    pull_policy: never
 
   wallet-aggregator:
     extends:
       file: common-services.yml
       service: wallet-aggregator
+    pull_policy: never
+
+  ######################################################################################## 3rd parties
+
+  keycloak:
+    extends:
+      file: common-services.yml
+      service: keycloak
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: dev-file
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      WDC_DASHBOARD_URL: "http://localhost:5173"
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
+    command:
+      - start-dev
+      - --import-realm
+      - --http-port=8080
+    ports:
+      - "8080:8080"
 
   surrealdb:
     extends:
@@ -30,31 +69,6 @@ services:
       service: surrealdb
     ports:
       - "8000:8000"
-
-  cdk-mintd:
-    extends:
-      file: common-services.yml
-      service: cdk-mintd
-
-  ebpp:
-    extends:
-      file: common-services.yml
-      service: ebpp
-
-  ebill-service:
-    extends:
-      file: common-services.yml
-      service: ebill-service
-
-  bff-wallet-service:
-    extends:
-      file: common-services.yml
-      service: bff-wallet-service
-
-  bff-dashboard-service:
-    extends:
-      file: common-services.yml
-      service: bff-dashboard-service
 
   bitcoin-core:
     extends:
@@ -76,25 +90,27 @@ services:
       ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
       ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
 
-  keycloak:
+  cdk-mintd:
     extends:
       file: common-services.yml
-      service: keycloak
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_DB: dev-file
-      KC_HEALTH_ENABLED: true
-      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
-      WDC_DASHBOARD_URL: "http://localhost:5173"
-      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
-      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
-    command:
-      - start-dev
-      - --import-realm
-      - --http-port=8080
-    ports:
-      - "8080:8080"
+      service: cdk-mintd
+
+  bff-dashboard-service:
+    extends:
+      file: common-services.yml
+      service: bff-dashboard-service
+
+  bff-wallet-service:
+    extends:
+      file: common-services.yml
+      service: bff-wallet-service
+
+  ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    extends:
+      file: common-services.yml
+      service: ebill-service
 
   e2e-tests:
     image: wildcat/e2e-tests
