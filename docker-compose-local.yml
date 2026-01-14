@@ -70,7 +70,7 @@ services:
       - --proxy-headers=xforwarded
       - --hostname=localhost
     ports:
-      - "8000:8000"
+      - "8080:8080"
 
   surrealdb:
     extends:
@@ -185,7 +185,7 @@ services:
     depends_on:
       signatory-beta:
         condition: service_started
-      nats:
+      nats-beta:
         condition: service_started
       electrs:
         condition: service_started
