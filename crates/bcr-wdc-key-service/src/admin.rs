@@ -72,6 +72,7 @@ pub async fn new_mintop(
         request.kid,
         request.pub_key,
         request.target,
+        request.bill_info,
     )
     .await?;
     let response = wire_keys::NewMintOperationResponse {};

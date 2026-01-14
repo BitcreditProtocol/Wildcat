@@ -2,7 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::core;
+use bcr_common::{core, wire::quotes::BillInfo};
 use bcr_wdc_utils::keys as keys_utils;
 use cdk_common::mint::MintKeySetInfo;
 use itertools::Itertools;
@@ -16,13 +16,13 @@ use crate::{
 // ----- end imports
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(test, derive(PartialEq))]
 pub struct MintOperation {
     pub uid: Uuid,
     pub kid: cashu::Id,
     pub pub_key: cashu::PublicKey,
     pub target: cashu::Amount,
     pub minted: cashu::Amount,
+    pub bill_info: BillInfo,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -56,6 +56,14 @@ pub trait SignaturesRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
+    async fn mint_ebill(
+        &self,
+        keyset_id: cashu::Id,
+        quote_id: uuid::Uuid,
+        amount: cashu::Amount,
+        info: BillInfo,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>>;
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()>;
     async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()>;
 }
@@ -156,6 +164,7 @@ impl Service {
         kid: cashu::Id,
         pub_key: cashu::PublicKey,
         amount: cashu::Amount,
+        bill_info: BillInfo,
     ) -> Result<()> {
         let new = MintOperation {
             uid,
@@ -163,6 +172,7 @@ impl Service {
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
+            bill_info,
         };
         self.keys.store_mintop(new).await?;
         Ok(())
@@ -229,8 +239,13 @@ impl Service {
                 operation.minted + output_amount,
             )
             .await?;
-        let response = cashu::MintResponse { signatures };
-        Ok(response)
+
+        let signatures = self
+            .clowder
+            .mint_ebill(keyset.id, request.quote, output_amount, operation.bill_info.clone(), signatures)
+            .await?;
+
+        Ok(cashu::MintResponse { signatures })
     }
 }
 
@@ -239,10 +254,25 @@ mod tests {
     use super::*;
     use crate::btc32::DerivationPath;
     use crate::test_utils::{TestKeysRepository, TestKeysService, TestSignaturesRepository};
+    use bcr_common::wire::bill::BillParticipant;
+    use bcr_common::wire_tests::random_identity_public_data;
     use bcr_wdc_utils::signatures::test_utils::generate_blinds;
     use cashu::Amount;
     use secp256k1::Keypair;
     use std::str::FromStr;
+
+    fn test_bill_info() -> BillInfo {
+        BillInfo {
+            id: bcr_common::core_tests::random_bill_id(),
+            drawee: random_identity_public_data().1,
+            drawer: random_identity_public_data().1,
+            payee: BillParticipant::Ident(random_identity_public_data().1),
+            endorsees: vec![],
+            sum: 1000,
+            maturity_date: chrono::NaiveDate::from_ymd_opt(2029, 1, 1).unwrap(),
+            file_urls: vec![],
+        }
+    }
 
     // Helper function to set up test service
     async fn setup_test_service(
@@ -264,7 +294,7 @@ mod tests {
         let qid = Uuid::new_v4();
         let kp = bcr_common::core_tests::generate_random_keypair();
         service
-            .new_minting_operation(qid, kid, kp.public_key().into(), amount)
+            .new_minting_operation(qid, kid, kp.public_key().into(), amount, test_bill_info())
             .await
             .unwrap();
         (service, kid, qid, kp)

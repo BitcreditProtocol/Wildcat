@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
+use bcr_common::wire::quotes::BillInfo;
 use bcr_wdc_utils::keys::KeysetEntry;
 use bitcoin::bip32::DerivationPath;
 use cashu::{nut00 as cdk00, nut01 as cdk01, nut02 as cdk02, nut12 as cdk12, Amount, PublicKey};
@@ -115,6 +116,7 @@ pub struct MintOpDBEntry {
     pub_key: cashu::PublicKey,
     target: cashu::Amount,
     minted: cashu::Amount,
+    bill_info: BillInfo,
 }
 
 fn convert_to_mintopdbentry(entry: MintOperation, table: &str) -> MintOpDBEntry {
@@ -124,6 +126,7 @@ fn convert_to_mintopdbentry(entry: MintOperation, table: &str) -> MintOpDBEntry 
         pub_key,
         target,
         minted,
+        bill_info,
     } = entry;
     let id = RecordId::from_table_key(table, uid);
     MintOpDBEntry {
@@ -132,6 +135,7 @@ fn convert_to_mintopdbentry(entry: MintOperation, table: &str) -> MintOpDBEntry 
         pub_key,
         target,
         minted,
+        bill_info,
     }
 }
 impl std::convert::From<MintOpDBEntry> for MintOperation {
@@ -144,6 +148,7 @@ impl std::convert::From<MintOpDBEntry> for MintOperation {
             pub_key: entry.pub_key,
             target: entry.target,
             minted: entry.minted,
+            bill_info: entry.bill_info,
         }
     }
 }
@@ -423,7 +428,22 @@ impl SignaturesRepository for DBSignatures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bcr_common::wire::bill::BillParticipant;
+    use bcr_common::wire_tests::random_identity_public_data;
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+
+    fn test_bill_info() -> BillInfo {
+        BillInfo {
+            id: bcr_common::core_tests::random_bill_id(),
+            drawee: random_identity_public_data().1,
+            drawer: random_identity_public_data().1,
+            payee: BillParticipant::Ident(random_identity_public_data().1),
+            endorsees: vec![],
+            sum: 1000,
+            maturity_date: chrono::NaiveDate::from_ymd_opt(2029, 1, 1).unwrap(),
+            file_urls: vec![],
+        }
+    }
 
     async fn init_mem_db() -> DBKeys {
         let sdb = Surreal::<Any>::init();
@@ -556,6 +576,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store_mintop(op).await.unwrap();
     }
@@ -572,6 +593,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store_mintop(op.clone()).await.unwrap();
         let res = db.store_mintop(op).await;
@@ -590,6 +612,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         assert!(db.store_mintop(op).await.is_err());
     }
@@ -606,6 +629,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store(keys).await.unwrap();
         db.store_mintop(op.clone()).await.unwrap();
@@ -626,6 +650,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store(keys).await.unwrap();
         db.store_mintop(op.clone()).await.unwrap();
@@ -649,6 +674,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store(keys).await.unwrap();
         db.store_mintop(op1.clone()).await.unwrap();
@@ -658,6 +684,7 @@ mod tests {
             pub_key: kp.public_key().into(),
             target: Amount::ZERO,
             minted: Amount::ZERO,
+            bill_info: test_bill_info(),
         };
         db.store_mintop(op2.clone()).await.unwrap();
         let res = db.list_mintops(kid).await.unwrap();
