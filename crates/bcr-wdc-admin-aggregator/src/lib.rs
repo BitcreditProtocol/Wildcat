@@ -172,6 +172,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_keys::DeactivateKeysetRequest,
         wire_keys::DeactivateKeysetResponse,
         // quotes service
+        wire_quotes::ListSort,
         wire_quotes::InfoReply,
         wire_quotes::ListReplyLight,
         wire_quotes::UpdateQuoteRequest,
