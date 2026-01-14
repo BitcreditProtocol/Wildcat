@@ -164,7 +164,7 @@ services:
     depends_on:
       signatory-beta:
         condition: service_started
-      nats:
+      nats-beta:
         condition: service_started
     volumes:
       - ./docker/clowder-node/settings_beta.toml:/clowder/settings.toml
