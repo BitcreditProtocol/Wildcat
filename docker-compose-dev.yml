@@ -7,47 +7,54 @@ services:
     depends_on:
       surrealdb:
         condition: service_healthy
+      electrs:
+        condition: service_started
     environment:
       - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
-      - EBPP__APPCFG__ONCHAIN__NETWORK=testnet
-      - EBPP__APPCFG__ONCHAIN__STORE_PATH=/data/testnet
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-ebpp:nightly
+    pull_policy: always
 
   key-service:
     extends:
       file: common-services.yml
       service: key-service
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-key-service:nightly
+    pull_policy: always
 
   swap-service:
     extends:
       file: common-services.yml
       service: swap-service
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-swap-service:nightly
+    pull_policy: always
 
   treasury-service:
     extends:
       file: common-services.yml
       service: treasury-service
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-treasury-service:nightly
+    pull_policy: always
 
   quote-service:
     extends:
       file: common-services.yml
       service: quote-service
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-quote-service:nightly
+    pull_policy: always
 
   wallet-aggregator:
     extends:
       file: common-services.yml
       service: wallet-aggregator
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-wallet-aggregator:nightly
+    pull_policy: always
 
   admin-aggregator:
     extends:
       file: common-services.yml
       service: admin-aggregator
-    pull_policy: never
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-admin-aggregator:nightly
+    pull_policy: always
 
   ######################################################################################## 3rd parties
 
@@ -56,19 +63,19 @@ services:
       file: common-services.yml
       service: keycloak
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_SECRET}
-      WDC_DASHBOARD_URL: ${WDC_DASHBOARD_URL}
-      KEYCLOAK_BFF_DASHBOARD_SECRET: ${KEYCLOAK_BFF_DASHBOARD_SECRET}
-      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS}
-      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      WDC_DASHBOARD_URL: http://localhost:5173
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
       KC_DB: dev-file
     command:
       - start-dev
       - --import-realm
       - --http-port=8080
       - --proxy-headers=xforwarded
-      - --hostname=${KEYCLOAK_HOSTNAME}
+      - --hostname=localhost
     ports:
       - "8080:8080"
 
@@ -76,6 +83,26 @@ services:
     extends:
       file: common-services.yml
       service: surrealdb
+
+  bitcoin-core:
+    extends:
+      file: common-services.yml
+      service: bitcoin-core
+    command:
+      - -printtoconsole
+      - --regtest=1
+      - -conf=/home/bitcoin/bitcoin.conf
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "--regtest", "getconnectioncount"]
+
+  electrs:
+    extends:
+      file: common-services.yml
+      service: electrs
+    environment:
+      ELECTRS_NETWORK: regtest
+      ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
+      ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
 
   cdk-mintd:
     extends:
@@ -129,18 +156,17 @@ services:
     extends:
       file: common-services.yml
       service: signatory
-    volumes:
-      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
 
+  # Signatory for Beta node
   signatory-beta:
     extends:
       file: common-services.yml
       service: signatory
-    volumes:
-      - ./docker/clowder-signatory/settings_beta.toml:/clowder/settings.toml
     depends_on:
       nats-beta:
         condition: service_started
+    volumes:
+      - ./docker/clowder-signatory/settings_beta.toml:/clowder/settings.toml
 
   clowder-node:
     extends:
@@ -151,23 +177,28 @@ services:
         condition: service_started
       nats:
         condition: service_started
+      electrs:
+        condition: service_started
     volumes:
       - ./docker/clowder-node/settings.toml:/clowder/settings.toml
     ports:
       - "3010:3010"
       - 5001:5001/udp
 
+  # Beta node for mint
   clowder-beta:
     extends:
       file: common-services.yml
       service: clowder-node
+    volumes:
+      - ./docker/clowder-node/settings_beta.toml:/clowder/settings.toml
     depends_on:
       signatory-beta:
         condition: service_started
       nats:
         condition: service_started
-    volumes:
-      - ./docker/clowder-node/settings_beta.toml:/clowder/settings.toml
+      electrs:
+        condition: service_started
     ports:
       - "3011:3011"
       - 5002:5002/udp
