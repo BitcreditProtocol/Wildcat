@@ -324,7 +324,6 @@ pub async fn mint_onchain(
             keyset_id: kid,
             quote_id: data.clowder_quote,
             amount: cashu::Amount::from(outputs_amount),
-            expiry: data.expiry,
         };
         let resp = messages::MintOnchainResponse {
             signatures: response.signatures.clone(),
