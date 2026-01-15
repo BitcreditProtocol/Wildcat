@@ -2,7 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::core;
+use bcr_common::core::{self, BillId};
 use bcr_wdc_utils::keys as keys_utils;
 use cdk_common::mint::MintKeySetInfo;
 use itertools::Itertools;
@@ -16,13 +16,13 @@ use crate::{
 // ----- end imports
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(test, derive(PartialEq))]
 pub struct MintOperation {
     pub uid: Uuid,
     pub kid: cashu::Id,
     pub pub_key: cashu::PublicKey,
     pub target: cashu::Amount,
     pub minted: cashu::Amount,
+    pub bill_id: BillId,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -56,6 +56,14 @@ pub trait SignaturesRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
+    async fn mint_ebill(
+        &self,
+        keyset_id: cashu::Id,
+        quote_id: uuid::Uuid,
+        amount: cashu::Amount,
+        bill_id: BillId,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>>;
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()>;
     async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()>;
 }
@@ -156,6 +164,7 @@ impl Service {
         kid: cashu::Id,
         pub_key: cashu::PublicKey,
         amount: cashu::Amount,
+        bill_id: BillId,
     ) -> Result<()> {
         let new = MintOperation {
             uid,
@@ -163,6 +172,7 @@ impl Service {
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
+            bill_id,
         };
         self.keys.store_mintop(new).await?;
         Ok(())
@@ -229,8 +239,19 @@ impl Service {
                 operation.minted + output_amount,
             )
             .await?;
-        let response = cashu::MintResponse { signatures };
-        Ok(response)
+
+        let signatures = self
+            .clowder
+            .mint_ebill(
+                keyset.id,
+                request.quote,
+                output_amount,
+                operation.bill_id.clone(),
+                signatures,
+            )
+            .await?;
+
+        Ok(cashu::MintResponse { signatures })
     }
 }
 
@@ -264,7 +285,13 @@ mod tests {
         let qid = Uuid::new_v4();
         let kp = bcr_common::core_tests::generate_random_keypair();
         service
-            .new_minting_operation(qid, kid, kp.public_key().into(), amount)
+            .new_minting_operation(
+                qid,
+                kid,
+                kp.public_key().into(),
+                amount,
+                bcr_common::core_tests::random_bill_id(),
+            )
             .await
             .unwrap();
         (service, kid, qid, kp)
