@@ -57,6 +57,7 @@ pub trait KeysHandler: Send + Sync {
         kid: cashu::Id,
         pk: cashu::PublicKey,
         target: cashu::Amount,
+        bill_id: BillId,
     ) -> Result<()>;
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
     async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>>;
@@ -337,7 +338,13 @@ impl Service {
             .update_status_if_accepted(quote.id, quote.status)
             .await?;
         self.keys_hndlr
-            .add_new_mint_operation(qid, keyset_id, wallet_pubkey, discounted_amount)
+            .add_new_mint_operation(
+                qid,
+                keyset_id,
+                wallet_pubkey,
+                discounted_amount,
+                quote.bill.id.clone(),
+            )
             .await?;
         Ok(())
     }

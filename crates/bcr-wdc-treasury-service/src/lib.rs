@@ -234,14 +234,20 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
             post(web::sat_offline_exchange),
         )
-        .route("/v1/melt/quote/onchain", post(web::melt_quote_onchain))
-        .route("/v1/melt/onchain", post(web::melt_onchain))
-        .route("/v1/mint/quote/onchain", post(web::mint_quote_onchain))
         .route(
-            "/v1/mint/quote/onchain/{quote_id}",
+            TreasuryClient::MELTQUOTE_ONCHAIN_EP_V1,
+            post(web::melt_quote_onchain),
+        )
+        .route(TreasuryClient::MELT_ONCHAIN_EP_V1, post(web::melt_onchain))
+        .route(
+            TreasuryClient::MINTQUOTE_ONCHAIN_EP_V1,
+            post(web::mint_quote_onchain),
+        )
+        .route(
+            TreasuryClient::MINTQUOTE_ONCHAIN_GET_EP_V1,
             get(web::get_mint_quote_onchain),
         )
-        .route("/v1/mint/onchain", post(web::mint_onchain));
+        .route(TreasuryClient::MINT_ONCHAIN_EP_V1, post(web::mint_onchain));
     let admin = Router::new()
         .route(
             TreasuryClient::REQTOPAY_EP_V1,
