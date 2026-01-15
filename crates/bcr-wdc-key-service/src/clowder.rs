@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::clowder::messages;
+use bcr_common::{core::BillId, wire::clowder::messages};
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
@@ -46,6 +46,16 @@ impl ClowderClient for DummyClowderClient {
 
         Ok(())
     }
+    async fn mint_ebill(
+        &self,
+        _keyset_id: cashu::Id,
+        _quote_id: uuid::Uuid,
+        _amount: cashu::Amount,
+        _bill_id: BillId,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        Ok(signatures)
+    }
 }
 
 pub struct ClowderCl(ClowderNatsClient);
@@ -77,5 +87,29 @@ impl ClowderClient for ClowderCl {
             .await
             .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
         Ok(())
+    }
+
+    async fn mint_ebill(
+        &self,
+        keyset_id: cashu::Id,
+        quote_id: uuid::Uuid,
+        amount: cashu::Amount,
+        bill_id: BillId,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let resp = self
+            .0
+            .mint_ebill(
+                messages::MintEbillRequest {
+                    amount,
+                    keyset_id,
+                    quote_id,
+                    bill_id,
+                },
+                messages::MintEbillResponse { signatures },
+            )
+            .await
+            .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
+        Ok(resp.signatures)
     }
 }
