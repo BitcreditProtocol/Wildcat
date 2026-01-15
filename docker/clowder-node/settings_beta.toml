@@ -21,6 +21,12 @@ offline_frequency_check_seconds = 3
 lock_reduction_per_hop_seconds = 600
 rabid_audit = false
 eiou_sats = 1.0
+melt_margin_sats = 200
+signing_request_timeout_seconds = 5
+
+[alpha_params]
+melt_rebroadcast_interval_seconds = 5
+melt_timeout_seconds = 30
 
 # Clowder Configurations
 
