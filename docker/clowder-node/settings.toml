@@ -25,6 +25,10 @@ melt_margin_sats = 200
 signing_request_timeout_seconds = 5
 rabid_validation = true
 
+[alpha_params]
+melt_rebroadcast_interval_seconds = 5
+melt_timeout_seconds = 30
+
 # Clowder Configurations
 
 [[nodes]]
