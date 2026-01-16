@@ -51,6 +51,7 @@ jobs:
             - 'recipe.json'
             - 'scripts/**'
             - 'docker/**/Dockerfile'
+            - '.github/workflows/nightly.yml'
 
 # ───────────────────────────────
 # build base image, cache, upload local artifact
