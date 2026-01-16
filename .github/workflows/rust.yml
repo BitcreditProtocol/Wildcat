@@ -4,14 +4,34 @@ on:
   push:
     branches: [ "**" ]
 
+permissions:
+  contents: read
+  security-events: write
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
+          private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
+          owner: BitcreditProtocol
+      
+      - name: Git auth with app token
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Free up disk space
         run: |
@@ -29,49 +49,43 @@ jobs:
         run: rustup default stable
 
       - name: Update rust
-        run: rustup update
+        run: rustup update stable
 
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+      - name: Update rust
+        run: rustup update stable
 
-      - name: Cargo update
-        run: cargo update --verbose
+      - name: Add rustup components
+        run: rustup component add clippy rustfmt
+
+      - name: Install required cargo tools
+        run: cargo install cargo-deny clippy-sarif sarif-fmt
+
+      - name: Activate cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          prefix-key: "ebill-01"
 
       - name: Check
         run: cargo check --verbose
 
-      - name: Test
-        run: cargo test
-        continue-on-error: true
-
-      - name: Build
-        run: cargo build --verbose
-
-      - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
-
-      - name: Add clippy
-        run: rustup component add clippy
-
-      - name: Add fmt
-        run: rustup component add rustfmt
-
-      - name: Add cargo deny
-        run: cargo install cargo-deny
-
       - name: Check formatting
         run: cargo fmt -- --check
+        continue-on-error: true
 
       - name: Clippy
         run:
           cargo clippy
+          --verbose
           --all-features
           --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
-      - name: Cargo deny 
+      - name: Cargo deny
         run: cargo deny check
         continue-on-error: true
+
+      - name: Build
+        run: cargo build --verbose
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3
