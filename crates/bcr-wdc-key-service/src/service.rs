@@ -178,9 +178,9 @@ impl Service {
         Ok(())
     }
 
-    pub async fn mintop_status(&self, uid: Uuid) -> Result<cashu::Amount> {
+    pub async fn mintop_status(&self, uid: Uuid) -> Result<MintOperation> {
         let operation = self.keys.load_mintop(uid).await?;
-        Ok(operation.minted)
+        Ok(operation)
     }
 
     pub async fn list_mintops_for_kid(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {
