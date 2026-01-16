@@ -33,11 +33,6 @@ type ProdSatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdSatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
 type ProdSatKeysClient = foreign::clients::SatKeysClient;
 
-type ProdDebitWallet = debit::CDKWallet;
-type ProdWildcatClient = debit::WildcatCl;
-type ProdDebitRepository = persistence::surreal::DebitRepository;
-type ProdDebitService = debit::Service<ProdDebitWallet, ProdWildcatClient, ProdDebitRepository>;
-
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     credit_keys_url: reqwest::Url,
@@ -59,7 +54,7 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    debit: ProdDebitService,
+    debit: debit::Service,
     crsat: Arc<ProdCrsatService>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
@@ -90,22 +85,22 @@ impl AppController {
             min_confirmations,
         } = cfg;
 
-        let wallet = ProdDebitWallet::new(sat_wallet, seed)
+        let wallet = debit::CDKWallet::new(sat_wallet, seed)
             .await
             .expect("Failed to create wallet");
-        let wdc = ProdWildcatClient::new(wildcat);
-        let repo = ProdDebitRepository::new(debit_repo)
+        let wdc = debit::WildcatCl::new(wildcat);
+        let repo = persistence::surreal::DebitRepository::new(debit_repo)
             .await
             .expect("Failed to create repository");
         let signing_keys =
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
-        let debit = ProdDebitService {
-            wallet,
+        let debit = debit::Service {
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval,
             quote_expiry_seconds,
         };

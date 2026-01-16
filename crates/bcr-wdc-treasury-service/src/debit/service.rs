@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -35,7 +35,7 @@ pub struct OnchainMeltQuote {
 }
 
 #[async_trait]
-pub trait Wallet: Clone + Send {
+pub trait Wallet: Send + Sync {
     async fn mint_quote(
         &self,
         amount: Amount,
@@ -51,7 +51,7 @@ pub trait Wallet: Clone + Send {
 }
 
 #[async_trait]
-pub trait WildcatService: Clone + Send {
+pub trait WildcatService: Send + Sync {
     async fn burn(&self, inputs: &[cdk00::Proof]) -> Result<()>;
     async fn keyset_info(&self, kid: cdk02::Id) -> Result<cdk02::KeySetInfo>;
 }
@@ -63,7 +63,7 @@ pub struct MintQuote {
 }
 
 #[async_trait]
-pub trait Repository: Clone + Send {
+pub trait Repository: Send + Sync {
     async fn store_quote(&self, quote: MintQuote) -> Result<()>;
     async fn delete_quote(&self, qid: String) -> Result<()>;
     async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
@@ -78,28 +78,20 @@ pub trait Repository: Clone + Send {
 }
 
 #[derive(Clone)]
-pub struct Service<Wlt, WdcSrvc, Repo> {
-    pub wallet: Wlt,
-    pub wdc: WdcSrvc,
+pub struct Service {
+    pub wallet: Arc<dyn Wallet>,
+    pub wdc: Arc<dyn WildcatService>,
     pub signing_keys: bitcoin::secp256k1::Keypair,
-    pub repo: Repo,
+    pub repo: Arc<dyn Repository>,
     pub monitor_interval: tokio::time::Duration,
     pub quote_expiry_seconds: u64,
 }
 
-impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
-where
-    Wlt: Wallet,
-{
+impl Service {
     pub async fn balance(&self) -> Result<Amount> {
         self.wallet.balance().await
     }
-}
 
-impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
-where
-    Repo: Repository,
-{
     pub async fn create_onchain_melt_quote(
         &self,
         request: wire_melt::MeltQuoteOnchainRequest,
@@ -139,14 +131,7 @@ where
             state: None,
         })
     }
-}
 
-impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
-where
-    Wlt: Wallet + 'static,
-    WdcSrvc: WildcatService + 'static,
-    Repo: Repository + 'static,
-{
     pub async fn init_monitors_for_past_ebills(&self) -> Result<()> {
         let quotes = self.repo.list_quotes().await?;
         for quote in quotes {
@@ -193,13 +178,7 @@ where
         ));
         Ok(quote)
     }
-}
 
-impl<Wlt, WdcSrvc, Repo> Service<Wlt, WdcSrvc, Repo>
-where
-    Wlt: Wallet,
-    WdcSrvc: WildcatService,
-{
     pub async fn redeem(
         &self,
         inputs: &[cdk00::Proof],
@@ -262,8 +241,8 @@ where
 async fn monitor_quote(
     qid: String,
     ebill_id: BillId,
-    wlt: impl Wallet,
-    repo: impl Repository,
+    wlt: Arc<dyn Wallet>,
+    repo: Arc<dyn Repository>,
     interval: tokio::time::Duration,
 ) {
     loop {
@@ -396,10 +375,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };
@@ -422,10 +401,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };
@@ -447,10 +426,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };
@@ -469,10 +448,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };
@@ -508,10 +487,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };
@@ -537,10 +516,10 @@ mod tests {
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let service = Service {
-            wallet,
+            wallet: Arc::new(wallet),
             signing_keys,
-            wdc,
-            repo,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
         };

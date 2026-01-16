@@ -9,19 +9,15 @@ use cashu::nut03 as cdk03;
 use cdk::wallet::MintConnector;
 use uuid::Uuid;
 // ----- local imports
-use crate::debit::Repository;
 use crate::{debit, error::Result, foreign, AppController};
+
 // ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn redeem<Wlt, WdcSrvc, Repo>(
-    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
+pub async fn redeem(
+    State(ctrl): State<debit::Service>,
     Json(request): Json<cdk03::SwapRequest>,
-) -> Result<Json<cdk03::SwapResponse>>
-where
-    Wlt: debit::Wallet,
-    WdcSrvc: debit::WildcatService,
-{
+) -> Result<Json<cdk03::SwapResponse>> {
     tracing::debug!("Received request to redeem");
 
     let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
@@ -102,13 +98,10 @@ pub async fn sat_offline_exchange(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn melt_quote_onchain<Wlt, WdcSrvc, Repo>(
-    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
+pub async fn melt_quote_onchain(
+    State(ctrl): State<debit::Service>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
-) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>>
-where
-    Repo: debit::Repository,
-{
+) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
     let response = ctrl.create_onchain_melt_quote(request).await?;
     Ok(Json(response))
 }
