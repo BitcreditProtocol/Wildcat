@@ -1,6 +1,7 @@
 nats_url = "nats://nats-beta:4222"
 log_level = "INFO"
 private_key = "8b946da17a0110b950fca770657013e45d012042ce8eb95ff4f4461395d866ce"
+nonce_ttl_seconds = 300
 
 [frost.028456fbc3cd559484c4c01a9bccfbc517169f1b84ed21d09a6ab557e352e4ce04]
 max_signers = 2
