@@ -11,15 +11,10 @@ use crate::{debit, error::Result, foreign};
 
 // ----- sat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn request_to_pay_ebill<Wlt, WdcSrvc, Repo>(
-    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
+pub async fn request_to_pay_ebill(
+    State(ctrl): State<debit::Service>,
     Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
-) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>>
-where
-    Wlt: debit::Wallet + 'static,
-    WdcSrvc: debit::WildcatService + 'static,
-    Repo: debit::Repository + 'static,
-{
+) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
     tracing::debug!("Received request to mint from ebill");
 
     let quote = ctrl
@@ -32,12 +27,9 @@ where
     Ok(Json(response))
 }
 
-pub async fn sat_balance<Wlt, WdcSrvc, Repo>(
-    State(ctrl): State<debit::Service<Wlt, WdcSrvc, Repo>>,
-) -> Result<Json<web_wallet::ECashBalance>>
-where
-    Wlt: debit::Wallet,
-{
+pub async fn sat_balance(
+    State(ctrl): State<debit::Service>,
+) -> Result<Json<web_wallet::ECashBalance>> {
     tracing::debug!("Received request to sat_balance");
 
     let amount = ctrl.balance().await?;
