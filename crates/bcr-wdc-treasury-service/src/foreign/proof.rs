@@ -82,11 +82,11 @@ pub trait KeysClient: Send + Sync {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
 }
 
-fn generate_htlc_secret(
+fn generate_htlc_conditions(
     locktime: Option<TStamp>,
     hash: Sha256Hash,
     pk: cashu::PublicKey,
-) -> Result<cdk10::Secret> {
+) -> Result<cashu::SpendingConditions> {
     let conditions = cashu::Conditions::new(
         locktime.map(|t| t.timestamp() as u64),
         Some(vec![pk]),
@@ -97,8 +97,7 @@ fn generate_htlc_secret(
     )?;
     let spending_conds =
         cashu::SpendingConditions::new_htlc_hash(&hash.to_string(), Some(conditions))?;
-    let secret = cdk10::Secret::from(spending_conds);
-    Ok(secret)
+    Ok(spending_conds)
 }
 
 pub async fn generate_htlc_proofs(
@@ -109,13 +108,62 @@ pub async fn generate_htlc_proofs(
     keyset: &cashu::KeySet,
     keycl: &dyn KeysClient,
 ) -> Result<Vec<cashu::Proof>> {
-    let nut10secret = generate_htlc_secret(locktime, hash, pk)?;
-    let secret = cashu::secret::Secret::try_from(nut10secret)?;
-    let amounts = amount.split();
-    let secrets = vec![secret; amounts.len()];
-    let premints = cashu::PreMintSecrets::from_secrets(keyset.id, amounts, secrets)?;
+    let spending_conds = generate_htlc_conditions(locktime, hash, pk)?;
+    let premints = cashu::PreMintSecrets::with_conditions(
+        keyset.id,
+        amount,
+        &cashu::amount::SplitTarget::None,
+        &spending_conds,
+    )?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
     let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), keyset)?;
     Ok(proofs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_common::core_tests;
+    use bitcoin::hashes::Hash;
+    use std::collections::HashSet;
+
+    #[test]
+    fn generate_htlc_premints_have_unique_y_and_correct_hash() {
+        let hash = Sha256Hash::hash(b"test_preimage");
+        let kp = core_tests::generate_random_keypair();
+        let pk = cashu::PublicKey::from(kp.public_key());
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amount = cashu::Amount::from(1023);
+        let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
+
+        let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
+        let premints = cashu::PreMintSecrets::with_conditions(
+            keyset.id,
+            amount,
+            &cashu::amount::SplitTarget::None,
+            &spending_conds,
+        )
+        .unwrap();
+
+        assert!(premints.len() == 10);
+
+        let mut ys = HashSet::new();
+        for pm in premints.iter() {
+            let proof = cashu::Proof {
+                keyset_id: keyset.id,
+                amount: pm.amount,
+                secret: pm.secret.clone(),
+                c: cashu::PublicKey::from(kp.public_key()), // dummy
+                witness: None,
+                dleq: None,
+            };
+            let y = proof.y().unwrap();
+            assert!(ys.insert(y), "duplicate Y found");
+
+            // Verify HTLC hash
+            let (extracted_hash, _) = extract_hash_timelock_from_htlc(&proof).unwrap();
+            assert_eq!(extracted_hash, hash);
+        }
+    }
 }
