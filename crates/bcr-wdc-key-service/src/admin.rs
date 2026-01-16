@@ -79,15 +79,25 @@ pub async fn new_mintop(
     Ok(Json(response))
 }
 
+fn convert_mintop_status(status: service::MintOperation) -> wire_keys::MintOperationStatus {
+    wire_keys::MintOperationStatus {
+        kid: status.kid,
+        quote_id: status.uid,
+        target: status.target,
+        current: status.minted,
+    }
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mintop_status(
     State(ctrl): State<service::Service>,
     Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<cashu::Amount>> {
-    tracing::debug!("Received mint operation status request");
+) -> Result<Json<wire_keys::MintOperationStatus>> {
+    tracing::debug!("Received mint operation status request {qid}");
 
-    let amount = ctrl.mintop_status(qid).await?;
-    Ok(Json(amount))
+    let status = ctrl.mintop_status(qid).await?;
+    let status = convert_mintop_status(status);
+    Ok(Json(status))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
