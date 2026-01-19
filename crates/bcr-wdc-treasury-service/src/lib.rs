@@ -106,9 +106,10 @@ impl AppController {
         } else {
             None
         };
-        let clowder_write: Option<Arc<dyn debit::ClowderWriteService>> = clwdr_nats
-            .as_ref()
-            .map(|c| Arc::new(debit::ClowderNatsCl(c.clone())) as Arc<dyn debit::ClowderWriteService>);
+        let clowder_write: Option<Arc<dyn debit::ClowderWriteService>> =
+            clwdr_nats.as_ref().map(|c| {
+                Arc::new(debit::ClowderNatsCl(c.clone())) as Arc<dyn debit::ClowderWriteService>
+            });
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
