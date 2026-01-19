@@ -108,12 +108,25 @@ impl AppController {
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
         let clowder_cl = debit::ClowderCl(ClowderRestClient::new(clowder_url.clone()));
+        let clwdr_nats = if let Some(url) = clwdr_nats_url {
+            Some(Arc::new(
+                ClowderNatsClient::new(url)
+                    .await
+                    .expect("Failed to create clowder nats client"),
+            ))
+        } else {
+            None
+        };
+        let clowder_write: Option<Arc<dyn debit::ClowderWriteService>> = clwdr_nats
+            .as_ref()
+            .map(|c| Arc::new(debit::ClowderNatsCl(c.clone())) as Arc<dyn debit::ClowderWriteService>);
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder: Arc::new(clowder_cl),
+            clowder_read: Arc::new(clowder_cl),
+            clowder_write,
             monitor_interval,
             quote_expiry_seconds,
         };
@@ -187,16 +200,6 @@ impl AppController {
         let signer = SignatoryNatsClient::new(signer_url, None)
             .await
             .expect("Failed to create signer");
-
-        let clwdr_nats = if let Some(url) = clwdr_nats_url {
-            Some(Arc::new(
-                ClowderNatsClient::new(url)
-                    .await
-                    .expect("Failed to create clowder nats client"),
-            ))
-        } else {
-            None
-        };
 
         let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let dev = devmode::Service {
