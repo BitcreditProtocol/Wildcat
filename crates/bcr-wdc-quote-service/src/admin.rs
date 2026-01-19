@@ -188,7 +188,7 @@ pub async fn lookup_quote(
     State(ctrl): State<Service>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<wire_quotes::InfoReply>> {
-    tracing::debug!("Received mint quote lookup request");
+    tracing::debug!("Received mint quote lookup request {id}");
 
     let now = chrono::Utc::now();
     let quote = ctrl.lookup(id, now).await?;
