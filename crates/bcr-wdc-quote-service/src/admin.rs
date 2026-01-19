@@ -191,8 +191,7 @@ pub async fn lookup_quote(
     tracing::debug!("Received mint quote lookup request");
 
     let now = chrono::Utc::now();
-    let quote = ctrl.lookup(id, now).await?;
-    let minting_status = ctrl.minting_status(id).await?;
+    let (quote, minting_status) = ctrl.lookup(id, now).await?;
     let response = convert_to_info_reply(quote, minting_status);
     Ok(Json(response))
 }

@@ -60,7 +60,7 @@ pub trait KeysHandler: Send + Sync {
         bill_id: BillId,
     ) -> Result<()>;
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
-    async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>>;
+    async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -83,6 +83,21 @@ pub struct Service {
 
 impl Service {
     pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
+
+    async fn _lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
+        let mut quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or(Error::QuoteIDNotFound(qid))?;
+        let changed = quote.check_expire(now);
+        if changed {
+            self.quotes
+                .update_status_if_offered(quote.id, quote.status.clone())
+                .await?;
+        }
+        Ok(quote)
+    }
 
     pub async fn new_quote(
         &self,
@@ -227,19 +242,14 @@ impl Service {
         Ok(())
     }
 
-    pub async fn lookup(&self, id: uuid::Uuid, now: TStamp) -> Result<Quote> {
-        let mut quote = self
-            .quotes
-            .load(id)
-            .await?
-            .ok_or(Error::QuoteIDNotFound(id))?;
-        let changed = quote.check_expire(now);
-        if changed {
-            self.quotes
-                .update_status_if_offered(quote.id, quote.status.clone())
-                .await?;
-        }
-        Ok(quote)
+    pub async fn lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<(Quote, MintingStatus)> {
+        let quote = self._lookup(qid, now).await?;
+        let minting_status = if matches!(quote.status, Status::MintingEnabled { .. }) {
+            self.keys_hndlr.get_minting_status(qid).await?
+        } else {
+            MintingStatus::Disabled
+        };
+        Ok((quote, minting_status))
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
@@ -282,7 +292,7 @@ impl Service {
         submitted: TStamp,
         ttl: Option<TStamp>,
     ) -> Result<(Amount, TStamp)> {
-        let mut quote = self.lookup(qid, submitted).await?;
+        let mut quote = self._lookup(qid, submitted).await?;
         let Status::Pending { .. } = quote.status else {
             return Err(Error::InvalidQuoteStatus(
                 qid,
@@ -347,15 +357,6 @@ impl Service {
             )
             .await?;
         Ok(())
-    }
-
-    pub async fn minting_status(&self, qid: uuid::Uuid) -> Result<MintingStatus> {
-        let response = self.keys_hndlr.get_minting_status(qid).await;
-        match response {
-            Ok(Some(amount)) => Ok(MintingStatus::Enabled(amount)),
-            Ok(None) => Ok(MintingStatus::Disabled),
-            Err(e) => Err(e),
-        }
     }
 }
 
