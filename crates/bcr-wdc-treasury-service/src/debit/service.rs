@@ -4,7 +4,9 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use bcr_common::{
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
-    wire::{clowder::messages as clowder_messages, melt as wire_melt, signatures as wire_signatures},
+    wire::{
+        clowder::messages as clowder_messages, melt as wire_melt, signatures as wire_signatures,
+    },
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::Amount;
@@ -79,7 +81,6 @@ pub struct MintQuote {
     pub qid: String,
     pub ebill_id: BillId,
     pub clowder_qid: uuid::Uuid,
-    pub keyset_id: cashu::Id,
 }
 
 #[derive(Clone)]
@@ -150,7 +151,10 @@ impl Service {
         // TODO this is incorrect, its just an active dummy keyset
         // We need to use the keyset id that identifies the mint
         let bill_keyset_id = active_kinfo.id;
-        let sweeping_address = self.clowder_read.get_sweep(clowder_qid, bill_keyset_id).await?;
+        let sweeping_address = self
+            .clowder_read
+            .get_sweep(clowder_qid, bill_keyset_id)
+            .await?;
         let request = wire_signatures::RequestToMintFromEBillDesc {
             ebill_id: ebill_id.clone(),
             deadline,
@@ -166,7 +170,6 @@ impl Service {
             qid: quote.id.clone(),
             ebill_id: ebill_id.clone(),
             clowder_qid,
-            keyset_id: bill_keyset_id,
         };
         self.repo.store_quote(mint_quote).await?;
         let ebill_cloned = ebill_id.clone();
