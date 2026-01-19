@@ -146,14 +146,6 @@ impl<ElectrumApi> OnChainWallet for Wallet<ElectrumApi>
 where
     ElectrumApi: electrum_client::ElectrumApi + Sync + Send + 'static,
 {
-    fn generate_new_recipient(&self) -> Result<btc::Address> {
-        let mut locked = self.main.lock().unwrap();
-        let (wlt, db) = &mut *locked;
-        let address_info = wlt.reveal_next_address(KeychainKind::External);
-        wlt.persist(db)?;
-        Ok(address_info.address)
-    }
-
     fn network(&self) -> bdk_wallet::bitcoin::Network {
         self.network
     }
@@ -274,51 +266,35 @@ where
         Ok(amount)
     }
 
-    async fn send_to(
+    async fn sweep_address_to(
         &self,
+        address: btc::Address,
         recipient: btc::Address,
-        amount: btc::Amount,
         max_fee: btc::Amount,
-    ) -> Result<(btc::Txid, btc::Amount)> {
+    ) -> Result<btc::Txid> {
         wallets_sync(
             self.main.clone(),
             &self.singles,
             self.electrum_client.clone(),
         )
         .await?;
-        // 1. send from a single wallet whose balance is greater than amount + max_fee
-        {
-            let locked_singles = self.singles.lock().unwrap();
-            for wlt in locked_singles.iter() {
-                let locked = wlt.lock().unwrap();
-                if locked.0.balance().confirmed > amount + max_fee {
-                    let sweeping_address = {
-                        let mut locked = self.main.lock().unwrap();
-                        let (wlt, db) = &mut *locked;
-                        let address_info = wlt.reveal_next_address(KeychainKind::External);
-                        wlt.persist(db)?;
-                        address_info.address
-                    };
-                    return sweep_to(
-                        self.electrum_client.clone(),
-                        locked,
-                        recipient,
-                        sweeping_address,
-                        amount,
-                        max_fee,
-                    );
-                }
+        let script = address.script_pubkey();
+        let locked_singles = self.singles.lock().unwrap();
+        for wlt in locked_singles.iter() {
+            let locked = wlt.lock().unwrap();
+            let (wlt, _) = &*locked;
+            if !wlt.is_mine(script.clone()) {
+                continue;
             }
+            let txid = sweep_to(
+                self.electrum_client.clone(),
+                locked,
+                recipient.clone(),
+                max_fee,
+            )?;
+            return Ok(txid);
         }
-        // 2. send from the main wallet
-        let main_locked = self.main.lock().unwrap();
-        return send_to(
-            self.electrum_client.clone(),
-            main_locked,
-            recipient,
-            amount,
-            max_fee,
-        );
+        return Err(Error::UnknownAddress(address));
     }
 
     async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool> {
@@ -485,16 +461,13 @@ where
     }
     Ok(())
 }
-
 // blocking function as we need to keep the wallet locked
 fn sweep_to<ElectrumApi>(
     electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
     mut locked_wlt: MutexGuard<PersistedBdkWallet>,
     recipient: btc::Address,
-    sweeping_address: btc::Address,
-    amount: btc::Amount,
     max_fee: btc::Amount,
-) -> Result<(btc::Txid, btc::Amount)>
+) -> Result<btc::Txid>
 where
     ElectrumApi: electrum_client::ElectrumApi,
 {
@@ -503,9 +476,8 @@ where
         let mut builder = wallet.build_tx();
         builder
             .ordering(TxOrdering::Untouched)
-            .add_recipient(recipient.script_pubkey(), amount)
             .drain_wallet()
-            .drain_to(sweeping_address.script_pubkey())
+            .drain_to(recipient.script_pubkey())
             .fee_absolute(max_fee);
         builder.finish().map_err(Error::BDKCreateTx)?
     };
@@ -521,54 +493,11 @@ where
     if !finalok {
         return Err(Error::BDKSignOpNotOK);
     }
-    let total_fee = psbt.fee()?;
     let tx = psbt.extract_tx()?;
     let txid = electrum_client.transaction_broadcast(&tx)?;
     wallet.persist(db)?;
-    let total_spent = amount + total_fee;
-    Ok((txid, total_spent))
+    Ok(txid)
 }
-
-// blocking function as we need to keep the wallet locked
-fn send_to<ElectrumApi>(
-    electrum_client: Arc<BdkElectrumClient<ElectrumApi>>,
-    mut locked_wlt: MutexGuard<PersistedBdkWallet>,
-    recipient: btc::Address,
-    amount: btc::Amount,
-    max_fee: btc::Amount,
-) -> Result<(btc::Txid, btc::Amount)>
-where
-    ElectrumApi: electrum_client::ElectrumApi,
-{
-    let (wallet, db) = &mut *locked_wlt;
-    let mut psbt = {
-        let mut builder = wallet.build_tx();
-        builder
-            .ordering(TxOrdering::Untouched)
-            .add_recipient(recipient.script_pubkey(), amount)
-            .fee_absolute(max_fee);
-        builder.finish().map_err(Error::BDKCreateTx)?
-    };
-    let signok = wallet
-        .sign(&mut psbt, bdk_wallet::SignOptions::default())
-        .map_err(Error::BDKSigner)?;
-    if !signok {
-        return Err(Error::BDKSignOpNotOK);
-    }
-    let finalok = wallet
-        .finalize_psbt(&mut psbt, bdk_wallet::SignOptions::default())
-        .map_err(Error::BDKSigner)?;
-    if !finalok {
-        return Err(Error::BDKSignOpNotOK);
-    }
-    let total_fee = psbt.fee()?;
-    let tx = psbt.extract_tx()?;
-    let txid = electrum_client.transaction_broadcast(&tx)?;
-    let total_spent = amount + total_fee;
-    wallet.persist(db)?;
-    Ok((txid, total_spent))
-}
-
 async fn timed_spawn_blocking<F, T>(
     note: &'static str,
     f: F,

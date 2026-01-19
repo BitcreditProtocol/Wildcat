@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 // ----- extra library imports
-use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
     core::{
@@ -25,7 +24,7 @@ use cdk_common::{
         IncomingPaymentOptions, MakePaymentResponse, MintPayment, OutgoingPaymentOptions,
         PaymentIdentifier, PaymentQuoteResponse, WaitPaymentResponse,
     },
-    {Amount, CurrencyUnit},
+    CurrencyUnit,
 };
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -34,7 +33,9 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    payment, TStamp,
+    payment,
+    persistence::PaymentRepository,
+    TStamp,
 };
 
 // ----- end imports
@@ -43,40 +44,19 @@ type PaymentResult<T> = std::result::Result<T, PaymentError>;
 
 #[async_trait]
 pub trait OnChainWallet: Send + Sync {
-    fn generate_new_recipient(&self) -> Result<btc::Address>;
     fn network(&self) -> btc::Network;
     async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
     async fn balance(&self) -> Result<bdk_wallet::Balance>;
     async fn get_address_balance(&self, recipient: &btc::Address) -> Result<btc::Amount>;
     async fn estimate_fees(&self) -> Result<btc::Amount>;
     // returns (transaction_id, total_spent_fee)
-    async fn send_to(
+    async fn sweep_address_to(
         &self,
+        address: btc::Address,
         recipient: btc::Address,
-        amount: btc::Amount,
         max_fee: btc::Amount,
-    ) -> Result<(btc::Txid, btc::Amount)>;
+    ) -> Result<btc::Txid>;
     async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait PaymentRepository: Send + Sync {
-    async fn load_incoming(&self, reqid: &PaymentIdentifier) -> Result<payment::IncomingRequest>;
-    async fn store_incoming(&self, req: payment::IncomingRequest) -> Result<()>;
-    async fn update_incoming(&self, req: payment::IncomingRequest) -> Result<()>;
-    async fn list_unpaid_incoming_requests(&self) -> Result<Vec<payment::IncomingRequest>>;
-
-    async fn load_outgoing(&self, reqid: &PaymentIdentifier) -> Result<payment::OutgoingRequest>;
-    async fn store_outgoing(&self, req: payment::OutgoingRequest) -> Result<()>;
-    async fn update_outgoing(&self, req: payment::OutgoingRequest) -> Result<()>;
-
-    async fn store_foreign(&self, new: payment::ForeignPayment) -> Result<()>;
-    async fn check_foreign_nonce(&self, nonce: &str) -> Result<Option<payment::ForeignPayment>>;
-    async fn check_foreign_reqid(
-        &self,
-        reqid: &PaymentIdentifier,
-    ) -> Result<Option<payment::ForeignPayment>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -172,7 +152,7 @@ impl MintPayment for Service {
         let amount = btc::Amount::from_sat(options.amount.into());
         let parsed_description = ParsedDescription::parse(&options.description.unwrap_or_default());
         let payment_type = match parsed_description {
-            ParsedDescription::ForeignECash(request) => {
+            Ok(ParsedDescription::ForeignECash(request)) => {
                 tracing::debug!("Parsed foreign ecash request",);
                 let payload: web_exchange::RequestToMintFromForeigneCashPayload =
                     deserialize_borsh_msg(&request.payload).map_err(Error::from)?;
@@ -196,21 +176,27 @@ impl MintPayment for Service {
                 self.payrepo.store_foreign(foreign).await?;
                 return Ok(response);
             }
-            ParsedDescription::EbillRequestToPay(request) => {
+            Ok(ParsedDescription::EbillRequestToPay(request)) => {
                 tracing::trace!("Parsed EBill request",);
-                let message: wire_signatures::RequestToMintFromEBillDesc =
-                    deserialize_borsh_msg(&request.content).map_err(Error::from)?;
                 schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
                     .map_err(Error::from)?;
+                let message: wire_signatures::RequestToMintFromEBillDesc =
+                    deserialize_borsh_msg(&request.content).map_err(Error::from)?;
                 let output = self
                     .ebill
                     .request_to_pay(&message.ebill_id, amount, message.deadline)
                     .await?;
                 let recipient = self.onchain.add_descriptor(&output).await?;
-                payment::PaymentType::EBill(recipient)
+                let sweep = btc::Address::from_str(&message.sweeping_address)
+                    .map_err(|_| PaymentError::UnsupportedPaymentOption)?
+                    .require_network(self.onchain.network())
+                    .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+                payment::PaymentType::EBill { recipient, sweep }
             }
-            ParsedDescription::ClowderOnchain(uuid) => payment::PaymentType::ClowderOnchain(uuid),
-            ParsedDescription::Dev => {
+            Ok(ParsedDescription::ClowderOnchain(uuid)) => {
+                payment::PaymentType::ClowderOnchain(uuid)
+            }
+            Ok(ParsedDescription::Dev) => {
                 let idx: u32 = rand::random();
                 let pid = PaymentIdentifier::Label(format!("dev{idx}"));
                 self.dev_payments
@@ -223,12 +209,9 @@ impl MintPayment for Service {
                     expiry: None,
                 });
             }
-            ParsedDescription::None => {
-                let recipient = self
-                    .onchain
-                    .generate_new_recipient()
-                    .map_err(PaymentError::from)?;
-                payment::PaymentType::OnChain(recipient)
+            Err(e) => {
+                tracing::error!("Empty or unrecognized description field");
+                return Err(e);
             }
         };
         let expiration = options
@@ -240,6 +223,7 @@ impl MintPayment for Service {
             amount,
             expiration,
             status: MintQuoteState::Unpaid,
+            sweep_tx: None,
         };
         let reqid = request.reqid.clone();
         let recipient = request.payment_type.recipient();
@@ -288,17 +272,21 @@ impl MintPayment for Service {
             return Err(PaymentError::UnsupportedPaymentOption);
         };
         let description = options.bolt11.description().to_string();
-        let uri = parse_to_bip21_uri(&description, self.onchain.network())?;
-        let fees_btc = self.onchain.estimate_fees().await?;
-        let fee = Amount::from(fees_btc.to_sat());
-        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
-        let outgoing = payment::OutgoingRequest::new(reqid, uri, fees_btc)?;
+        let request: wire_signatures::SignedRequestToMeltDesc =
+            serde_json::from_str(&description).map_err(PaymentError::Serde)?;
+        schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
+            .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+        let content: wire_signatures::RequestToMeltDesc =
+            deserialize_borsh_msg(&request.content)
+                .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+        let reqid = PaymentIdentifier::CustomId(content.qid.to_string());
+        let outgoing = payment::OutgoingRequest::new(reqid, content.amount);
         let response = PaymentQuoteResponse {
             request_lookup_id: Some(outgoing.reqid.clone()),
-            amount: Amount::from(outgoing.amount.to_sat()),
+            amount: content.amount,
             unit: CurrencyUnit::Sat,
-            fee,
-            state: outgoing.status,
+            fee: cashu::Amount::ZERO,
+            state: MeltQuoteState::Paid,
         };
         self.payrepo.store_outgoing(outgoing).await?;
         Ok(response)
@@ -317,59 +305,38 @@ impl MintPayment for Service {
         let OutgoingPaymentOptions::Bolt11(options) = options else {
             return Err(PaymentError::UnsupportedPaymentOption);
         };
-        let reqid = PaymentIdentifier::CustomId(options.bolt11.description().to_string());
-        let outgoing = self.payrepo.load_outgoing(&reqid).await;
-        let mut request = match outgoing {
-            Ok(request) => match request.status {
-                MeltQuoteState::Paid => return Err(PaymentError::InvoiceAlreadyPaid),
-                MeltQuoteState::Pending => return Err(PaymentError::InvoicePaymentPending),
-                _ => request,
-            },
-            Err(Error::PaymentRequestNotFound(_)) => return Err(PaymentError::UnknownPaymentState),
-            Err(e) => return Err(e.into()),
-        };
-
-        let quote_amount = btc::Amount::from_sat(
-            options.bolt11.amount_milli_satoshis().unwrap_or_default() / 1000,
-        );
-        if request.amount != quote_amount {
-            return Err(PaymentError::Amount(
-                cdk_common::amount::Error::InvalidAmount(format!(
-                    "melt_quote.amount {quote_amount} != request.amount {}",
-                    request.amount
-                )),
-            ));
+        let description = options.bolt11.description().to_string();
+        let request: wire_signatures::SignedRequestToMeltDesc =
+            serde_json::from_str(&description).map_err(PaymentError::Serde)?;
+        schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
+            .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+        let content: wire_signatures::RequestToMeltDesc =
+            deserialize_borsh_msg(&request.content)
+                .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+        let invoice_amount =
+            cashu::Amount::from(options.bolt11.amount_milli_satoshis().unwrap_or_default() / 1000);
+        if invoice_amount != content.amount {
+            return Err(PaymentError::Amount(cashu::amount::Error::InvalidAmount(
+                format!(
+                    "Invoice amount {invoice_amount} does not match requested amount {}",
+                    content.amount
+                ),
+            )));
         }
-        request.status = MeltQuoteState::Pending;
-        self.payrepo.update_outgoing(request.clone()).await?;
-        let (tx_id, total_fee) = self
-            .onchain
-            .send_to(
-                request.recipient.clone(),
-                request.amount,
-                request.reserved_fees,
-            )
-            .await?;
-        request.proof = Some(tx_id);
-        let total_spent = request.amount + total_fee;
-        request.total_spent = Some(total_spent);
-        let store_result = self.payrepo.update_outgoing(request.clone()).await;
-        if let Err(e) = store_result {
-            tracing::error!(
-                "Error in storing proof for reqid {}, tx_id {tx_id}, e: {e}",
-                request.reqid
-            );
+        let reqid = PaymentIdentifier::CustomId(content.qid.to_string());
+        let mut outgoing = self.payrepo.load_outgoing(&reqid).await?;
+        if matches!(outgoing.state, MeltQuoteState::Paid) {
+            return Err(PaymentError::InvoiceAlreadyPaid);
         }
-
-        let total_spent = Amount::from(total_spent.to_sat());
         let response = MakePaymentResponse {
-            payment_lookup_id: reqid,
-            payment_proof: Some(tx_id.to_string()),
-            status: MeltQuoteState::Pending,
-            total_spent,
+            payment_lookup_id: outgoing.reqid.clone(),
+            payment_proof: None,
+            status: MeltQuoteState::Paid,
+            total_spent: outgoing.amount,
             unit: CurrencyUnit::Sat,
         };
-
+        outgoing.state = MeltQuoteState::Paid;
+        self.payrepo.update_outgoing(outgoing).await?;
         Ok(response)
     }
 
@@ -412,6 +379,7 @@ impl MintPayment for Service {
     ) -> PaymentResult<Vec<WaitPaymentResponse>> {
         let _span = tracing::debug_span!("check_incoming_payment_status");
 
+        // Dev payment
         if let Some(amount) = self.dev_payments.lock().unwrap().get(payment_identifier) {
             return Ok(vec![WaitPaymentResponse {
                 payment_identifier: payment_identifier.clone(),
@@ -421,6 +389,7 @@ impl MintPayment for Service {
             }]);
         }
 
+        // Foreign eCash payment
         let mut response = Vec::new();
         let foreign = self.payrepo.check_foreign_reqid(payment_identifier).await?;
         if let Some(foreign) = foreign {
@@ -433,31 +402,77 @@ impl MintPayment for Service {
             });
             return Ok(response);
         }
-        // nothing to look at, proceed
+
+        // E-Bill payment
         let mut request = self.payrepo.load_incoming(payment_identifier).await?;
-        if request.status == MintQuoteState::Unpaid {
-            request.status = if let Some(recipient) = request.payment_type.recipient() {
-                check_incoming_payment(&recipient, request.amount, self.onchain.as_ref()).await?
-            } else {
-                MintQuoteState::Paid
-            };
-            self.payrepo.update_incoming(request.clone()).await?;
-        }
-        if request.status == MintQuoteState::Paid {
-            let payment_id = request
-                .payment_type
-                .recipient()
-                .map(|a| a.to_string())
-                .or_else(|| request.payment_type.clowder_quote().map(|u| u.to_string()))
-                .unwrap_or_default();
-            response.push(WaitPaymentResponse {
+        match (request.status, request.payment_type.clone()) {
+            (MintQuoteState::Unpaid, payment::PaymentType::ClowderOnchain(_)) => {
+                request.status = MintQuoteState::Paid;
+                self.payrepo.update_incoming(request.clone()).await?;
+                Ok(vec![WaitPaymentResponse {
+                    payment_identifier: payment_identifier.clone(),
+                    payment_amount: cashu::Amount::from(request.amount.to_sat()),
+                    unit: CurrencyUnit::Sat,
+                    payment_id: payment_identifier.to_string(),
+                }])
+            }
+            (MintQuoteState::Unpaid, payment::PaymentType::EBill { recipient, sweep }) => {
+                let state =
+                    check_incoming_payment(&recipient, request.amount, self.onchain.as_ref())
+                        .await?;
+                match state {
+                    MintQuoteState::Unpaid => Ok(vec![]),
+                    MintQuoteState::Paid => {
+                        request.status = MintQuoteState::Paid;
+                        let max_fees = self.onchain.estimate_fees().await?;
+                        let txid = self
+                            .onchain
+                            .sweep_address_to(recipient, sweep, max_fees)
+                            .await?;
+                        request.sweep_tx = Some(txid);
+                        self.payrepo.update_incoming(request).await?;
+                        Ok(vec![])
+                    }
+                    _ => Err(PaymentError::UnknownPaymentState),
+                }
+            }
+            (MintQuoteState::Paid, payment::PaymentType::ClowderOnchain(_)) => {
+                request.status = MintQuoteState::Issued;
+                self.payrepo.update_incoming(request.clone()).await?;
+                Ok(vec![WaitPaymentResponse {
+                    payment_identifier: payment_identifier.clone(),
+                    payment_amount: cashu::Amount::from(request.amount.to_sat()),
+                    unit: CurrencyUnit::Sat,
+                    payment_id: payment_identifier.to_string(),
+                }])
+            }
+            (MintQuoteState::Paid, payment::PaymentType::EBill { .. }) => match request.sweep_tx {
+                Some(txid) => {
+                    if self.onchain.is_confirmed(txid).await? {
+                        request.status = MintQuoteState::Issued;
+                        self.payrepo.update_incoming(request.clone()).await?;
+                        Ok(vec![WaitPaymentResponse {
+                            payment_identifier: payment_identifier.clone(),
+                            payment_amount: cashu::Amount::from(request.amount.to_sat()),
+                            unit: CurrencyUnit::Sat,
+                            payment_id: payment_identifier.to_string(),
+                        }])
+                    } else {
+                        Ok(vec![])
+                    }
+                }
+                None => {
+                    tracing::error!("No sweep transaction found for paid E-Bill payment");
+                    return Err(PaymentError::UnknownPaymentState);
+                }
+            },
+            (MintQuoteState::Issued, _) => Ok(vec![WaitPaymentResponse {
                 payment_identifier: payment_identifier.clone(),
                 payment_amount: cashu::Amount::from(request.amount.to_sat()),
                 unit: CurrencyUnit::Sat,
-                payment_id,
-            });
+                payment_id: payment_identifier.to_string(),
+            }]),
         }
-        Ok(response)
     }
 
     async fn check_outgoing_payment(
@@ -466,22 +481,15 @@ impl MintPayment for Service {
     ) -> PaymentResult<MakePaymentResponse> {
         let _span = tracing::debug_span!("check_outgoing_payment", payment_identifier = %payment_identifier);
 
-        let mut request = self.payrepo.load_outgoing(payment_identifier).await?;
-        let total_spent = Amount::from(request.total_spent.unwrap_or(request.amount).to_sat());
+        let request = self.payrepo.load_outgoing(payment_identifier).await?;
+        let total_spent = request.amount;
         let response = MakePaymentResponse {
             payment_lookup_id: payment_identifier.clone(),
-            payment_proof: request.proof.map(|txid| txid.to_string()),
+            payment_proof: None,
             unit: CurrencyUnit::Sat,
-            status: request.status,
+            status: MeltQuoteState::Paid,
             total_spent,
         };
-        if matches!(request.status, MeltQuoteState::Paid) {
-            return Ok(response);
-        }
-
-        let new_state = check_outgoing_payment(request.proof, self.onchain.as_ref()).await?;
-        request.status = new_state;
-        self.payrepo.update_outgoing(request).await?;
         Ok(response)
     }
 }
@@ -530,55 +538,32 @@ async fn check_incoming_payment(
     }
 }
 
-async fn check_outgoing_payment(
-    tx_id: Option<btc::Txid>,
-    onchain: &dyn OnChainWallet,
-) -> Result<cdk_common::MeltQuoteState> {
-    if let Some(tx_id) = tx_id {
-        if onchain.is_confirmed(tx_id).await? {
-            Ok(cdk_common::MeltQuoteState::Paid)
-        } else {
-            Ok(cdk_common::MeltQuoteState::Pending)
-        }
-    } else {
-        Ok(cdk_common::MeltQuoteState::Unpaid)
-    }
-}
-
-fn parse_to_bip21_uri(input: &str, network: btc::Network) -> Result<bip21::Uri<'_>> {
-    bip21::Uri::from_str(input)
-        .map_err(|e| Error::Bip21Parse(anyhow!(e)))?
-        .require_network(network)
-        .map_err(|e| Error::Bip21Parse(anyhow!(e)))
-}
-
 enum ParsedDescription {
     Dev,
     EbillRequestToPay(wire_signatures::SignedRequestToMintFromEBillDesc),
     ForeignECash(web_exchange::RequestToMintFromForeigneCash),
     ClowderOnchain(Uuid),
-    None,
 }
 impl ParsedDescription {
-    fn parse(input: &str) -> Self {
+    fn parse(input: &str) -> PaymentResult<Self> {
         if let Ok(ebill_request) =
             serde_json::from_str::<wire_signatures::SignedRequestToMintFromEBillDesc>(input)
         {
-            Self::EbillRequestToPay(ebill_request)
+            Ok(Self::EbillRequestToPay(ebill_request))
         } else if let Ok(foreign_ecash_request) =
             serde_json::from_str::<web_exchange::RequestToMintFromForeigneCash>(input)
         {
-            Self::ForeignECash(foreign_ecash_request)
+            Ok(Self::ForeignECash(foreign_ecash_request))
         } else if let Some(uuid_str) = input.strip_prefix("clowder:") {
             if let Ok(uuid) = Uuid::parse_str(uuid_str) {
-                Self::ClowderOnchain(uuid)
+                Ok(Self::ClowderOnchain(uuid))
             } else {
-                Self::None
+                Err(PaymentError::UnsupportedPaymentOption)
             }
         } else if input == "it's me, Mario" {
-            Self::Dev
+            Ok(Self::Dev)
         } else {
-            Self::None
+            Err(PaymentError::UnsupportedPaymentOption)
         }
     }
 }
@@ -586,27 +571,23 @@ impl ParsedDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::MockPaymentRepository;
+    use bcr_common::{
+        core::signature::serialize_n_schnorr_sign_borsh_msg, core_tests::generate_random_keypair,
+    };
     use bdk_wallet::bitcoin::hashes::{sha256, Hash};
     use cashu::lightning_invoice as ln;
     use cdk_common::payment::{Bolt11IncomingPaymentOptions, Bolt11OutgoingPaymentOptions};
     use mockall::predicate::*;
 
-    fn generate_random_pubkey() -> btc::XOnlyPublicKey {
-        let kp = btc::key::Keypair::new(secp256k1::global::SECP256K1, &mut rand::thread_rng());
-        btc::XOnlyPublicKey::from_keypair(&kp).0
-    }
-
-    fn generate_random_address() -> btc::Address {
-        let sk = btc::PrivateKey::generate(btc::Network::Testnet);
-        let pk =
-            btc::CompressedPublicKey::from_private_key(secp256k1::global::SECP256K1, &sk).unwrap();
-        btc::Address::p2wpkh(&pk, btc::Network::Testnet)
-    }
-
-    fn generate_fake_bolt11(description: String, amount: cashu::Amount) -> ln::Bolt11Invoice {
+    fn generate_fake_bolt11(
+        description: wire_signatures::SignedRequestToMeltDesc,
+        amount: cashu::Amount,
+    ) -> ln::Bolt11Invoice {
         let payment_hash = sha256::Hash::from_slice(&[0; 32][..]).unwrap();
         let payment_secret = ln::PaymentSecret([42u8; 32]);
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let description = serde_json::to_string(&description).unwrap();
         ln::InvoiceBuilder::new(ln::Currency::Bitcoin)
             .description(description)
             .payment_hash(payment_hash)
@@ -622,18 +603,17 @@ mod tests {
         OnChainWallet{}
         #[async_trait]
         impl OnChainWallet for OnChainWallet {
-            fn generate_new_recipient(&self) -> Result<btc::Address>;
             fn network(&self) -> btc::Network;
             async fn add_descriptor(&self, descriptor: &str) -> Result<btc::Address>;
             async fn balance(&self) -> Result<bdk_wallet::Balance>;
             async fn get_address_balance(&self, recipient: &btc::Address) -> Result<btc::Amount>;
             async fn estimate_fees(&self) -> Result<btc::Amount>;
-            async fn send_to(
+            async fn sweep_address_to(
                 &self,
+                address: btc::Address,
                 recipient: btc::Address,
-                amount: btc::Amount,
                 max_fee: btc::Amount,
-            ) -> Result<(btc::Txid, btc::Amount)>;
+            ) -> Result<btc::Txid>;
             async fn is_confirmed(&self, tx_id: btc::Txid) -> Result<bool>;
         }
 
@@ -649,7 +629,15 @@ mod tests {
         let payrepo = Arc::new(MockPaymentRepository::new());
         let ebill = Arc::new(MockEBillNode::new());
         let interval = Duration::from_secs(1);
-        let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
+        let tkp = generate_random_keypair();
+        let srvc = Service::new(
+            onchain,
+            payrepo,
+            ebill,
+            interval,
+            tkp.public_key().x_only_public_key().0,
+        )
+        .await;
         let result = srvc
             .create_incoming_payment_request(
                 &CurrencyUnit::Usd,
@@ -664,13 +652,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_incoming_payment_request_getnewaddress() {
-        let address = generate_random_address();
-        let cloned_address = address.clone();
-        let mut onchain = MockOnChainWallet::new();
-        onchain
-            .expect_generate_new_recipient()
-            .returning(move || Ok(address.clone()));
+    async fn create_incoming_payment_request_no_description() {
+        let onchain = MockOnChainWallet::new();
+        let tkp = generate_random_keypair();
         let mut payrepo = MockPaymentRepository::new();
         payrepo.expect_store_incoming().returning(|_| Ok(()));
         let ebill = Arc::new(MockEBillNode::new());
@@ -680,7 +664,7 @@ mod tests {
             Arc::new(payrepo),
             ebill,
             interval,
-            generate_random_pubkey(),
+            tkp.x_only_public_key().0,
         )
         .await;
         let result = srvc
@@ -692,13 +676,8 @@ mod tests {
                     unix_expiry: None,
                 }),
             )
-            .await
-            .unwrap();
-        let uri: bip21::Uri = bip21::Uri::from_str(&result.request)
-            .unwrap()
-            .require_network(btc::Network::Testnet)
-            .unwrap();
-        assert_eq!(uri.address, cloned_address);
+            .await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -707,12 +686,22 @@ mod tests {
         let payrepo = Arc::new(MockPaymentRepository::new());
         let ebill = Arc::new(MockEBillNode::new());
         let interval = Duration::from_secs(1);
-        let srvc = Service::new(onchain, payrepo, ebill, interval, generate_random_pubkey()).await;
+        let tkp = generate_random_keypair();
+        let srvc = Service::new(onchain, payrepo, ebill, interval, tkp.x_only_public_key().0).await;
+        let description = wire_signatures::RequestToMeltDesc {
+            qid: Uuid::new_v4(),
+            amount: cashu::Amount::ZERO,
+        };
+        let (content, payload) = serialize_n_schnorr_sign_borsh_msg(&description, &tkp).unwrap();
+        let signed_desc = wire_signatures::SignedRequestToMeltDesc {
+            content,
+            signature: payload,
+        };
         let result = srvc
             .make_payment(
                 &cashu::CurrencyUnit::Usd,
                 OutgoingPaymentOptions::Bolt11(Box::new(Bolt11OutgoingPaymentOptions {
-                    bolt11: generate_fake_bolt11(String::default(), cashu::Amount::ZERO),
+                    bolt11: generate_fake_bolt11(signed_desc, cashu::Amount::ZERO),
                     max_fee_amount: None,
                     timeout_secs: None,
                     melt_options: None,
@@ -725,22 +714,20 @@ mod tests {
 
     #[tokio::test]
     async fn make_payment_alreadypaid() {
-        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
+        let qid = Uuid::new_v4();
+        let reqid = PaymentIdentifier::CustomId(qid.to_string());
         let onchain = Arc::new(MockOnChainWallet::new());
         let mut payrepo = MockPaymentRepository::new();
         let cloned_reqid = reqid.clone();
+        let tkp = generate_random_keypair();
         payrepo
             .expect_load_outgoing()
             .with(eq(cloned_reqid.clone()))
             .returning(move |_| {
                 Ok(payment::OutgoingRequest {
                     reqid: cloned_reqid.clone(),
-                    reserved_fees: btc::Amount::ZERO,
-                    amount: btc::Amount::ZERO,
-                    recipient: generate_random_address(),
-                    status: MeltQuoteState::Paid,
-                    proof: None,
-                    total_spent: None,
+                    amount: cashu::Amount::ZERO,
+                    state: MeltQuoteState::Paid,
                 })
             });
         let ebill = Arc::new(MockEBillNode::new());
@@ -750,14 +737,20 @@ mod tests {
             Arc::new(payrepo),
             ebill,
             interval,
-            generate_random_pubkey(),
+            tkp.x_only_public_key().0,
         )
         .await;
+        let desc = wire_signatures::RequestToMeltDesc {
+            qid,
+            amount: cashu::Amount::ZERO,
+        };
+        let (content, signature) = serialize_n_schnorr_sign_borsh_msg(&desc, &tkp).unwrap();
+        let signed_desc = wire_signatures::SignedRequestToMeltDesc { content, signature };
         let result = srvc
             .make_payment(
                 &cashu::CurrencyUnit::Sat,
                 OutgoingPaymentOptions::Bolt11(Box::new(Bolt11OutgoingPaymentOptions {
-                    bolt11: generate_fake_bolt11(reqid.to_string(), Amount::ZERO),
+                    bolt11: generate_fake_bolt11(signed_desc, cashu::Amount::ZERO),
                     max_fee_amount: None,
                     timeout_secs: None,
                     melt_options: None,
@@ -772,10 +765,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn make_payment_pending() {
-        let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
+    async fn make_payment_paid() {
+        let qid = Uuid::new_v4();
+        let reqid = PaymentIdentifier::CustomId(qid.to_string());
         let onchain = MockOnChainWallet::new();
         let mut payrepo = MockPaymentRepository::new();
+        let tkp = generate_random_keypair();
         let cloned_reqid = reqid.clone();
         payrepo
             .expect_load_outgoing()
@@ -783,14 +778,19 @@ mod tests {
             .returning(move |_| {
                 Ok(payment::OutgoingRequest {
                     reqid: cloned_reqid.clone(),
-                    amount: btc::Amount::ZERO,
-                    recipient: generate_random_address(),
-                    status: MeltQuoteState::Pending,
-                    proof: None,
-                    total_spent: None,
-                    reserved_fees: btc::Amount::ZERO,
+                    amount: cashu::Amount::ZERO,
+                    state: MeltQuoteState::Pending,
                 })
             });
+        let cloned_reqid = reqid.clone();
+        payrepo
+            .expect_update_outgoing()
+            .with(eq(payment::OutgoingRequest {
+                reqid: cloned_reqid.clone(),
+                amount: cashu::Amount::ZERO,
+                state: MeltQuoteState::Paid,
+            }))
+            .returning(move |_| Ok(()));
         let ebill = MockEBillNode::new();
         let interval = Duration::from_secs(1);
         let srvc = Service::new(
@@ -798,31 +798,33 @@ mod tests {
             Arc::new(payrepo),
             Arc::new(ebill),
             interval,
-            generate_random_pubkey(),
+            tkp.x_only_public_key().0,
         )
         .await;
-        let result = srvc
-            .make_payment(
-                &cashu::CurrencyUnit::Sat,
-                OutgoingPaymentOptions::Bolt11(Box::new(Bolt11OutgoingPaymentOptions {
-                    bolt11: generate_fake_bolt11(reqid.to_string(), Amount::ZERO),
-                    max_fee_amount: None,
-                    timeout_secs: None,
-                    melt_options: None,
-                })),
-            )
-            .await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PaymentError::InvoicePaymentPending
-        ));
+        let desc = wire_signatures::RequestToMeltDesc {
+            qid,
+            amount: cashu::Amount::ZERO,
+        };
+        let (content, signature) = serialize_n_schnorr_sign_borsh_msg(&desc, &tkp).unwrap();
+        let signed_desc = wire_signatures::SignedRequestToMeltDesc { content, signature };
+        srvc.make_payment(
+            &cashu::CurrencyUnit::Sat,
+            OutgoingPaymentOptions::Bolt11(Box::new(Bolt11OutgoingPaymentOptions {
+                bolt11: generate_fake_bolt11(signed_desc, cashu::Amount::ZERO),
+                max_fee_amount: None,
+                timeout_secs: None,
+                melt_options: None,
+            })),
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
     async fn make_payment_quoteandrequestamountsdonotmatch() {
         let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
         let mut onchain = MockOnChainWallet::new();
+        let tkp = generate_random_keypair();
         onchain.expect_network().returning(|| btc::Network::Testnet);
         let mut payrepo = MockPaymentRepository::new();
         let cloned_reqid = reqid.clone();
@@ -832,12 +834,8 @@ mod tests {
             .returning(move |_| {
                 Ok(payment::OutgoingRequest {
                     reqid: cloned_reqid.clone(),
-                    amount: btc::Amount::from_sat(10),
-                    recipient: generate_random_address(),
-                    status: MeltQuoteState::Unpaid,
-                    proof: None,
-                    total_spent: None,
-                    reserved_fees: btc::Amount::ZERO,
+                    amount: cashu::Amount::from(10),
+                    state: MeltQuoteState::Pending,
                 })
             });
         let ebill = MockEBillNode::new();
@@ -847,14 +845,20 @@ mod tests {
             Arc::new(payrepo),
             Arc::new(ebill),
             interval,
-            generate_random_pubkey(),
+            tkp.x_only_public_key().0,
         )
         .await;
+        let desc = wire_signatures::RequestToMeltDesc {
+            qid: Uuid::new_v4(),
+            amount: cashu::Amount::from(10),
+        };
+        let (content, signature) = serialize_n_schnorr_sign_borsh_msg(&desc, &tkp).unwrap();
+        let signed_desc = wire_signatures::SignedRequestToMeltDesc { content, signature };
         let result = srvc
             .make_payment(
                 &cashu::CurrencyUnit::Sat,
                 OutgoingPaymentOptions::Bolt11(Box::new(Bolt11OutgoingPaymentOptions {
-                    bolt11: generate_fake_bolt11(reqid.to_string(), cashu::Amount::from(11)),
+                    bolt11: generate_fake_bolt11(signed_desc, cashu::Amount::from(11)),
                     max_fee_amount: None,
                     timeout_secs: None,
                     melt_options: None,
