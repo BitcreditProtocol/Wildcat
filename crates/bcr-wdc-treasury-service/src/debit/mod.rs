@@ -9,7 +9,7 @@ mod wildcat;
 
 // ----- end imports
 
-pub use clowder::ClowderCl;
-pub use service::{ClowderMintQuoteOnchain, MintQuote, OnchainMeltQuote, Service};
+pub use clowder::{ClowderCl, ClowderNatsCl};
+pub use service::{ClowderMintQuoteOnchain, ClowderWriteService, MintQuote, OnchainMeltQuote, Service};
 pub use wallet::{CDKWallet, CDKWalletConfig};
 pub use wildcat::{WildcatCl, WildcatClientConfig};
