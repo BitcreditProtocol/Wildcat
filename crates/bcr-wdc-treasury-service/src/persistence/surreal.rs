@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     debit,
     error::{Error, Result},
-    foreign,
+    foreign, persistence,
 };
 
 // ----- end imports
@@ -97,7 +97,7 @@ impl DebitRepository {
 }
 
 #[async_trait]
-impl debit::Repository for DebitRepository {
+impl persistence::Repository for DebitRepository {
     async fn store_quote(&self, quote: debit::MintQuote) -> Result<()> {
         let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
         let _: Option<debit::MintQuote> = self
@@ -497,8 +497,8 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::debit::Repository;
     use crate::foreign::OfflineRepository;
+    use crate::persistence::Repository;
     use bcr_common::core_tests;
     use bcr_common::core_tests::generate_random_keypair;
     use bitcoin::hashes::Hash;
