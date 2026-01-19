@@ -96,11 +96,13 @@ impl AppController {
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
+        let clowder_cl = debit::ClowderCl(ClowderRestClient::new(clowder_url.clone()));
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
+            clowder: Arc::new(clowder_cl),
             monitor_interval,
             quote_expiry_seconds,
         };

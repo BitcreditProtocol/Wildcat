@@ -24,7 +24,6 @@ pub struct CDKWalletConfig {
     pub storage: std::path::PathBuf,
 }
 
-#[derive(Clone)]
 pub struct CDKWallet {
     wlt: cdk::wallet::Wallet,
     client: cdk::wallet::HttpClient,
@@ -121,5 +120,9 @@ impl Wallet for CDKWallet {
     async fn balance(&self) -> Result<Amount> {
         self.wlt.check_all_mint_quotes().await?;
         self.wlt.total_balance().await.map_err(Error::CDKWallet)
+    }
+
+    async fn active_keyset(&self) -> Result<cashu::KeySetInfo> {
+        self.wlt.get_active_keyset().await.map_err(Error::CDKWallet)
     }
 }
