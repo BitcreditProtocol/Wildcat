@@ -102,8 +102,7 @@ pub async fn lookup_quote(
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
     let now = chrono::Utc::now();
-    let quote = ctrl.lookup(id, now).await?;
-    let mint_status = ctrl.minting_status(id).await?;
+    let (quote, mint_status) = ctrl.lookup(id, now).await?;
     Ok(Json(convert_to_enquire_reply(quote, mint_status)))
 }
 
@@ -132,8 +131,7 @@ pub async fn cancel(
 
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
-    let quote = ctrl.lookup(id, now).await?;
-    let status = ctrl.minting_status(id).await?;
-    let reply = convert_to_enquire_reply(quote, status);
+    let (quote, mint_status) = ctrl.lookup(id, now).await?;
+    let reply = convert_to_enquire_reply(quote, mint_status);
     Ok(Json(reply))
 }

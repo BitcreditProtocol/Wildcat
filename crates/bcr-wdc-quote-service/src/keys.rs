@@ -8,7 +8,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    service::KeysHandler,
+    service::{KeysHandler, MintingStatus},
 };
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -56,11 +56,11 @@ impl KeysHandler for KeysRestHandler {
         let signatures = self.0.sign(msg).await?;
         Ok(signatures)
     }
-    async fn get_minting_status(&self, qid: Uuid) -> Result<Option<cashu::Amount>> {
+    async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {
         let response = self.0.mint_operation_status(qid).await;
         match response {
-            Ok(status) => Ok(Some(status.current)),
-            Err(KeysError::MintOpNotFound(_)) => Ok(None),
+            Ok(status) => Ok(MintingStatus::Enabled(status.current)),
+            Err(KeysError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
             Err(e) => Err(Error::KeysHandler(e)),
         }
     }
