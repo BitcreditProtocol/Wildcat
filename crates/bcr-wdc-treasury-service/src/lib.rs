@@ -50,6 +50,7 @@ pub struct AppConfig {
     monitor_interval_sec: u64,
     quote_expiry_seconds: u64,
     min_confirmations: u32,
+    min_melt_sats: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -63,6 +64,7 @@ pub struct AppController {
     dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
     min_confirmations: u32,
+    min_melt_sats: u64,
 }
 
 impl AppController {
@@ -83,6 +85,7 @@ impl AppController {
             monitor_interval_sec,
             quote_expiry_seconds,
             min_confirmations,
+            min_melt_sats,
         } = cfg;
 
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
@@ -200,6 +203,7 @@ impl AppController {
             dbmint,
             dev: Arc::new(dev),
             min_confirmations,
+            min_melt_sats,
         }
     }
 
