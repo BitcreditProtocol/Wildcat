@@ -99,10 +99,16 @@ pub async fn sat_offline_exchange(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_quote_onchain(
-    State(ctrl): State<debit::Service>,
+    State(ctrl): State<AppController>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    let response = ctrl.create_onchain_melt_quote(request).await?;
+    if request.request.amount < bitcoin::Amount::from_sat(ctrl.min_melt_sats) {
+        return Err(crate::error::Error::InsufficientOnchainMeltAmount(
+            request.request.amount,
+        ));
+    }
+
+    let response = ctrl.debit.create_onchain_melt_quote(request).await?;
     Ok(Json(response))
 }
 
@@ -124,13 +130,13 @@ pub async fn melt_onchain(
     tracing::info!(
         "On chain melt request id {} total inputs {} sat addr {} original quote amount {}",
         request.quote(),
+        total_proofs,
         onchain_data
             .request
             .request
             .address
             .clone()
             .assume_checked(),
-        total_proofs,
         onchain_data.request.request.amount
     );
 
@@ -193,12 +199,6 @@ pub async fn mint_quote_onchain(
     Json(request): Json<wire_mint::MintQuoteOnchainRequest>,
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
     tracing::debug!("Received mint_quote_onchain request");
-
-    if request.amount < bitcoin::Amount::from_sat(ctrl.min_melt_sats) {
-        return Err(crate::error::Error::InsufficientOnchainMeltAmount(
-            request.amount,
-        ));
-    }
 
     let clowder_quote = Uuid::new_v4();
     // TODO update mint quote onchain to provide keyset id
