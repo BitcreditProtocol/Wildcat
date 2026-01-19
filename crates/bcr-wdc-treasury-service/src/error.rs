@@ -141,11 +141,9 @@ impl axum::response::IntoResponse for Error {
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::InsufficientOnchainMeltAmount(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, String::new())
-            }
-            Error::MeltAmountMismatch(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::MintAmountMismatch(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::InsufficientOnchainMeltAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
         };
         resp.into_response()
     }
