@@ -25,9 +25,40 @@ env:
 jobs:
 
 # ───────────────────────────────
+# detect code changes
+# ───────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Detect code changes
+      id: filter
+      uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+      with:
+        filters: |
+          code:
+            - 'crates/**'
+            - 'bcr-common/**'
+            - 'Cargo.toml'
+            - 'deny.toml'
+            - 'rustfmt.toml'
+            - 'recipe.json'
+            - 'scripts/**'
+            - 'docker/**/Dockerfile'
+            - '.github/workflows/nightly.yml'
+
+# ───────────────────────────────
 # build base image, cache, upload local artifact
 # ───────────────────────────────
   base-image:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -100,7 +131,10 @@ jobs:
 # build & push wildcat images
 # ───────────────────────────────
   wildcat-images:
-    needs: base-image
+    needs:
+      - changes
+      - base-image
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -193,7 +227,10 @@ jobs:
   # ─────────────────────────────
   deploy-dev:
     name: Deploy to dev
-    needs: wildcat-images
+    needs:
+      - changes
+      - wildcat-images
+    if: ${{ always() && (needs.changes.outputs.code == 'false' || needs.wildcat-images.result == 'success') }}
 
     permissions:
       contents: read
