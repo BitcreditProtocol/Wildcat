@@ -12,7 +12,7 @@ use crate::{
     error::{Error, Result},
     onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor},
     payment::{ForeignPayment, IncomingRequest, OutgoingRequest},
-    service::PaymentRepository,
+    persistence::PaymentRepository,
 };
 
 // ----- end imports
