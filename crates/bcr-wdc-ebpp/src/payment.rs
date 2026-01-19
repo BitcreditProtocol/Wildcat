@@ -5,7 +5,6 @@ use cashu::{MeltQuoteState, MintQuoteState};
 use cdk_common::payment::PaymentIdentifier;
 use uuid::Uuid;
 // ----- local imports
-use crate::error::{Error, Result};
 
 // ----- end imports
 
@@ -20,15 +19,16 @@ pub struct IncomingRequest {
 
 #[derive(Debug, Clone)]
 pub enum PaymentType {
-    OnChain(btc::Address),
-    EBill(btc::Address),
+    EBill {
+        recipient: btc::Address,
+        sweep: btc::Address,
+    },
     ClowderOnchain(Uuid),
 }
 impl PaymentType {
     pub fn recipient(&self) -> Option<btc::Address> {
         match self {
-            PaymentType::EBill(add) => Some(add.clone()),
-            PaymentType::OnChain(add) => Some(add.clone()),
+            PaymentType::EBill { recipient, .. } => Some(recipient.clone()),
             PaymentType::ClowderOnchain(_) => None,
         }
     }
@@ -53,33 +53,19 @@ impl std::fmt::Display for IncomingRequest {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutgoingRequest {
     pub reqid: PaymentIdentifier,
-    pub recipient: btc::Address,
-    pub amount: btc::Amount,
-    pub reserved_fees: btc::Amount,
-    pub status: MeltQuoteState,
-    pub proof: Option<btc::Txid>,
-    pub total_spent: Option<btc::Amount>,
+    pub amount: cashu::Amount,
+    pub state: MeltQuoteState,
 }
-
 impl OutgoingRequest {
-    pub fn new(
-        reqid: PaymentIdentifier,
-        uri: bip21::Uri,
-        reserved_fees: btc::Amount,
-    ) -> Result<Self> {
-        let amount = uri.amount.ok_or(Error::UnknownAmount)?;
-        Ok(Self {
+    pub fn new(reqid: PaymentIdentifier, amount: cashu::Amount) -> Self {
+        Self {
             reqid,
-            recipient: uri.address,
             amount,
-            reserved_fees,
-            status: MeltQuoteState::Unpaid,
-            proof: None,
-            total_spent: None,
-        })
+            state: MeltQuoteState::Pending,
+        }
     }
 }
 

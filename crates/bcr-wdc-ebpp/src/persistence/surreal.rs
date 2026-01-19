@@ -20,7 +20,7 @@ use crate::{
     error::{Error, Result},
     onchain::{PrivateKeysRepository, SingleSecretKeyDescriptor},
     payment::{ForeignPayment, IncomingRequest, OutgoingRequest, PaymentType},
-    service::PaymentRepository,
+    persistence::PaymentRepository,
 };
 
 // ----- end imports
@@ -115,33 +115,33 @@ impl PrivateKeysRepository for DBPrivateKeys {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PaymentTypeDBEntry {
-    OnChain(btc::Address<btc::address::NetworkUnchecked>),
-    EBill(btc::Address<btc::address::NetworkUnchecked>),
+    EBill {
+        recipient: btc::Address<btc::address::NetworkUnchecked>,
+        sweep: btc::Address<btc::address::NetworkUnchecked>,
+    },
     ClowderOnchain(uuid::Uuid),
 }
 impl std::convert::From<PaymentType> for PaymentTypeDBEntry {
     fn from(pt: PaymentType) -> Self {
         match pt {
-            PaymentType::OnChain(addr) => PaymentTypeDBEntry::OnChain(addr.into_unchecked()),
-            PaymentType::EBill(addr) => PaymentTypeDBEntry::EBill(addr.into_unchecked()),
+            PaymentType::EBill { recipient, sweep } => PaymentTypeDBEntry::EBill {
+                recipient: recipient.into_unchecked(),
+                sweep: sweep.into_unchecked(),
+            },
             PaymentType::ClowderOnchain(uuid) => PaymentTypeDBEntry::ClowderOnchain(uuid),
         }
     }
 }
 fn into_payment_type(pt: PaymentTypeDBEntry, network: btc::Network) -> Result<PaymentType> {
     match pt {
-        PaymentTypeDBEntry::OnChain(addr) => {
-            let addr = addr
+        PaymentTypeDBEntry::EBill { recipient, sweep } => Ok(PaymentType::EBill {
+            recipient: recipient
                 .require_network(network)
-                .map_err(Error::BTCAddressParse)?;
-            Ok(PaymentType::OnChain(addr))
-        }
-        PaymentTypeDBEntry::EBill(addr) => {
-            let addr = addr
+                .map_err(Error::BTCAddressParse)?,
+            sweep: sweep
                 .require_network(network)
-                .map_err(Error::BTCAddressParse)?;
-            Ok(PaymentType::EBill(addr))
-        }
+                .map_err(Error::BTCAddressParse)?,
+        }),
         PaymentTypeDBEntry::ClowderOnchain(uuid) => Ok(PaymentType::ClowderOnchain(uuid)),
     }
 }
@@ -182,39 +182,23 @@ fn into_incoming_request(
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OutgoingPaymentDBEntry {
     reqid: PaymentIdentifier,
-    recipient: btc::Address<btc::address::NetworkUnchecked>,
-    amount: btc::Amount,
-    reserved_fees: btc::Amount,
-    status: cdk_common::MeltQuoteState,
-    proof: Option<btc::Txid>,
-    total_spent: Option<btc::Amount>,
+    amount: cashu::Amount,
+    state: cdk_common::MeltQuoteState,
 }
 impl std::convert::From<OutgoingRequest> for OutgoingPaymentDBEntry {
     fn from(req: OutgoingRequest) -> Self {
         Self {
             reqid: req.reqid,
             amount: req.amount,
-            reserved_fees: req.reserved_fees,
-            status: req.status,
-            recipient: req.recipient.into_unchecked(),
-            proof: req.proof,
-            total_spent: req.total_spent,
+            state: req.state,
         }
     }
 }
-fn into_outgoing_request(
-    dbreq: OutgoingPaymentDBEntry,
-    network: btc::Network,
-) -> Result<OutgoingRequest> {
-    let recipient = dbreq.recipient.require_network(network)?;
+fn into_outgoing_request(dbreq: OutgoingPaymentDBEntry) -> Result<OutgoingRequest> {
     Ok(OutgoingRequest {
         reqid: dbreq.reqid,
         amount: dbreq.amount,
-        reserved_fees: dbreq.reserved_fees,
-        recipient,
-        status: dbreq.status,
-        proof: dbreq.proof,
-        total_spent: dbreq.total_spent,
+        state: dbreq.state,
     })
 }
 
@@ -377,7 +361,7 @@ impl PaymentRepository for DBPayments {
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let dbreq = dbreq.ok_or(Error::PaymentRequestNotFound(reqid.clone()))?;
-        into_outgoing_request(dbreq, self.network)
+        into_outgoing_request(dbreq)
     }
 
     async fn store_outgoing(&self, req: OutgoingRequest) -> Result<()> {
@@ -387,6 +371,7 @@ impl PaymentRepository for DBPayments {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
+
     async fn update_outgoing(&self, req: OutgoingRequest) -> Result<()> {
         let reqid = req.reqid.clone();
         let res: Option<OutgoingPaymentDBEntry> = self
@@ -482,7 +467,10 @@ mod tests {
             reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
-            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            payment_type: PaymentTypeDBEntry::EBill {
+                recipient: address.clone().into_unchecked(),
+                sweep: address.clone().into_unchecked(),
+            },
             status: MintQuoteState::Unpaid,
         };
         unpaids.push(unpaid1.reqid.clone());
@@ -493,7 +481,10 @@ mod tests {
             reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
-            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            payment_type: PaymentTypeDBEntry::EBill {
+                recipient: address.clone().into_unchecked(),
+                sweep: address.clone().into_unchecked(),
+            },
             status: MintQuoteState::Paid,
         };
         let rid = RecordId::from_table_key(&db.incoming_table, paid1.reqid.to_string());
@@ -503,7 +494,10 @@ mod tests {
             reqid: PaymentIdentifier::PaymentId(rand::random()),
             amount: btc::Amount::ZERO,
             expiration: None,
-            payment_type: PaymentTypeDBEntry::OnChain(address.clone()),
+            payment_type: PaymentTypeDBEntry::EBill {
+                recipient: address.clone().into_unchecked(),
+                sweep: address.clone().into_unchecked(),
+            },
             status: MintQuoteState::Unpaid,
         };
         unpaids.push(unpaid2.reqid.clone());
