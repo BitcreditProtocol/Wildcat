@@ -146,7 +146,6 @@ impl Service {
         amount: bitcoin::Amount,
         deadline: TStamp,
     ) -> Result<cdk::wallet::MintQuote> {
-        let _active_kinfo = self.wallet.active_keyset().await?;
         let clowder_qid = Uuid::new_v4();
         let sweeping_address = self.clowder_read.get_sweep(clowder_qid).await?;
         let request = wire_signatures::RequestToMintFromEBillDesc {
