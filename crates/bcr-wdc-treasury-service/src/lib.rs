@@ -50,6 +50,15 @@ pub struct AppConfig {
     monitor_interval_sec: u64,
     quote_expiry_seconds: u64,
     min_confirmations: u32,
+    min_melt_threshold: bitcoin::Amount,
+    min_mint_threshold: bitcoin::Amount,
+}
+
+#[derive(Clone)]
+struct Parameters {
+    pub min_confirmations: u32,
+    pub min_melt_threshold: bitcoin::Amount,
+    pub min_mint_threshold: bitcoin::Amount,
 }
 
 #[derive(Clone, FromRef)]
@@ -62,7 +71,7 @@ pub struct AppController {
     clwdr_rest: Arc<ClowderRestClient>,
     dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
-    min_confirmations: u32,
+    params: Parameters,
 }
 
 impl AppController {
@@ -83,6 +92,8 @@ impl AppController {
             monitor_interval_sec,
             quote_expiry_seconds,
             min_confirmations,
+            min_melt_threshold,
+            min_mint_threshold,
         } = cfg;
 
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
@@ -199,7 +210,11 @@ impl AppController {
             clwdr_rest,
             dbmint,
             dev: Arc::new(dev),
-            min_confirmations,
+            params: Parameters {
+                min_confirmations,
+                min_melt_threshold,
+                min_mint_threshold,
+            },
         }
     }
 

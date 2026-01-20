@@ -11,6 +11,8 @@ signer_url = "nats://nats:4222"
 quote_expiry_seconds = 86400
 clwdr_nats_url = "nats://nats:4222"
 min_confirmations = 1
+min_melt_threshold = 1000
+min_mint_threshold = 1000
 
 [appcfg.credit_repo]
 connection = "ws://surrealdb:8000"
