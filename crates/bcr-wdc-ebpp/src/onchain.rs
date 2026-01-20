@@ -263,6 +263,7 @@ where
             .round() as u64;
         let fee = fee_rate_sat_byte * self.avg_transaction_size_bytes;
         let amount = Amount::from_sat(fee);
+        tracing::info!("estimated fees {fee_rate_btc_kbyte} btc/kbyte, {amount} btc/tx");
         Ok(amount)
     }
 
@@ -292,6 +293,7 @@ where
                 recipient.clone(),
                 max_fee,
             )?;
+            tracing::debug!("sweeping from {address} to {recipient}, with max fee set to {max_fee}, txID: {txid}");
             return Ok(txid);
         }
         return Err(Error::UnknownAddress(address));

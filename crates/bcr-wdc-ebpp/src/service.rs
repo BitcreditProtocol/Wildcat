@@ -153,9 +153,13 @@ impl MintPayment for Service {
         let parsed_description = ParsedDescription::parse(&options.description.unwrap_or_default());
         let payment_type = match parsed_description {
             Ok(ParsedDescription::ForeignECash(request)) => {
-                tracing::debug!("Parsed foreign ecash request",);
                 let payload: web_exchange::RequestToMintFromForeigneCashPayload =
                     deserialize_borsh_msg(&request.payload).map_err(Error::from)?;
+                tracing::debug!(
+                    "Parsed foreign ecash request, {} for {}",
+                    payload.nonce,
+                    payload.foreign_amount_sat
+                );
                 schnorr_verify_b64(&request.payload, &request.signature, &self.treasury_pubkey)
                     .map_err(Error::from)?;
                 let foreign = self.payrepo.check_foreign_nonce(&payload.nonce).await?;
@@ -177,11 +181,15 @@ impl MintPayment for Service {
                 return Ok(response);
             }
             Ok(ParsedDescription::EbillRequestToPay(request)) => {
-                tracing::trace!("Parsed EBill request",);
-                schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
-                    .map_err(Error::from)?;
                 let message: wire_signatures::RequestToMintFromEBillDesc =
                     deserialize_borsh_msg(&request.content).map_err(Error::from)?;
+                tracing::debug!(
+                    "Parsed EBill request, {} --> {}",
+                    message.ebill_id,
+                    message.sweeping_address
+                );
+                schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
+                    .map_err(Error::from)?;
                 let output = self
                     .ebill
                     .request_to_pay(&message.ebill_id, amount, message.deadline)
@@ -194,10 +202,12 @@ impl MintPayment for Service {
                 payment::PaymentType::EBill { recipient, sweep }
             }
             Ok(ParsedDescription::ClowderOnchain(uuid)) => {
+                tracing::debug!("Parsed ClowderOnchain request, {uuid}");
                 payment::PaymentType::ClowderOnchain(uuid)
             }
             Ok(ParsedDescription::Dev) => {
                 let idx: u32 = rand::random();
+                tracing::debug!("Parsed Dev request idx {idx}");
                 let pid = PaymentIdentifier::Label(format!("dev{idx}"));
                 self.dev_payments
                     .lock()
@@ -381,6 +391,7 @@ impl MintPayment for Service {
 
         // Dev payment
         if let Some(amount) = self.dev_payments.lock().unwrap().get(payment_identifier) {
+            tracing::debug!("check_incoming_payment_status for dev payment {payment_identifier}");
             return Ok(vec![WaitPaymentResponse {
                 payment_identifier: payment_identifier.clone(),
                 payment_amount: *amount,
@@ -390,23 +401,25 @@ impl MintPayment for Service {
         }
 
         // Foreign eCash payment
-        let mut response = Vec::new();
         let foreign = self.payrepo.check_foreign_reqid(payment_identifier).await?;
         if let Some(foreign) = foreign {
+            tracing::debug!(
+                "check_incoming_payment_status for foreign payment {payment_identifier}"
+            );
             let payment_id = foreign.reqid.to_string();
-            response.push(WaitPaymentResponse {
+            return Ok(vec![WaitPaymentResponse {
                 payment_identifier: foreign.reqid,
                 payment_amount: cashu::Amount::from(foreign.amount.to_sat()),
                 unit: CurrencyUnit::Sat,
                 payment_id,
-            });
-            return Ok(response);
+            }]);
         }
 
         // E-Bill payment
         let mut request = self.payrepo.load_incoming(payment_identifier).await?;
         match (request.status, request.payment_type.clone()) {
             (MintQuoteState::Unpaid, payment::PaymentType::ClowderOnchain(_)) => {
+                tracing::debug!("check_incoming_payment_status for ClowderOnchain: Unpaid");
                 request.status = MintQuoteState::Paid;
                 self.payrepo.update_incoming(request.clone()).await?;
                 Ok(vec![WaitPaymentResponse {
@@ -417,6 +430,7 @@ impl MintPayment for Service {
                 }])
             }
             (MintQuoteState::Unpaid, payment::PaymentType::EBill { recipient, sweep }) => {
+                tracing::debug!("check_incoming_payment_status for Ebill: Unpaid");
                 let state =
                     check_incoming_payment(&recipient, request.amount, self.onchain.as_ref())
                         .await?;
@@ -437,6 +451,7 @@ impl MintPayment for Service {
                 }
             }
             (MintQuoteState::Paid, payment::PaymentType::ClowderOnchain(_)) => {
+                tracing::debug!("check_incoming_payment_status for ClowderOnchain: Paid");
                 request.status = MintQuoteState::Issued;
                 self.payrepo.update_incoming(request.clone()).await?;
                 Ok(vec![WaitPaymentResponse {
@@ -446,32 +461,38 @@ impl MintPayment for Service {
                     payment_id: payment_identifier.to_string(),
                 }])
             }
-            (MintQuoteState::Paid, payment::PaymentType::EBill { .. }) => match request.sweep_tx {
-                Some(txid) => {
-                    if self.onchain.is_confirmed(txid).await? {
-                        request.status = MintQuoteState::Issued;
-                        self.payrepo.update_incoming(request.clone()).await?;
-                        Ok(vec![WaitPaymentResponse {
-                            payment_identifier: payment_identifier.clone(),
-                            payment_amount: cashu::Amount::from(request.amount.to_sat()),
-                            unit: CurrencyUnit::Sat,
-                            payment_id: payment_identifier.to_string(),
-                        }])
-                    } else {
-                        Ok(vec![])
+            (MintQuoteState::Paid, payment::PaymentType::EBill { .. }) => {
+                tracing::debug!("check_incoming_payment_status for Ebill: Paid");
+                match request.sweep_tx {
+                    Some(txid) => {
+                        if self.onchain.is_confirmed(txid).await? {
+                            request.status = MintQuoteState::Issued;
+                            self.payrepo.update_incoming(request.clone()).await?;
+                            Ok(vec![WaitPaymentResponse {
+                                payment_identifier: payment_identifier.clone(),
+                                payment_amount: cashu::Amount::from(request.amount.to_sat()),
+                                unit: CurrencyUnit::Sat,
+                                payment_id: payment_identifier.to_string(),
+                            }])
+                        } else {
+                            Ok(vec![])
+                        }
+                    }
+                    None => {
+                        tracing::error!("No sweep transaction found for paid E-Bill payment");
+                        return Err(PaymentError::UnknownPaymentState);
                     }
                 }
-                None => {
-                    tracing::error!("No sweep transaction found for paid E-Bill payment");
-                    return Err(PaymentError::UnknownPaymentState);
-                }
-            },
-            (MintQuoteState::Issued, _) => Ok(vec![WaitPaymentResponse {
-                payment_identifier: payment_identifier.clone(),
-                payment_amount: cashu::Amount::from(request.amount.to_sat()),
-                unit: CurrencyUnit::Sat,
-                payment_id: payment_identifier.to_string(),
-            }]),
+            }
+            (MintQuoteState::Issued, _) => {
+                tracing::debug!("check_incoming_payment_status for: Issued");
+                Ok(vec![WaitPaymentResponse {
+                    payment_identifier: payment_identifier.clone(),
+                    payment_amount: cashu::Amount::from(request.amount.to_sat()),
+                    unit: CurrencyUnit::Sat,
+                    payment_id: payment_identifier.to_string(),
+                }])
+            }
         }
     }
 
