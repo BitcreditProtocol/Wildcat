@@ -63,7 +63,7 @@ pub trait WildcatService: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderReadService: Send + Sync {
-    async fn get_sweep(&self, qid: uuid::Uuid, kid: cashu::Id) -> Result<bitcoin::Address>;
+    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -146,15 +146,9 @@ impl Service {
         amount: bitcoin::Amount,
         deadline: TStamp,
     ) -> Result<cdk::wallet::MintQuote> {
-        let active_kinfo = self.wallet.active_keyset().await?;
+        let _active_kinfo = self.wallet.active_keyset().await?;
         let clowder_qid = Uuid::new_v4();
-        // TODO this is incorrect, its just an active dummy keyset
-        // We need to use the keyset id that identifies the mint
-        let bill_keyset_id = active_kinfo.id;
-        let sweeping_address = self
-            .clowder_read
-            .get_sweep(clowder_qid, bill_keyset_id)
-            .await?;
+        let sweeping_address = self.clowder_read.get_sweep(clowder_qid).await?;
         let request = wire_signatures::RequestToMintFromEBillDesc {
             ebill_id: ebill_id.clone(),
             deadline,
