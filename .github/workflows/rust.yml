@@ -58,6 +58,9 @@ jobs:
       - name: Install required cargo tools
         run: cargo install cargo-deny clippy-sarif sarif-fmt
 
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
       - name: Activate cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
