@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     client::keys::{Client as KeysClient, Error as KeysError},
-    wire::{clowder::messages, exchange as wire_exchange, swap as wire_swap},
+    wire::{
+        clowder as wire_clowder, clowder::messages, exchange as wire_exchange, swap as wire_swap,
+    },
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use cashu::MintVersion;
@@ -377,6 +379,42 @@ pub async fn get_clowder_betas(
     let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
 
     Ok(Json(clowder_client.get_betas().await?))
+}
+
+pub async fn get_foreign_offline(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::OfflineResponse>> {
+    tracing::debug!("Requested /v1/foreign/offline/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_offline(alpha_id).await?))
+}
+
+pub async fn get_foreign_status(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::AlphaStateResponse>> {
+    tracing::debug!("Requested /v1/foreign/status/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_status(alpha_id).await?))
+}
+
+pub async fn get_foreign_substitute(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::ConnectedMintResponse>> {
+    tracing::debug!("Requested /v1/foreign/substitute/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_substitute(alpha_id).await?))
+}
+
+pub async fn get_foreign_keysets(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<cashu::KeysResponse>> {
+    tracing::debug!("Requested /v1/foreign/keysets/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_active_keysets(&alpha_id).await?))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]

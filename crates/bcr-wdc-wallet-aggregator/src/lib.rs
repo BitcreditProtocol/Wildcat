@@ -160,6 +160,22 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/exchange/online", post(web::post_online_exchange))
         .route("/v1/exchange/offline", post(web::post_offline_exchange))
         .route("/v1/betas", get(web::get_clowder_betas))
+        .route(
+            "/v1/foreign/offline/{alpha_id}",
+            get(web::get_foreign_offline),
+        )
+        .route(
+            "/v1/foreign/status/{alpha_id}",
+            get(web::get_foreign_status),
+        )
+        .route(
+            "/v1/foreign/substitute/{alpha_id}",
+            get(web::get_foreign_substitute),
+        )
+        .route(
+            "/v1/foreign/keysets/{alpha_id}",
+            get(web::get_foreign_keysets),
+        )
         .with_state(app)
         .merge(swagger);
     Ok(router)
