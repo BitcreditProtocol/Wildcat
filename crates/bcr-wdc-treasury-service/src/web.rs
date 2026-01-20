@@ -102,7 +102,7 @@ pub async fn melt_quote_onchain(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    if request.request.amount < bitcoin::Amount::from_sat(ctrl.params.min_melt_sats) {
+    if request.request.amount < ctrl.params.min_melt_threshold {
         return Err(crate::error::Error::InsufficientOnchainMeltAmount(
             request.request.amount,
         ));
@@ -200,7 +200,7 @@ pub async fn mint_quote_onchain(
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
     tracing::debug!("Received mint_quote_onchain request");
 
-    if request.amount < bitcoin::Amount::from_sat(ctrl.params.min_mint_sats) {
+    if request.amount < ctrl.params.min_mint_threshold {
         return Err(crate::error::Error::InsufficientOnchainMintAmount(
             request.amount,
         ));

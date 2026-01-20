@@ -50,15 +50,15 @@ pub struct AppConfig {
     monitor_interval_sec: u64,
     quote_expiry_seconds: u64,
     min_confirmations: u32,
-    min_melt_sats: u64,
-    min_mint_sats: u64,
+    min_melt_threshold: bitcoin::Amount,
+    min_mint_threshold: bitcoin::Amount,
 }
 
 #[derive(Clone)]
 struct Parameters {
     pub min_confirmations: u32,
-    pub min_melt_sats: u64,
-    pub min_mint_sats: u64,
+    pub min_melt_threshold: bitcoin::Amount,
+    pub min_mint_threshold: bitcoin::Amount,
 }
 
 #[derive(Clone, FromRef)]
@@ -92,8 +92,8 @@ impl AppController {
             monitor_interval_sec,
             quote_expiry_seconds,
             min_confirmations,
-            min_melt_sats,
-            min_mint_sats,
+            min_melt_threshold,
+            min_mint_threshold,
         } = cfg;
 
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
@@ -212,8 +212,8 @@ impl AppController {
             dev: Arc::new(dev),
             params: Parameters {
                 min_confirmations,
-                min_melt_sats,
-                min_mint_sats,
+                min_melt_threshold,
+                min_mint_threshold,
             },
         }
     }
