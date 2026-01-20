@@ -524,6 +524,7 @@ mod tests {
         let quote = debit::MintQuote {
             qid: Uuid::new_v4().to_string(),
             ebill_id: core_tests::random_bill_id(),
+            clowder_qid: Uuid::new_v4(),
         };
         db.store_quote(quote.clone()).await.unwrap();
 
