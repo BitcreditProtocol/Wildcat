@@ -329,7 +329,7 @@ mod tests {
         clowder
             .expect_get_sweep()
             .times(1)
-            .returning(move |_, _| Ok(sweep.clone()));
+            .returning(move |_| Ok(sweep.clone()));
         let qid_cloned = mint_quote.id.clone();
         let ebill_cloned = ebill_id.clone();
         wallet
