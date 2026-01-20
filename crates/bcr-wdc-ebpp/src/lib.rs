@@ -109,9 +109,13 @@ pub fn routes(ctrl: AppController) -> Router {
         "/v1/admin/ebpp/",
         Router::new().route("/onchain/balance", get(admin::balance)),
     );
-    let web = Router::new().nest(
+    let web = Router::new().route("/health", get(get_health)).nest(
         "/v1/ebpp",
         Router::new().route("/onchain/network", get(web::network)),
     );
     Router::new().merge(admin).merge(web).with_state(ctrl)
+}
+
+async fn get_health() -> &'static str {
+    "{ \"status\": \"OK\" }"
 }
