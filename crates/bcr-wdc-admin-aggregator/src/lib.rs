@@ -82,6 +82,7 @@ pub mod endpoints {
     pub const GET_EBILL_PAYMENTSTATUS: &str = "/v1/admin/ebill/payment_status/{bid}";
 
     // Clowder-Client
+    pub const GET_CLOWDER_INFO: &str = "/v1/admin/clowder/info";
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
     pub const GET_CLOWDER_BETAS: &str = "/v1/admin/clowder/betas";
     pub const GET_CLOWDER_LOCAL_COVERAGE: &str = "/v1/admin/clowder/coverage";
@@ -132,6 +133,7 @@ pub fn routes(ctrl: AppController) -> Router {
             get(admin::get_ebill_paymentstatus),
         )
         // clowder service
+        .route(endpoints::GET_CLOWDER_INFO, get(admin::get_clowder_info))
         .route(
             endpoints::GET_CLOWDER_ALPHAS,
             get(admin::get_clowder_alphas),
@@ -184,6 +186,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_bill::Endorsement,
         wire_bill::SimplifiedBillPaymentStatus,
         // clowder service
+        wire_clowder::ClowderNodeInfo,
         wire_clowder::ConnectedMintsResponse,
         wire_clowder::PerceivedState,
         wire_clowder::AlphaStateResponse,
@@ -214,6 +217,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_ebill_attachment,
         admin::get_ebill_paymentstatus,
         // clowder service
+        admin::get_clowder_info,
         admin::get_clowder_alphas,
         admin::get_clowder_betas,
         admin::get_clowder_local_coverage,
