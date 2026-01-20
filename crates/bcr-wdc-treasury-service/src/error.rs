@@ -81,6 +81,14 @@ pub enum Error {
     RequestIDNotFound(Uuid),
     #[error("ebill id not found {0}")]
     EBillNotFound(String),
+    #[error("Insufficient amount for melting {0}")]
+    InsufficientOnchainMeltAmount(bitcoin::Amount),
+    #[error("Insufficient amount for minting {0}")]
+    InsufficientOnchainMintAmount(bitcoin::Amount),
+    #[error("Proofs supplied for melting does not match original request")]
+    MeltAmountMismatch(cashu::Amount),
+    #[error("Signatures supplied for minting does not match original request")]
+    MintAmountMismatch(cashu::Amount),
 
     #[error("internal {0}")]
     Internal(String),
@@ -135,6 +143,10 @@ impl axum::response::IntoResponse for Error {
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::InsufficientOnchainMeltAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::InsufficientOnchainMintAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
         };
         resp.into_response()
     }

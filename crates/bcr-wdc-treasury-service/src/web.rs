@@ -99,10 +99,16 @@ pub async fn sat_offline_exchange(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_quote_onchain(
-    State(ctrl): State<debit::Service>,
+    State(ctrl): State<AppController>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    let response = ctrl.create_onchain_melt_quote(request).await?;
+    if request.request.amount < ctrl.params.min_melt_threshold {
+        return Err(crate::error::Error::InsufficientOnchainMeltAmount(
+            request.request.amount,
+        ));
+    }
+
+    let response = ctrl.debit.create_onchain_melt_quote(request).await?;
     Ok(Json(response))
 }
 
@@ -115,6 +121,25 @@ pub async fn melt_onchain(
     let quote_id = request.quote_id();
     tracing::debug!("Loading onchain melt quote with ID {}", quote_id);
     let onchain_data = ctrl.debit.repo.load_onchain_melt(*quote_id).await?;
+
+    let total_proofs: u64 = request
+        .inputs_amount()
+        .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?
+        .into();
+
+    tracing::info!(
+        "On chain melt request id {} total inputs {} sat addr {} original quote amount {}",
+        request.quote(),
+        total_proofs,
+        onchain_data
+            .request
+            .request
+            .address
+            .clone()
+            .assume_checked(),
+        onchain_data.request.request.amount
+    );
+
     let current_time = chrono::Utc::now().timestamp() as u64;
     if current_time > onchain_data.expiry {
         return Err(crate::error::Error::InvalidInput(String::from(
@@ -126,14 +151,10 @@ pub async fn melt_onchain(
         return Err(crate::error::Error::InvalidInput(String::from("No inputs")));
     }
 
-    let total_proofs: u64 = request
-        .inputs_amount()
-        .map_err(|_| crate::error::Error::InvalidInput(String::from("No amount for inputs")))?
-        .into();
     if total_proofs != onchain_data.request.request.amount.to_sat() {
-        return Err(crate::error::Error::InvalidInput(String::from(
-            "Requested amount mismatch",
-        )));
+        return Err(crate::error::Error::MeltAmountMismatch(
+            cashu::Amount::from(total_proofs),
+        ));
     }
     if let Some(clowder) = ctrl.clwdr_nats {
         tracing::debug!("Requesting onchain clowder melt transaction");
@@ -178,6 +199,12 @@ pub async fn mint_quote_onchain(
     Json(request): Json<wire_mint::MintQuoteOnchainRequest>,
 ) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
     tracing::debug!("Received mint_quote_onchain request");
+
+    if request.amount < ctrl.params.min_mint_threshold {
+        return Err(crate::error::Error::InsufficientOnchainMintAmount(
+            request.amount,
+        ));
+    }
 
     let clowder_quote = Uuid::new_v4();
     // TODO update mint quote onchain to provide keyset id
@@ -241,7 +268,7 @@ pub async fn get_mint_quote_onchain(
             .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
         let payment = ctrl
             .clwdr_rest
-            .verify_mint_payment(data.clowder_quote, dummy_kid, ctrl.min_confirmations)
+            .verify_mint_payment(data.clowder_quote, dummy_kid, ctrl.params.min_confirmations)
             .await?;
 
         if payment.amount.to_sat() >= data.amount.into() {
@@ -270,6 +297,7 @@ pub async fn mint_onchain(
     let cdk_quote = Uuid::parse_str(&request.quote)
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
     let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
+
     let current_time = chrono::Utc::now().timestamp() as u64;
     if current_time > data.expiry {
         return Err(crate::error::Error::InvalidInput(String::from(
@@ -287,7 +315,7 @@ pub async fn mint_onchain(
 
     let payment_response = ctrl
         .clwdr_rest
-        .verify_mint_payment(data.clowder_quote, kid, ctrl.min_confirmations)
+        .verify_mint_payment(data.clowder_quote, kid, ctrl.params.min_confirmations)
         .await?;
 
     tracing::debug!("Clowder payment check {:?} sats", payment_response.amount);
@@ -297,6 +325,14 @@ pub async fn mint_onchain(
         .iter()
         .fold(cashu::Amount::ZERO, |acc, o| acc + o.amount)
         .into();
+
+    tracing::info!("On chain mint cdk id {} clowder id {} total outputs {outputs_amount} payment received {}, original quote amount {}", data.cdk_quote, data.clowder_quote, payment_response.amount, outputs_amount);
+
+    if outputs_amount != u64::from(data.amount) {
+        return Err(crate::error::Error::MintAmountMismatch(
+            cashu::Amount::from(outputs_amount),
+        ));
+    }
 
     if outputs_amount > payment_response.amount.to_sat() {
         return Err(crate::error::Error::InvalidInput(format!(
