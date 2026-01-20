@@ -99,7 +99,7 @@ impl ClowderClient for ClowderCl {
     ) -> Result<Vec<cashu::BlindSignature>> {
         let resp = self
             .0
-            .mint_ebill(
+            .mint_bill(
                 messages::MintEbillRequest {
                     amount,
                     keyset_id,
