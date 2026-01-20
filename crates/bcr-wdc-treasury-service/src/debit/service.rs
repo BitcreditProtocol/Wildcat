@@ -4,7 +4,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use bcr_common::{
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
-    wire::{melt as wire_melt, mint as wire_mint, signatures as wire_signatures},
+    wire::{melt as wire_melt, signatures as wire_signatures},
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::Amount;
@@ -113,22 +113,6 @@ impl Service {
             unit: Some(request.unit),
             state: cashu::nuts::MeltQuoteState::Unpaid,
             expiry,
-        })
-    }
-
-    pub async fn get_onchain_mint_quote(
-        &self,
-        quote_id: &str,
-    ) -> Result<wire_mint::MintQuoteOnchainResponse> {
-        let cdk_quote = Uuid::parse_str(quote_id)
-            .map_err(|_| Error::InvalidInput(String::from("Invalid quote ID")))?;
-        let data = self.repo.load_onchain_mint(cdk_quote).await?;
-        Ok(wire_mint::MintQuoteOnchainResponse {
-            quote: data.cdk_quote,
-            address: data.address,
-            amount: bitcoin::Amount::from_sat(data.amount.into()),
-            expiry: data.expiry,
-            state: None,
         })
     }
 
