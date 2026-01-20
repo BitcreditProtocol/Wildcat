@@ -52,9 +52,6 @@ jobs:
       - name: Update rust
         run: rustup update stable
 
-      - name: Update rust
-        run: rustup update stable
-
       - name: Add rustup components
         run: rustup component add clippy rustfmt
 
