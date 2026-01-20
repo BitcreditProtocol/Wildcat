@@ -15,10 +15,13 @@ pub struct ClowderCl(pub ClowderRestClient);
 
 #[async_trait]
 impl ClowderReadService for ClowderCl {
-    async fn get_sweep(&self, qid: uuid::Uuid, kid: cashu::Id) -> Result<bitcoin::Address> {
+    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address> {
+        let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
+            .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
+
         let response = self
             .0
-            .request_mint_address(qid, kid)
+            .request_mint_address(qid, dummy_kid)
             .await
             .map_err(Error::ClowderClient)?;
         Ok(response.address.assume_checked())
