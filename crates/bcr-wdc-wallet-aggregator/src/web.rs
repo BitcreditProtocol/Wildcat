@@ -381,6 +381,16 @@ pub async fn get_clowder_betas(
     Ok(Json(clowder_client.get_betas().await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/foreign/offline/{alpha_id}",
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn get_foreign_offline(
     State(ctrl): State<AppController>,
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
@@ -390,6 +400,16 @@ pub async fn get_foreign_offline(
     Ok(Json(clowder_client.get_offline(alpha_id).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/foreign/status/{alpha_id}",
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn get_foreign_status(
     State(ctrl): State<AppController>,
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
@@ -399,6 +419,16 @@ pub async fn get_foreign_status(
     Ok(Json(clowder_client.get_status(alpha_id).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/foreign/substitute/{alpha_id}",
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn get_foreign_substitute(
     State(ctrl): State<AppController>,
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
@@ -408,6 +438,16 @@ pub async fn get_foreign_substitute(
     Ok(Json(clowder_client.get_substitute(alpha_id).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/foreign/keysets/{alpha_id}",
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn get_foreign_keysets(
     State(ctrl): State<AppController>,
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,

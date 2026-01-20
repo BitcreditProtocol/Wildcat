@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use bcr_common::client::clowder::Client as ClowderClient;
 use bcr_common::wire::clowder::messages::{KeysetCreationRequest, KeysetCreationResponse};
 use cashu::mint_url::MintUrl;
 use cdk::{wallet::MintConnector, HttpClient};
@@ -155,27 +156,24 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/restore", post(web::post_restore))
         .route("/v1/commitment", post(web::post_commit))
         // Clowder Endpoints
-        .route("/v1/id", get(web::get_clowder_id))
-        .route("/v1/path", post(web::post_clowder_path))
-        .route("/v1/exchange/online", post(web::post_online_exchange))
-        .route("/v1/exchange/offline", post(web::post_offline_exchange))
-        .route("/v1/betas", get(web::get_clowder_betas))
+        .route(ClowderClient::ID_EP_V1, get(web::get_clowder_id))
+        .route(ClowderClient::PATH_EP_V1, post(web::post_clowder_path))
         .route(
-            "/v1/foreign/offline/{alpha_id}",
-            get(web::get_foreign_offline),
+            ClowderClient::ONLINE_EXCHANGE_EP_V1,
+            post(web::post_online_exchange),
         )
         .route(
-            "/v1/foreign/status/{alpha_id}",
-            get(web::get_foreign_status),
+            ClowderClient::OFFLINE_EXCHANGE_EP_V1,
+            post(web::post_offline_exchange),
         )
+        .route(ClowderClient::BETAS_EP_V1, get(web::get_clowder_betas))
+        .route(ClowderClient::OFFLINE_EP_V1, get(web::get_foreign_offline))
+        .route(ClowderClient::STATUS_EP_V1, get(web::get_foreign_status))
         .route(
-            "/v1/foreign/substitute/{alpha_id}",
+            ClowderClient::SUBSTITUTE_EP_V1,
             get(web::get_foreign_substitute),
         )
-        .route(
-            "/v1/foreign/keysets/{alpha_id}",
-            get(web::get_foreign_keysets),
-        )
+        .route(ClowderClient::KEYSETS_EP_V1, get(web::get_foreign_keysets))
         .with_state(app)
         .merge(swagger);
     Ok(router)
@@ -190,5 +188,10 @@ pub async fn routes(app: AppController) -> Result<Router> {
     crate::web::post_swap,
     crate::web::post_check_state,
     crate::web::post_restore,
+    crate::web::get_clowder_id,
+    crate::web::get_foreign_offline,
+    crate::web::get_foreign_status,
+    crate::web::get_foreign_substitute,
+    crate::web::get_foreign_keysets,
 ))]
 struct ApiDoc;
