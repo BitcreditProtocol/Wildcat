@@ -86,13 +86,13 @@ cdk-mintd = {cdk_mintd}"#,
 
 #[utoipa::path(
     get,
-    path = "/v1/wildcat/info",
+    path = "/v1/wildcat",
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
 )]
 pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<WildcatInfo>> {
-    tracing::debug!("Requested /v1/wildcat/info");
+    tracing::debug!("Requested /v1/wildcat");
     let network = ctrl.ebpp_client.network().await?;
     let info = ctrl.cdk_client.get_mint_info().await?;
 
