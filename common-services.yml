@@ -166,6 +166,7 @@ services:
     platform: linux/amd64
     volumes:
       - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
+      - ./.docker_data/cdk-mintd/:/root/.cdk-mintd/
     restart: unless-stopped
     command: ["cdk-mintd"]
     depends_on:
