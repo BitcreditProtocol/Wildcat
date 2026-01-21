@@ -210,6 +210,8 @@ pub async fn routes(app: AppController) -> Result<Router> {
         wire_clowder::PathRequest,
         wire_clowder::ClowderNodeInfo,
         wire_clowder::Coverage,
+        bcr_common::wire::info::WildcatInfo,
+        bcr_common::wire::info::VersionInfo,
         // exchange service
         wire_exchange::OnlineExchangeRequest,
         wire_exchange::OnlineExchangeResponse,
@@ -220,6 +222,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
     )),
     paths(
         crate::web::health,
+        crate::web::get_wildcat_info,
         crate::web::get_mint_keys,
         crate::web::get_mint_keysets,
         crate::web::get_mint_keyset,
