@@ -379,6 +379,23 @@ pub async fn get_ebill_paymentstatus(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_CLOWDER_INFO,
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::ClowderNodeInfo, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_clowder_info(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::ClowderNodeInfo>> {
+    tracing::debug!("Received clowder info request");
+
+    let info = ctrl.clwdr_cl.get_info().await?;
+    Ok(Json(info))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_CLOWDER_ALPHAS,
     params(
     ),
