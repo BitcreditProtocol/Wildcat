@@ -272,7 +272,9 @@ async fn monitor_quote(
         let result = repo.delete_quote(qid.clone()).await;
         match result {
             Ok(_) => {
-                tracing::info!("Successfully deactivated keyset for ebill {ebill_id} after minting quote {qid}");
+                tracing::info!(
+                    "Successfully minted debit sat for ebill {ebill_id} after minting quote {qid}"
+                );
                 break;
             }
             Err(e) => {
