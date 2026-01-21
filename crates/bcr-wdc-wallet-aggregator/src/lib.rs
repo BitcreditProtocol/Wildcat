@@ -6,7 +6,9 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use bcr_common::client::clowder::Client as ClowderClient;
 use bcr_common::wire::clowder::messages::{KeysetCreationRequest, KeysetCreationResponse};
+use bcr_common::wire::{clowder as wire_clowder, exchange as wire_exchange};
 use cashu::mint_url::MintUrl;
 use cdk::{wallet::MintConnector, HttpClient};
 use utoipa::OpenApi;
@@ -50,6 +52,7 @@ pub struct AppController {
     clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
     clwdr_rest_client: Option<Arc<clwdr_client::ClowderRestClient>>,
     commit_srv: Arc<commitment::Service>,
+    time_started: chrono::DateTime<chrono::Utc>,
 }
 
 impl AppController {
@@ -101,6 +104,7 @@ impl AppController {
             clwdr_stream_client,
             clwdr_rest_client,
             commit_srv,
+            time_started: chrono::Utc::now(),
         })
     }
 }
@@ -146,6 +150,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/health", get(web::health))
         // Cashu Endpoints
         .route("/v1/info", get(web::get_mint_info))
+        .route("/v1/wildcat", get(web::get_wildcat_info))
         .route("/v1/keys", get(web::get_mint_keys))
         .route("/v1/keysets", get(web::get_mint_keysets))
         .route("/v1/keysets/{kid}", get(web::get_keyset_info))
@@ -155,24 +160,85 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/restore", post(web::post_restore))
         .route("/v1/commitment", post(web::post_commit))
         // Clowder Endpoints
-        .route("/v1/id", get(web::get_clowder_id))
-        .route("/v1/path", post(web::post_clowder_path))
-        .route("/v1/exchange/online", post(web::post_online_exchange))
-        .route("/v1/exchange/offline", post(web::post_offline_exchange))
-        .route("/v1/betas", get(web::get_clowder_betas))
+        .route(ClowderClient::LOCAL_INFO_EP_V1, get(web::get_clowder_info))
+        .route(
+            ClowderClient::LOCAL_PATH_EP_V1,
+            post(web::post_clowder_path),
+        )
+        .route(
+            ClowderClient::ONLINE_EXCHANGE_EP_V1,
+            post(web::post_online_exchange),
+        )
+        .route(
+            ClowderClient::OFFLINE_EXCHANGE_EP_V1,
+            post(web::post_offline_exchange),
+        )
+        .route(
+            ClowderClient::LOCAL_BETAS_EP_V1,
+            get(web::get_clowder_betas),
+        )
+        .route(
+            ClowderClient::FOREIGN_OFFLINE_EP_V1,
+            get(web::get_foreign_offline),
+        )
+        .route(
+            ClowderClient::FOREIGN_STATUS_EP_V1,
+            get(web::get_foreign_status),
+        )
+        .route(
+            ClowderClient::FOREIGN_SUBSTITUTE_EP_V1,
+            get(web::get_foreign_substitute),
+        )
+        .route(
+            ClowderClient::FOREIGN_KEYSETS_EP_V1,
+            get(web::get_foreign_keysets),
+        )
+        .route(ClowderClient::LOCAL_COVERAGE_EP_V1, get(web::get_coverage))
         .with_state(app)
         .merge(swagger);
     Ok(router)
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    crate::web::health,
-    crate::web::get_mint_keys,
-    crate::web::get_mint_keysets,
-    crate::web::get_mint_keyset,
-    crate::web::post_swap,
-    crate::web::post_check_state,
-    crate::web::post_restore,
-))]
+#[openapi(
+    components(schemas(
+        // clowder service
+        wire_clowder::OfflineResponse,
+        wire_clowder::AlphaStateResponse,
+        wire_clowder::ConnectedMintResponse,
+        wire_clowder::ConnectedMintsResponse,
+        wire_clowder::PathRequest,
+        wire_clowder::ClowderNodeInfo,
+        wire_clowder::Coverage,
+        bcr_common::wire::info::WildcatInfo,
+        bcr_common::wire::info::VersionInfo,
+        // exchange service
+        wire_exchange::OnlineExchangeRequest,
+        wire_exchange::OnlineExchangeResponse,
+        wire_exchange::OfflineExchangeRequest,
+        wire_exchange::OfflineExchangeResponse,
+        // cashu types
+        cashu::KeysResponse,
+    )),
+    paths(
+        crate::web::health,
+        crate::web::get_wildcat_info,
+        crate::web::get_mint_keys,
+        crate::web::get_mint_keysets,
+        crate::web::get_mint_keyset,
+        crate::web::post_swap,
+        crate::web::post_check_state,
+        crate::web::post_restore,
+        crate::web::get_clowder_info,
+        crate::web::post_clowder_path,
+        crate::web::get_clowder_betas,
+        crate::web::get_foreign_offline,
+        crate::web::get_foreign_status,
+        crate::web::get_foreign_substitute,
+        crate::web::get_foreign_keysets,
+        crate::web::post_online_exchange,
+        crate::web::post_offline_exchange,
+        crate::web::get_coverage,
+    )
+)]
 struct ApiDoc;
