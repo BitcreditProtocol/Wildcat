@@ -11,6 +11,10 @@ on:
         description: "Remove treasury-service data?"
         type: boolean
         default: false
+      delete_cdkmintd_data:
+        description: "Remove cdk-mintd data?"
+        type: boolean
+        default: false
       delete_surrealdb_data:
         description: "DANGER: Remove surrealdb data?"
         type: boolean
@@ -190,6 +194,12 @@ jobs:
         run: |
           echo "Removing treasury-service data..."
           rm -rf ${{ env.DATA_PATH }}/treasury-service/*
+
+      - name: Remove cdk-mintd data
+        if: inputs.delete_cdkmintd_data || inputs.delete_all_data
+        run: |
+          echo "Removing cdk-mintd data..."
+          rm -rf ${{ env.DATA_PATH }}/cdk-mintd/*
 
       - name: Remove surrealdb data
         if: inputs.delete_surrealdb_data || inputs.delete_all_data

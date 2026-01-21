@@ -12,11 +12,23 @@ on:
           - staging
           - production
       delete_ebpp_data:
-        description: "DANGER: Remove ebpp data?"
+        description: "Remove ebpp data?"
         type: boolean
         default: false
       delete_treasury_data:
-        description: "DANGER: Remove treasury-service data?"
+        description: "Remove treasury-service data?"
+        type: boolean
+        default: false
+      delete_cdkmintd_data:
+        description: "Remove cdk-mintd data?"
+        type: boolean
+        default: false
+      delete_surrealdb_data:
+        description: "DANGER: Remove surrealdb data?"
+        type: boolean
+        default: false
+      delete_all_data:
+        description: "DANGER: Remove all data?"
         type: boolean
         default: false
 
@@ -194,17 +206,29 @@ jobs:
         continue-on-error: true
 
       - name: Remove ebpp data
-        if: inputs.delete_ebpp_data
+        if: inputs.delete_ebpp_data || inputs.delete_all_data
         run: |
           echo "Removing ebpp data..."
           rm -rf ${{ env.DATA_PATH }}/ebpp/regtest/*
           rm -rf ${{ env.DATA_PATH }}/ebpp/testnet/*
 
       - name: Remove treasury-service data
-        if: inputs.delete_treasury_data
+        if: inputs.delete_treasury_data || inputs.delete_all_data
         run: |
           echo "Removing treasury-service data..."
           rm -rf ${{ env.DATA_PATH }}/treasury-service/*
+
+      - name: Remove cdk-mintd data
+        if: inputs.delete_cdkmintd_data || inputs.delete_all_data
+        run: |
+          echo "Removing cdk-mintd data..."
+          rm -rf ${{ env.DATA_PATH }}/cdk-mintd/*
+
+      - name: Remove surrealdb data
+        if: inputs.delete_surrealdb_data || inputs.delete_all_data
+        run: |
+          echo "Removing surrealdb data..."
+          rm -rf ${{ env.DATA_PATH }}/surrealdb/*
 
       - name: 'Deploy'
         run: |
