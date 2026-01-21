@@ -405,7 +405,7 @@ pub async fn post_restore(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::INFO_EP_V1,
+    path = ClowderClient::LOCAL_INFO_EP_V1,
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
@@ -420,7 +420,7 @@ pub async fn get_clowder_info(
 
 #[utoipa::path(
     post,
-    path = ClowderClient::PATH_EP_V1,
+    path = ClowderClient::LOCAL_PATH_EP_V1,
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
@@ -438,7 +438,7 @@ pub async fn post_clowder_path(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::BETAS_EP_V1,
+    path = ClowderClient::LOCAL_BETAS_EP_V1,
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
@@ -453,7 +453,7 @@ pub async fn get_clowder_betas(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::OFFLINE_EP_V1,
+    path = ClowderClient::FOREIGN_OFFLINE_EP_V1,
     params(
         ("alpha_id" = String, Path, description = "The alpha public key")
     ),
@@ -472,7 +472,7 @@ pub async fn get_foreign_offline(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::STATUS_EP_V1,
+    path = ClowderClient::FOREIGN_STATUS_EP_V1,
     params(
         ("alpha_id" = String, Path, description = "The alpha public key")
     ),
@@ -491,7 +491,7 @@ pub async fn get_foreign_status(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::SUBSTITUTE_EP_V1,
+    path = ClowderClient::FOREIGN_SUBSTITUTE_EP_V1,
     params(
         ("alpha_id" = String, Path, description = "The alpha public key")
     ),
@@ -510,7 +510,7 @@ pub async fn get_foreign_substitute(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::KEYSETS_EP_V1,
+    path = ClowderClient::FOREIGN_KEYSETS_EP_V1,
     params(
         ("alpha_id" = String, Path, description = "The alpha public key")
     ),
@@ -623,7 +623,7 @@ pub async fn post_offline_exchange(
 
 #[utoipa::path(
     get,
-    path = ClowderClient::COVERAGE_EP_V1,
+    path = ClowderClient::LOCAL_COVERAGE_EP_V1,
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )

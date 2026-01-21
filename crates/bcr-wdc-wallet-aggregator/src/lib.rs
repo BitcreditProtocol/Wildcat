@@ -160,8 +160,11 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/restore", post(web::post_restore))
         .route("/v1/commitment", post(web::post_commit))
         // Clowder Endpoints
-        .route(ClowderClient::INFO_EP_V1, get(web::get_clowder_info))
-        .route(ClowderClient::PATH_EP_V1, post(web::post_clowder_path))
+        .route(ClowderClient::LOCAL_INFO_EP_V1, get(web::get_clowder_info))
+        .route(
+            ClowderClient::LOCAL_PATH_EP_V1,
+            post(web::post_clowder_path),
+        )
         .route(
             ClowderClient::ONLINE_EXCHANGE_EP_V1,
             post(web::post_online_exchange),
@@ -170,15 +173,27 @@ pub async fn routes(app: AppController) -> Result<Router> {
             ClowderClient::OFFLINE_EXCHANGE_EP_V1,
             post(web::post_offline_exchange),
         )
-        .route(ClowderClient::BETAS_EP_V1, get(web::get_clowder_betas))
-        .route(ClowderClient::OFFLINE_EP_V1, get(web::get_foreign_offline))
-        .route(ClowderClient::STATUS_EP_V1, get(web::get_foreign_status))
         .route(
-            ClowderClient::SUBSTITUTE_EP_V1,
+            ClowderClient::LOCAL_BETAS_EP_V1,
+            get(web::get_clowder_betas),
+        )
+        .route(
+            ClowderClient::FOREIGN_OFFLINE_EP_V1,
+            get(web::get_foreign_offline),
+        )
+        .route(
+            ClowderClient::FOREIGN_STATUS_EP_V1,
+            get(web::get_foreign_status),
+        )
+        .route(
+            ClowderClient::FOREIGN_SUBSTITUTE_EP_V1,
             get(web::get_foreign_substitute),
         )
-        .route(ClowderClient::KEYSETS_EP_V1, get(web::get_foreign_keysets))
-        .route(ClowderClient::COVERAGE_EP_V1, get(web::get_coverage))
+        .route(
+            ClowderClient::FOREIGN_KEYSETS_EP_V1,
+            get(web::get_foreign_keysets),
+        )
+        .route(ClowderClient::LOCAL_COVERAGE_EP_V1, get(web::get_coverage))
         .with_state(app)
         .merge(swagger);
     Ok(router)
