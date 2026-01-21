@@ -4,8 +4,16 @@ use std::{collections::HashSet, sync::Arc};
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
-    client::keys::{Client as KeysClient, Error as KeysError},
-    wire::{clowder::messages, exchange as wire_exchange, swap as wire_swap},
+    client::{
+        clowder::Client as ClowderClient,
+        keys::{Client as KeysClient, Error as KeysError},
+    },
+    wire::{
+        clowder::{self as wire_clowder, messages},
+        exchange as wire_exchange,
+        info::{VersionInfo, WildcatInfo},
+        swap as wire_swap,
+    },
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use cashu::MintVersion;
@@ -74,6 +82,57 @@ cdk-mintd = {cdk_mintd}"#,
         .long_description(long_description)
         .version(version);
     Ok(Json(info))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/wildcat",
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<WildcatInfo>> {
+    tracing::debug!("Requested /v1/wildcat");
+    let network = ctrl.ebpp_client.network().await?;
+    let info = ctrl.cdk_client.get_mint_info().await?;
+
+    let build_time = built::util::strptime(built_info::BUILT_TIME_UTC);
+    let ebill_core = built::util::parse_versions(&built_info::DEPENDENCIES)
+        .find_map(|(n, v)| if n == "bcr-ebill-core" { Some(v) } else { None })
+        .unwrap_or(built::semver::Version::new(0, 0, 0));
+
+    let cdk_mintd = info
+        .version
+        .as_ref()
+        .map(|v| v.version.clone())
+        .unwrap_or(String::from("0.0.0"));
+
+    let clowder = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+
+    let clowder_info = clowder.get_info().await?;
+
+    let versions = VersionInfo {
+        wildcat: String::from(built_info::PKG_VERSION),
+        bcr_ebill_core: ebill_core.to_string(),
+        cdk_mintd,
+        clowder: clowder_info.version,
+    };
+
+    // Convert cashu::PublicKey to bitcoin::secp256k1::PublicKey (different secp256k1 versions)
+    let node_id_bytes = clowder_info.node_id.to_bytes();
+    let clowder_node_id = bitcoin::secp256k1::PublicKey::from_slice(&node_id_bytes)
+        .map_err(|e| Error::Invalid(format!("Invalid node_id public key: {e}")))?;
+
+    let wildcat_info = WildcatInfo {
+        build_time,
+        uptime_timestamp: ctrl.time_started,
+        versions,
+        network,
+        clowder_node_id,
+        clowder_change_address: clowder_info.change_address,
+    };
+
+    Ok(Json(wildcat_info))
 }
 
 #[utoipa::path(
@@ -346,20 +405,26 @@ pub async fn post_restore(
 
 #[utoipa::path(
     get,
-    path = "/v1/id",
+    path = ClowderClient::LOCAL_INFO_EP_V1,
     responses (
         (status = 200, description = "Successful response", content_type = "application/json"),
     )
 )]
-pub async fn get_clowder_id(
+pub async fn get_clowder_info(
     State(ctrl): State<AppController>,
-) -> Result<Json<clwdr_client::model::PublicKeyResponse>> {
+) -> Result<Json<clwdr_client::model::ClowderNodeInfo>> {
     let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
 
-    Ok(Json(clowder_client.get_id().await?))
+    Ok(Json(clowder_client.get_info().await?))
 }
 
-// TODO, add Utoipa ToSchema for PathRequest
+#[utoipa::path(
+    post,
+    path = ClowderClient::LOCAL_PATH_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn post_clowder_path(
     State(ctrl): State<AppController>,
     Json(request): Json<clwdr_client::model::PathRequest>,
@@ -371,6 +436,13 @@ pub async fn post_clowder_path(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = ClowderClient::LOCAL_BETAS_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 pub async fn get_clowder_betas(
     State(ctrl): State<AppController>,
 ) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
@@ -379,6 +451,89 @@ pub async fn get_clowder_betas(
     Ok(Json(clowder_client.get_betas().await?))
 }
 
+#[utoipa::path(
+    get,
+    path = ClowderClient::FOREIGN_OFFLINE_EP_V1,
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_foreign_offline(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::OfflineResponse>> {
+    tracing::debug!("Requested /v1/foreign/offline/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_offline(alpha_id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = ClowderClient::FOREIGN_STATUS_EP_V1,
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_foreign_status(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::AlphaStateResponse>> {
+    tracing::debug!("Requested /v1/foreign/status/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_status(alpha_id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = ClowderClient::FOREIGN_SUBSTITUTE_EP_V1,
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_foreign_substitute(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<wire_clowder::ConnectedMintResponse>> {
+    tracing::debug!("Requested /v1/foreign/substitute/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_substitute(alpha_id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = ClowderClient::FOREIGN_KEYSETS_EP_V1,
+    params(
+        ("alpha_id" = String, Path, description = "The alpha public key")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+pub async fn get_foreign_keysets(
+    State(ctrl): State<AppController>,
+    Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
+) -> Result<Json<cashu::KeysResponse>> {
+    tracing::debug!("Requested /v1/foreign/keysets/{alpha_id}");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    Ok(Json(clowder_client.get_active_keysets(&alpha_id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = ClowderClient::ONLINE_EXCHANGE_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 pub async fn post_online_exchange(
     State(ctrl): State<AppController>,
@@ -418,6 +573,13 @@ pub async fn post_online_exchange(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = ClowderClient::OFFLINE_EXCHANGE_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 pub async fn post_offline_exchange(
     State(ctrl): State<AppController>,
@@ -457,6 +619,30 @@ pub async fn post_offline_exchange(
         }
     };
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = ClowderClient::LOCAL_COVERAGE_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_coverage(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::Coverage>> {
+    tracing::debug!("Requested /v1/local/coverage");
+    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
+    let supply = clowder_client.get_mint_circulating_supply().await?;
+    let collateral = clowder_client.get_mint_collateral().await?;
+    Ok(Json(wire_clowder::Coverage {
+        debit_circulating_supply: supply.debit,
+        credit_circulating_supply: supply.credit,
+        onchain_collateral: collateral.onchain,
+        ebill_collateral: collateral.ebill,
+        eiou_collateral: collateral.eiou,
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
