@@ -419,7 +419,10 @@ impl MintPayment for Service {
         let mut request = self.payrepo.load_incoming(payment_identifier).await?;
         match (request.status, request.payment_type.clone()) {
             (MintQuoteState::Unpaid, payment::PaymentType::ClowderOnchain(_)) => {
-                tracing::debug!("check_incoming_payment_status for ClowderOnchain: Unpaid");
+                tracing::debug!(
+                    "check_incoming_payment_status for {}: ClowderOnchain, Unpaid",
+                    request.reqid
+                );
                 request.status = MintQuoteState::Paid;
                 self.payrepo.update_incoming(request.clone()).await?;
                 Ok(vec![WaitPaymentResponse {
@@ -430,7 +433,10 @@ impl MintPayment for Service {
                 }])
             }
             (MintQuoteState::Unpaid, payment::PaymentType::EBill { recipient, sweep }) => {
-                tracing::debug!("check_incoming_payment_status for Ebill: Unpaid");
+                tracing::debug!(
+                    "check_incoming_payment_status for {}: Ebill, Unpaid",
+                    request.reqid
+                );
                 let state =
                     check_incoming_payment(&recipient, request.amount, self.onchain.as_ref())
                         .await?;
@@ -451,7 +457,10 @@ impl MintPayment for Service {
                 }
             }
             (MintQuoteState::Paid, payment::PaymentType::ClowderOnchain(_)) => {
-                tracing::debug!("check_incoming_payment_status for ClowderOnchain: Paid");
+                tracing::debug!(
+                    "check_incoming_payment_status for {}: ClowderOnchain, Paid",
+                    request.reqid
+                );
                 request.status = MintQuoteState::Issued;
                 self.payrepo.update_incoming(request.clone()).await?;
                 Ok(vec![WaitPaymentResponse {
@@ -462,7 +471,10 @@ impl MintPayment for Service {
                 }])
             }
             (MintQuoteState::Paid, payment::PaymentType::EBill { .. }) => {
-                tracing::debug!("check_incoming_payment_status for Ebill: Paid");
+                tracing::debug!(
+                    "check_incoming_payment_status for {}: Ebill, Paid",
+                    request.reqid
+                );
                 match request.sweep_tx {
                     Some(txid) => {
                         if self.onchain.is_confirmed(txid).await? {
@@ -479,13 +491,19 @@ impl MintPayment for Service {
                         }
                     }
                     None => {
-                        tracing::error!("No sweep transaction found for paid E-Bill payment");
+                        tracing::error!(
+                            "No sweep transaction found for {}: Ebill, Paid",
+                            request.reqid
+                        );
                         return Err(PaymentError::UnknownPaymentState);
                     }
                 }
             }
             (MintQuoteState::Issued, _) => {
-                tracing::debug!("check_incoming_payment_status for: Issued");
+                tracing::debug!(
+                    "check_incoming_payment_status for {}: Issued",
+                    request.reqid
+                );
                 Ok(vec![WaitPaymentResponse {
                     payment_identifier: payment_identifier.clone(),
                     payment_amount: cashu::Amount::from(request.amount.to_sat()),
