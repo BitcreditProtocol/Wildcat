@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use bcr_common::{client::quote::Client as QuoteClient, wire::clowder as wire_clowder};
+use bcr_common::client::quote::Client as QuoteClient;
 // ----- local modules
 mod admin;
 mod ebill;
@@ -53,10 +53,13 @@ impl AppController {
             .expect("DB connection to quotes failed");
 
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_rest_url);
-        let wire_clowder::PublicKeyResponse { public_key } =
-            clwdr_cl.get_id().await.expect("Failed to get Clowder ID");
+        let public_key = clwdr_cl
+            .get_info()
+            .await
+            .expect("Failed to get Clowder ID")
+            .node_id;
         let clwdr_client::model::MintUrlResponse { mint_url, .. } = clwdr_cl
-            .get_mint_url(public_key)
+            .get_mint_url(*public_key)
             .await
             .expect("Failed to get mint URL");
         let keys_hndlr = ProdKeysHandler::new(keys);

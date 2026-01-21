@@ -96,8 +96,8 @@ impl proof::ClowderClient for ClowderCl {
 #[async_trait]
 impl foreign::ClowderClient for ClowderCl {
     async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey> {
-        let response = self.clwdr.get_id().await?;
-        let pk = bitcoin::PublicKey::from(response.public_key);
+        let my_id = self.clwdr.get_info().await?.node_id;
+        let pk = bitcoin::PublicKey::from(*my_id);
 
         Ok(pk)
     }
@@ -137,8 +137,8 @@ impl foreign::ClowderClient for ClowderCl {
             node_id: substitute_id,
             ..
         } = self.clwdr.get_substitute(origin_id).await?;
-        let myself = self.clwdr.get_id().await?;
-        if substitute_id != myself.public_key {
+        let myself = self.clwdr.get_info().await?.node_id;
+        if substitute_id != *myself {
             return Err(Error::InvalidInput(String::from(
                 "currently not a substitute",
             )));
