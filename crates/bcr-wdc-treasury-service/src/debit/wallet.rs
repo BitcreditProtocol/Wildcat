@@ -44,6 +44,16 @@ impl CDKWallet {
         let client = cdk::wallet::HttpClient::new(mint_url);
         // make the wallet aware of the mint info
         wlt.fetch_mint_info().await.map_err(Error::CDKWallet)?;
+        let result = wlt.check_all_mint_quotes().await;
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    "CDKWallet initialization: check_all_mint_quotes failed: {}",
+                    e
+                );
+            }
+        }
         Ok(Self { wlt, client })
     }
 }
@@ -118,7 +128,6 @@ impl Wallet for CDKWallet {
     }
 
     async fn balance(&self) -> Result<Amount> {
-        self.wlt.check_all_mint_quotes().await?;
         self.wlt.total_balance().await.map_err(Error::CDKWallet)
     }
 
