@@ -159,6 +159,8 @@ services:
       - "8000:8000"
 
   cdk-mintd:
+    volumes:
+      - ${DATA_PATH}/cdk-mintd:/root/.cdk-mintd/
     environment:
       - CDK_MINTD_MNEMONIC=${MINT_SEED_PHRASE}
 
