@@ -278,6 +278,19 @@ impl TreasuryClient {
         Ok(response)
     }
 
+    pub const IS_EBILL_MINT_COMPLETE_EP_V1: &'static str =
+        "/v1/admin/treasury/debit/mint_complete/{ebill_id}";
+    pub async fn is_ebill_mint_complete(&self, ebill_id: BillId) -> Result<bool> {
+        let path = Self::IS_EBILL_MINT_COMPLETE_EP_V1.replace("{ebill_id}", &ebill_id.to_string());
+        let url = self
+            .base
+            .join(&path)
+            .expect("is_ebill_mint_complete relative path");
+        let request = self.cl.get(url);
+        let response: web_wallet::EbillMintingComplete = request.send().await?.json().await?;
+        Ok(response.complete)
+    }
+
     pub const MELTQUOTE_ONCHAIN_EP_V1: &'static str = "/v1/melt/quote/onchain";
     pub const MELT_ONCHAIN_EP_V1: &'static str = "/v1/melt/onchain";
     pub const MINTQUOTE_ONCHAIN_EP_V1: &'static str = "/v1/mint/quote/onchain";
