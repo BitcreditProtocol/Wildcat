@@ -70,8 +70,8 @@ where
     ElectrumApi: electrum_client::ElectrumApi + Send + Sync + 'static,
 {
     const MAIN_STORE_FNAME: &'static str = "main.sqlite";
-    const MIN_FEE_RATE_SAT_BYTE: f64 = 1.0; // minimum fee rate in sat/byte
-    const BTC_KBYTE_TO_SAT_BYTE: f64 = 100_000.0;
+    const MAX_FEE_RATE_SAT_BYTE: f64 = 3.5;
+    const MIN_FEE_RATE_SAT_BYTE: f64 = 1.0;
     const BATCH_SIZE: usize = 15;
 
     pub async fn new(
@@ -258,12 +258,12 @@ where
             cloned.inner.estimate_fee(max_confirmation_blocks)
         })
         .await??;
-        let fee_rate_sat_byte = Self::MIN_FEE_RATE_SAT_BYTE
-            .max(fee_rate_btc_kbyte * Self::BTC_KBYTE_TO_SAT_BYTE)
-            .round() as u64;
-        let fee = fee_rate_sat_byte * self.avg_transaction_size_bytes;
+        let mut fee_rate_sat_byte = fee_rate_btc_kbyte * 100_000_000.0 /* sat/btc */ / 1000.0 /* byte/kbyte */ ;
+        fee_rate_sat_byte =
+            fee_rate_sat_byte.clamp(Self::MIN_FEE_RATE_SAT_BYTE, Self::MAX_FEE_RATE_SAT_BYTE);
+        let fee = (fee_rate_sat_byte as u64) * self.avg_transaction_size_bytes;
         let amount = Amount::from_sat(fee);
-        tracing::info!("estimated fees {fee_rate_btc_kbyte} btc/kbyte, {amount} btc/tx");
+        tracing::info!("estimated fees {fee_rate_btc_kbyte} btc/kbyte, clamped to {fee_rate_sat_byte} sat/byte, {amount} btc/tx");
         Ok(amount)
     }
 
