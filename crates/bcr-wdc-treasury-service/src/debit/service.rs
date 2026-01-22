@@ -1,5 +1,9 @@
 // ----- standard library imports
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -81,6 +85,7 @@ pub struct MintQuote {
     pub qid: String,
     pub ebill_id: BillId,
     pub clowder_qid: uuid::Uuid,
+    pub mint_complete: bool,
 }
 
 #[derive(Clone)]
@@ -93,11 +98,22 @@ pub struct Service {
     pub signing_keys: bitcoin::secp256k1::Keypair,
     pub monitor_interval: tokio::time::Duration,
     pub quote_expiry_seconds: u64,
+    pub cancel: tokio_util::sync::CancellationToken,
+    pub hndls: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 impl Service {
     pub async fn balance(&self) -> Result<Amount> {
         self.wallet.balance().await
+    }
+
+    pub async fn stop(&self) -> Result<()> {
+        self.cancel.cancel();
+        loop {
+            let next = self.hndls.lock().unwrap().pop();
+            let Some(handle) = next else { return Ok(()) };
+            handle.await.map_err(|e| Error::Internal(e.to_string()))?;
+        }
     }
 
     pub async fn create_onchain_melt_quote(
@@ -127,15 +143,18 @@ impl Service {
     pub async fn init_monitors_for_past_ebills(&self) -> Result<()> {
         let quotes = self.repo.list_quotes().await?;
         for quote in quotes {
-            tokio::spawn(monitor_quote(
-                quote.qid,
-                quote.ebill_id,
-                quote.clowder_qid,
+            if quote.mint_complete {
+                continue;
+            }
+            let hndl = tokio::spawn(monitor_quote(
+                quote,
                 self.wallet.clone(),
                 self.repo.clone(),
                 self.clowder_write.clone(),
                 self.monitor_interval,
+                self.cancel.clone(),
             ));
+            self.hndls.lock().unwrap().push(hndl);
         }
         Ok(())
     }
@@ -163,18 +182,18 @@ impl Service {
             qid: quote.id.clone(),
             ebill_id: ebill_id.clone(),
             clowder_qid,
+            mint_complete: false,
         };
-        self.repo.store_quote(mint_quote).await?;
-        let ebill_cloned = ebill_id.clone();
-        tokio::spawn(monitor_quote(
-            quote.id.clone(),
-            ebill_cloned,
-            clowder_qid,
+        self.repo.store_quote(mint_quote.clone()).await?;
+        let hndl = tokio::spawn(monitor_quote(
+            mint_quote,
             self.wallet.clone(),
             self.repo.clone(),
             self.clowder_write.clone(),
             self.monitor_interval,
+            self.cancel.clone(),
         ));
+        self.hndls.lock().unwrap().push(hndl);
         Ok(quote)
     }
 
@@ -235,19 +254,36 @@ impl Service {
         }
         response
     }
+
+    pub async fn is_ebill_payment_minted(&self, ebill: BillId) -> Result<bool> {
+        let quotes = self.repo.list_quotes().await?;
+        let quote = quotes.into_iter().find(|q| q.ebill_id == ebill);
+        let Some(quote) = quote else {
+            return Err(Error::EBillNotFound(ebill.to_string()));
+        };
+        Ok(quote.mint_complete)
+    }
 }
 
 async fn monitor_quote(
-    qid: String,
-    ebill_id: BillId,
-    clowder_qid: Uuid,
+    mut quote: MintQuote,
     wlt: Arc<dyn Wallet>,
     repo: Arc<dyn Repository>,
     clowder_write: Option<Arc<dyn ClowderWriteService>>,
     interval: tokio::time::Duration,
+    cancel: tokio_util::sync::CancellationToken,
 ) {
+    let qid = quote.qid.clone();
+    let ebill_id = quote.ebill_id.clone();
+    let clowder_qid = quote.clowder_qid;
     loop {
-        tokio::time::sleep(interval).await;
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::info!("Monitor for quote {qid} cancelled");
+                return;
+            }
+            _ = tokio::time::sleep(interval) => {}
+        }
         let result = wlt.mint(qid.clone()).await;
         let Ok(status) = result else {
             tracing::warn!("Failed to mint quote {qid}: {result:?}");
@@ -257,33 +293,30 @@ async fn monitor_quote(
             tracing::info!("Quote {qid} is not paid yet, retrying...");
             continue;
         }
-
-        if let Some(clwdr) = &clowder_write {
-            let req = clowder_messages::BillPaymentRequest {
-                bill_id: ebill_id.clone(),
-                payment_clowder_quote: clowder_qid,
-            };
-            let resp = clowder_messages::BillPaymentResponse {};
-            if let Err(e) = clwdr.pay_bill(req, resp).await {
-                tracing::warn!("Failed to call clowder pay_bill for ebill {ebill_id}: {e}");
-            }
-        }
-
-        let result = repo.delete_quote(qid.clone()).await;
-        match result {
-            Ok(_) => {
-                tracing::info!(
-                    "Successfully minted debit sat for ebill {ebill_id} after minting quote {qid}"
-                );
-                break;
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to delete quote {qid} after deactivating keyset for ebill {ebill_id}: {e}"
-                );
-            }
-        };
+        break;
     }
+    if let Some(clwdr) = &clowder_write {
+        let req = clowder_messages::BillPaymentRequest {
+            bill_id: ebill_id.clone(),
+            payment_clowder_quote: clowder_qid,
+        };
+        let resp = clowder_messages::BillPaymentResponse {};
+        if let Err(e) = clwdr.pay_bill(req, resp).await {
+            tracing::warn!("Failed to call clowder pay_bill for ebill {ebill_id}: {e}");
+        }
+    }
+    quote.mint_complete = true;
+    let result = repo.update_quote(quote).await;
+    match result {
+        Ok(_) => {
+            tracing::info!(
+                "Successfully minted debit sat for ebill {ebill_id} after minting quote {qid}"
+            );
+        }
+        Err(e) => {
+            tracing::error!("Failed to update quote {qid} after minting ebill {ebill_id}: {e}");
+        }
+    };
 }
 
 #[cfg(test)]
@@ -295,7 +328,6 @@ mod tests {
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::{nut23 as cdk23, Amount};
-    use mockall::predicate::*;
     use secp256k1::global::SECP256K1;
     use std::str::FromStr;
 
@@ -357,6 +389,8 @@ mod tests {
             quote_expiry_seconds: 3600,
             clowder_read: Arc::new(clowder),
             clowder_write: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
         let quote = service
             .mint_from_ebill(
@@ -386,6 +420,8 @@ mod tests {
             clowder_write: None,
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
 
         let (_, keyset) = generate_keyset();
@@ -414,6 +450,8 @@ mod tests {
             clowder_write: None,
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
 
         let (_, keyset) = generate_keyset();
@@ -439,6 +477,8 @@ mod tests {
             clowder_write: None,
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
 
         let (_, keyset) = generate_keyset();
@@ -481,6 +521,8 @@ mod tests {
             clowder_write: None,
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
 
         let (_, keyset) = generate_keyset();
@@ -513,6 +555,8 @@ mod tests {
             clowder_write: None,
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
 
         let (_, keyset) = generate_keyset();
