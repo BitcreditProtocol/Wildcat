@@ -164,7 +164,7 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance))
         .route(
             endpoints::EBILL_MINT_COMPLETE,
-            get(admin::ebill_mint_complete),
+            get(admin::get_ebill_mint_complete),
         );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
@@ -200,6 +200,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_signatures::RequestToMintFromEBillRequest,
         wire_signatures::RequestToMintFromEBillResponse,
         web_wallet::ECashBalance,
+        web_wallet::EbillMintingComplete,
     ),),
     paths(
         admin::get_health,
@@ -231,7 +232,8 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_status,
         // treasury service
         admin::post_ebill_reqtopay,
-        admin::get_sat_balance
+        admin::get_sat_balance,
+        admin::get_ebill_mint_complete,
     )
 )]
 pub struct ApiDoc;
