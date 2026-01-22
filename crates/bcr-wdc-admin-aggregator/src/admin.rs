@@ -573,3 +573,23 @@ pub async fn get_sat_balance(
     let response = ctrl.treasury_cl.sat_balance().await?;
     Ok(Json(response))
 }
+
+#[utoipa::path(
+    get,
+    path = endpoints::EBILL_MINT_COMPLETE,
+    responses (
+        (status = 200, description = "Successful response", body = web_wallet::EbillMintingComplete, content_type = "application/json"),
+        (status = 404, description = "bill id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn ebill_mint_complete(
+    State(ctrl): State<AppController>,
+    Path(bill_id): Path<BillId>,
+) -> Result<Json<web_wallet::EbillMintingComplete>> {
+    tracing::debug!("Received request for ebill mint complete {bill_id}");
+
+    let complete = ctrl.treasury_cl.is_ebill_mint_complete(bill_id).await?;
+    let response = web_wallet::EbillMintingComplete { complete };
+    Ok(Json(response))
+}

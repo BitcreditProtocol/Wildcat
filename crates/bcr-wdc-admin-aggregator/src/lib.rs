@@ -90,8 +90,9 @@ pub mod endpoints {
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client
-    pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/ebill/reqtopay";
+    pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
+    pub const EBILL_MINT_COMPLETE: &str = "/v1/admin/treasury/ebill/mint_complete/{bid}";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -160,7 +161,11 @@ pub fn routes(ctrl: AppController) -> Router {
             endpoints::POST_EBILL_REQTOPAY,
             post(admin::post_ebill_reqtopay),
         )
-        .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance));
+        .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance))
+        .route(
+            endpoints::EBILL_MINT_COMPLETE,
+            get(admin::ebill_mint_complete),
+        );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
 
