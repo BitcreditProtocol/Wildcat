@@ -71,3 +71,9 @@ pub struct Network {
     #[schema(value_type=String)]
     pub network: bitcoin::Network,
 }
+
+///--------------------------- ebill minting completed
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EbillMintingComplete {
+    pub complete: bool,
+}
