@@ -583,13 +583,13 @@ pub async fn get_sat_balance(
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn ebill_mint_complete(
+pub async fn get_ebill_mint_complete(
     State(ctrl): State<AppController>,
-    Path(bill_id): Path<BillId>,
+    Path(bid): Path<BillId>,
 ) -> Result<Json<web_wallet::EbillMintingComplete>> {
-    tracing::debug!("Received request for ebill mint complete {bill_id}");
+    tracing::debug!("Received request for ebill mint complete {bid}");
 
-    let complete = ctrl.treasury_cl.is_ebill_mint_complete(bill_id).await?;
+    let complete = ctrl.treasury_cl.is_ebill_mint_complete(bid).await?;
     let response = web_wallet::EbillMintingComplete { complete };
     Ok(Json(response))
 }
