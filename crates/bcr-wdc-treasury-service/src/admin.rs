@@ -1,8 +1,8 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::{Json, State};
-use bcr_common::wire::signatures as wire_signatures;
+use axum::extract::{Json, Path, State};
+use bcr_common::{core::BillId, wire::signatures as wire_signatures};
 use bcr_wdc_webapi::{exchange as web_exchange, wallet as web_wallet};
 use cashu::{self as cdk};
 // ----- local imports
@@ -58,4 +58,15 @@ pub async fn sat_try_htlc_swap(
 
     let amount = ctrl.try_swap_htlc(&request.preimage).await?;
     Ok(Json(amount))
+}
+
+pub async fn is_ebill_minting_completed(
+    State(ctrl): State<debit::Service>,
+    Path(bill_id): Path<BillId>,
+) -> Result<Json<web_wallet::EbillMintingComplete>> {
+    tracing::debug!("Received request for ebill minting completed {bill_id}");
+
+    let complete = ctrl.is_ebill_payment_minted(bill_id).await?;
+    let response = web_wallet::EbillMintingComplete { complete };
+    Ok(Json(response))
 }

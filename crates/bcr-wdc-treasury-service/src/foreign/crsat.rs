@@ -464,7 +464,7 @@ mod tests {
         let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
-        let originals = vec![
+        let originals = [
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset,
                 cashu::Amount::from(512),
