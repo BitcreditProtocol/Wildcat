@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
@@ -130,6 +130,8 @@ impl AppController {
             clowder_write,
             monitor_interval,
             quote_expiry_seconds,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
         };
         debit
             .init_monitors_for_past_ebills()
@@ -225,6 +227,7 @@ impl AppController {
     }
 
     pub async fn stop(&self) -> error::Result<()> {
+        self.debit.stop().await?;
         self.crsat.stop().await?;
         self.sat.stop().await
     }
@@ -277,6 +280,10 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::TRYSATHTLC_EP_V1,
             post(admin::sat_try_htlc_swap),
         )
-        .route(TreasuryClient::SATBALANCE_EP_V1, get(admin::sat_balance));
+        .route(TreasuryClient::SATBALANCE_EP_V1, get(admin::sat_balance))
+        .route(
+            TreasuryClient::IS_EBILL_MINT_COMPLETE_EP_V1,
+            get(admin::is_ebill_minting_completed),
+        );
     admin.merge(web).with_state(app)
 }

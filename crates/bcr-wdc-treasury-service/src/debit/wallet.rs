@@ -103,9 +103,6 @@ impl Wallet for CDKWallet {
         let total = outputs
             .iter()
             .fold(Amount::ZERO, |acc, msg| acc + msg.amount);
-
-        self.wlt.check_all_mint_quotes().await?;
-
         let inputs = self.wlt.swap_from_unspent(total, None, true).await?;
         let request = cdk03::SwapRequest::new(inputs.clone(), outputs.to_vec());
 
