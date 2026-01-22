@@ -109,9 +109,14 @@ impl persistence::Repository for DebitRepository {
         Ok(())
     }
 
-    async fn delete_quote(&self, quote_id: String) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.table, quote_id);
-        let _: Option<debit::MintQuote> = self.db.delete(rid).await.map_err(Error::DB)?;
+    async fn update_quote(&self, quote: debit::MintQuote) -> Result<()> {
+        let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
+        let _: Option<debit::MintQuote> = self
+            .db
+            .update(rid)
+            .content(quote)
+            .await
+            .map_err(Error::DB)?;
         Ok(())
     }
 
@@ -525,6 +530,7 @@ mod tests {
             qid: Uuid::new_v4().to_string(),
             ebill_id: core_tests::random_bill_id(),
             clowder_qid: Uuid::new_v4(),
+            mint_complete: false,
         };
         db.store_quote(quote.clone()).await.unwrap();
 
@@ -532,7 +538,7 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].qid, quote.qid);
 
-        db.delete_quote(quote.qid.clone()).await.unwrap();
+        db.update_quote(quote).await.unwrap();
     }
 
     async fn init_foreignoffline_mem_db() -> ForeignOfflineRepository {
