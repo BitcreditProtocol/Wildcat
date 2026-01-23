@@ -22,7 +22,7 @@ use futures::future::JoinAll;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    {built_info, AppController},
+    AppController,
 };
 
 // ----- end imports
@@ -54,27 +54,30 @@ pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cas
 network = {network}
 "#
     );
-    if !built_info::PKG_VERSION_PRE.is_empty() {
-        let build_time = built::util::strptime(built_info::BUILT_TIME_UTC);
-        let ebill_core = built::util::parse_versions(&built_info::DEPENDENCIES)
-            .find_map(|(n, v)| if n == "bcr-ebill-core" { Some(v) } else { None })
-            .unwrap_or(built::semver::Version::new(0, 0, 0));
-        let cdk_mintd = info
-            .version
-            .as_ref()
-            .map(|v| v.version.clone())
-            .unwrap_or(String::from("0.0.0"));
-        long_description += &format!(
-            r#"
+    let default = cashu::MintVersion::new(String::from("cdk-mint"), String::from("0.0.0"));
+    let cdk_mintd = info.version.clone().unwrap_or(default);
+    let build_time = bcr_wdc_utils::info::get_build_time();
+    let dep_versions = bcr_wdc_utils::info::get_deps_versions()
+        .into_iter()
+        .map(|(k, v)| {
+            if v.is_some() {
+                format!("{k} = {}", v.unwrap())
+            } else {
+                format!("{k} = ?")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    long_description += &format!(
+        r#"
 build-time = {build_time}
 [versions]
-bcr-ebill-core = {ebill_core}
+{dep_versions}
 cdk-mintd = {cdk_mintd}"#,
-        );
-    }
+    );
     let version = MintVersion {
         name: String::from("wildcat"),
-        version: String::from(built_info::PKG_VERSION),
+        version: bcr_wdc_utils::info::get_version().to_string(),
     };
     let info = info
         .name("bcr-wdc")
@@ -96,24 +99,21 @@ pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<
     let network = ctrl.ebpp_client.network().await?;
     let info = ctrl.cdk_client.get_mint_info().await?;
 
-    let build_time = built::util::strptime(built_info::BUILT_TIME_UTC);
-    let ebill_core = built::util::parse_versions(&built_info::DEPENDENCIES)
-        .find_map(|(n, v)| if n == "bcr-ebill-core" { Some(v) } else { None })
-        .unwrap_or(built::semver::Version::new(0, 0, 0));
-
+    let build_time = bcr_wdc_utils::info::get_build_time();
+    let ebill_core = bcr_wdc_utils::info::get_ebill_version()
+        .map(|v| v.to_string())
+        .unwrap_or(String::from("?"));
+    let version = bcr_wdc_utils::info::get_version().to_string();
     let cdk_mintd = info
         .version
         .as_ref()
         .map(|v| v.version.clone())
         .unwrap_or(String::from("0.0.0"));
-
     let clowder = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-
     let clowder_info = clowder.get_info().await?;
-
     let versions = VersionInfo {
-        wildcat: String::from(built_info::PKG_VERSION),
-        bcr_ebill_core: ebill_core.to_string(),
+        wildcat: version,
+        bcr_ebill_core: ebill_core,
         cdk_mintd,
         clowder: clowder_info.version,
     };
