@@ -3,6 +3,7 @@ name = "bcr-wdc-utils"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 
 [features]
@@ -17,6 +18,7 @@ bcr-common = {workspace = true}
 bcr-ebill-core.workspace = true
 bitcoin = { workspace = true}
 borsh = {workspace = true}
+built = {workspace = true, features = ["semver", "chrono"]}
 cashu = {workspace = true, features = ["swagger"]}
 cdk-common = {workspace = true}
 chrono.workspace = true
@@ -36,3 +38,6 @@ uuid.workspace = true
 [dev-dependencies]
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 rand = {workspace = true}
+
+[build-dependencies]
+built = {workspace = true, features = ["dependency-tree", "chrono"]}
