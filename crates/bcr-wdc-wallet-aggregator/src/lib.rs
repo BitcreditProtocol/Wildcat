@@ -13,10 +13,6 @@ use cashu::mint_url::MintUrl;
 use cdk::{wallet::MintConnector, HttpClient};
 use utoipa::OpenApi;
 // ----- local modules
-pub mod built_info {
-    // The file has been placed there by the build script.
-    include!(concat!(env!("OUT_DIR"), "/built.rs"));
-}
 mod commitment;
 mod error;
 mod persistence;
