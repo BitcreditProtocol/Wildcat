@@ -7,8 +7,8 @@ use axum::{
     Router,
 };
 use bcr_common::wire::{
-    bill as wire_bill, clowder as wire_clowder, identity as wire_identity, keys as wire_keys,
-    quotes as wire_quotes, signatures as wire_signatures,
+    bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
+    keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
 };
 use bcr_wdc_webapi::wallet as web_wallet;
 use utoipa::OpenApi;
@@ -62,6 +62,7 @@ impl AppController {
 
 pub mod endpoints {
     pub const HEALTH: &str = "/health";
+    pub const MINT_INFO: &str = "/v1/admin/mint/info";
     // Keys-Client
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
@@ -100,6 +101,7 @@ pub fn routes(ctrl: AppController) -> Router {
         .url("/api-docs/openapi.json", ApiDoc::openapi());
     let admin = Router::new()
         .route(endpoints::HEALTH, get(admin::get_health))
+        .route(endpoints::MINT_INFO, get(admin::get_mint_info))
         // keys service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
@@ -172,6 +174,7 @@ pub fn routes(ctrl: AppController) -> Router {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     components(schemas(
+        wire_info::WildcatInfo,
         // keys service
         cashu::Id,
         cashu::KeySetInfo,
@@ -204,6 +207,7 @@ pub fn routes(ctrl: AppController) -> Router {
     ),),
     paths(
         admin::get_health,
+        admin::get_mint_info,
         // keys service
         admin::get_keyset_info,
         admin::list_keyset_infos,
