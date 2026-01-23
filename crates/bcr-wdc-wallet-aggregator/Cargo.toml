@@ -3,7 +3,6 @@ name = "bcr-wdc-wallet-aggregator"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-build = "build.rs"
 
 [features]
 test-utils = ["axum-test"]
@@ -16,10 +15,10 @@ axum-test = {workspace = true, optional = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-ebpp-client = {workspace = true}
 bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
+bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
 borsh = {workspace = true}
-built = {workspace = true, features = ["semver", "chrono"]}
 cashu.workspace = true
 cdk = {workspace = true, features = ["wallet"]}
 chrono = {workspace = true, features = ["serde"]}
@@ -43,6 +42,3 @@ uuid = {workspace = true}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 mockall.workspace = true
 surrealdb = {workspace = true, features = ["kv-mem"]}
-
-[build-dependencies]
-built = {workspace = true, features = ["dependency-tree", "chrono"]}
