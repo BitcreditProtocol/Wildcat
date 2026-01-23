@@ -9,13 +9,18 @@ use axum::{
 use bcr_common::{
     core::BillId,
     wire::{
-        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, keys as wire_keys,
-        quotes as wire_quotes, signatures as wire_signatures,
+        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
+        keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
     },
 };
 use bcr_wdc_webapi::wallet as web_wallet;
+use clwdr_client::model::ClowderNodeInfo;
 // ----- local imports
-use crate::{endpoints, error::Result, AppController};
+use crate::{
+    endpoints,
+    error::{Error, Result},
+    AppController,
+};
 
 // ----- end imports
 
@@ -591,5 +596,50 @@ pub async fn get_ebill_mint_complete(
 
     let complete = ctrl.treasury_cl.is_ebill_mint_complete(bid).await?;
     let response = web_wallet::EbillMintingComplete { complete };
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::MINT_INFO,
+    responses (
+        (status = 200, description = "Successful response", body = wire_info::WildcatInfo, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_mint_info(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_info::WildcatInfo>> {
+    tracing::debug!("Received request for wildcat info");
+
+    let clwd_info = ctrl.clwdr_cl.get_info().await?;
+    let ClowderNodeInfo {
+        node_id,
+        network,
+        uptime_timestamp,
+        change_address: clowder_change_address,
+        version,
+    } = clwd_info;
+    let build_time = bcr_wdc_utils::info::get_build_time();
+    let uptime_timestamp = chrono::DateTime::from_timestamp(uptime_timestamp as i64, 0)
+        .ok_or(Error::Internal(String::from("uptime_timestamp error")))?;
+    let versions = wire_info::VersionInfo {
+        bcr_ebill_core: bcr_wdc_utils::info::get_ebill_version()
+            .map(|v| v.to_string())
+            .unwrap_or(String::from("?")),
+        clowder: version,
+        wildcat: bcr_wdc_utils::info::get_version().to_string(),
+        cdk_mintd: bcr_wdc_utils::info::get_cashu_version()
+            .map(|v| v.to_string())
+            .unwrap_or(String::from("?")),
+    };
+    let response = wire_info::WildcatInfo {
+        build_time,
+        clowder_change_address,
+        network,
+        clowder_node_id: *node_id,
+        uptime_timestamp,
+        versions,
+    };
     Ok(Json(response))
 }

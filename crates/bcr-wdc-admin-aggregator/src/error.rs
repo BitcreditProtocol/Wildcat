@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_common::client::{
     ebill::Error as EbillClientError, keys::Error as KeysClientError,
@@ -30,7 +29,7 @@ pub enum Error {
     #[error("resource not found: {0}")]
     ResourceNotFound(String),
     #[error("Internal server error: {0}")]
-    Internal(#[from] AnyError),
+    Internal(String),
 }
 
 impl axum::response::IntoResponse for Error {

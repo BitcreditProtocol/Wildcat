@@ -22,8 +22,23 @@ pub fn get_ebill_version() -> Option<built::semver::Version> {
     version
 }
 
+const CASHU_CORE: &str = "cashu";
+pub fn get_cashu_version() -> Option<built::semver::Version> {
+    let version = built::util::parse_versions(&built_info::DEPENDENCIES).find_map(|(n, v)| {
+        if n == CASHU_CORE {
+            Some(v)
+        } else {
+            None
+        }
+    });
+    version
+}
+
 pub fn get_deps_versions() -> HashMap<String, Option<built::semver::Version>> {
-    HashMap::from([(String::from(EBILL_CORE), get_ebill_version())])
+    HashMap::from([
+        (String::from(EBILL_CORE), get_ebill_version()),
+        (String::from(CASHU_CORE), get_cashu_version()),
+    ])
 }
 
 pub fn get_version() -> built::semver::Version {
