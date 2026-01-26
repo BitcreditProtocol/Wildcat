@@ -16,6 +16,7 @@ use bcr_common::{
     },
 };
 use bcr_wdc_treasury_client::TreasuryClient;
+use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
 use cashu::MintVersion;
 use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
@@ -556,7 +557,7 @@ pub async fn post_online_exchange(
     let wire_exchange::OnlineExchangeRequest {
         proofs,
         exchange_path,
-    } = request;
+    } = request.clone();
     let proofs = match input_type {
         InputType::Sat => {
             ctrl.treasury_client
@@ -568,6 +569,19 @@ pub async fn post_online_exchange(
                 .crsat_exchange_online(proofs, exchange_path)
                 .await?
         }
+    };
+    if let Some(write_clowder) = ctrl.clwdr_stream_client {
+        write_clowder
+            .mint_foreign_ecash(
+                messages::MintForeignEcashRequest {
+                    proofs: request.proofs.clone(),
+                    exchange_path: request.exchange_path.clone(),
+                },
+                messages::MintForeignEcashResponse {
+                    proofs: proofs.clone(),
+                },
+            )
+            .await?;
     };
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
@@ -605,7 +619,7 @@ pub async fn post_offline_exchange(
         fingerprints,
         hashes,
         wallet_pk,
-    } = request;
+    } = request.clone();
     let response = match input_type {
         InputType::Sat => {
             ctrl.treasury_client
@@ -617,6 +631,26 @@ pub async fn post_offline_exchange(
                 .crsat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
                 .await?
         }
+    };
+    let serialized = STANDARD
+        .decode(&response.content)
+        .map_err(|e| Error::InvalidInput(e.to_string()))?;
+    let payload: bcr_common::wire::exchange::OfflineExchangePayload =
+        borsh::from_slice(&serialized)?;
+
+    if let Some(write_clowder) = ctrl.clwdr_stream_client {
+        write_clowder
+            .mint_offline_foreign_ecash(
+                messages::MintForeignOfflineEcashRequest {
+                    fingerprints: request.fingerprints.clone(),
+                    hashes: request.hashes.clone(),
+                    wallet_pk: request.wallet_pk,
+                },
+                messages::MintForeignOfflineEcashResponse {
+                    proofs: payload.proofs,
+                },
+            )
+            .await?;
     };
     Ok(Json(response))
 }
