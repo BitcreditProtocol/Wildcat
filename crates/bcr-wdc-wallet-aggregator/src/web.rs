@@ -554,10 +554,13 @@ pub async fn post_online_exchange(
     };
     let input_type =
         determine_input_type(&clowder_keys, request.proofs.iter().map(|p| p.keyset_id)).await?;
+    // Clone what we need for the stream before consuming request
+    let stream_proofs = request.proofs.clone();
+    let stream_exchange_path = request.exchange_path.clone();
     let wire_exchange::OnlineExchangeRequest {
         proofs,
         exchange_path,
-    } = request.clone();
+    } = request;
     let proofs = match input_type {
         InputType::Sat => {
             ctrl.treasury_client
@@ -574,8 +577,8 @@ pub async fn post_online_exchange(
         write_clowder
             .mint_foreign_ecash(
                 messages::MintForeignEcashRequest {
-                    proofs: request.proofs.clone(),
-                    exchange_path: request.exchange_path.clone(),
+                    proofs: stream_proofs,
+                    exchange_path: stream_exchange_path,
                 },
                 messages::MintForeignEcashResponse {
                     proofs: proofs.clone(),
@@ -615,11 +618,14 @@ pub async fn post_offline_exchange(
         request.fingerprints.iter().map(|fp| fp.keyset_id),
     )
     .await?;
+    // Clone what we need for the stream before consuming request
+    let stream_fingerprints = request.fingerprints.clone();
+    let stream_hashes = request.hashes.clone();
     let wire_exchange::OfflineExchangeRequest {
         fingerprints,
         hashes,
         wallet_pk,
-    } = request.clone();
+    } = request;
     let response = match input_type {
         InputType::Sat => {
             ctrl.treasury_client
@@ -642,9 +648,9 @@ pub async fn post_offline_exchange(
         write_clowder
             .mint_offline_foreign_ecash(
                 messages::MintForeignOfflineEcashRequest {
-                    fingerprints: request.fingerprints.clone(),
-                    hashes: request.hashes.clone(),
-                    wallet_pk: request.wallet_pk,
+                    fingerprints: stream_fingerprints,
+                    hashes: stream_hashes,
+                    wallet_pk,
                 },
                 messages::MintForeignOfflineEcashResponse {
                     proofs: payload.proofs,
