@@ -16,6 +16,7 @@ use bcr_common::{
     },
 };
 use bcr_wdc_treasury_client::TreasuryClient;
+use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
 use cashu::MintVersion;
 use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
@@ -553,6 +554,9 @@ pub async fn post_online_exchange(
     };
     let input_type =
         determine_input_type(&clowder_keys, request.proofs.iter().map(|p| p.keyset_id)).await?;
+    // Clone what we need for the stream before consuming request
+    let stream_proofs = request.proofs.clone();
+    let stream_exchange_path = request.exchange_path.clone();
     let wire_exchange::OnlineExchangeRequest {
         proofs,
         exchange_path,
@@ -568,6 +572,19 @@ pub async fn post_online_exchange(
                 .crsat_exchange_online(proofs, exchange_path)
                 .await?
         }
+    };
+    if let Some(write_clowder) = ctrl.clwdr_stream_client {
+        write_clowder
+            .mint_foreign_ecash(
+                messages::MintForeignEcashRequest {
+                    proofs: stream_proofs,
+                    exchange_path: stream_exchange_path,
+                },
+                messages::MintForeignEcashResponse {
+                    proofs: proofs.clone(),
+                },
+            )
+            .await?;
     };
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
@@ -601,6 +618,9 @@ pub async fn post_offline_exchange(
         request.fingerprints.iter().map(|fp| fp.keyset_id),
     )
     .await?;
+    // Clone what we need for the stream before consuming request
+    let stream_fingerprints = request.fingerprints.clone();
+    let stream_hashes = request.hashes.clone();
     let wire_exchange::OfflineExchangeRequest {
         fingerprints,
         hashes,
@@ -617,6 +637,26 @@ pub async fn post_offline_exchange(
                 .crsat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
                 .await?
         }
+    };
+    let serialized = STANDARD
+        .decode(&response.content)
+        .map_err(|e| Error::InvalidInput(e.to_string()))?;
+    let payload: bcr_common::wire::exchange::OfflineExchangePayload =
+        borsh::from_slice(&serialized)?;
+
+    if let Some(write_clowder) = ctrl.clwdr_stream_client {
+        write_clowder
+            .mint_offline_foreign_ecash(
+                messages::MintForeignOfflineEcashRequest {
+                    fingerprints: stream_fingerprints,
+                    hashes: stream_hashes,
+                    wallet_pk,
+                },
+                messages::MintForeignOfflineEcashResponse {
+                    proofs: payload.proofs,
+                },
+            )
+            .await?;
     };
     Ok(Json(response))
 }
