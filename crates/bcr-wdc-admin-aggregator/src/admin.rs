@@ -14,12 +14,13 @@ use bcr_common::{
     },
 };
 use bcr_wdc_webapi::wallet as web_wallet;
+use cashu::ProofsMethods;
 use clwdr_client::model::ClowderNodeInfo;
 // ----- local imports
 use crate::{
     endpoints,
     error::{Error, Result},
-    AppController,
+    types, AppController,
 };
 
 // ----- end imports
@@ -642,4 +643,39 @@ pub async fn get_mint_info(
         versions,
     };
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::POST_TOKEN_STATUS,
+    request_body(content = types::TokenStateRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = types::TokenStateResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn post_token_status(
+    State(ctrl): State<AppController>,
+    Json(req): Json<types::TokenStateRequest>,
+) -> Result<Json<types::TokenStateResponse>> {
+    let head = req.token.chars().take(16).collect::<String>();
+    tracing::debug!("Received token state request {}", head);
+
+    let token = bcr_common::wallet::Token::from_str(&req.token)?;
+    let kinfos = ctrl.keys_cl.list_keyset_info().await?;
+    let ys = token.proofs(&kinfos)?.ys()?;
+    let states = ctrl.swap_cl.check_state(ys).await?;
+    let is_any_spent = states
+        .into_iter()
+        .map(|s| s.state)
+        .any(|s| matches!(s, cashu::State::Spent));
+    if is_any_spent {
+        Ok(Json(types::TokenStateResponse {
+            state: types::TokenState::Spent,
+        }))
+    } else {
+        Ok(Json(types::TokenStateResponse {
+            state: types::TokenState::Unspent,
+        }))
+    }
 }
