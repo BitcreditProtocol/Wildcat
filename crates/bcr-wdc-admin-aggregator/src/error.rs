@@ -3,7 +3,7 @@
 use axum::http::StatusCode;
 use bcr_common::client::{
     ebill::Error as EbillClientError, keys::Error as KeysClientError,
-    quote::Error as QuotesClientError,
+    quote::Error as QuotesClientError, swap::Error as SwapClientError,
 };
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use clwdr_client::ClowderClientError;
@@ -15,6 +15,10 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("cdk00 {0}")]
+    Cdk00(#[from] cashu::nut00::Error),
+    #[error("SwapClient: {0}")]
+    SwapClient(#[from] SwapClientError),
     #[error("TreasuryClient: {0}")]
     TreasuryClient(#[from] TreasuryClientError),
     #[error("ClowderClient: {0}")]
