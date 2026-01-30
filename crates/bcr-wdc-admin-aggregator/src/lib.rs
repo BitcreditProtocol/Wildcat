@@ -15,6 +15,7 @@ use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod error;
+mod types;
 
 // ----- end imports
 
@@ -25,6 +26,7 @@ pub struct AppConfig {
     pub ebill_url: bcr_common::client::Url,
     pub clowder_url: bcr_common::client::Url,
     pub treasury_url: bcr_wdc_treasury_client::Url,
+    pub swap_url: bcr_common::client::Url,
 }
 
 #[derive(Clone, FromRef)]
@@ -34,6 +36,7 @@ pub struct AppController {
     pub ebill_cl: bcr_common::client::ebill::Client,
     pub clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
     pub treasury_cl: bcr_wdc_treasury_client::TreasuryClient,
+    pub swap_cl: bcr_common::client::swap::Client,
 }
 
 impl AppController {
@@ -44,18 +47,21 @@ impl AppController {
             ebill_url,
             clowder_url,
             treasury_url,
+            swap_url,
         } = cfg;
         let keys_cl = bcr_common::client::keys::Client::new(keys_url);
         let quotes_cl = bcr_common::client::quote::Client::new(quotes_url);
         let ebill_cl = bcr_common::client::ebill::Client::new(ebill_url);
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
         let treasury_cl = bcr_wdc_treasury_client::TreasuryClient::new(treasury_url);
+        let swap_cl = bcr_common::client::swap::Client::new(swap_url);
         AppController {
             keys_cl,
             quotes_cl,
             ebill_cl,
             clwdr_cl: Arc::new(clwdr_cl),
             treasury_cl,
+            swap_cl,
         }
     }
 }
@@ -81,7 +87,6 @@ pub mod endpoints {
     pub const GET_EBILL_ENDORSEMENTS: &str = "/v1/admin/ebill/endorsements/{bid}";
     pub const GET_EBILL_ATTACHMENT: &str = "/v1/admin/ebill/attachments/{bid}/{fname}";
     pub const GET_EBILL_PAYMENTSTATUS: &str = "/v1/admin/ebill/payment_status/{bid}";
-
     // Clowder-Client
     pub const GET_CLOWDER_INFO: &str = "/v1/admin/clowder/info";
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
@@ -94,6 +99,8 @@ pub mod endpoints {
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
     pub const EBILL_MINT_COMPLETE: &str = "/v1/admin/treasury/ebill/mint_complete/{bid}";
+    // Swap-Client
+    pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -167,7 +174,9 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::EBILL_MINT_COMPLETE,
             get(admin::get_ebill_mint_complete),
-        );
+        )
+        // swap service
+        .route(endpoints::POST_TOKEN_STATUS, post(admin::post_token_status));
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
 
@@ -204,6 +213,9 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_signatures::RequestToMintFromEBillResponse,
         web_wallet::ECashBalance,
         web_wallet::EbillMintingComplete,
+        // swap service
+        types::TokenStateRequest,
+        types::TokenStateResponse,
     ),),
     paths(
         admin::get_health,
@@ -238,6 +250,8 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::post_ebill_reqtopay,
         admin::get_sat_balance,
         admin::get_ebill_mint_complete,
+        // swap service
+        admin::post_token_status,
     )
 )]
 pub struct ApiDoc;
