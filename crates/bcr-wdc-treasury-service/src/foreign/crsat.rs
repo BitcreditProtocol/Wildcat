@@ -204,7 +204,6 @@ async fn try_online_htlc(
             &cashu::amount::SplitTarget::None,
         )
         .map_err(|e| Error::Internal(e.to_string()))?;
-        // TODO: allow different keyset_ids
         assert_eq!(
             1,
             f_proofs
