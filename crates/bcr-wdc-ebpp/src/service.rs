@@ -282,6 +282,25 @@ impl MintPayment for Service {
             return Err(PaymentError::UnsupportedPaymentOption);
         };
         let description = options.bolt11.description().to_string();
+
+        if let Some(amount_str) = description.strip_prefix("clowder:melt:") {
+            let amount = amount_str
+                .parse::<u64>()
+                .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+            let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
+            let outgoing =
+                payment::OutgoingRequest::new(reqid.clone(), cashu::Amount::from(amount));
+            self.payrepo.store_outgoing(outgoing).await?;
+            tracing::debug!("Clowder melt quote {reqid} for amount {amount}");
+            return Ok(PaymentQuoteResponse {
+                request_lookup_id: Some(reqid),
+                amount: cashu::Amount::from(amount),
+                unit: CurrencyUnit::Sat,
+                fee: cashu::Amount::ZERO,
+                state: MeltQuoteState::Unpaid,
+            });
+        }
+
         let request: wire_signatures::SignedRequestToMeltDesc =
             serde_json::from_str(&description).map_err(PaymentError::Serde)?;
         schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)
@@ -309,13 +328,32 @@ impl MintPayment for Service {
     ) -> PaymentResult<MakePaymentResponse> {
         let _span = tracing::debug_span!("make_payment");
 
-        if !matches!(unit, CurrencyUnit::Sat) {
-            return Err(PaymentError::UnsupportedUnit);
-        }
         let OutgoingPaymentOptions::Bolt11(options) = options else {
             return Err(PaymentError::UnsupportedPaymentOption);
         };
         let description = options.bolt11.description().to_string();
+
+        // Process before as unit is msat due to cdk processing
+        // This just exists to mark a clowder melt as paid and burn the input proofs
+        if let Some(amount_str) = description.strip_prefix("clowder:melt:") {
+            let amount = amount_str
+                .parse::<u64>()
+                .map_err(|_| PaymentError::UnsupportedPaymentOption)?;
+            let reqid = PaymentIdentifier::CustomId(Uuid::new_v4().to_string());
+            tracing::debug!("Clowder make payment {amount} {unit} {reqid}");
+            return Ok(MakePaymentResponse {
+                payment_lookup_id: reqid,
+                payment_proof: None,
+                status: MeltQuoteState::Paid,
+                total_spent: cashu::Amount::from(amount),
+                unit: CurrencyUnit::Sat,
+            });
+        }
+
+        if !matches!(unit, CurrencyUnit::Sat) {
+            return Err(PaymentError::UnsupportedUnit);
+        }
+
         let request: wire_signatures::SignedRequestToMeltDesc =
             serde_json::from_str(&description).map_err(PaymentError::Serde)?;
         schnorr_verify_b64(&request.content, &request.signature, &self.treasury_pubkey)

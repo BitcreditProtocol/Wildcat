@@ -121,6 +121,7 @@ impl AppController {
             clwdr_nats.as_ref().map(|c| {
                 Arc::new(debit::ClowderNatsCl(c.clone())) as Arc<dyn debit::ClowderWriteService>
             });
+        let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -132,6 +133,7 @@ impl AppController {
             quote_expiry_seconds,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: dbmint.clone(),
         };
         debit
             .init_monitors_for_past_ebills()
@@ -204,7 +206,6 @@ impl AppController {
             .await
             .expect("Failed to create signer");
 
-        let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let dev = devmode::Service {
             crkeys: bcr_common::client::keys::Client::new(credit_keys_url),
             dbmint: dbmint.clone(),
