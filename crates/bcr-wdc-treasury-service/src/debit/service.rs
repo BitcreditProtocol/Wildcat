@@ -14,6 +14,7 @@ use bcr_common::{
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use cashu::Amount;
+use cdk::wallet::MintConnector;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -23,6 +24,27 @@ use crate::{
 };
 
 // ----- end imports
+
+fn create_clowder_melt_bolt11(amount: cashu::Amount) -> cashu::lightning_invoice::Bolt11Invoice {
+    use bitcoin::hashes::{sha256, Hash};
+    use cashu::lightning_invoice as ln;
+
+    // Random unused values
+    let payment_hash = sha256::Hash::hash(&rand::random::<[u8; 32]>());
+    let payment_secret = ln::PaymentSecret(rand::random());
+    let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+    let description = format!("clowder:melt:{}", u64::from(amount));
+
+    ln::InvoiceBuilder::new(ln::Currency::Bitcoin)
+        .description(description)
+        .payment_hash(payment_hash)
+        .payment_secret(payment_secret)
+        .current_timestamp()
+        .amount_milli_satoshis(u64::from(amount) * 1000) // msat
+        .min_final_cltv_expiry_delta(144)
+        .build_signed(|hash| secp256k1::global::SECP256K1.sign_ecdsa_recoverable(hash, &sk))
+        .unwrap()
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClowderMintQuoteOnchain {
@@ -100,6 +122,7 @@ pub struct Service {
     pub quote_expiry_seconds: u64,
     pub cancel: tokio_util::sync::CancellationToken,
     pub hndls: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    pub dbmint: cdk::wallet::HttpClient,
 }
 
 impl Service {
@@ -121,19 +144,39 @@ impl Service {
         request: wire_melt::MeltQuoteOnchainRequest,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
         let expiry = (chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64) as u64;
-        let quote_id = Uuid::new_v4();
-        tracing::info!("Creating onchain melt quote with ID {}", quote_id);
+        let amount = cashu::Amount::from(request.request.amount.to_sat());
+
+        let bolt11 = create_clowder_melt_bolt11(amount);
+        let melt_quote_req = cashu::MeltQuoteBolt11Request {
+            request: bolt11,
+            unit: cashu::CurrencyUnit::Sat,
+            options: None,
+        };
+
+        let cdk_quote = match self.dbmint.post_melt_quote(melt_quote_req).await {
+            Ok(resp) => {
+                tracing::info!("CDK melt quote created: {}", resp.quote);
+                Uuid::parse_str(&resp.quote)
+                    .map_err(|_| Error::InvalidInput("Invalid CDK quote ID".into()))?
+            }
+            Err(e) => {
+                tracing::error!("Failed to create CDK melt quote: {:?}", e);
+                return Err(Error::Internal(format!("CDK quote creation failed: {}", e)));
+            }
+        };
+
         let data = OnchainMeltQuote {
             request: request.clone(),
             expiry,
         };
-        self.repo.store_onchain_melt(quote_id, data).await?;
+        self.repo.store_onchain_melt(cdk_quote, data).await?;
+
         Ok(wire_melt::MeltQuoteOnchainResponse {
             txid: None,
-            quote: quote_id,
+            quote: cdk_quote,
             fee_reserve: bitcoin::Amount::ZERO,
             change: None,
-            amount: bitcoin::Amount::from_sat(request.request.amount.to_sat()),
+            amount: request.request.amount,
             unit: Some(request.unit),
             state: cashu::nuts::MeltQuoteState::Unpaid,
             expiry,
@@ -380,6 +423,9 @@ mod tests {
             .returning(|_| Ok(()));
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -391,6 +437,7 @@ mod tests {
             clowder_write: None,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
         let quote = service
             .mint_from_ebill(
@@ -411,6 +458,9 @@ mod tests {
         let clowder = MockClowderReadService::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -422,6 +472,7 @@ mod tests {
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
 
         let (_, keyset) = generate_keyset();
@@ -441,6 +492,9 @@ mod tests {
         let clowder = MockClowderReadService::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -452,6 +506,7 @@ mod tests {
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
 
         let (_, keyset) = generate_keyset();
@@ -468,6 +523,9 @@ mod tests {
         let clowder = MockClowderReadService::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -479,6 +537,7 @@ mod tests {
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
 
         let (_, keyset) = generate_keyset();
@@ -512,6 +571,9 @@ mod tests {
         });
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -523,6 +585,7 @@ mod tests {
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
 
         let (_, keyset) = generate_keyset();
@@ -546,6 +609,9 @@ mod tests {
             .returning(|kids| Err(Error::UnknownKeyset(kids[0])));
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
         let service = Service {
             wallet: Arc::new(wallet),
             signing_keys,
@@ -557,6 +623,7 @@ mod tests {
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
         };
 
         let (_, keyset) = generate_keyset();
