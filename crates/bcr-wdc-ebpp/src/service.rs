@@ -334,6 +334,7 @@ impl MintPayment for Service {
         let description = options.bolt11.description().to_string();
 
         // Process before as unit is msat due to cdk processing
+        // This just exists to mark a clowder melt as paid and burn the input proofs
         if let Some(amount_str) = description.strip_prefix("clowder:melt:") {
             let amount = amount_str
                 .parse::<u64>()
