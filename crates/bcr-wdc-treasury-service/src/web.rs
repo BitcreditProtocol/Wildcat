@@ -207,8 +207,6 @@ pub async fn mint_quote_onchain(
     }
 
     let clowder_quote = Uuid::new_v4();
-    // TODO update mint quote onchain to provide keyset id
-    // Which can be used later to select correct frost multisig
     let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
     let address_response = ctrl
