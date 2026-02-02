@@ -166,7 +166,6 @@ async fn monitor(
             let request = cashu::SwapRequest::new(proofs, premints.blinded_messages());
             let Ok(response) = client.post_swap(request).await else {
                 warn!("post_swap failed {}, lost {}", mint.1, total);
-                //TODO: store the request for future replay
                 continue;
             };
             let mut news = Vec::with_capacity(response.signatures.len());
@@ -184,7 +183,6 @@ async fn monitor(
             }
             if online_repo.store(mint.clone(), news).await.is_err() {
                 error!("store new proofs failed {}, {total} lost", mint.1);
-                //TODO: store the request for future replay
             };
             if offline_repo.remove_proofs(&ys).await.is_err() {
                 warn!("remove_proofs failed {}", mint.1);
