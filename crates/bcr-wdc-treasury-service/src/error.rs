@@ -92,6 +92,9 @@ pub enum Error {
 
     #[error("internal {0}")]
     Internal(String),
+
+    #[error("Clowder unavailable for onchain operations")]
+    ClowderUnavailable,
 }
 
 impl axum::response::IntoResponse for Error {
@@ -147,6 +150,10 @@ impl axum::response::IntoResponse for Error {
             Error::InsufficientOnchainMintAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::ClowderUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Clowder unavailable".to_string(),
+            ),
         };
         resp.into_response()
     }

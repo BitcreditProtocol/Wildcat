@@ -102,6 +102,9 @@ pub async fn melt_quote_onchain(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
+    if ctrl.clwdr_nats.is_none() {
+        return Err(crate::error::Error::ClowderUnavailable);
+    }
     if request.request.amount < ctrl.params.min_melt_threshold {
         return Err(crate::error::Error::InsufficientOnchainMeltAmount(
             request.request.amount,
@@ -156,37 +159,38 @@ pub async fn melt_onchain(
             cashu::Amount::from(total_proofs),
         ));
     }
-    if let Some(clowder) = ctrl.clwdr_nats {
-        tracing::debug!("Requesting onchain clowder melt transaction");
-        let melt_resp = clowder
-            .melt_onchain(messages::MeltOnchainRequest {
-                quote: *quote_id,
-                address: onchain_data.request.request.address,
-                amount: onchain_data.request.request.amount,
-                proofs: inputs.clone(),
-            })
-            .await?;
-        let resp = wire_melt::MeltQuoteOnchainResponse {
-            txid: Some(melt_resp.txid),
-            quote: *quote_id,
-            fee_reserve: bitcoin::Amount::ZERO,
-            change: None,
-            amount: onchain_data.request.request.amount,
-            unit: Some(onchain_data.request.unit.clone()),
-            state: cashu::nuts::MeltQuoteState::Paid,
-            expiry: onchain_data.expiry,
-        };
-        return Ok(Json(resp));
+
+    let Some(clowder) = ctrl.clwdr_nats else {
+        return Err(crate::error::Error::ClowderUnavailable);
+    };
+
+    let melt_request = cashu::MeltRequest::new(quote_id.to_string(), inputs.clone(), None);
+    let cdk_resp = ctrl.dbmint.post_melt(melt_request).await?;
+    if cdk_resp.paid != Some(true) {
+        tracing::error!("Invalid cdk resp state {:?}", cdk_resp);
+        return Err(crate::error::Error::Internal(
+            "CDK Mintd did not mark melt quote as paid".to_string(),
+        ));
     }
 
+    tracing::debug!("Requesting onchain clowder melt transaction");
+    let melt_resp = clowder
+        .melt_onchain(messages::MeltOnchainRequest {
+            quote: *quote_id,
+            address: onchain_data.request.request.address,
+            amount: onchain_data.request.request.amount,
+            proofs: inputs.clone(),
+        })
+        .await?;
+
     let resp = wire_melt::MeltQuoteOnchainResponse {
-        txid: None,
+        txid: Some(melt_resp.txid),
         quote: *quote_id,
         fee_reserve: bitcoin::Amount::ZERO,
         change: None,
         amount: onchain_data.request.request.amount,
         unit: Some(onchain_data.request.unit),
-        state: cashu::nuts::MeltQuoteState::Unpaid,
+        state: cashu::nuts::MeltQuoteState::Paid,
         expiry: onchain_data.expiry,
     };
 
