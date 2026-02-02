@@ -1,5 +1,0 @@
-
-bind_address = "0.0.0.0:3338"
-log_level = "DEBUG"
-
-[appcfg]
