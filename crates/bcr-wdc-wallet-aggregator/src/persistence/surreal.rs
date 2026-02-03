@@ -3,6 +3,7 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
+use bcr_common::cashu;
 use bitcoin::secp256k1::schnorr::Signature;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports

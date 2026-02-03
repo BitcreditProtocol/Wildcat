@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::cashu::{self, nut00 as cdk00, nut02 as cdk02, nut07 as cdk07, Amount};
 use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::{nut00 as cdk00, nut02 as cdk02, nut07 as cdk07, Amount};
 use futures::future::JoinAll;
 use itertools::Itertools;
 // ----- local imports

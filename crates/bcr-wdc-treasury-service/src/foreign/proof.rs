@@ -1,10 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::client::cdk::MintConnectorExt;
+use bcr_common::{
+    cashu::{self, nut10 as cdk10},
+    client::cdk::MintConnectorExt,
+};
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use cashu::nut10 as cdk10;
 // ----- local imports
 use crate::{
     error::{Error, Result},

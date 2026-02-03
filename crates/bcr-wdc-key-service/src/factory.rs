@@ -1,9 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::cashu::{self, nut02::KeySetVersion};
+use bcr_common::cdk_common::mint::MintKeySetInfo;
 use bcr_wdc_utils::keys;
 use bitcoin::bip32::{self as btc32};
-use cashu::nut02::KeySetVersion;
-use cdk_common::mint::MintKeySetInfo;
 // ----- local modules
 // ----- local imports
 use crate::TStamp;

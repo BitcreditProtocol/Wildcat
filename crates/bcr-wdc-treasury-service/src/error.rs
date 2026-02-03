@@ -1,12 +1,15 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
-use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::{
-    nut00::Error as CDK00Error, nut02 as cdk02, nut10::Error as CDK10Error,
-    nut11::Error as CDK11Error, nut12::Error as CDK12Error, nut13::Error as CDK13Error,
-    nut20::Error as CDK20Error,
+use bcr_common::{
+    cashu,
+    cashu::{
+        nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
+        nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut20::Error as CDK20Error,
+    },
+    cdk,
 };
+use bcr_wdc_utils::signatures as signatures_utils;
 use surrealdb::Error as SurrealError;
 use thiserror::Error;
 use uuid::Uuid;
@@ -68,13 +71,13 @@ pub enum Error {
     #[error("invalid outputs {0}")]
     InvalidOutput(signatures_utils::ChecksError),
     #[error("inactive keyset {0}")]
-    InactiveKeyset(cdk02::Id),
+    InactiveKeyset(cashu::Id),
     #[error("active keyset {0}")]
-    ActiveKeyset(cdk02::Id),
+    ActiveKeyset(cashu::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
     UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("Unknown keyset {0}")]
-    UnknownKeyset(cdk02::Id),
+    UnknownKeyset(cashu::Id),
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
     #[error("request id not found {0}")]

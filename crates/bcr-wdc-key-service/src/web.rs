@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
+use bcr_common::cashu;
 // ----- local imports
 use crate::{error::Result, service::Service};
 

@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::cashu;
 use bdk_wallet::bitcoin as btc;
-use cashu as cdk;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 // ----- local imports
@@ -46,8 +46,8 @@ impl std::convert::From<Balance> for bdk_wallet::Balance {
 ///--------------------------- eCash wallet balance
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ECashBalance {
-    pub amount: cdk::Amount,
-    pub unit: cdk::CurrencyUnit,
+    pub amount: cashu::Amount,
+    pub unit: cashu::CurrencyUnit,
 }
 
 ///--------------------------- eCash balance chart

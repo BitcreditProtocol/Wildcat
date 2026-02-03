@@ -1,25 +1,27 @@
 // ----- standard library imports
 // ----- extra library imports
-use cashu::{nut00 as cdk00, nut02 as cdk02};
+use bcr_common::cashu;
 use serde::{Deserialize, Serialize};
 // ----- local imports
+
+// ----- end imports
 
 ///--------------------------- generate blinded messages
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenerateBlindedMessagesRequest {
-    pub kid: cdk02::Id,
+    pub kid: cashu::Id,
     pub total: cashu::Amount,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenerateBlindedMessagesResponse {
     pub request_id: uuid::Uuid,
-    pub messages: Vec<cdk00::BlindedMessage>,
+    pub messages: Vec<cashu::BlindedMessage>,
 }
 
 ///--------------------------- store blinded signatures
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoreBlindSignaturesRequest {
     pub rid: uuid::Uuid,
-    pub signatures: Vec<cdk00::BlindSignature>,
+    pub signatures: Vec<cashu::BlindSignature>,
 }

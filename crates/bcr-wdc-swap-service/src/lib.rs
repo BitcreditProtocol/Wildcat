@@ -78,8 +78,7 @@ pub mod test_utils {
 
     use super::*;
     use crate::error::{Error, Result};
-    use cashu::nut00 as cdk00;
-    use cashu::nut02 as cdk02;
+    use bcr_common::cashu::{nut00 as cdk00, nut02 as cdk02};
 
     #[derive(Debug, Default, Clone)]
     pub struct TestKeysService {

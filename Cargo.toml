@@ -8,10 +8,8 @@ resolver = "2"
 
 members = [
     "crates/bcr-wdc-admin-aggregator",
-    "crates/bcr-wdc-balance-collector",
     "crates/bcr-wdc-e2e-tests",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
-    "crates/bcr-wdc-eiou-service", "crates/bcr-wdc-eiou-client",
     "crates/bcr-wdc-key-service",
     "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-swap-service",
@@ -43,11 +41,6 @@ bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
-cashu = {version = "=0.13.1", default-features = false}
-cdk = {version = "=0.13.1", default-features = false}
-cdk-common = {version = "=0.13.1"}
-cdk-payment-processor = {version = "=0.13.1", default-features = false}
-cdk-redb = {version = "=0.13.1"}
 chrono = {version = "0.4"}
 clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "e160832dfc20e8fd8059ef8c10b6e95d1fa2cee0"}
 config = {version = "0.15"}

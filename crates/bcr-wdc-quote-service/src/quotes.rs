@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{core::BillId, wire::quotes as wire_quotes};
+use bcr_common::{cashu, core::BillId, wire::quotes as wire_quotes};
 use bcr_ebill_core::protocol::blockchain::bill::participant::{
     BillIdentParticipant, BillParticipant,
 };

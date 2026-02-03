@@ -14,7 +14,6 @@ bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
 bdk_wallet = {workspace = true}
 bitcoin.workspace = true
-cashu.workspace = true
 chrono.workspace = true
 config = {workspace = true}
 rand = {workspace = true}
