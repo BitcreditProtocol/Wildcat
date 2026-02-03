@@ -2,14 +2,16 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use cashu::{nut00 as cdk00, nut02 as cdk02, nut07 as cdk07};
-use surrealdb::RecordId;
-use surrealdb::Result as SurrealResult;
-use surrealdb::{engine::any::Any, Surreal};
-// ----- local modules
+use bcr_common::cashu::{self, nut00 as cdk00, nut02 as cdk02, nut07 as cdk07};
+use surrealdb::{
+    RecordId, Result as SurrealResult,
+    {engine::any::Any, Surreal},
+};
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::ProofRepository;
+use crate::{
+    error::{Error, Result},
+    service::ProofRepository,
+};
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct ConnectionConfig {

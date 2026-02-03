@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use cdk_common::payment::PaymentIdentifier;
+use bcr_common::cdk_common::payment::PaymentIdentifier;
 // ----- local imports
 use crate::{error::Result, payment};
 // ----- local modules

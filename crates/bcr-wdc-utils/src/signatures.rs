@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use cashu::Amount;
+use bcr_common::cashu;
 use itertools::Itertools;
 use thiserror::Error;
 // ----- local imports
@@ -24,7 +24,9 @@ pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()>
         return Err(ChecksError::Empty);
     }
     // 2. no zero amounts
-    let zero_inputs = blinds.iter().any(|output| output.amount == Amount::ZERO);
+    let zero_inputs = blinds
+        .iter()
+        .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
         return Err(ChecksError::ZeroAmount);
     }
@@ -41,7 +43,9 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
         return Err(ChecksError::Empty);
     }
     // 2. no zero amounts
-    let zero_inputs = proofs.iter().any(|output| output.amount == Amount::ZERO);
+    let zero_inputs = proofs
+        .iter()
+        .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
         return Err(ChecksError::ZeroAmount);
     }
@@ -59,7 +63,10 @@ pub mod test_utils {
     use crate::keys::test_utils::{generate_blind, publics};
     use cashu::{dhke, secret, Id};
 
-    pub fn generate_proofs(keyset: &cashu::MintKeySet, amounts: &[Amount]) -> Vec<cashu::Proof> {
+    pub fn generate_proofs(
+        keyset: &cashu::MintKeySet,
+        amounts: &[cashu::Amount],
+    ) -> Vec<cashu::Proof> {
         let mut proofs: Vec<cashu::Proof> = Vec::new();
         for amount in amounts {
             let keypair = keyset.keys.get(amount).expect("keys for amount");
@@ -75,7 +82,7 @@ pub mod test_utils {
 
     pub fn generate_blinds(
         id: Id,
-        amounts: &[Amount],
+        amounts: &[cashu::Amount],
     ) -> Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> {
         let mut blinds: Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> = Vec::new();
         for amount in amounts {
@@ -86,7 +93,7 @@ pub mod test_utils {
 
     pub fn generate_signatures(
         keyset: &cashu::MintKeySet,
-        amounts: &[Amount],
+        amounts: &[cashu::Amount],
     ) -> Vec<cashu::BlindSignature> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::new();
         for amount in amounts {
@@ -192,18 +199,18 @@ mod tests {
     #[test]
     fn basic_checks_zero_amount() {
         let (_, keyset) = generate_keyset();
-        let amounts = vec![Amount::from(64), Amount::from(2)];
+        let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(2)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
-        blinds[0].amount = Amount::ZERO;
+        blinds[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_blinds_checks(&blinds),
             Err(ChecksError::ZeroAmount)
         ));
         let mut proofs = generate_proofs(&keyset, &amounts);
-        proofs[0].amount = Amount::ZERO;
+        proofs[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_proofs_checks(&proofs),
             Err(ChecksError::ZeroAmount)
@@ -213,7 +220,7 @@ mod tests {
     #[test]
     fn basic_checks_unique() {
         let (_, keyset) = generate_keyset();
-        let amounts = vec![Amount::from(64), Amount::from(8)];
+        let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(8)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)

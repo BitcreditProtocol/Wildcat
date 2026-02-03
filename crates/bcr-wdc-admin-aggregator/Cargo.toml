@@ -12,7 +12,6 @@ bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
-cashu = {workspace = true, features = ["swagger"]}
 chrono = {workspace = true}
 clwdr-client = {workspace = true}
 config = {workspace = true}

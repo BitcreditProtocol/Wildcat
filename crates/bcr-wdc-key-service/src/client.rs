@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::client::keys::Error as KeysError;
+use bcr_common::{cashu, client::keys::Error as KeysError};
 // ----- local imports
 use crate::KeysRepository;
 

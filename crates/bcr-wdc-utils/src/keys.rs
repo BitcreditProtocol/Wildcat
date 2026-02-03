@@ -1,11 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
-use bitcoin::hashes::{sha256::Hash as Sha256, Hash};
-use cashu::{
-    dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
+use bcr_common::cashu::{
+    self, dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
     nut12 as cdk12, nut14 as cdk14, Amount as cdk_Amount,
 };
-use cdk_common::mint as cdk_mint;
+use bcr_common::cdk_common::mint as cdk_mint;
+use bitcoin::hashes::{sha256::Hash as Sha256, Hash};
 use thiserror::Error;
 // ----- local imports
 
@@ -126,7 +126,6 @@ pub mod test_utils {
     use bitcoin::bip32::DerivationPath;
     use cashu::nuts::nut01 as cdk01;
     use cashu::secret as cdk_secret;
-    use cdk_common::mint as cdk_mint;
     use rand::RngCore;
 
     pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {

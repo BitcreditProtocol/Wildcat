@@ -1,13 +1,18 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::client::swap::Client as SwapClient;
+use bcr_common::{
+    cashu::{
+        self,
+        dhke::{blind_message, construct_proofs, sign_message},
+        Amount,
+    },
+    client::swap::Client as SwapClient,
+};
 use bcr_wdc_key_service::KeysRepository;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-use cashu::{
-    dhke::{blind_message, construct_proofs, sign_message},
-    Amount,
-};
 // ----- local imports
+
+// ----- end imports
 
 #[tokio::test]
 async fn swap() {

@@ -1,10 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
+use bcr_common::cashu::{self, nut01 as cdk01, nut02 as cdk02, nut12 as cdk12, Amount};
 use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::nuts::nut01 as cdk01;
-use cashu::nuts::nut02 as cdk02;
-use cashu::Amount;
 use thiserror::Error;
 // ----- local imports
 
@@ -20,7 +18,7 @@ pub enum Error {
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]
-    CDKNUT12(#[from] cashu::nuts::nut12::Error),
+    CDKNUT12(#[from] cdk12::Error),
     #[error("invalid inputs {0}")]
     InvalidInput(signatures_utils::ChecksError),
     #[error("invalid outputs {0}")]

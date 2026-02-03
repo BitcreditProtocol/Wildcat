@@ -5,8 +5,7 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
-use cashu::MintQuoteState;
-use cdk_common::payment::PaymentIdentifier;
+use bcr_common::{cashu::MintQuoteState, cdk_common::payment::PaymentIdentifier};
 // ----- local imports
 use crate::{
     error::{Error, Result},

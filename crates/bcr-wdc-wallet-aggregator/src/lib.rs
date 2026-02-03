@@ -6,11 +6,18 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::clowder::Client as ClowderClient;
-use bcr_common::wire::clowder::messages::{KeysetCreationRequest, KeysetCreationResponse};
-use bcr_common::wire::{clowder as wire_clowder, exchange as wire_exchange};
-use cashu::mint_url::MintUrl;
-use cdk::{wallet::MintConnector, HttpClient};
+use bcr_common::{
+    cashu::{self, mint_url::MintUrl},
+    cdk::{self, wallet::MintConnector, HttpClient},
+    client::clowder::Client as ClowderClient,
+    wire::{
+        clowder::{
+            self as wire_clowder,
+            messages::{KeysetCreationRequest, KeysetCreationResponse},
+        },
+        exchange as wire_exchange,
+    },
+};
 use utoipa::OpenApi;
 // ----- local modules
 mod commitment;
