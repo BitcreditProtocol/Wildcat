@@ -1,6 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
+use bcr_common::cashu;
 use borsh::io::{Error, ErrorKind, Read, Write};
 // ----- local imports
 

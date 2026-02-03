@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::{
+    cashu,
     core::BillId,
     wire::{exchange as wire_exchange, keys as wire_keys, signatures as wire_signatures},
 };

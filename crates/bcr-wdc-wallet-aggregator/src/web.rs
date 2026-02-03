@@ -4,6 +4,8 @@ use std::{collections::HashSet, sync::Arc};
 use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
+    cashu::{self, MintVersion},
+    cdk::{self, wallet::MintConnector},
     client::{
         clowder::Client as ClowderClient,
         keys::{Client as KeysClient, Error as KeysError},
@@ -17,8 +19,6 @@ use bcr_common::{
 };
 use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
-use cashu::MintVersion;
-use cdk::wallet::MintConnector;
 use futures::future::JoinAll;
 // ----- local imports
 use crate::{

@@ -4,6 +4,10 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
+use bcr_common::{
+    cashu::{self, MintQuoteState},
+    cdk_common::{self, payment::PaymentIdentifier},
+};
 use bdk_wallet::miniscript::{
     bitcoin::{
         self as btc,
@@ -12,8 +16,6 @@ use bdk_wallet::miniscript::{
     descriptor::{DescriptorSecretKey, KeyMap},
     Descriptor, DescriptorPublicKey,
 };
-use cashu::MintQuoteState;
-use cdk_common::payment::PaymentIdentifier;
 use surrealdb::{engine::any::Any, Result as SurrealResult, Surreal};
 // ----- local imports
 use crate::{

@@ -3,12 +3,13 @@ use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
+    cashu,
+    cdk::{self, wallet::MintConnector},
     core::signature::serialize_n_schnorr_sign_borsh_msg,
     wire::{clowder as wire_clowder, keys as wire_keys},
 };
 use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
-use cdk::wallet::MintConnector;
 use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
 use crate::{

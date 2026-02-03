@@ -1,9 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
-use bcr_common::client::{
-    ebill::Error as EbillClientError, keys::Error as KeysClientError,
-    quote::Error as QuotesClientError, swap::Error as SwapClientError,
+use bcr_common::{
+    cashu,
+    client::{
+        ebill::Error as EbillClientError, keys::Error as KeysClientError,
+        quote::Error as QuotesClientError, swap::Error as SwapClientError,
+    },
 };
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use clwdr_client::ClowderClientError;

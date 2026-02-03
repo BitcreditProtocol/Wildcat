@@ -2,7 +2,9 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use cdk_common::{amount::Error as CDKAmountError, payment::Error as CDKPaymentError};
+use bcr_common::cdk_common::{
+    self, amount::Error as CDKAmountError, payment::Error as CDKPaymentError,
+};
 use thiserror::Error;
 // ----- local imports
 

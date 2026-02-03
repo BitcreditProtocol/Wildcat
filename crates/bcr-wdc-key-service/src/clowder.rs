@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{core::BillId, wire::clowder::messages};
+use bcr_common::{cashu, core::BillId, wire::clowder::messages};
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
