@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{client::cdk::MintConnectorExt, wire::keys as wire_keys};
+use bcr_common::{cashu, client::cdk::MintConnectorExt, wire::keys as wire_keys};
 pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
@@ -133,6 +133,7 @@ fn fingerprints_vec_to_map(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::error::Result;
     use async_trait::async_trait;
     use bcr_common::wire::keys as wire_keys;

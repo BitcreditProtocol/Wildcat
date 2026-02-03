@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::{
+    cashu::{self, MeltQuoteState, MintQuoteState},
+    cdk_common::payment::PaymentIdentifier,
+};
 use bdk_wallet::bitcoin as btc;
-use cashu::{MeltQuoteState, MintQuoteState};
-use cdk_common::payment::PaymentIdentifier;
 use uuid::Uuid;
 // ----- local imports
 

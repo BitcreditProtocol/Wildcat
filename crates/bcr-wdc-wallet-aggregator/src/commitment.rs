@@ -3,13 +3,13 @@ use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
+    cashu::{self, nut07 as cdk07},
+    cdk::{self, wallet::MintConnector},
     client::{keys::Client as KeysClient, swap::Client as SwapClient},
     core::signature::deserialize_borsh_msg,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bitcoin::secp256k1::schnorr;
-use cashu::nut07 as cdk07;
-use cdk::wallet::MintConnector;
 // ----- local imports
 use crate::{
     error::{Error, Result},

@@ -2,9 +2,12 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::core::{self, BillId};
+use bcr_common::{
+    cashu,
+    cdk_common::mint::MintKeySetInfo,
+    core::{self, BillId},
+};
 use bcr_wdc_utils::keys as keys_utils;
-use cdk_common::mint::MintKeySetInfo;
 use itertools::Itertools;
 use uuid::Uuid;
 // ----- local imports

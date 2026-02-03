@@ -1,9 +1,10 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_common::wire::quotes::{StatusReply, UpdateQuoteResponse};
-use cashu::MintUrl;
-
+use bcr_common::{
+    cashu,
+    wire::quotes::{StatusReply, UpdateQuoteResponse},
+};
 use reqwest::Url;
 use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
@@ -243,7 +244,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let proofs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys).unwrap();
 
     let url = &cfg.user_service;
-    let mint_url = MintUrl::from_str(url).unwrap();
+    let mint_url = cashu::MintUrl::from_str(url).unwrap();
     let token = cashu::nut00::Token::new(
         mint_url,
         proofs,

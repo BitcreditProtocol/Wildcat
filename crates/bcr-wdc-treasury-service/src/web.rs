@@ -2,11 +2,12 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::wire::clowder::messages;
-use bcr_common::wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint};
+use bcr_common::{
+    cashu,
+    cdk::wallet::MintConnector,
+    wire::{clowder::messages, exchange as wire_exchange, melt as wire_melt, mint as wire_mint},
+};
 use bitcoin::base64::prelude::*;
-use cashu::nut03 as cdk03;
-use cdk::wallet::MintConnector;
 use uuid::Uuid;
 // ----- local imports
 use crate::{debit, error::Result, foreign, AppController};
@@ -16,12 +17,12 @@ use crate::{debit, error::Result, foreign, AppController};
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn redeem(
     State(ctrl): State<debit::Service>,
-    Json(request): Json<cdk03::SwapRequest>,
-) -> Result<Json<cdk03::SwapResponse>> {
+    Json(request): Json<cashu::SwapRequest>,
+) -> Result<Json<cashu::SwapResponse>> {
     tracing::debug!("Received request to redeem");
 
     let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
-    let response = cdk03::SwapResponse { signatures };
+    let response = cashu::SwapResponse { signatures };
     Ok(Json(response))
 }
 

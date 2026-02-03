@@ -7,6 +7,7 @@ use axum::{
     response::{AppendHeaders, IntoResponse},
 };
 use bcr_common::{
+    cashu::{self, ProofsMethods},
     core::BillId,
     wire::{
         bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
@@ -14,7 +15,6 @@ use bcr_common::{
     },
 };
 use bcr_wdc_webapi::wallet as web_wallet;
-use cashu::ProofsMethods;
 use clwdr_client::model::ClowderNodeInfo;
 // ----- local imports
 use crate::{

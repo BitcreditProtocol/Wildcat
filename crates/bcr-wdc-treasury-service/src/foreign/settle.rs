@@ -2,6 +2,7 @@
 use std::sync::{Arc, Mutex, Weak};
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::cashu;
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};

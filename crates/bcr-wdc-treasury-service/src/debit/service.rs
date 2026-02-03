@@ -7,14 +7,14 @@ use std::{
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
+    cashu,
+    cdk::{self, wallet::MintConnector},
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
     wire::{
         clowder::messages as clowder_messages, melt as wire_melt, signatures as wire_signatures,
     },
 };
 use bcr_wdc_utils::signatures as signatures_utils;
-use cashu::Amount;
-use cdk::wallet::MintConnector;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -51,7 +51,7 @@ pub struct ClowderMintQuoteOnchain {
     pub clowder_quote: uuid::Uuid,
     pub cdk_quote: uuid::Uuid,
     pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-    pub amount: Amount,
+    pub amount: cashu::Amount,
     pub expiry: u64,
 }
 
@@ -66,7 +66,7 @@ pub struct OnchainMeltQuote {
 pub trait Wallet: Send + Sync {
     async fn mint_quote(
         &self,
-        amount: Amount,
+        amount: cashu::Amount,
         signed_request: wire_signatures::SignedRequestToMintFromEBillDesc,
     ) -> Result<cdk::wallet::MintQuote>;
     async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
@@ -75,7 +75,7 @@ pub trait Wallet: Send + Sync {
         &self,
         outputs: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>>;
-    async fn balance(&self) -> Result<Amount>;
+    async fn balance(&self) -> Result<cashu::Amount>;
     async fn active_keyset(&self) -> Result<cashu::KeySetInfo>;
 }
 
@@ -126,7 +126,7 @@ pub struct Service {
 }
 
 impl Service {
-    pub async fn balance(&self) -> Result<Amount> {
+    pub async fn balance(&self) -> Result<cashu::Amount> {
         self.wallet.balance().await
     }
 
@@ -219,7 +219,7 @@ impl Service {
             serialize_n_schnorr_sign_borsh_msg(&request, &self.signing_keys)?;
         let signed_request =
             wire_signatures::SignedRequestToMintFromEBillDesc { content, signature };
-        let amount = Amount::from(amount.to_sat());
+        let amount = cashu::Amount::from(amount.to_sat());
         let quote = self.wallet.mint_quote(amount, signed_request).await?;
         let mint_quote = MintQuote {
             qid: quote.id.clone(),
@@ -252,10 +252,10 @@ impl Service {
         // 3. inputs and outputs have equal amounts
         let total_input = inputs
             .iter()
-            .fold(Amount::ZERO, |total, proof| total + proof.amount);
+            .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
         let total_output = outputs
             .iter()
-            .fold(Amount::ZERO, |total, proof| total + proof.amount);
+            .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
         if total_input != total_output {
             return Err(Error::UnmatchingAmount(total_input, total_output));
         }
@@ -364,10 +364,9 @@ async fn monitor_quote(
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::persistence::MockRepository;
-    use bcr_common::core_tests::generate_random_ecash_keyset;
+    use bcr_common::{cdk_common, core_tests::generate_random_ecash_keyset};
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::{nut23 as cdk23, Amount};

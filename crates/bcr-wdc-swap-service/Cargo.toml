@@ -15,7 +15,6 @@ axum-test = {workspace = true, optional = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-wdc-key-service = {workspace = true, optional = true}
 bcr-wdc-utils = {workspace = true}
-cashu.workspace = true
 chrono.workspace = true
 config.workspace = true
 futures.workspace = true

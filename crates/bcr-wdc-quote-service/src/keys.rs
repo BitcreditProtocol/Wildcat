@@ -1,8 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
-use bcr_common::core::BillId;
+use bcr_common::{
+    cashu,
+    client::keys::{Client as KeysClient, Error as KeysError},
+    core::BillId,
+};
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports

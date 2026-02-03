@@ -1,8 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::extract::{Json, State};
+use bcr_common::cashu::{nut03 as cdk03, nut07 as cdk07};
 use bcr_common::wire::swap as wire_swap;
-use cashu::{nut03 as cdk03, nut07 as cdk07};
 // ----- local imports
 use crate::error::Result;
 use crate::service::Service;

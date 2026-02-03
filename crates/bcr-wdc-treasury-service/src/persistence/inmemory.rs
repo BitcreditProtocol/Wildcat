@@ -5,9 +5,8 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::keys::ProofFingerprint;
+use bcr_common::{cashu, wire::keys::ProofFingerprint};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use cashu::nut00 as cdk00;
 // ----- local imports
 use crate::{error::Result, foreign};
 
@@ -16,9 +15,9 @@ use crate::{error::Result, foreign};
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryOnlineRepository {
-    proofs: Arc<Mutex<Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>,
+    proofs: Arc<Mutex<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>>,
     htlc: Arc<
-        Mutex<HashMap<Sha256Hash, Vec<((secp256k1::PublicKey, cashu::MintUrl), cdk00::Proof)>>>,
+        Mutex<HashMap<Sha256Hash, Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>>,
     >,
 }
 

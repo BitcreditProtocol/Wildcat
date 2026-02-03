@@ -1,9 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
+use bcr_common::{cashu, cdk::Error as CDKError};
 use bcr_wdc_ebpp_client::Error as EbppClientError;
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
-use cdk::Error as CDKError;
 use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports

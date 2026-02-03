@@ -5,6 +5,7 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::cashu;
 use bitcoin::secp256k1::schnorr::Signature;
 // ----- local imports
 use crate::{commitment, error::Result, TStamp};
