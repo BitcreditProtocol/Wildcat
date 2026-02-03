@@ -1,10 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::wire::quotes as wire_quotes;
+use bcr_common::{cashu, wire::quotes as wire_quotes};
 use bcr_wdc_webapi::test_utils::generate_random_bill_enquire_request;
 use bitcoin::secp256k1::Keypair;
-use cashu::nuts::nut02 as cdk02;
-use cashu::Amount;
 // ----- local modules
 // ----- end imports
 
@@ -25,8 +23,8 @@ pub fn random_ebill_request(
 }
 
 pub fn generate_blinds(
-    keyset_id: cdk02::Id,
-    amounts: &[Amount],
+    keyset_id: cashu::Id,
+    amounts: &[cashu::Amount],
 ) -> Vec<(
     cashu::BlindedMessage,
     cashu::secret::Secret,

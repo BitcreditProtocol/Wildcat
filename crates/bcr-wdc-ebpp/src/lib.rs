@@ -6,8 +6,8 @@ use axum::{
     extract::FromRef,
     routing::{get, Router},
 };
+use bcr_common::cdk_payment_processor::PaymentProcessorServer;
 use bdk_wallet::{bitcoin as btc, miniscript::ToPublicKey};
-use cdk_payment_processor::PaymentProcessorServer;
 use serde_with::serde_as;
 // ----- local modules
 mod admin;

@@ -9,6 +9,17 @@ use std::{
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
+    cashu,
+    cdk_common::{
+        self,
+        nuts::{MeltQuoteState, MintQuoteState},
+        payment::{
+            Bolt11Settings, CreateIncomingPaymentResponse, Error as PaymentError, Event,
+            IncomingPaymentOptions, MakePaymentResponse, MintPayment, OutgoingPaymentOptions,
+            PaymentIdentifier, PaymentQuoteResponse, WaitPaymentResponse,
+        },
+        CurrencyUnit,
+    },
     core::{
         signature::{deserialize_borsh_msg, schnorr_verify_b64},
         BillId,
@@ -17,15 +28,6 @@ use bcr_common::{
 };
 use bcr_wdc_webapi::exchange as web_exchange;
 use bdk_wallet::bitcoin as btc;
-use cdk_common::{
-    nuts::{MeltQuoteState, MintQuoteState},
-    payment::{
-        Bolt11Settings, CreateIncomingPaymentResponse, Error as PaymentError, Event,
-        IncomingPaymentOptions, MakePaymentResponse, MintPayment, OutgoingPaymentOptions,
-        PaymentIdentifier, PaymentQuoteResponse, WaitPaymentResponse,
-    },
-    CurrencyUnit,
-};
 use futures::Stream;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;

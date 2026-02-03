@@ -1,9 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::{
+    cashu::{self, secret::Secret, Amount},
+    wire::keys as wire_keys,
+};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use cashu::{secret::Secret, Amount};
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 use uuid::Uuid;
 // ----- local imports

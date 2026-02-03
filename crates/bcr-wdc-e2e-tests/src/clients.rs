@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 // ----- extra library imports
 use anyhow::{anyhow, Result};
 use bcr_common::{
+    cashu,
     client::{
         ebill::Client as EbillClient, keys::Client as KeysClient, quote::Client as QuoteClient,
         swap::Client as SwapClient,

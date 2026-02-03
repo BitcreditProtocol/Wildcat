@@ -19,8 +19,6 @@ bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
 borsh = {workspace = true}
-cashu.workspace = true
-cdk = {workspace = true, features = ["wallet"]}
 chrono = {workspace = true, features = ["serde"]}
 clwdr-client = {workspace = true}
 config = {workspace = true}

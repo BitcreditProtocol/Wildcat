@@ -1,10 +1,15 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::client::keys::{Client as KeysClient, Error as KeysError};
+use bcr_common::{
+    cashu,
+    client::keys::{Client as KeysClient, Error as KeysError},
+};
 // ----- local imports
-use crate::error::{Error, Result};
-use crate::service::KeysService;
+use crate::{
+    error::{Error, Result},
+    service::KeysService,
+};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KeysClientConfig {

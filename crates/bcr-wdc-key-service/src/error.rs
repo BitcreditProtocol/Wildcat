@@ -2,7 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use cashu::{nut01 as cdk01, nut02 as cdk02};
+use bcr_common::cashu::{nut01 as cdk01, nut02 as cdk02};
 use thiserror::Error;
 // ----- local imports
 

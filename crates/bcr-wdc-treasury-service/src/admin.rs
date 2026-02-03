@@ -2,9 +2,8 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::{core::BillId, wire::signatures as wire_signatures};
+use bcr_common::{cashu, core::BillId, wire::signatures as wire_signatures};
 use bcr_wdc_webapi::{exchange as web_exchange, wallet as web_wallet};
-use cashu::{self as cdk};
 // ----- local imports
 use crate::{debit, error::Result, foreign};
 // ----- end imports
@@ -35,7 +34,7 @@ pub async fn sat_balance(
     let amount = ctrl.balance().await?;
     let response = web_wallet::ECashBalance {
         amount,
-        unit: cdk::CurrencyUnit::Sat,
+        unit: cashu::CurrencyUnit::Sat,
     };
     Ok(Json(response))
 }

@@ -2,7 +2,7 @@
 use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::wire::keys as wire_keys;
+use bcr_common::{cashu, wire::keys as wire_keys};
 use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
 // ----- local imports

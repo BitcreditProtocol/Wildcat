@@ -3,13 +3,18 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_common::wire::signatures as wire_signatures;
-use cashu::{
-    mint_url::MintUrl,
-    nuts::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03},
-    Amount,
+use bcr_common::{
+    cashu::{
+        self,
+        mint_url::MintUrl,
+        nuts::{nut00 as cdk00, nut02 as cdk02, nut03 as cdk03},
+        Amount,
+    },
+    cdk,
+    cdk::wallet::{MintConnector, ReceiveOptions},
+    cdk_common, cdk_redb,
+    wire::signatures as wire_signatures,
 };
-use cdk::wallet::{MintConnector, ReceiveOptions};
 // ----- local imports
 use crate::{
     debit::service::Wallet,

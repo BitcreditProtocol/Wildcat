@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 // ----- extra library imports
 use async_trait::async_trait;
-use cashu::dhke as cdk_dhke;
-use cashu::{nut00 as cdk00, nut01 as cdk01, nut07 as cdk07};
+use bcr_common::cashu::{
+    self, dhke as cdk_dhke, {nut00 as cdk00, nut01 as cdk01, nut07 as cdk07},
+};
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::service::ProofRepository;

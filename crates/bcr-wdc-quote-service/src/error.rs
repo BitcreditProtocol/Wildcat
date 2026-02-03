@@ -2,9 +2,9 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
+use bcr_common::cashu::nut02 as cdk02;
 use bcr_wdc_treasury_client::Error as WalletError;
 use bcr_wdc_utils::keys::SignWithKeysError;
-use cashu::nuts::nut02 as cdk02;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports

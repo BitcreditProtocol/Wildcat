@@ -19,8 +19,6 @@ bcr-ebill-core.workspace = true
 bitcoin = { workspace = true}
 borsh = {workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}
-cashu = {workspace = true, features = ["swagger"]}
-cdk-common = {workspace = true}
 chrono.workspace = true
 clwdr-client.workspace = true
 itertools = {workspace = true}

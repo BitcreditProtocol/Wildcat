@@ -6,9 +6,12 @@ use axum::{
     routing::{get, post, put},
     Router,
 };
-use bcr_common::wire::{
-    bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
-    keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
+use bcr_common::{
+    cashu,
+    wire::{
+        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
+        keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
+    },
 };
 use bcr_wdc_webapi::wallet as web_wallet;
 use utoipa::OpenApi;

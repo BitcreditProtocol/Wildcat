@@ -3,6 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
+    cashu,
     core::{BillId, NodeId},
     wallet::Token,
     wire::quotes as wire_quotes,
