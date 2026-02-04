@@ -74,6 +74,6 @@ pub struct Network {
 
 ///--------------------------- ebill minting completed
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct EbillMintingComplete {
+pub struct EbillPaymentComplete {
     pub complete: bool,
 }

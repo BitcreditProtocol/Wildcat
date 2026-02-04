@@ -13,6 +13,7 @@ use bcr_common::{
         keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
     },
 };
+use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use bcr_wdc_webapi::wallet as web_wallet;
 use cashu::ProofsMethods;
 use clwdr_client::model::ClowderNodeInfo;
@@ -582,9 +583,9 @@ pub async fn get_sat_balance(
 
 #[utoipa::path(
     get,
-    path = endpoints::EBILL_MINT_COMPLETE,
+    path = endpoints::EBILL_PAY_COMPLETE,
     responses (
-        (status = 200, description = "Successful response", body = web_wallet::EbillMintingComplete, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = web_wallet::EbillPaymentComplete, content_type = "application/json"),
         (status = 404, description = "bill id not found"),
     )
 )]
@@ -592,12 +593,19 @@ pub async fn get_sat_balance(
 pub async fn get_ebill_mint_complete(
     State(ctrl): State<AppController>,
     Path(bid): Path<BillId>,
-) -> Result<Json<web_wallet::EbillMintingComplete>> {
-    tracing::debug!("Received request for ebill mint complete {bid}");
+) -> Result<Json<web_wallet::EbillPaymentComplete>> {
+    tracing::debug!("Received request for ebill payment complete {bid}");
 
-    let complete = ctrl.treasury_cl.is_ebill_mint_complete(bid).await?;
-    let response = web_wallet::EbillMintingComplete { complete };
-    Ok(Json(response))
+    let response = ctrl.treasury_cl.is_ebill_mint_complete(bid).await;
+    match response {
+        Err(TreasuryClientError::ResourceNotFound(resource)) => {
+            Err(Error::ResourceNotFound(resource))
+        }
+        Err(err) => Err(Error::TreasuryClient(err)),
+        Ok(response) => Ok(Json(web_wallet::EbillPaymentComplete {
+            complete: response,
+        })),
+    }
 }
 
 #[utoipa::path(

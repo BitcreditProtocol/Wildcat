@@ -63,10 +63,10 @@ pub async fn sat_try_htlc_swap(
 pub async fn is_ebill_minting_completed(
     State(ctrl): State<debit::Service>,
     Path(bill_id): Path<BillId>,
-) -> Result<Json<web_wallet::EbillMintingComplete>> {
-    tracing::debug!("Received request for ebill minting completed {bill_id}");
+) -> Result<Json<web_wallet::EbillPaymentComplete>> {
+    tracing::debug!("Received request for ebill payment completed {bill_id}");
 
     let complete = ctrl.is_ebill_payment_minted(bill_id).await?;
-    let response = web_wallet::EbillMintingComplete { complete };
+    let response = web_wallet::EbillPaymentComplete { complete };
     Ok(Json(response))
 }
