@@ -15,6 +15,8 @@ pub use reqwest::Url;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("resource not found {0}")]
+    ResourceNotFound(String),
     #[error("internal error {0}")]
     Reqwest(#[from] reqwest::Error),
     #[error("signature verification {0}")]
@@ -288,7 +290,11 @@ impl TreasuryClient {
             .join(&path)
             .expect("is_ebill_mint_complete relative path");
         let request = self.cl.get(url);
-        let response: web_wallet::EbillMintingComplete = request.send().await?.json().await?;
+        let response = request.send().await?;
+        if matches!(response.status(), reqwest::StatusCode::NOT_FOUND) {
+            return Err(Error::ResourceNotFound(ebill_id.to_string()));
+        }
+        let response: web_wallet::EbillPaymentComplete = response.json().await?;
         Ok(response.complete)
     }
 

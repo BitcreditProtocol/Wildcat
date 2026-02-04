@@ -101,7 +101,7 @@ pub mod endpoints {
     // Treasury-Client
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
-    pub const EBILL_MINT_COMPLETE: &str = "/v1/admin/treasury/ebill/mint_complete/{bid}";
+    pub const EBILL_PAY_COMPLETE: &str = "/v1/admin/treasury/ebill/payment_complete/{bid}";
     // Swap-Client
     pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
 }
@@ -175,7 +175,7 @@ pub fn routes(ctrl: AppController) -> Router {
         )
         .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance))
         .route(
-            endpoints::EBILL_MINT_COMPLETE,
+            endpoints::EBILL_PAY_COMPLETE,
             get(admin::get_ebill_mint_complete),
         )
         // swap service
@@ -215,7 +215,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_signatures::RequestToMintFromEBillRequest,
         wire_signatures::RequestToMintFromEBillResponse,
         web_wallet::ECashBalance,
-        web_wallet::EbillMintingComplete,
+        web_wallet::EbillPaymentComplete,
         // swap service
         types::TokenStateRequest,
         types::TokenStateResponse,
