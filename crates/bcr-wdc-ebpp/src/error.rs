@@ -78,8 +78,6 @@ pub enum Error {
     UnknownAmount,
     #[error("tx_id not found {0}")]
     TxNotFound(bdk_wallet::bitcoin::Txid),
-    #[error("treasury signature verification failed {0}")]
-    SchnorrBorsh(bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("invalid descriptor {0}")]
     InvalidDescriptor(String),
 
@@ -98,7 +96,6 @@ impl std::convert::From<Error> for cdk_common::payment::Error {
             Error::InvalidDescriptor(_) => CDKPaymentError::Custom(String::from(
                 "invalid descriptor, this should never happen",
             )),
-            Error::SchnorrBorsh(_) => CDKPaymentError::UnsupportedPaymentOption,
             Error::TxNotFound(_) => CDKPaymentError::UnknownPaymentState,
             Error::UnknownAmount => CDKPaymentError::Amount(CDKAmountError::InvalidAmount(
                 String::from("unknown amount"),

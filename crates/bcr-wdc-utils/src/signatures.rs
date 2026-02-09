@@ -128,54 +128,6 @@ pub mod test_utils {
     }
 }
 
-pub type UnblindResult<T> = std::result::Result<T, UnblindError>;
-#[derive(Debug, Error)]
-pub enum UnblindError {
-    #[error("keyset mismatch {0}")]
-    Keyset(String),
-    #[error("amount {0}")]
-    Amount(String),
-    #[error("cashu::dhke {0}")]
-    DHKE(#[from] cashu::dhke::Error),
-}
-pub fn unblind_signatures<'a>(
-    premints: impl Iterator<Item = &'a cashu::PreMint>,
-    signatures: impl Iterator<Item = cashu::BlindSignature>,
-    keys: &cashu::KeySet,
-) -> UnblindResult<Vec<cashu::Proof>> {
-    let mut proofs: Vec<cashu::Proof> = Vec::with_capacity(signatures.size_hint().0);
-    for (signature, premint) in signatures.zip(premints) {
-        if signature.keyset_id != keys.id {
-            return Err(UnblindError::Keyset(format!(
-                "signature {} != keys {}",
-                signature.keyset_id, keys.id
-            )));
-        }
-        if signature.keyset_id != premint.blinded_message.keyset_id {
-            return Err(UnblindError::Keyset(format!(
-                "signature {} != premint {}",
-                signature.keyset_id, premint.blinded_message.keyset_id
-            )));
-        }
-        if premint.amount != cashu::Amount::ZERO && signature.amount != premint.amount {
-            return Err(UnblindError::Amount(format!(
-                "signature.amount {} != premint.amount {}",
-                signature.amount, premint.amount
-            )));
-        }
-        let key = keys.keys.amount_key(signature.amount).ok_or_else(|| {
-            UnblindError::Amount(format!("no key for amount {}", signature.amount))
-        })?;
-        let c = cashu::dhke::unblind_message(&signature.c, &premint.r, &key)?;
-        let mut proof = cashu::Proof::new(signature.amount, keys.id, premint.secret.clone(), c);
-        if let Some(dleq) = signature.dleq {
-            proof.dleq = Some(cashu::ProofDleq::new(dleq.e, dleq.s, premint.r.clone()));
-        }
-        proofs.push(proof);
-    }
-    Ok(proofs)
-}
-
 #[cfg(test)]
 mod tests {
     use super::test_utils::*;

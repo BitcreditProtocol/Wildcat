@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
     client::cdk::MintConnectorExt,
+    core::signature::unblind_ecash_signature,
 };
-use bcr_wdc_utils::signatures::unblind_signatures;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
@@ -119,7 +119,11 @@ pub async fn generate_htlc_proofs(
     )?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
-    let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), keyset)?;
+    let mut proofs = Vec::with_capacity(signatures.len());
+    for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
+        let proof = unblind_ecash_signature(&keyset, pre.clone(), sig)?;
+        proofs.push(proof);
+    }
     Ok(proofs)
 }
 
