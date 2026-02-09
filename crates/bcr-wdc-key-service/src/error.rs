@@ -12,7 +12,7 @@ pub enum Error {
     // external errors wrappers
     #[error("keys repository {0}")]
     KeysRepository(AnyError),
-    #[error("{0}")]
+    #[error("eCash sign/verify: {0}")]
     SignVerifyEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("signatures repository {0}")]
     SignaturesRepository(AnyError),
