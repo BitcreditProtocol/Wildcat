@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 // ----- local modules
-pub mod borsh;
 #[cfg(feature = "auth")]
 pub mod client;
 pub mod convert;

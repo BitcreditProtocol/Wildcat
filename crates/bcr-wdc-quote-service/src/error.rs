@@ -2,9 +2,8 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::cashu::nut02 as cdk02;
+use bcr_common::{cashu::nut02 as cdk02, core::signature::ECashSignatureError};
 use bcr_wdc_treasury_client::Error as WalletError;
-use bcr_wdc_utils::keys::SignWithKeysError;
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -17,8 +16,8 @@ pub enum Error {
     BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("convert {0}")]
     Convert(#[from] bcr_wdc_utils::convert::Error),
-    #[error("Keys error {0}")]
-    SignWithKeys(#[from] SignWithKeysError),
+    #[error("eCash sign/verify error {0}")]
+    SignWithKeys(#[from] ECashSignatureError),
     #[error("Error in parsing datetime: {0}")]
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
@@ -67,7 +66,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
 
-            Error::SignWithKeys(SignWithKeysError::NoKeyForAmount(amount)) => {
+            Error::SignWithKeys(ECashSignatureError::NoKeyForAmount(amount)) => {
                 (StatusCode::NOT_FOUND, format!("No key for amount {amount}"))
             }
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),

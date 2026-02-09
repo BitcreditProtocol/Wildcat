@@ -43,7 +43,9 @@ impl DummyClient {
             .await
             .expect("InMemoryRepository");
         let keys = res.ok_or(KeysError::KeysetIdNotFound(msg.keyset_id))?;
-        bcr_wdc_utils::keys::sign_with_keys(&keys, msg).map_err(|_| KeysError::InvalidRequest)
+        let signature = bcr_common::core::signature::sign_ecash(&keys, msg)
+            .map_err(|_| KeysError::InvalidRequest)?;
+        Ok(signature)
     }
     pub async fn verify(&self, proof: &cashu::Proof) -> Result<bool> {
         let res = self
@@ -52,7 +54,7 @@ impl DummyClient {
             .await
             .expect("InMemoryRepository");
         let keys = res.ok_or(KeysError::KeysetIdNotFound(proof.keyset_id))?;
-        bcr_wdc_utils::keys::verify_with_keys(&keys, proof)
+        bcr_common::core::signature::verify_ecash_proof(&keys, proof)
             .map_err(|_| KeysError::InvalidRequest)?;
         Ok(true)
     }
