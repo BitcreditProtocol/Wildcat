@@ -2,8 +2,7 @@
 use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, wire::keys as wire_keys};
-use bcr_wdc_utils::signatures::unblind_signatures;
+use bcr_common::{cashu, core::signature::unblind_ecash_signature, wire::keys as wire_keys};
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
 // ----- local imports
 use crate::{
@@ -60,7 +59,11 @@ impl Service {
             premints.combine(premint);
         }
         let signatures = self.keys.sign(&premints.blinded_messages()).await?;
-        let proofs = unblind_signatures(premints.iter(), signatures.into_iter(), &keyset)?;
+        let mut proofs = Vec::with_capacity(signatures.len());
+        for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
+            let proof = unblind_ecash_signature(&keyset, pre.clone(), sig)?;
+            proofs.push(proof);
+        }
         self.offline_repo
             .store_fps((foreign_mint_pk, foreign_mint_url), inputs, hashes)
             .await?;
@@ -186,9 +189,11 @@ async fn try_online_htlc_swap(
             .await?;
         let request = cashu::SwapRequest::new(f_proofs, premints.blinded_messages());
         let swap_response = foreign_client.post_swap(request).await?;
-        let proofs =
-            unblind_signatures(premints.iter(), swap_response.signatures.into_iter(), &keys)
-                .map_err(|e| Error::Internal(e.to_string()))?;
+        let mut proofs = Vec::with_capacity(swap_response.signatures.len());
+        for (sig, pre) in swap_response.signatures.into_iter().zip(premints.iter()) {
+            let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
+            proofs.push(proof);
+        }
         repo.store((mint_pk, mint_url), proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         grand_total += total;

@@ -27,9 +27,6 @@ pub enum Error {
     #[error("borsh {0}")]
     Borsh(#[from] borsh::io::Error),
 
-    #[error("unblind {0}")]
-    Unblind(#[from] bcr_wdc_utils::signatures::UnblindError),
-
     #[error("cashu::nut20 {0}")]
     CDK20(#[from] CDK20Error),
     #[error("cashu::nut00 {0}")]
@@ -52,8 +49,6 @@ pub enum Error {
     Secp256k1(#[from] bitcoin::secp256k1::Error),
     #[error("Serde_json error {0}")]
     SerdeJson(#[from] serde_json::Error),
-    #[error("schnorr borsh message {0}")]
-    SchnorrBorshMsg(#[from] bcr_wdc_utils::keys::SchnorrBorshMsgError),
     #[error("keys client {0}")]
     KeyClient(#[from] bcr_common::client::keys::Error),
     #[error("clowder client {0}")]
@@ -133,7 +128,6 @@ impl axum::response::IntoResponse for Error {
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SwapClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::SchnorrBorshMsg(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -145,7 +139,6 @@ impl axum::response::IntoResponse for Error {
             Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Unblind(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

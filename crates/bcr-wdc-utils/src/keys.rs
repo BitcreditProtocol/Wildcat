@@ -1,131 +1,18 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::cashu::{
-    self, dhke as cdk_dhke, nut00 as cdk00, nut02 as cdk02, nut10 as cdk10, nut11 as cdk11,
-    nut12 as cdk12, nut14 as cdk14, Amount as cdk_Amount,
-};
-use bcr_common::cdk_common::mint as cdk_mint;
-use bitcoin::hashes::{sha256::Hash as Sha256, Hash};
-use thiserror::Error;
+use bcr_common::{cashu, cdk_common::mint as cdk_mint};
 // ----- local imports
 
 // ----- end imports
 
-pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cdk02::MintKeySet);
-
-pub type SignWithKeysResult<T> = std::result::Result<T, SignWithKeysError>;
-#[derive(Debug, Error)]
-pub enum SignWithKeysError {
-    #[error("no key for amount {0}")]
-    NoKeyForAmount(cdk_Amount),
-    #[error("cdk::dhke error {0}")]
-    CdkDHKE(#[from] cdk_dhke::Error),
-    #[error("cdk::nut12 error {0}")]
-    CdkNut12(#[from] cdk12::Error),
-}
-pub fn sign_with_keys(
-    keyset: &cdk02::MintKeySet,
-    blind: &cdk00::BlindedMessage,
-) -> SignWithKeysResult<cdk00::BlindSignature> {
-    let key = keyset
-        .keys
-        .get(&blind.amount)
-        .ok_or(SignWithKeysError::NoKeyForAmount(blind.amount))?;
-    let raw_signature = cdk_dhke::sign_message(&key.secret_key, &blind.blinded_secret)?;
-    let mut signature = cdk00::BlindSignature {
-        amount: blind.amount,
-        c: raw_signature,
-        keyset_id: keyset.id,
-        dleq: None,
-    };
-    signature.add_dleq_proof(&blind.blinded_secret, &key.secret_key)?;
-    Ok(signature)
-}
-
-pub type VerifyWithKeysResult<T> = std::result::Result<T, VerifyWithKeysError>;
-#[derive(Debug, Error)]
-pub enum VerifyWithKeysError {
-    #[error("no key for amount {0}")]
-    NoKeyForAmount(cdk_Amount),
-    #[error("cdk::dhke error {0}")]
-    CdkDHKE(#[from] cdk_dhke::Error),
-    #[error("Nut11 error {0}")]
-    Cdk11(#[from] cdk11::Error),
-    #[error("Nut14 error {0}")]
-    Cdk14(#[from] cdk14::Error),
-}
-pub fn verify_with_keys(
-    keyset: &cdk02::MintKeySet,
-    proof: &cdk00::Proof,
-) -> VerifyWithKeysResult<()> {
-    // ref: https://docs.rs/cdk/latest/cdk/mint/struct.Mint.html#method.verify_proof
-    if let Ok(secret) = <&cashu::secret::Secret as TryInto<cdk10::Secret>>::try_into(&proof.secret)
-    {
-        match secret.kind() {
-            cashu::nuts::Kind::P2PK => {
-                proof.verify_p2pk()?;
-            }
-            cashu::nuts::Kind::HTLC => {
-                proof.verify_htlc()?;
-            }
-        }
-    }
-
-    let keypair = keyset
-        .keys
-        .get(&proof.amount)
-        .ok_or(VerifyWithKeysError::NoKeyForAmount(proof.amount))?;
-    cashu::dhke::verify_message(&keypair.secret_key, proof.c, proof.secret.as_bytes())?;
-    Ok(())
-}
-
-pub type SchnorrSignBorshResult<T> = std::result::Result<T, SchnorrBorshMsgError>;
-#[derive(Debug, Error)]
-pub enum SchnorrBorshMsgError {
-    #[error("Borsh error {0}")]
-    Borsh(borsh::io::Error),
-    #[error("Secp256k1 error {0}")]
-    Secp256k1(bitcoin::secp256k1::Error),
-}
-
-pub fn schnorr_sign_borsh_msg_with_key<Message>(
-    msg: &Message,
-    keys: &bitcoin::secp256k1::Keypair,
-) -> SchnorrSignBorshResult<bitcoin::secp256k1::schnorr::Signature>
-where
-    Message: borsh::BorshSerialize,
-{
-    let serialized = borsh::to_vec(&msg).map_err(SchnorrBorshMsgError::Borsh)?;
-    let sha = Sha256::hash(&serialized);
-    let secp_msg = bitcoin::secp256k1::Message::from_digest(*sha.as_ref());
-
-    Ok(bitcoin::secp256k1::global::SECP256K1.sign_schnorr(&secp_msg, keys))
-}
-
-pub fn schnorr_verify_borsh_msg_with_key<Message>(
-    msg: &Message,
-    signature: &bitcoin::secp256k1::schnorr::Signature,
-    key: &bitcoin::secp256k1::XOnlyPublicKey,
-) -> SchnorrSignBorshResult<()>
-where
-    Message: borsh::BorshSerialize,
-{
-    let serialized = borsh::to_vec(&msg).map_err(SchnorrBorshMsgError::Borsh)?;
-    let sha = Sha256::hash(&serialized);
-    let secp_msg = bitcoin::secp256k1::Message::from_digest(*sha.as_ref());
-
-    bitcoin::secp256k1::global::SECP256K1
-        .verify_schnorr(signature, &secp_msg, key)
-        .map_err(SchnorrBorshMsgError::Secp256k1)
-}
+pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cashu::MintKeySet);
 
 #[cfg(any(feature = "test-utils", test))]
 pub mod test_utils {
 
     use super::*;
+    use bcr_common::cashu::{self, nut02::KeySetVersion, secret as cdk_secret};
     use bitcoin::bip32::DerivationPath;
-    use cashu::nuts::nut01 as cdk01;
-    use cashu::secret as cdk_secret;
     use rand::RngCore;
 
     pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {
@@ -133,31 +20,31 @@ pub mod test_utils {
         bitcoin::secp256k1::Keypair::new(bitcoin::secp256k1::global::SECP256K1, &mut rng)
     }
 
-    pub fn generate_random_keysetid() -> cdk02::Id {
+    pub fn generate_random_keysetid() -> cashu::Id {
         const ID_BYTE_LEN: usize = 7;
         let mut id_bytes = [0u8; ID_BYTE_LEN + 1];
-        id_bytes[0] = cdk02::KeySetVersion::Version00 as u8;
+        id_bytes[0] = KeySetVersion::Version00 as u8;
         rand::thread_rng().fill_bytes(&mut id_bytes[1..]);
-        cdk02::Id::from_bytes(&id_bytes).expect("Keyset ID is valid")
+        cashu::Id::from_bytes(&id_bytes).expect("Keyset ID is valid")
     }
 
-    pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
+    pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cashu::MintKeySet) {
         let path = DerivationPath::master();
         let denominations: Vec<u64> = (0..10).map(|i| 2u64.pow(i)).collect();
-        let set = cdk02::MintKeySet::generate_from_seed(
+        let set = cashu::MintKeySet::generate_from_seed(
             secp256k1::global::SECP256K1,
             &[],
             &denominations,
-            cdk00::CurrencyUnit::Sat,
+            cashu::CurrencyUnit::Sat,
             path.clone(),
             None,
-            cdk02::KeySetVersion::Version00,
+            KeySetVersion::Version00,
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             amounts: denominations,
             active: true,
-            unit: cdk00::CurrencyUnit::Sat,
+            unit: cashu::CurrencyUnit::Sat,
             valid_from: 0,
             final_expiry: None,
             derivation_path_index: None,
@@ -167,25 +54,25 @@ pub mod test_utils {
         };
         (info, set)
     }
-    pub fn generate_random_keyset() -> (cdk_mint::MintKeySetInfo, cdk02::MintKeySet) {
+    pub fn generate_random_keyset() -> (cdk_mint::MintKeySetInfo, cashu::MintKeySet) {
         let path = DerivationPath::master();
         let mut random_seed = [0u8; 32];
         let denominations: Vec<u64> = (0..10).map(|i| 2u64.pow(i)).collect();
         rand::thread_rng().fill_bytes(&mut random_seed);
-        let set = cdk02::MintKeySet::generate_from_seed(
+        let set = cashu::MintKeySet::generate_from_seed(
             secp256k1::global::SECP256K1,
             &random_seed,
             &denominations,
-            cdk00::CurrencyUnit::Sat,
+            cashu::CurrencyUnit::Sat,
             path.clone(),
             None,
-            cdk02::KeySetVersion::Version00,
+            KeySetVersion::Version00,
         );
         let info = cdk_mint::MintKeySetInfo {
             id: set.id,
             active: true,
             amounts: denominations,
-            unit: cdk00::CurrencyUnit::Sat,
+            unit: cashu::CurrencyUnit::Sat,
             valid_from: 0,
             final_expiry: None,
             derivation_path_index: None,
@@ -197,13 +84,13 @@ pub mod test_utils {
     }
 
     pub fn generate_blind(
-        kid: cdk02::Id,
-        amount: cdk_Amount,
-    ) -> (cdk00::BlindedMessage, cdk_secret::Secret, cdk01::SecretKey) {
+        kid: cashu::Id,
+        amount: cashu::Amount,
+    ) -> (cashu::BlindedMessage, cdk_secret::Secret, cashu::SecretKey) {
         let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
         let (b_, r) =
-            cdk_dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
-        (cdk00::BlindedMessage::new(amount, kid, b_), secret, r)
+            cashu::dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
+        (cashu::BlindedMessage::new(amount, kid, b_), secret, r)
     }
 
     pub const RANDOMS: [&str; 6] = [
@@ -215,28 +102,10 @@ pub mod test_utils {
         "027a238c992c4a5ea59502b2d6b52e6466bf2a775191cbfaf29b9311e8352d99dc",
     ];
 
-    pub fn publics() -> Vec<cdk01::PublicKey> {
+    pub fn publics() -> Vec<cashu::PublicKey> {
         RANDOMS
             .iter()
-            .map(|key| cdk01::PublicKey::from_hex(key).unwrap())
+            .map(|key| cashu::PublicKey::from_hex(key).unwrap())
             .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cashu::Amount;
-
-    #[test]
-    fn sign_verify_message() {
-        let (_, keyset) = test_utils::generate_keyset();
-        let (blind, secret, secretkey) = test_utils::generate_blind(keyset.id, Amount::from(8));
-        let sig = sign_with_keys(&keyset, &blind).unwrap();
-        let mintpub = keyset.keys.get(&blind.amount).unwrap().public_key;
-        let c = cashu::dhke::unblind_message(&sig.c, &secretkey, &mintpub).unwrap();
-        let p = cdk00::Proof::new(blind.amount, keyset.id, secret, c);
-
-        verify_with_keys(&keyset, &p).unwrap();
     }
 }
