@@ -188,7 +188,7 @@ services:
       - default
 
   bff-wallet-service:
-    image: nginx:stable-bookworm
+    image: envoyproxy/envoy:v1.33.0
     depends_on:
       quote-service:
         condition: service_healthy
@@ -199,8 +199,14 @@ services:
       ens-service:
         condition: service_healthy
     volumes:
-      - ./docker/bff-wallet-service/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/bff-wallet-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: >
+      /usr/local/bin/envoy
+      -c /etc/envoy/envoy.yaml
+      --log-level info
     restart: unless-stopped
+    networks:
+      - default
 
   nats:
     image: nats:2.11.9-alpine
