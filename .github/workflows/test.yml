@@ -4,11 +4,6 @@ on:
   push:
     branches: [ "**" ]
 
-permissions:
-  contents: read
-  security-events: write
-  actions: read
-
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
@@ -33,12 +28,9 @@ jobs:
           echo "After cleanup:"
           df -h
 
-      - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      
-      - name: Create GitHub App token
+      - name: Create GitHub app token
         id: app-token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
           private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
@@ -50,26 +42,25 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - name: Free up disk space
-        run: |
-          echo "Before cleanup:"
-          df -h
-          docker system prune -a -f
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo apt-get clean
-          sudo apt-get autoremove -y
-          echo "After cleanup:"
-          df -h
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
-      - name: Switch rust version
-        run: rustup default stable
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
 
-      - name: Update rust
+      - name: install rust
         run: rustup update stable
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
+
+      - name: Activate cache
+        uses: Swatinem/rust-cache@v2.8.0
+        with:
+          prefix-key: "wildcat-01"
 
       - name: Install grcov
         run: cargo install grcov
@@ -81,19 +72,10 @@ jobs:
           RUSTFLAGS: "-Cinstrument-coverage"
 
       - name: Create coverage report
-        run: |
-          grcov \
-            --source-dir . \
-            --binary-path target/debug \
-            --branch \
-            --excl-start 'mod tests \{' \
-            --ignore 'tests/*' \
-            --keep-only "crates/*" \
-            -o lcov.info \
-            -t lcov `find crates -name coverage`
+        run: grcov --source-dir . --binary-path target/debug --branch --keep-only "crates/*"  -o lcov.info -t lcov `find crates -name coverage`
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
