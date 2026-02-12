@@ -31,3 +31,11 @@ url = "https://bitcredit-dev.minibill.tech"
 
 [appcfg.payment_config]
 num_confirmations_for_payment = 1
+
+[appcfg.identity_config]
+name = "Wildcat"
+email = "info@bitcr.org"
+country = "AT"
+city = "Vienna"
+zip = "1020"
+address = "Smithstreet 15, Top 22"
