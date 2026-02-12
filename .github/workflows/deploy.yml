@@ -100,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ${{ env.DEPLOY_PATH }}
-          rsync -a --no-owner --no-group --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
+          sudo rsync -a --no-owner --no-group --delete --exclude '.git' ./ ${{ env.DEPLOY_PATH }}/
 
       - name: Authenticate to GCP
         id: auth
@@ -211,26 +211,26 @@ jobs:
         if: inputs.delete_ebpp_data || inputs.delete_all_data
         run: |
           echo "Removing ebpp data..."
-          rm -rf ${{ env.DATA_PATH }}/ebpp/regtest/*
-          rm -rf ${{ env.DATA_PATH }}/ebpp/testnet/*
+          sudo rm -rf ${{ env.DATA_PATH }}/ebpp/regtest/*
+          sudo rm -rf ${{ env.DATA_PATH }}/ebpp/testnet/*
 
       - name: Remove treasury-service data
         if: inputs.delete_treasury_data || inputs.delete_all_data
         run: |
           echo "Removing treasury-service data..."
-          rm -rf ${{ env.DATA_PATH }}/treasury-service/*
+          sudo rm -rf ${{ env.DATA_PATH }}/treasury-service/*
 
       - name: Remove cdk-mintd data
         if: inputs.delete_cdkmintd_data || inputs.delete_all_data
         run: |
           echo "Removing cdk-mintd data..."
-          rm -rf ${{ env.DATA_PATH }}/cdk-mintd/*
+          sudo rm -rf ${{ env.DATA_PATH }}/cdk-mintd/*
 
       - name: Remove surrealdb data
         if: inputs.delete_surrealdb_data || inputs.delete_all_data
         run: |
           echo "Removing surrealdb data..."
-          rm -rf ${{ env.DATA_PATH }}/surrealdb/*
+          sudo rm -rf ${{ env.DATA_PATH }}/surrealdb/*
 
       - name: 'Deploy'
         run: |
