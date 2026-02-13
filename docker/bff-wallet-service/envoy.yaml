@@ -16,6 +16,18 @@ static_resources:
                   virtual_hosts:
                     - name: bff_wallet_vhost
                       domains: ["*"]
+                      typed_per_filter_config:
+                        envoy.filters.http.cors:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                          allow_origin_string_match:
+                            - suffix: ".minibill.tech"
+                            - suffix: ".pages.dev"
+                            - prefix: "http://localhost:"
+                            - prefix: "http://127.0.0.1:"
+                          allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+                          allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Access-Control-Allow-Origin"
+                          allow_credentials: true
+                          max_age: "1728000"
                       routes:
                         - match: { prefix: "/health" }
                           route: { cluster: wallet_aggregator }
@@ -65,6 +77,9 @@ static_resources:
                         - match: { prefix: "/v1" }
                           route: { cluster: wallet_aggregator }
                 http_filters:
+                  - name: envoy.filters.http.cors
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
