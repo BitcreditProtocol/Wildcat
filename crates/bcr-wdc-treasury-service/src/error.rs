@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_common::{
     cashu,
@@ -10,7 +11,6 @@ use bcr_common::{
     cdk,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
-use surrealdb::Error as SurrealError;
 use thiserror::Error;
 use uuid::Uuid;
 // ----- local imports
@@ -44,7 +44,7 @@ pub enum Error {
     #[error("CDK secret {0}")]
     CDKSecret(#[from] cdk::secret::Error),
     #[error("DB error {0}")]
-    DB(#[from] SurrealError),
+    DB(#[source] AnyError),
     #[error("Secp256k1 error {0}")]
     Secp256k1(#[from] bitcoin::secp256k1::Error),
     #[error("Serde_json error {0}")]

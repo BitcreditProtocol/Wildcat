@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, secret::Secret, Amount},
@@ -107,7 +108,7 @@ impl persistence::Repository for DebitRepository {
             .insert(rid)
             .content(quote)
             .await
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -118,7 +119,7 @@ impl persistence::Repository for DebitRepository {
             .update(rid)
             .content(quote)
             .await
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -129,9 +130,9 @@ impl persistence::Repository for DebitRepository {
             .query(statement)
             .bind(("table", self.table.clone()))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(entries)
     }
 
@@ -141,15 +142,22 @@ impl persistence::Repository for DebitRepository {
         data: debit::OnchainMeltQuote,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let _: Option<debit::OnchainMeltQuote> =
-            self.db.insert(rid).content(data).await.map_err(Error::DB)?;
+        let _: Option<debit::OnchainMeltQuote> = self
+            .db
+            .insert(rid)
+            .content(data)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
     async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<debit::OnchainMeltQuote> {
         let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
-        let result: Option<debit::OnchainMeltQuote> =
-            self.db.select(rid).await.map_err(Error::DB)?;
+        let result: Option<debit::OnchainMeltQuote> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
 
@@ -159,8 +167,12 @@ impl persistence::Repository for DebitRepository {
         data: debit::ClowderMintQuoteOnchain,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
-        let _: Option<debit::ClowderMintQuoteOnchain> =
-            self.db.insert(rid).content(data).await.map_err(Error::DB)?;
+        let _: Option<debit::ClowderMintQuoteOnchain> = self
+            .db
+            .insert(rid)
+            .content(data)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -169,8 +181,11 @@ impl persistence::Repository for DebitRepository {
         quote_id: uuid::Uuid,
     ) -> Result<debit::ClowderMintQuoteOnchain> {
         let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
-        let result: Option<debit::ClowderMintQuoteOnchain> =
-            self.db.select(rid).await.map_err(Error::DB)?;
+        let result: Option<debit::ClowderMintQuoteOnchain> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
 }
@@ -244,7 +259,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .insert(&self.foreigns_table)
             .content(entries)
             .await
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -255,9 +270,9 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .query(statement)
             .bind(("table", self.foreigns_table.clone()))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let mut ret_val = Vec::with_capacity(entries.len());
         for entry in entries {
             let ForeignProofEntry {
@@ -294,7 +309,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .insert(&self.htlcs_table)
             .content(entries)
             .await
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -308,9 +323,9 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
             .bind(("table", self.htlcs_table.clone()))
             .bind(("hash", *hash))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let ret_val = htlcs
             .into_iter()
             .map(
@@ -328,8 +343,11 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         for y in ys {
             let rid = RecordId::from_table_key(&self.htlcs_table, y.to_string());
-            let _: Option<ForeignOnlineHtlcProofEntry> =
-                self.db.delete(rid).await.map_err(Error::DB)?;
+            let _: Option<ForeignOnlineHtlcProofEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
         }
         Ok(())
     }
@@ -404,7 +422,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
                 .insert(rid)
                 .content(entry)
                 .await
-                .map_err(Error::DB)?;
+                .map_err(|e| Error::DB(anyhow!(e)))?;
         }
         Ok(())
     }
@@ -419,7 +437,11 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         )>,
     > {
         let rid = RecordId::from_table_key(&self.fps_table, hash.to_string());
-        let entry: Option<ForeignFingerprintEntry> = self.db.select(rid).await?;
+        let entry: Option<ForeignFingerprintEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let Some(entry) = entry else {
             return Ok(None);
         };
@@ -441,9 +463,9 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             .bind(("table", self.fps_table.clone()))
             .bind(("ys", ys.to_vec()))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
     async fn store_proofs(
@@ -462,7 +484,12 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             };
             entries.push(entry);
         }
-        let _: Vec<ForeignProofEntry> = self.db.insert(&self.proofs_table).content(entries).await?;
+        let _: Vec<ForeignProofEntry> = self
+            .db
+            .insert(&self.proofs_table)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
@@ -477,9 +504,9 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             .bind(("mint_url", mint_url.clone()))
             .bind(("mint_pk", *mint_pk))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let mut ret_val = Vec::with_capacity(entries.len());
         for entry in entries {
             ret_val.push(entry.proof);
@@ -494,9 +521,9 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             .bind(("table", self.proofs_table.clone()))
             .bind(("ys", ys.to_vec()))
             .await
-            .map_err(Error::DB)?
+            .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
-            .map_err(Error::DB)?;
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 }
