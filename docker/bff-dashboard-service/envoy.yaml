@@ -40,77 +40,6 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
                       providers:
                         keycloak_provider_service:
-                          issuer: http://keycloak:8080/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_localhost:
-                          issuer: http://localhost:8080/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_docker_dev_secure:
-                          issuer: https://keycloak.wildcat-dev-docker.minibill.tech/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_docker_staging_secure:
-                          issuer: https://keycloak.wildcat-staging-docker.minibill.tech/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_docker_secure:
-                          issuer: https://keycloak.wildcat-docker.minibill.tech/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_cluster_dev_secure:
-                          issuer: https://keycloak.wildcat-dev.minibill.tech/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_cluster_staging_secure:
-                          issuer: https://keycloak.wildcat-staging.minibill.tech/realms/dev
-                          remote_jwks:
-                            http_uri:
-                              uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
-                              cluster: keycloak_service
-                              timeout: 5s
-                            cache_duration:
-                              seconds: 600
-                          forward_payload_header: x-jwt-payload
-                        keycloak_provider_external_cluster_secure:
-                          issuer: https://keycloak.wildcat.minibill.tech/realms/dev
                           remote_jwks:
                             http_uri:
                               uri: http://keycloak:8080/realms/dev/protocol/openid-connect/certs
@@ -122,16 +51,7 @@ static_resources:
                       rules:
                         - match: { prefix: "/v1/admin" }
                           requires:
-                            requires_any:
-                              requirements:
-                                - provider_name: keycloak_provider_service
-                                - provider_name: keycloak_provider_localhost
-                                - provider_name: keycloak_provider_external_docker_dev_secure
-                                - provider_name: keycloak_provider_external_docker_staging_secure
-                                - provider_name: keycloak_provider_external_docker_secure
-                                - provider_name: keycloak_provider_external_cluster_dev_secure
-                                - provider_name: keycloak_provider_external_cluster_staging_secure
-                                - provider_name: keycloak_provider_external_cluster_secure
+                            provider_name: keycloak_provider_service
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
