@@ -6,6 +6,10 @@ on:
       - dev
       - master
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
