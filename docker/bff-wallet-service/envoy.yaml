@@ -17,89 +17,53 @@ static_resources:
                     - name: bff_wallet_vhost
                       domains: ["*"]
                       routes:
-                        - match:
-                            prefix: "/health"
-                          route:
-                            cluster: wallet_aggregator
+                        - match: { prefix: "/health" }
+                          route: { cluster: wallet_aggregator }
 
-                        - match:
-                            prefix: "/v1/mint/quote/credit"
-                          route:
-                            cluster: quote_service
+                        - match: { prefix: "/v1/mint/quote/credit" }
+                          route: { cluster: quote_service }
 
-                        - match:
-                            prefix: "/v1/mint/ebill"
-                          route:
-                            cluster: key_service
+                        - match: { prefix: "/v1/mint/ebill" }
+                          route: { cluster: key_service }
 
-                        - match:
-                            prefix: "/v1/melt/quote/onchain"
-                          route:
-                            cluster: treasury_service
+                        - match: { prefix: "/v1/melt/quote/onchain" }
+                          route: { cluster: treasury_service }
 
-                        - match:
-                            prefix: "/v1/mint/quote/onchain"
-                          route:
-                            cluster: treasury_service
+                        - match: { prefix: "/v1/mint/quote/onchain" }
+                          route: { cluster: treasury_service }
 
-                        - match:
-                            prefix: "/v1/melt/onchain"
-                          route:
-                            cluster: treasury_service
+                        - match: { prefix: "/v1/melt/onchain" }
+                          route: { cluster: treasury_service }
 
-                        - match:
-                            prefix: "/v1/mint/onchain"
-                          route:
-                            cluster: treasury_service
+                        - match: { prefix: "/v1/mint/onchain" }
+                          route: { cluster: treasury_service }
 
-                        - match:
-                            prefix: "/v1/mint"
-                          route:
-                            cluster: cdk_mintd
+                        - match: { prefix: "/v1/mint" }
+                          route: { cluster: cdk_mintd }
 
-                        - match:
-                            prefix: "/v1/melt"
-                          route:
-                            cluster: cdk_mintd
+                        - match: { prefix: "/v1/melt" }
+                          route: { cluster: cdk_mintd }
 
-                        - match:
-                            prefix: "/v1/free_money"
-                          route:
-                            cluster: treasury_service
+                        - match: { prefix: "/v1/free_money" }
+                          route: { cluster: treasury_service }
 
-                        - match:
-                            prefix: "/v1/eic"
-                          route:
-                            cluster: eic_service
-                            prefix_rewrite: "/v1"
+                        - match: { prefix: "/v1/eic" }
+                          route: { cluster: eic_service, prefix_rewrite: "/v1" }
 
-                        - match:
-                            prefix: "/v1/ens/challenge"
-                          route:
-                            cluster: ens_service
-                            prefix_rewrite: "/v1/challenge"
+                        - match: { prefix: "/v1/ens/challenge" }
+                          route: { cluster: ens_service, prefix_rewrite: "/v1/challenge" }
 
-                        - match:
-                            prefix: "/v1/ens/email/send"
-                          route:
-                            cluster: ens_service
-                            prefix_rewrite: "/v1/email/send"
+                        - match: { prefix: "/v1/ens/email/send" }
+                          route: { cluster: ens_service, prefix_rewrite: "/v1/email/send" }
 
-                        - match:
-                            prefix: "/v1/ens/email/preferences/link"
-                          route:
-                            cluster: ens_service
-                            prefix_rewrite: "/v1/email/preferences/link"
+                        - match: { prefix: "/v1/ens/email/preferences/link" }
+                          route: { cluster: ens_service, prefix_rewrite: "/v1/email/preferences/link" }
 
-                        - match:
-                            prefix: "/email/preferences"
-                          route:
-                            cluster: ens_service
+                        - match: { prefix: "/email/preferences" }
+                          route: { cluster: ens_service }
 
-                        - match:
-                            prefix: "/v1"
-                          route:
-                            cluster: wallet_aggregator
+                        - match: { prefix: "/v1" }
+                          route: { cluster: wallet_aggregator }
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
