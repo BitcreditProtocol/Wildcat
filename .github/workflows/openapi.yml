@@ -64,15 +64,6 @@ jobs:
         with:
           prefix-key: "wildcat-01"
 
-      - name: get branch name
-        id: branch-names
-        uses: tj-actions/branch-names@v9
-
-      - name: download previous openapi.json
-        continue-on-error: true
-        uses: actions/download-artifact@v7
-        with:
-          name: "openapi-${{ steps.branch-names.outputs.ref_branch }}.json"
 
       - name: compile openapi.json
         run: cargo run -p bcr-wdc-admin-aggregator --bin gen_api
@@ -80,27 +71,5 @@ jobs:
       - name: upload new openapi.json file
         uses: actions/upload-artifact@v6
         with:
-          name: "openapi-${{ steps.branch-names.outputs.ref_branch }}.json"
+          name: "openapi.json"
           path: openapi.json
-
-      # - name: compare openapi files
-      #   id: comparison
-      #   uses: swimmwatch/openapi-diff-action@v1.0.1
-      #   with:
-      #     old-spec: "openapi-${{ steps.branch-names.outputs.ref_branch }}.json"
-      #     new-spec: openapi.json
-      #     json: out.json
-      #     markdown: out.md
-      #
-      # - name: Get issue content
-      #   id: body
-      #   run: echo "body=$(cat out.md)" >> $GITHUB_OUTPUT
-      #
-      # - name: open an issue in dashboard repo
-      #   if: steps.comparison.outputs.state != 'no_changes'
-      #   uses: actions-ecosystem/action-create-issue@v1
-      #   with:
-      #     github_token: ${{ steps.app-token.outputs.token }}
-      #     title: "wildcat admin API change in ${{ steps.branch-names.outputs.ref_branch }}: ${{ steps.comparison.outputs.state }} changes"
-      #     body: ${{ steps.body.outputs.body }}
-      #     repo: BitcreditProtocol/wildcat-dashboard-ui
