@@ -10,9 +10,8 @@ members = [
     "crates/bcr-wdc-admin-aggregator",
     "crates/bcr-wdc-e2e-tests",
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
-    "crates/bcr-wdc-key-service",
+    "crates/bcr-wdc-core-service",
     "crates/bcr-wdc-quote-service",
-    "crates/bcr-wdc-swap-service",
     "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
     "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
@@ -27,7 +26,7 @@ axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.6.0"}
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.5.0-2"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
-bcr-wdc-key-service = {path = "./crates/bcr-wdc-key-service"}
+bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
