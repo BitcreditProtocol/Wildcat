@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-ebpp .
 # Expose gRPC port
 EXPOSE 9090
 
-CMD ["/ebpp/bcr-wdc-ebpp"]
+ENTRYPOINT ["/ebpp/bcr-wdc-ebpp"]
