@@ -1,0 +1,24 @@
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+
+[appcfg.keys]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "key"
+keys_table = "keys"
+mints_table = "mints"
+
+[appcfg.signatures]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "key"
+table = "signatures"
+
+[appcfg]
+starting_derivation_path = "m/129372'/0/0"
+
+[appcfg.clowder.ClowderNats]
+url = "nats://nats:4222"
+wait_ack = false

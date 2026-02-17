@@ -1,0 +1,299 @@
+services:
+  ######################################################################################## ours
+  ebpp:
+    image: wildcat/ebpp
+    volumes:
+      - ./docker/ebpp/config.toml:/ebpp/config.toml
+      - ./.docker_data/ebpp/:/data/
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  key-service:
+    image: wildcat/key-service
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      clowder-node:
+        condition: service_healthy
+    environment:
+      - KEY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/key-service/config.toml:/key-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  swap-service:
+    image: wildcat/swap-service
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      key-service:
+        condition: service_healthy
+    volumes:
+      - ./docker/swap-service/config.toml:/swap-service/config.toml
+
+  treasury-service:
+    image: wildcat/treasury-service
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      cdk-mintd:
+        condition: service_started
+    environment:
+      - TREASURY_SERVICE_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/treasury-service/config.toml:/treasury-service/config.toml
+      - ./.docker_data/treasury-service/:/data/
+
+  quote-service:
+    image: wildcat/quote-service
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      key-service:
+        condition: service_healthy
+      treasury-service:
+        condition: service_started
+      ebill-service:
+        condition: service_healthy
+      clowder-node:
+        condition: service_healthy
+    volumes:
+      - ./docker/quote-service/config.toml:/quote-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  wallet-aggregator:
+    image: wildcat/wallet-aggregator
+    depends_on:
+      key-service:
+        condition: service_healthy
+      swap-service:
+        condition: service_started # no healthcheck yet
+      cdk-mintd:
+        condition: service_started # no healthcheck yet
+    volumes:
+      - ./docker/wallet-aggregator/config.toml:/wallet-aggregator/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  admin-aggregator:
+    image: wildcat/admin-aggregator
+    depends_on:
+      key-service:
+        condition: service_healthy
+      quote-service:
+        condition: service_healthy
+      ebill-service:
+        condition: service_healthy
+      clowder-node:
+        condition: service_healthy
+    volumes:
+      - ./docker/admin-aggregator/config.toml:/admin-aggregator/config.toml
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ######################################################################################## 3rd parties
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.0
+    volumes:
+      - ./docker/keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
+    healthcheck:
+      test: "{ printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/8080"
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    volumes:
+      - ./.docker_data/surrealdb:/data
+    command:
+      - start
+      - --unauthenticated
+      - rocksdb:/data/database.db
+    user: ${UID}:${GID}
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready"]
+      interval: 5s
+      retries: 5
+
+  bitcoin-core:
+    image: bitcoin/bitcoin:28.1
+    volumes:
+      - ./docker/bitcoin-core/bitcoin.conf:/root/.bitcoin/bitcoin.conf
+      - ./docker/bitcoin-core/bitcoin.conf:/home/bitcoin/bitcoin.conf
+      - ./.docker_data/bitcoin-core/:/home/bitcoin/data
+    environment:
+      BITCOIN_DATA: /home/bitcoin/data
+
+  electrs:
+    image: getumbrel/electrs:v0.10.9
+    depends_on:
+      bitcoin-core:
+        condition: service_healthy
+    volumes:
+      - ./docker/electrs/config.toml:/data/.electrs/config.toml
+
+  cdk-mintd:
+    image: cashubtc/mintd:0.13.1
+    platform: linux/amd64
+    volumes:
+      - ./docker/cdk-mintd/config.toml:/root/.cdk-mintd/config.toml
+      - ./.docker_data/cdk-mintd/:/root/.cdk-mintd/
+    restart: unless-stopped
+    command: ["cdk-mintd"]
+    depends_on:
+      ebpp:
+        condition: service_started
+
+  bff-dashboard-service:
+    image: envoyproxy/envoy:v1.33.0
+    depends_on:
+      - keycloak
+      - admin-aggregator
+    volumes:
+      - ./docker/bff-dashboard-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: >
+      /usr/local/bin/envoy
+      -c /etc/envoy/envoy.yaml
+      --log-level info
+    networks:
+      - default
+
+  bff-wallet-service:
+    image: envoyproxy/envoy:v1.33.0
+    depends_on:
+      quote-service:
+        condition: service_healthy
+      wallet-aggregator:
+        condition: service_healthy
+      eic-service:
+        condition: service_healthy
+      ens-service:
+        condition: service_healthy
+    volumes:
+      - ./docker/bff-wallet-service/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: >
+      /usr/local/bin/envoy
+      -c /etc/envoy/envoy.yaml
+      --log-level info
+    restart: unless-stopped
+    networks:
+      - default
+
+  nats:
+    image: nats:2.11.9-alpine
+    volumes:
+      - ./docker/nats/nats-server.conf:/etc/nats/nats-server.conf
+    command: ["-c", "/etc/nats/nats-server.conf"]
+
+  ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-ebill-service:nightly
+    pull_policy: always
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/wildcat-aux-ebill-service/config.toml:/ebill-service/config.toml
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -o /dev/null --connect-timeout 2 http://localhost:3338/v1/admin/identity/detail",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  eic-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-eic-service:nightly
+    pull_policy: always
+    command: ["/eic-service/bcr-wdc-eic-service"]
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - EIC_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    volumes:
+      - ./docker/wildcat-aux-eic/config.toml:/eic-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3338/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ens-service:
+    image: ghcr.io/bitcreditprotocol/bcr-wdc-ens-service:nightly
+    pull_policy: always
+    command: ["/ens-service/bcr-wdc-ens-service"]
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    volumes:
+      - ./docker/wildcat-aux-ens/config.toml:/ens-service/config.toml
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "http://localhost:3339/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 3s
+
+  ######################################################################################## clowder
+
+  signatory:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    pull_policy: always
+    command: ["/clowder/clwdr-signatory"]
+    volumes:
+      - ./docker/clowder-signatory/settings.toml:/clowder/settings.toml
+    depends_on:
+      nats:
+        condition: service_started
+
+  clowder-node:
+    image: ghcr.io/bitcreditprotocol/clowder:nightly
+    pull_policy: always
+    command: ["/clowder/clwdr-node"]
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5

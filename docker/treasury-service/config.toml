@@ -1,0 +1,69 @@
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+[appcfg]
+credit_keys_url = "http://key-service:3338"
+monitor_interval_sec = 30
+cdk_mintd_url = "http://cdk-mintd:8085"
+clowder_url = "http://clowder-node:3010"
+signer_url = "nats://nats:4222"
+quote_expiry_seconds = 86400
+clwdr_nats_url = "nats://nats:4222"
+min_confirmations = 1
+min_melt_threshold = 1000
+min_mint_threshold = 1000
+
+[appcfg.credit_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-credit"
+secrets = "secrets"
+counters = "counters"
+signatures = "signatures"
+proofs = "proofs"
+
+[appcfg.debit_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-debit"
+table = "mint_quotes"
+onchain_melts = "onchain_melts"
+onchain_mints = "onchain_mints"
+
+[appcfg.crsatonline_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-crsat"
+foreigns_table = "online-foreigns"
+htlcs_table = "online-htlcs"
+
+[appcfg.satonline_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-sat"
+foreigns_table = "online-foreigns"
+htlcs_table = "online-htlcs"
+
+[appcfg.crsatoffline_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-crsat"
+fps_table = "offline-fps"
+proofs_table = "offline-proofs"
+
+[appcfg.satoffline_repo]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "treasury-sat"
+fps_table = "offline-fps"
+proofs_table = "offline-proofs"
+
+[appcfg.sat_wallet]
+mint_url = "http://cdk-mintd:8085"
+storage = "/data/cdk-wallet-redb.redb"
+
+[appcfg.wildcat]
+swap_service_url = "http://swap-service:3338"
+quote_service_url = "http://quote-service:3338"
+key_service_url = "http://key-service:3338"
