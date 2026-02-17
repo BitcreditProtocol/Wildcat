@@ -1,0 +1,19 @@
+
+bind_address = "0.0.0.0:3338"
+log_level = "DEBUG"
+
+[appcfg]
+cdk_mint_url = "http://cdk-mintd:8085"
+keys_client_url = "http://key-service:3338"
+swap_client_url = "http://swap-service:3338"
+treasury_client_url = "http://treasury-service:3338"
+ebpp_client_url = "http://ebpp:3338"
+signer_url = "nats://nats:4222"
+clwdr_rest_url = "http://clowder-node:3010"
+clwdr_nats_url = "nats://nats:4222"
+
+[appcfg.commit_repo_cfg]
+connection = "ws://surrealdb:8000"
+namespace = "test"
+database = "aggregator"
+table = "commitments"

@@ -1,0 +1,194 @@
+services:
+  ######################################################################################## ours
+  ebpp:
+    extends:
+      file: common-services.yml
+      service: ebpp
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      electrs:
+        condition: service_started
+    environment:
+      - EBPP_MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    pull_policy: never
+
+  key-service:
+    extends:
+      file: common-services.yml
+      service: key-service
+    pull_policy: never
+
+  swap-service:
+    extends:
+      file: common-services.yml
+      service: swap-service
+    pull_policy: never
+
+  treasury-service:
+    extends:
+      file: common-services.yml
+      service: treasury-service
+    pull_policy: never
+
+  quote-service:
+    extends:
+      file: common-services.yml
+      service: quote-service
+    pull_policy: never
+
+  wallet-aggregator:
+    extends:
+      file: common-services.yml
+      service: wallet-aggregator
+    pull_policy: never
+
+  admin-aggregator:
+    extends:
+      file: common-services.yml
+      service: admin-aggregator
+    pull_policy: never
+
+  ######################################################################################## 3rd parties
+
+  keycloak:
+    extends:
+      file: common-services.yml
+      service: keycloak
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      WDC_DASHBOARD_URL: http://localhost:5173
+      KEYCLOAK_BFF_DASHBOARD_SECRET: cute-kitties
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS: "*"
+      KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS: "*"
+      KC_DB: dev-file
+    command:
+      - start-dev
+      - --import-realm
+      - --http-port=8080
+      - --proxy-headers=xforwarded
+      - --hostname=localhost
+    ports:
+      - "8080:8080"
+
+  surrealdb:
+    extends:
+      file: common-services.yml
+      service: surrealdb
+
+  bitcoin-core:
+    extends:
+      file: common-services.yml
+      service: bitcoin-core
+    command:
+      - -printtoconsole
+      - --regtest=1
+      - -conf=/home/bitcoin/bitcoin.conf
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "--regtest", "getconnectioncount"]
+
+  electrs:
+    extends:
+      file: common-services.yml
+      service: electrs
+    environment:
+      ELECTRS_NETWORK: regtest
+      ELECTRS_DAEMON_RPC_ADDR: bitcoin-core:18443
+      ELECTRS_DAEMON_P2P_ADDR: bitcoin-core:18444
+
+  cdk-mintd:
+    extends:
+      file: common-services.yml
+      service: cdk-mintd
+
+  bff-dashboard-service:
+    extends:
+      file: common-services.yml
+      service: bff-dashboard-service
+    ports:
+      - "4242:4242"
+
+  bff-wallet-service:
+    extends:
+      file: common-services.yml
+      service: bff-wallet-service
+    ports:
+      - "4343:4242"
+
+  nats:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  nats-beta:
+    extends:
+      file: common-services.yml
+      service: nats
+
+  ######################################################################################## wildcat-auxiliary
+
+  ebill-service:
+    extends:
+      file: common-services.yml
+      service: ebill-service
+
+  eic-service:
+    extends:
+      file: common-services.yml
+      service: eic-service
+
+  ens-service:
+    extends:
+      file: common-services.yml
+      service: ens-service
+
+  ######################################################################################## clowder
+
+  signatory:
+    extends:
+      file: common-services.yml
+      service: signatory
+
+  # Signatory for Beta node
+  signatory-beta:
+    extends:
+      file: common-services.yml
+      service: signatory
+    volumes:
+      - ./docker/clowder-signatory/settings_beta.toml:/clowder/settings.toml
+
+  clowder-node:
+    extends:
+      file: common-services.yml
+      service: clowder-node
+    depends_on:
+      signatory:
+        condition: service_started
+      nats:
+        condition: service_started
+      electrs:
+        condition: service_started
+    volumes:
+      - ./docker/clowder-node/settings.toml:/clowder/settings.toml
+    ports:
+      - "3010:3010"
+      - 5001:5001/udp
+
+  # Beta node for mint
+  clowder-beta:
+    extends:
+      file: common-services.yml
+      service: clowder-node
+    volumes:
+      - ./docker/clowder-node/settings_beta.toml:/clowder/settings.toml
+    depends_on:
+      signatory-beta:
+        condition: service_started
+      nats-beta:
+        condition: service_started
+      electrs:
+        condition: service_started
+    ports:
+      - "3011:3011"
+      - 5002:5002/udp

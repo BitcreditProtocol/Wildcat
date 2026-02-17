@@ -1,0 +1,36 @@
+{
+    "realm": "dev",
+    "enabled": true,
+    "clients": [
+      {
+        "clientId": "bff-dashboard",
+        "enabled": true,
+        "publicClient": true,
+        "secret": "${KEYCLOAK_BFF_DASHBOARD_SECRET}",
+        "directAccessGrantsEnabled": true,
+        "redirectUris": ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_REDIRECT_URIS},
+        "webOrigins": ${KEYCLOAK_BFF_DASHBOARD_ALLOWED_ORIGINS}
+      },
+      {
+        "clientId": "bff-local-dev",
+        "enabled": true,
+        "publicClient": false,
+        "secret": "cute-kitties",
+        "directAccessGrantsEnabled": true,
+        "redirectUris": ["http://localhost:*", "http://127.0.0.1:*"]
+      }
+    ],
+    "users": [
+      {
+        "username": "democat",
+        "email": "democat@example.com",
+        "firstName": "Democat",
+        "lastName": "Democat",
+        "enabled": true,
+        "credentials": [
+          { "type": "password", "value": "bitcredit", "temporary": false }
+        ],
+        "realmRoles": ["offline_access","uma_authorization"]
+      }
+    ]
+}
