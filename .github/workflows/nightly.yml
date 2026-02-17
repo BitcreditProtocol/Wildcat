@@ -3,7 +3,7 @@ name: build and push nightly Docker images
 on:
   push:
     branches:
-      - '**' # temp trigger
+      - dev
 
   workflow_dispatch:
 
@@ -49,12 +49,9 @@ jobs:
             - 'crates/**'
             - 'bcr-common/**'
             - 'Cargo.toml'
-            - 'deny.toml'
-            - 'rustfmt.toml'
+            - 'Cargo.lock'
             - 'recipe.json'
-            - 'scripts/**'
             - 'docker/**/Dockerfile'
-            - '.github/workflows/nightly.yml'
 
 # ───────────────────────────────
 # build base image, cache, upload local artifact
@@ -234,7 +231,7 @@ jobs:
     needs:
       - changes
       - wildcat-images
-    if: ${{ always() && (needs.changes.outputs.code == 'false' || needs.wildcat-images.result == 'success') }}
+    if: ${{ needs.changes.outputs.code == 'true' && needs.wildcat-images.result == 'success' }}
 
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -254,6 +251,7 @@ jobs:
       - name: Dispatch deploy workflow
         env:
           GH_TOKEN: ${{ steps.deploy-token.outputs.token }}
+          WILDCAT_IMAGE_TAG: ${{ github.sha }}
         run: |
           gh workflow run deploy.yml \
             --repo BitcreditProtocol/Wildcat-deployment \
