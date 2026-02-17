@@ -3,7 +3,7 @@ name: build and push nightly Docker images
 on:
   push:
     branches:
-      - dev
+      - '**' # temp trigger
 
   workflow_dispatch:
 
