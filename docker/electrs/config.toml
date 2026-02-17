@@ -1,5 +1,0 @@
-
-db_dir = "/data/storage/index"
-electrum_rpc_addr = "0.0.0.0:50001"
-log_filters = "INFO"
-auth="electrs:bitcredit"

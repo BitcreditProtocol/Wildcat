@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-key-service .
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/key-service/bcr-wdc-key-service"]
+ENTRYPOINT ["/key-service/bcr-wdc-key-service"]

@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-wallet-aggregator .
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/wallet-aggregator/bcr-wdc-wallet-aggregator"]
+ENTRYPOINT ["/wallet-aggregator/bcr-wdc-wallet-aggregator"]

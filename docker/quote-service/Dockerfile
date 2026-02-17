@@ -10,12 +10,10 @@ RUN apt-get update \
   && apt-get clean \
   && rm --recursive --force /var/lib/apt/lists/*
 
-
-
 WORKDIR /quote-service
 COPY --from=rust-builder /wildcat/target/release/bcr-wdc-quote-service .
 
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/quote-service/bcr-wdc-quote-service"]
+ENTRYPOINT ["/quote-service/bcr-wdc-quote-service"]
