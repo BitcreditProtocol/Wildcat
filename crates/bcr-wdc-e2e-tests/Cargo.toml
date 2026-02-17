@@ -8,7 +8,6 @@ license.workspace = true
 anyhow = {workspace = true}
 bcr-common = {workspace = true, features = ["authorized"]}
 bcr-ebill-core.workspace = true
-bcr-wdc-key-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}

@@ -801,13 +801,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "bcr-wdc-core-service"
+version = "0.5.0-alpha"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-test",
+ "bcr-common",
+ "bcr-wdc-core-service",
+ "bcr-wdc-utils",
+ "bip39",
+ "bitcoin 0.32.8",
+ "chrono",
+ "clwdr-client",
+ "config",
+ "futures",
+ "mockall",
+ "rand 0.8.5",
+ "reqwest",
+ "secp256k1 0.29.1",
+ "serde",
+ "surrealdb",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "bcr-wdc-e2e-tests"
 version = "0.5.0-alpha"
 dependencies = [
  "anyhow",
  "bcr-common",
  "bcr-ebill-core",
- "bcr-wdc-key-service",
  "bcr-wdc-treasury-client",
  "bcr-wdc-utils",
  "bcr-wdc-webapi",
@@ -879,37 +909,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bcr-wdc-key-service"
-version = "0.5.0-alpha"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "axum-test",
- "bcr-common",
- "bcr-wdc-key-service",
- "bcr-wdc-utils",
- "bip39",
- "bitcoin 0.32.8",
- "chrono",
- "clwdr-client",
- "config",
- "futures",
- "itertools 0.14.0",
- "mockall",
- "reqwest",
- "secp256k1 0.29.1",
- "serde",
- "surrealdb",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "bcr-wdc-quote-service"
 version = "0.5.0-alpha"
 dependencies = [
@@ -945,35 +944,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bcr-wdc-swap-service"
-version = "0.5.0-alpha"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "axum-test",
- "bcr-common",
- "bcr-wdc-key-service",
- "bcr-wdc-swap-service",
- "bcr-wdc-utils",
- "bip39",
- "chrono",
- "config",
- "futures",
- "itertools 0.14.0",
- "mockall",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "surrealdb",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "bcr-wdc-treasury-client"
 version = "0.5.0-alpha"
 dependencies = [
@@ -999,7 +969,6 @@ dependencies = [
  "axum",
  "bcr-common",
  "bcr-ebill-core",
- "bcr-wdc-swap-service",
  "bcr-wdc-treasury-client",
  "bcr-wdc-utils",
  "bcr-wdc-webapi",

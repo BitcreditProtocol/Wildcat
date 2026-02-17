@@ -52,12 +52,10 @@ jobs:
         push: false
         load: true
 
-    - name: Build Docker Key Service
-      run: docker build -t wildcat/key-service -f docker/key-service/Dockerfile .
+    - name: Build Docker Core Service
+      run: docker build -t wildcat/core-service -f docker/core-service/Dockerfile .
     - name: Build Docker Treasury Service
       run: docker build -t wildcat/treasury-service -f docker/treasury-service/Dockerfile .
-    - name: Build Docker Swap Service
-      run: docker build -t wildcat/swap-service -f docker/swap-service/Dockerfile .
     - name: Build Docker Quote Service
       run: docker build -t wildcat/quote-service -f docker/quote-service/Dockerfile .
     - name: Build Docker Wallet Aggregator
