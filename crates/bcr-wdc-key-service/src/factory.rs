@@ -17,7 +17,7 @@ pub struct Factory {
 }
 
 impl Factory {
-    pub const MAX_ORDER: u8 = 20;
+    pub const MAX_ORDER: u8 = 32;
     pub const CURRENCY_UNIT: &'static str = "crsat";
 
     pub fn new(seed: &[u8], derivation: btc32::DerivationPath) -> Self {
