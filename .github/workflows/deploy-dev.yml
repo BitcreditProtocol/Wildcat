@@ -112,6 +112,7 @@ jobs:
           IMAGE_TAG=nightly
 
           DATA_PATH=${{ env.DATA_PATH }}
+          ROOT_FOLDER=${{ env.DATA_PATH }}
 
           # Dashboard
           WDC_DASHBOARD_URL="${{ secrets.WDC_DASHBOARD_URL }}"
@@ -161,7 +162,7 @@ jobs:
       - name: Validate compose config
         run: |
           docker compose \
-          -f docker-compose.yml \
+          -f deploy/wildcat-dev/docker-compose.yml \
           -f deployment-configuration.yml \
           config --quiet
         working-directory: ${{ env.DEPLOY_PATH }}
@@ -170,7 +171,7 @@ jobs:
         id: pull
         run: |
             docker compose \
-            -f docker-compose.yml \
+            -f deploy/wildcat-dev/docker-compose.yml \
             -f deployment-configuration.yml \
             pull
         working-directory: ${{ env.DEPLOY_PATH }}
@@ -178,7 +179,7 @@ jobs:
       - name: 'Tear Down Previous Deployment'
         run: |
             docker compose \
-            -f docker-compose.yml \
+            -f deploy/wildcat-dev/docker-compose.yml \
             -f deployment-configuration.yml \
             down --remove-orphans --timeout 30
         working-directory: ${{ env.DEPLOY_PATH }}
@@ -212,7 +213,7 @@ jobs:
       - name: 'Deploy'
         run: |
             docker compose \
-            -f docker-compose.yml \
+            -f deploy/wildcat-dev/docker-compose.yml \
             -f deployment-configuration.yml \
             up -d --force-recreate
         working-directory: ${{ env.DEPLOY_PATH }}
