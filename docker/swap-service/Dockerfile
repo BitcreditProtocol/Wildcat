@@ -10,12 +10,10 @@ RUN apt-get update \
   && apt-get clean \
   && rm --recursive --force /var/lib/apt/lists/*
 
-
-
 WORKDIR /swap-service
 COPY --from=rust-builder /wildcat/target/release/bcr-wdc-swap-service .
 
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/swap-service/bcr-wdc-swap-service"]
+ENTRYPOINT ["/swap-service/bcr-wdc-swap-service"]

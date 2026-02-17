@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-treasury-service .
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/treasury-service/bcr-wdc-treasury-service"]
+ENTRYPOINT ["/treasury-service/bcr-wdc-treasury-service"]

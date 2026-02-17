@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-e2e-tests .
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/e2e-tests/bcr-wdc-e2e-tests"]
+ENTRYPOINT ["/e2e-tests/bcr-wdc-e2e-tests"]
