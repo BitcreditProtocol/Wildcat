@@ -16,4 +16,4 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-admin-aggregator .
 # Expose web server port
 EXPOSE 3338
 
-CMD ["/admin-aggregator/bcr-wdc-admin-aggregator"]
+ENTRYPOINT ["/admin-aggregator/bcr-wdc-admin-aggregator"]
