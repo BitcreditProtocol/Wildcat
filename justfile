@@ -19,14 +19,11 @@ system-info:
 build-docker-base-image:
     docker build --ssh default -t wildcat/base-image -f docker/base-image/Dockerfile .
 
-build-docker-key-service: build-docker-base-image
-    docker build -t wildcat/key-service -f docker/key-service/Dockerfile .
+build-docker-core-service: build-docker-base-image
+    docker build -t wildcat/core-service -f docker/core-service/Dockerfile .
 
 build-docker-treasury-service: build-docker-base-image
     docker build -t wildcat/treasury-service -f docker/treasury-service/Dockerfile .
-
-build-docker-swap-service: build-docker-base-image
-    docker build -t wildcat/swap-service -f docker/swap-service/Dockerfile .
 
 build-docker-quote-service: build-docker-base-image
     docker build -t wildcat/quote-service -f docker/quote-service/Dockerfile .
@@ -49,7 +46,7 @@ build-docker-balance-collector: build-docker-base-image
 build-docker-e2e-tests: build-docker-base-image
     docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
 
-build-docker-images: build-docker-key-service build-docker-treasury-service build-docker-swap-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator build-docker-ebpp
+build-docker-images: build-docker-core-service build-docker-treasury-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator build-docker-ebpp
 
 openapi-generate-docs:
   @cargo run --package bcr-wdc-admin-aggregator --bin gen_api
