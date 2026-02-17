@@ -111,12 +111,10 @@ jobs:
       #max-parallel: 1
       matrix:
         service:
-          - name: bcr-wdc-key-service
-            dockerfile: docker/key-service/Dockerfile
+          - name: bcr-wdc-core-service
+            dockerfile: docker/core-service/Dockerfile
           - name: bcr-wdc-treasury-service
             dockerfile: docker/treasury-service/Dockerfile
-          - name: bcr-wdc-swap-service
-            dockerfile: docker/swap-service/Dockerfile
           - name: bcr-wdc-quote-service
             dockerfile: docker/quote-service/Dockerfile
           - name: bcr-wdc-wallet-aggregator
