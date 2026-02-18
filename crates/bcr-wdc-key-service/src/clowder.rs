@@ -12,6 +12,7 @@ use crate::{
 // ----- end imports
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(tag = "type")]
 pub enum ClowderClientConfig {
     #[default]
     Dummy,
