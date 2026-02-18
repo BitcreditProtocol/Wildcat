@@ -21,7 +21,9 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo
         quotes::StatusDiscriminants::Denied => wire_quotes::InfoReplyDiscriminants::Denied,
         quotes::StatusDiscriminants::Rejected => wire_quotes::InfoReplyDiscriminants::Rejected,
         quotes::StatusDiscriminants::Accepted => wire_quotes::InfoReplyDiscriminants::Accepted,
-        quotes::StatusDiscriminants::MintingEnabled => wire_quotes::InfoReplyDiscriminants::Minting,
+        quotes::StatusDiscriminants::MintingEnabled => {
+            wire_quotes::InfoReplyDiscriminants::MintingEnabled
+        }
     };
     wire_quotes::LightInfo {
         id: quote.id,
@@ -65,7 +67,7 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
         Some(wire_quotes::InfoReplyDiscriminants::Accepted) => {
             Some(quotes::StatusDiscriminants::Accepted)
         }
-        Some(wire_quotes::InfoReplyDiscriminants::Minting) => {
+        Some(wire_quotes::InfoReplyDiscriminants::MintingEnabled) => {
             Some(quotes::StatusDiscriminants::MintingEnabled)
         }
     };
@@ -104,16 +106,7 @@ pub async fn list_quotes(
 }
 
 /// --------------------------- Look up request
-fn convert_mint_status(status: service::MintingStatus) -> wire_quotes::MintingStatus {
-    match status {
-        service::MintingStatus::Disabled => wire_quotes::MintingStatus::Disabled,
-        service::MintingStatus::Enabled(minted) => wire_quotes::MintingStatus::Enabled { minted },
-    }
-}
-fn convert_to_info_reply(
-    quote: quotes::Quote,
-    minting_status: service::MintingStatus,
-) -> wire_quotes::InfoReply {
+fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
     match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::InfoReply::Pending {
             id: quote.id,
@@ -172,13 +165,12 @@ fn convert_to_info_reply(
             fee,
             discounted,
             ..
-        } => wire_quotes::InfoReply::Minting {
+        } => wire_quotes::InfoReply::MintingEnabled {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
             keyset_id,
             discounted,
             fee,
-            minting_status: convert_mint_status(minting_status),
         },
     }
 }
@@ -191,8 +183,8 @@ pub async fn lookup_quote(
     tracing::debug!("Received mint quote lookup request {id}");
 
     let now = chrono::Utc::now();
-    let (quote, minting_status) = ctrl.lookup(id, now).await?;
-    let response = convert_to_info_reply(quote, minting_status);
+    let quote = ctrl.lookup(id, now).await?;
+    let response = convert_to_info_reply(quote);
     Ok(Json(response))
 }
 
