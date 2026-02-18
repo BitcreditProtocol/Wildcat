@@ -243,14 +243,9 @@ impl Service {
         Ok(())
     }
 
-    pub async fn lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<(Quote, MintingStatus)> {
+    pub async fn lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
         let quote = self._lookup(qid, now).await?;
-        let minting_status = if matches!(quote.status, Status::MintingEnabled { .. }) {
-            self.keys_hndlr.get_minting_status(qid).await?
-        } else {
-            MintingStatus::Disabled
-        };
-        Ok((quote, minting_status))
+        Ok(quote)
     }
 
     pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
