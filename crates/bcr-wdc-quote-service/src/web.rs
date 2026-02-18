@@ -6,11 +6,7 @@ use bcr_common::{
     wire::quotes as wire_quotes,
 };
 // ----- local imports
-use crate::{
-    error::Result,
-    quotes,
-    service::{self, Service},
-};
+use crate::{error::Result, quotes, service::Service};
 
 // ----- end imports
 
@@ -40,16 +36,7 @@ pub async fn enquire_quote(
 }
 
 /// --------------------------- Look up quote
-fn convert_mint_status(status: service::MintingStatus) -> wire_quotes::MintingStatus {
-    match status {
-        service::MintingStatus::Disabled => wire_quotes::MintingStatus::Disabled,
-        service::MintingStatus::Enabled(minted) => wire_quotes::MintingStatus::Enabled { minted },
-    }
-}
-fn convert_to_enquire_reply(
-    quote: quotes::Quote,
-    minting_status: service::MintingStatus,
-) -> wire_quotes::StatusReply {
+fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
     match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::StatusReply::Pending,
         quotes::Status::Canceled { tstamp } => wire_quotes::StatusReply::Canceled { tstamp },
@@ -63,7 +50,7 @@ fn convert_to_enquire_reply(
             keyset_id,
             expiration_date: ttl,
             discounted,
-            minting_pubkey: wallet_pubkey,
+            wallet_pubkey,
         },
         quotes::Status::OfferExpired { tstamp, discounted } => {
             wire_quotes::StatusReply::OfferExpired { tstamp, discounted }
@@ -78,8 +65,7 @@ fn convert_to_enquire_reply(
         } => wire_quotes::StatusReply::Accepted {
             keyset_id,
             discounted,
-            minting_pubkey: wallet_pubkey,
-            minting_status: convert_mint_status(minting_status),
+            wallet_pubkey,
         },
         quotes::Status::MintingEnabled {
             keyset_id,
@@ -89,8 +75,7 @@ fn convert_to_enquire_reply(
         } => wire_quotes::StatusReply::Accepted {
             keyset_id,
             discounted,
-            minting_pubkey: wallet_pubkey,
-            minting_status: convert_mint_status(minting_status),
+            wallet_pubkey,
         },
     }
 }
@@ -102,8 +87,8 @@ pub async fn lookup_quote(
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
     let now = chrono::Utc::now();
-    let (quote, mint_status) = ctrl.lookup(id, now).await?;
-    Ok(Json(convert_to_enquire_reply(quote, mint_status)))
+    let quote = ctrl.lookup(id, now).await?;
+    Ok(Json(convert_to_enquire_reply(quote)))
 }
 
 /// --------------------------- Resolve quote offer
@@ -131,7 +116,7 @@ pub async fn cancel(
 
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
-    let (quote, mint_status) = ctrl.lookup(id, now).await?;
-    let reply = convert_to_enquire_reply(quote, mint_status);
+    let quote = ctrl.lookup(id, now).await?;
+    let reply = convert_to_enquire_reply(quote);
     Ok(Json(reply))
 }
