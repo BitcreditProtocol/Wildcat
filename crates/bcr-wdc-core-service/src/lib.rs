@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use bcr_common::{client::keys::Client as KeysClient, client::swap::Client as SwapClient};
+use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
 mod admin;
@@ -22,10 +23,10 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    keys: persistence::surreal::DBConnectionConfig,
-    mintops: persistence::surreal::DBConnectionConfig,
-    proofs: persistence::surreal::DBConnectionConfig,
-    signatures: persistence::surreal::DBConnectionConfig,
+    keys: surreal::DBConnConfig,
+    mintops: surreal::DBConnConfig,
+    proofs: surreal::DBConnConfig,
+    signatures: surreal::DBConnConfig,
     clowder: keys::clowder::ClowderClientConfig,
     starting_derivation_path: btc32::DerivationPath,
 }

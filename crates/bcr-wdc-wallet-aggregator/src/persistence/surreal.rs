@@ -4,6 +4,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::cashu;
+use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1::schnorr::Signature;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 // ----- local imports
@@ -23,30 +24,20 @@ struct CommitmentDBEntry {
     expiration: TStamp,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct DBCommitmentsConnectionConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-    pub table: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct DBCommitments {
     db: Surreal<Any>,
-    table: String,
 }
 
 impl DBCommitments {
-    pub async fn new(cfg: DBCommitmentsConnectionConfig) -> SurrealResult<Self> {
+    const TABLE: &'static str = "commitments";
+
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: cfg.table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
@@ -55,7 +46,7 @@ impl commitment::Repository for DBCommitments {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         self.db
             .query("DELETE FROM type::table($table) WHERE expiration < $now")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("now", now))
             .await
             .map_err(|e| Error::DB(anyhow!("SurrealDB error: {}", e)))?;
@@ -66,7 +57,7 @@ impl commitment::Repository for DBCommitments {
         let commitment: Option<CommitmentDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(inputs, $ys)) = false LIMIT 1")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("ys", ys.to_vec()))
             .await
             .map_err(|e| Error::DB(anyhow!("SurrealDB error: {}", e)))?
@@ -78,7 +69,7 @@ impl commitment::Repository for DBCommitments {
         let commitment: Option<CommitmentDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(outputs, $secrets)) = false LIMIT 1")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("secrets", secrets.to_vec()))
             .await
             .map_err(|e| Error::DB(anyhow!("SurrealDB error: {}", e)))?
@@ -94,7 +85,7 @@ impl commitment::Repository for DBCommitments {
         expiration: TStamp,
         signature: Signature,
     ) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.table, signature.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
         let entry = CommitmentDBEntry {
             id: rid.clone(),
             inputs,
@@ -123,7 +114,7 @@ impl commitment::Repository for DBCommitments {
         array::is_empty(array::difference(outputs, $outputs))
     LIMIT 1",
             )
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("inputs", inputs.to_vec()))
             .bind(("outputs", outputs.to_vec()))
             .await
@@ -139,7 +130,7 @@ impl commitment::Repository for DBCommitments {
     }
 
     async fn delete(&self, commitment: Signature) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.table, commitment.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, commitment.to_string());
         let _: Option<CommitmentDBEntry> =
             self.db.delete(rid).await.map_err(|e| {
                 Error::DB(anyhow!("SurrealDB error while deleting commitment: {}", e))
@@ -160,10 +151,7 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBCommitments {
-            db: sdb,
-            table: String::from("test"),
-        }
+        DBCommitments { db: sdb }
     }
 
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {

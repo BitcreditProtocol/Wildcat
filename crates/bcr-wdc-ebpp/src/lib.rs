@@ -7,6 +7,7 @@ use axum::{
     routing::{get, Router},
 };
 use bcr_common::cdk_payment_processor::PaymentProcessorServer;
+use bcr_wdc_utils::surreal;
 use bdk_wallet::{bitcoin as btc, miniscript::ToPublicKey};
 use serde_with::serde_as;
 // ----- local modules
@@ -34,8 +35,8 @@ pub type ProdService = service::Service;
 pub struct AppConfig {
     grpc_address: std::net::SocketAddr,
     onchain: onchain::WalletConfig,
-    private_keys: persistence::surreal::ConnectionConfig,
-    payments: persistence::surreal::PaymentConnectionConfig,
+    private_keys: surreal::DBConnConfig,
+    payments: surreal::DBConnConfig,
     ebill_client: ebill::EBillClientConfig,
     electrum_url: String,
     #[serde_as(as = "serde_with::DurationSeconds<i64>")]
