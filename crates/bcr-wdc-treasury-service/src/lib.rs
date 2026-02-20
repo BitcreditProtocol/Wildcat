@@ -8,6 +8,7 @@ use axum::{
 };
 use bcr_common::{cashu, cdk};
 use bcr_wdc_treasury_client::TreasuryClient;
+use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1;
 use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
@@ -38,11 +39,11 @@ type ProdSatKeysClient = foreign::clients::SatKeysClient;
 pub struct AppConfig {
     credit_keys_url: reqwest::Url,
     cdk_mintd_url: cashu::MintUrl,
-    debit_repo: persistence::surreal::DebitConnectionConfig,
-    crsatonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
-    crsatoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
-    satonline_repo: persistence::surreal::ForeignOnlineConnectionConfig,
-    satoffline_repo: persistence::surreal::ForeignOfflineConnectionConfig,
+    debit_repo: surreal::DBConnConfig,
+    crsatonline_repo: surreal::DBConnConfig,
+    crsatoffline_repo: surreal::DBConnConfig,
+    satonline_repo: surreal::DBConnConfig,
+    satoffline_repo: surreal::DBConnConfig,
     clowder_url: reqwest::Url,
     clwdr_nats_url: Option<reqwest::Url>,
     signer_url: reqwest::Url,
