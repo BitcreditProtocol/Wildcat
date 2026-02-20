@@ -11,7 +11,7 @@ use bcr_common::{
     cdk_common::mint::MintKeySetInfo,
     core::BillId,
 };
-use bcr_wdc_utils::keys::KeysetEntry;
+use bcr_wdc_utils::{keys::KeysetEntry, surreal};
 use bitcoin::bip32::DerivationPath;
 use surrealdb::{
     engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
@@ -26,14 +26,6 @@ use crate::{
 };
 
 // ----- end imports
-
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct DBConnectionConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-    pub table: String,
-}
 
 //////////////////////////////////////////////////////////////////////// Keys DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -127,27 +119,24 @@ impl std::convert::From<KeysDBEntry> for KeysetEntry {
 #[derive(Debug, Clone)]
 pub struct DBKeys {
     db: Surreal<surrealdb::engine::any::Any>,
-    table: String,
 }
 
 impl DBKeys {
-    pub async fn new(cfg: DBConnectionConfig) -> SurrealResult<Self> {
+    const TABLE: &'static str = "keys";
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: cfg.table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
 #[async_trait]
 impl persistence::KeysRepository for DBKeys {
     async fn store(&self, entry: KeysetEntry) -> Result<()> {
-        let rid = RecordId::from_table_key(self.table.clone(), entry.0.id.to_string());
-        let dbentry = convert_to_keysdbentry(entry, &self.table);
+        let rid = RecordId::from_table_key(Self::TABLE, entry.0.id.to_string());
+        let dbentry = convert_to_keysdbentry(entry, Self::TABLE);
         let _resp: Option<KeysDBEntry> = self
             .db
             .insert(rid)
@@ -157,7 +146,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(())
     }
     async fn info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
-        let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let info: Option<KeysInfoDBEntry> = self
             .db
             .query("SELECT VALUE info FROM $rid")
@@ -170,7 +159,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(info)
     }
     async fn keyset(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
-        let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let entry: Option<KeysDBEntry> = self
             .db
             .select(rid)
@@ -183,7 +172,7 @@ impl persistence::KeysRepository for DBKeys {
         let infos: Vec<KeysInfoDBEntry> = self
             .db
             .query("SELECT VALUE info FROM type::table($table)")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
@@ -195,7 +184,7 @@ impl persistence::KeysRepository for DBKeys {
         let response: Vec<KeysDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table)")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
@@ -210,7 +199,7 @@ impl persistence::KeysRepository for DBKeys {
     async fn update_info(&self, info: MintKeySetInfo) -> Result<()> {
         let info = KeysInfoDBEntry::from(info);
         let kid = info.kid;
-        let rid = RecordId::from_table_key(self.table.clone(), kid.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let entry: Option<KeysDBEntry> = self
             .db
             .query("UPDATE $rid SET info = $info RETURN BEFORE")
@@ -232,7 +221,7 @@ impl persistence::KeysRepository for DBKeys {
             // WARNING: https://github.com/surrealdb/surrealdb/issues/6405
             // .query("SELECT info FROM type::table($table) WHERE info.final_expiry > $tstamp ORDER BY info.final_expiry ASC")
             .query("SELECT VALUE info FROM type::table($table) WHERE info.final_expiry >= $expire")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("expire", expire))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
@@ -291,19 +280,16 @@ impl std::convert::From<MintOpDBEntry> for MintOperation {
 #[derive(Debug, Clone)]
 pub struct DBMintOps {
     db: Surreal<surrealdb::engine::any::Any>,
-    table: String,
 }
 
 impl DBMintOps {
-    pub async fn new(cfg: DBConnectionConfig) -> SurrealResult<Self> {
+    const TABLE: &'static str = "mints";
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: cfg.table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
@@ -311,7 +297,7 @@ impl DBMintOps {
 impl persistence::MintOpRepository for DBMintOps {
     async fn store(&self, mint_op: MintOperation) -> Result<()> {
         let uid = mint_op.uid;
-        let entry = convert_to_mintopdbentry(mint_op, &self.table);
+        let entry = convert_to_mintopdbentry(mint_op, Self::TABLE);
         let res: SurrealResult<Option<MintOpDBEntry>> =
             self.db.insert(&entry.id).content(entry).await;
         match res {
@@ -324,7 +310,7 @@ impl persistence::MintOpRepository for DBMintOps {
     }
 
     async fn load(&self, uid: Uuid) -> Result<MintOperation> {
-        let rid = RecordId::from_table_key(&self.table, uid);
+        let rid = RecordId::from_table_key(Self::TABLE, uid);
         let res: SurrealResult<Option<MintOpDBEntry>> = self.db.select(rid.clone()).await;
         match res {
             Ok(Some(entry)) => Ok(MintOperation::from(entry)),
@@ -337,7 +323,7 @@ impl persistence::MintOpRepository for DBMintOps {
         let ops: Vec<MintOpDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE kid == $kid")
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::TABLE))
             .bind(("kid", kid))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
@@ -348,7 +334,7 @@ impl persistence::MintOpRepository for DBMintOps {
         Ok(ops)
     }
     async fn update(&self, uid: Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
-        let rid = RecordId::from_table_key(self.table.clone(), uid);
+        let rid = RecordId::from_table_key(Self::TABLE, uid);
         let before: Option<MintOpDBEntry> = self
             .db
             .query("UPDATE $rid SET minted = $new WHERE minted == $old RETURN BEFORE")
@@ -401,26 +387,24 @@ impl std::convert::From<SignatureDBEntry> for cashu::BlindSignature {
 #[derive(Debug, Clone)]
 pub struct DBSignatures {
     db: Surreal<surrealdb::engine::any::Any>,
-    table: String,
 }
 
 impl DBSignatures {
-    pub async fn new(cfg: DBConnectionConfig) -> SurrealResult<Self> {
+    const TABLE: &'static str = "signatures";
+
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: cfg.table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
 #[async_trait]
 impl persistence::SignaturesRepository for DBSignatures {
     async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
-        let rid = RecordId::from_table_key(self.table.clone(), y.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, y.to_string());
         let entry = SignatureDBEntry::from(signature);
         let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
         match r {
@@ -432,7 +416,7 @@ impl persistence::SignaturesRepository for DBSignatures {
         }
     }
     async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>> {
-        let rid = RecordId::from_table_key(self.table.clone(), blind.blinded_secret.to_string());
+        let rid = RecordId::from_table_key(Self::TABLE, blind.blinded_secret.to_string());
         let entry: Option<SignatureDBEntry> = self
             .db
             .select(rid)
@@ -466,19 +450,16 @@ fn convert_to_db(proof: &cashu::Proof, table: &str) -> Result<DBProof> {
 #[derive(Debug, Clone)]
 pub struct DBProofs {
     db: Surreal<surrealdb::engine::any::Any>,
-    table: String,
 }
 
 impl DBProofs {
-    pub async fn new(cfg: DBConnectionConfig) -> SurrealResult<Self> {
+    const TABLE: &'static str = "proofs";
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: cfg.table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
@@ -487,7 +468,7 @@ impl persistence::ProofRepository for DBProofs {
     async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()> {
         let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
         for tk in tokens {
-            let db_entry = convert_to_db(tk, &self.table)?;
+            let db_entry = convert_to_db(tk, Self::TABLE)?;
             entries.push(db_entry);
         }
         let _: Vec<DBProof> = self
@@ -506,7 +487,7 @@ impl persistence::ProofRepository for DBProofs {
 
     async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()> {
         for tk in tokens {
-            let rid = proof_to_record_id(&self.table, tk)?;
+            let rid = proof_to_record_id(Self::TABLE, tk)?;
             let _p: Option<cashu::Proof> = self
                 .db
                 .delete(rid)
@@ -517,7 +498,7 @@ impl persistence::ProofRepository for DBProofs {
     }
 
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
-        let rid = y_to_record_id(&self.table, y);
+        let rid = y_to_record_id(Self::TABLE, y);
         let res: Option<DBProof> = self
             .db
             .select(rid)
@@ -554,18 +535,15 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBKeys {
-            db: sdb,
-            table: String::from("test"),
-        }
+        DBKeys { db: sdb }
     }
 
     #[tokio::test]
     async fn info() {
         let db = init_keys_mem_db().await;
         let (info, keyset) = keys_test::generate_random_keyset();
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
-        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
+        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
 
         let rinfo = db.info(info.id).await.unwrap().unwrap();
@@ -577,14 +555,14 @@ mod tests {
         let db = init_keys_mem_db().await;
         {
             let (info, keyset) = keys_test::generate_random_keyset();
-            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
             let (info, keyset) = keys_test::generate_random_keyset();
-            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
 
@@ -596,8 +574,8 @@ mod tests {
     async fn keyset() {
         let db = init_keys_mem_db().await;
         let (info, keyset) = keys_test::generate_random_keyset();
-        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset.clone()), &db.table);
+        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+        let dbkeys = convert_to_keysdbentry((info.clone(), keyset.clone()), DBKeys::TABLE);
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
 
         let rkeys = db.keyset(info.id).await.unwrap().unwrap();
@@ -609,14 +587,14 @@ mod tests {
         let db = init_keys_mem_db().await;
         {
             let (info, keyset) = keys_test::generate_random_keyset();
-            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
             let (info, keyset) = keys_test::generate_random_keyset();
-            let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         let rkeys = db.list_keyset().await.unwrap();
@@ -627,8 +605,8 @@ mod tests {
     async fn update_info() {
         let db = init_keys_mem_db().await;
         let (mut info, keyset) = keys_test::generate_random_keyset();
-        let rid = RecordId::from_table_key(db.table.clone(), info.id.to_string());
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), &db.table);
+        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         info.active = false;
         db.update_info(info.clone()).await.unwrap();
@@ -670,10 +648,7 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBMintOps {
-            db: sdb,
-            table: String::from("test"),
-        }
+        DBMintOps { db: sdb }
     }
 
     #[tokio::test]
@@ -790,10 +765,7 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBSignatures {
-            db: sdb,
-            table: String::from("test"),
-        }
+        DBSignatures { db: sdb }
     }
 
     #[tokio::test]
@@ -822,20 +794,17 @@ mod tests {
         assert!(matches!(res, Err(Error::SignatureAlreadyExists(..))));
     }
 
-    async fn init_mem_db() -> DBProofs {
+    async fn init_proofs_mem_db() -> DBProofs {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBProofs {
-            db: sdb,
-            table: "test".to_string(),
-        }
+        DBProofs { db: sdb }
     }
 
     #[tokio::test]
     async fn test_insert() {
-        let db = init_mem_db().await;
+        let db = init_proofs_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
         let proofs = signatures_test::generate_proofs(
             &keyset,
@@ -843,12 +812,12 @@ mod tests {
         );
         db.insert(&proofs).await.unwrap();
 
-        let rid = proof_to_record_id(&db.table, &proofs[0]).expect("Failed to get record id");
+        let rid = proof_to_record_id(DBProofs::TABLE, &proofs[0]).expect("Failed to get record id");
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
         assert_eq!(res.unwrap().secret, proofs[0].secret);
 
-        let rid = proof_to_record_id(&db.table, &proofs[1]).expect("Failed to get record id");
+        let rid = proof_to_record_id(DBProofs::TABLE, &proofs[1]).expect("Failed to get record id");
         let res: Option<DBProof> = db.db.select(rid).await.unwrap();
         assert!(res.is_some());
         assert_eq!(res.unwrap().secret, proofs[1].secret);
@@ -856,7 +825,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_double_spent_all() {
-        let db = init_mem_db().await;
+        let db = init_proofs_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
         let proofs = signatures_test::generate_proofs(
             &keyset,
@@ -871,7 +840,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_double_spent_partial() {
-        let db = init_mem_db().await;
+        let db = init_proofs_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
         let proofs = signatures_test::generate_proofs(
             &keyset,
@@ -890,7 +859,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_double_spent_partial_still_valid() {
-        let db = init_mem_db().await;
+        let db = init_proofs_mem_db().await;
         let (_, keyset) = keys_test::generate_keyset();
         let proofs = signatures_test::generate_proofs(
             &keyset,

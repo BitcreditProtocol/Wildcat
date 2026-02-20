@@ -6,6 +6,7 @@ use bcr_common::{
     cashu::{self, secret::Secret, Amount},
     wire::keys as wire_keys,
 };
+use bcr_wdc_utils::surreal;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
 use uuid::Uuid;
@@ -67,42 +68,29 @@ impl std::convert::From<DBEntryPremintSecret> for cashu::PreMintSecrets {
     }
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct DebitConnectionConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-    pub table: String,
-    pub onchain_melts: String,
-    pub onchain_mints: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct DebitRepository {
     db: Surreal<Any>,
-    table: String,
-    onchain_melts: String,
-    onchain_mints: String,
 }
+
 impl DebitRepository {
-    pub async fn new(config: DebitConnectionConfig) -> SurrealResult<Self> {
+    const QUOTES_TABLE: &'static str = "mint_quotes";
+    const MELTS_TABLE: &'static str = "onchain_melts";
+    const MINTS_TABLE: &'static str = "onchain_mints";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(config.connection).await?;
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
-        Ok(Self {
-            db: db_connection,
-            table: config.table,
-            onchain_melts: config.onchain_melts,
-            onchain_mints: config.onchain_mints,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
 #[async_trait]
 impl persistence::Repository for DebitRepository {
     async fn store_quote(&self, quote: debit::MintQuote) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
+        let rid = RecordId::from_table_key(Self::QUOTES_TABLE, quote.qid.clone());
         let _: Option<debit::MintQuote> = self
             .db
             .insert(rid)
@@ -113,7 +101,7 @@ impl persistence::Repository for DebitRepository {
     }
 
     async fn update_quote(&self, quote: debit::MintQuote) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.table, quote.qid.clone());
+        let rid = RecordId::from_table_key(Self::QUOTES_TABLE, quote.qid.clone());
         let _: Option<debit::MintQuote> = self
             .db
             .update(rid)
@@ -128,7 +116,7 @@ impl persistence::Repository for DebitRepository {
         let entries: Vec<debit::MintQuote> = self
             .db
             .query(statement)
-            .bind(("table", self.table.clone()))
+            .bind(("table", Self::QUOTES_TABLE))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -141,7 +129,7 @@ impl persistence::Repository for DebitRepository {
         quote_id: uuid::Uuid,
         data: debit::OnchainMeltQuote,
     ) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, quote_id);
         let _: Option<debit::OnchainMeltQuote> = self
             .db
             .insert(rid)
@@ -152,7 +140,7 @@ impl persistence::Repository for DebitRepository {
     }
 
     async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<debit::OnchainMeltQuote> {
-        let rid = RecordId::from_table_key(&self.onchain_melts, quote_id);
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, quote_id);
         let result: Option<debit::OnchainMeltQuote> = self
             .db
             .select(rid)
@@ -166,7 +154,7 @@ impl persistence::Repository for DebitRepository {
         quote_id: uuid::Uuid,
         data: debit::ClowderMintQuoteOnchain,
     ) -> Result<()> {
-        let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
+        let rid = RecordId::from_table_key(Self::MINTS_TABLE, quote_id);
         let _: Option<debit::ClowderMintQuoteOnchain> = self
             .db
             .insert(rid)
@@ -180,7 +168,7 @@ impl persistence::Repository for DebitRepository {
         &self,
         quote_id: uuid::Uuid,
     ) -> Result<debit::ClowderMintQuoteOnchain> {
-        let rid = RecordId::from_table_key(&self.onchain_mints, quote_id);
+        let rid = RecordId::from_table_key(Self::MINTS_TABLE, quote_id);
         let result: Option<debit::ClowderMintQuoteOnchain> = self
             .db
             .select(rid)
@@ -207,33 +195,21 @@ struct ForeignOnlineHtlcProofEntry {
     hash: Sha256Hash,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct ForeignOnlineConnectionConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-    pub foreigns_table: String,
-    pub htlcs_table: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct ForeignOnlineRepository {
     db: Surreal<Any>,
-    foreigns_table: String,
-    htlcs_table: String,
 }
 
 impl ForeignOnlineRepository {
-    pub async fn new(config: ForeignOnlineConnectionConfig) -> SurrealResult<Self> {
+    const FOREIGNS_TABLE: &'static str = "online-foreigns";
+    const HTLCS_TABLE: &'static str = "online-htlcs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(config.connection).await?;
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
-        Ok(Self {
-            db: db_connection,
-            foreigns_table: config.foreigns_table,
-            htlcs_table: config.htlcs_table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
@@ -246,7 +222,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
     ) -> Result<()> {
         let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
-            let rid = RecordId::from_table_key(&self.foreigns_table, proof.y()?.to_string());
+            let rid = RecordId::from_table_key(Self::FOREIGNS_TABLE, proof.y()?.to_string());
             entries.push(ForeignProofEntry {
                 id: rid,
                 proof,
@@ -256,7 +232,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
         }
         let _: Vec<ForeignProofEntry> = self
             .db
-            .insert(&self.foreigns_table)
+            .insert(Self::FOREIGNS_TABLE)
             .content(entries)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -268,7 +244,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
         let entries: Vec<ForeignProofEntry> = self
             .db
             .query(statement)
-            .bind(("table", self.foreigns_table.clone()))
+            .bind(("table", Self::FOREIGNS_TABLE))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -294,7 +270,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
     ) -> Result<()> {
         let mut entries: Vec<ForeignOnlineHtlcProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs {
-            let id = RecordId::from_table_key(&self.htlcs_table, proof.y()?.to_string());
+            let id = RecordId::from_table_key(Self::HTLCS_TABLE, proof.y()?.to_string());
             let entry = ForeignOnlineHtlcProofEntry {
                 hash,
                 id,
@@ -306,7 +282,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
         }
         let _: Vec<ForeignOnlineHtlcProofEntry> = self
             .db
-            .insert(&self.htlcs_table)
+            .insert(Self::HTLCS_TABLE)
             .content(entries)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -320,7 +296,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
         let htlcs: Vec<ForeignOnlineHtlcProofEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE hash = $hash")
-            .bind(("table", self.htlcs_table.clone()))
+            .bind(("table", Self::HTLCS_TABLE))
             .bind(("hash", *hash))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -342,7 +318,7 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
 
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         for y in ys {
-            let rid = RecordId::from_table_key(&self.htlcs_table, y.to_string());
+            let rid = RecordId::from_table_key(Self::HTLCS_TABLE, y.to_string());
             let _: Option<ForeignOnlineHtlcProofEntry> = self
                 .db
                 .delete(rid)
@@ -353,33 +329,21 @@ impl foreign::OnlineRepository for ForeignOnlineRepository {
     }
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct ForeignOfflineConnectionConfig {
-    pub connection: String,
-    pub namespace: String,
-    pub database: String,
-    pub fps_table: String,
-    pub proofs_table: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct ForeignOfflineRepository {
     db: Surreal<Any>,
-    fps_table: String,
-    proofs_table: String,
 }
 
 impl ForeignOfflineRepository {
-    pub async fn new(config: ForeignOfflineConnectionConfig) -> SurrealResult<Self> {
+    const FPS_TABLE: &'static str = "offline-fps";
+    const PROOFS_TABLE: &'static str = "offline-proofs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
         db_connection.connect(config.connection).await?;
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
-        Ok(Self {
-            db: db_connection,
-            fps_table: config.fps_table,
-            proofs_table: config.proofs_table,
-        })
+        Ok(Self { db: db_connection })
     }
 }
 
@@ -405,7 +369,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
         for (hash, fp) in hash.into_iter().zip(fps.into_iter()) {
-            let rid = RecordId::from_table_key(&self.fps_table, hash.to_string());
+            let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
             let entry = ForeignFingerprintEntry {
                 id: rid.clone(),
                 amount: fp.amount,
@@ -436,7 +400,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
             wire_keys::ProofFingerprint,
         )>,
     > {
-        let rid = RecordId::from_table_key(&self.fps_table, hash.to_string());
+        let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
         let entry: Option<ForeignFingerprintEntry> = self
             .db
             .select(rid)
@@ -460,7 +424,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         let _: Vec<ForeignFingerprintEntry> = self
             .db
             .query("DELETE FROM type::table($table) WHERE array::any($ys, y)")
-            .bind(("table", self.fps_table.clone()))
+            .bind(("table", Self::FPS_TABLE))
             .bind(("ys", ys.to_vec()))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -475,7 +439,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
     ) -> Result<()> {
         let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
-            let rid = RecordId::from_table_key(&self.proofs_table, proof.y()?.to_string());
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, proof.y()?.to_string());
             let entry = ForeignProofEntry {
                 id: rid,
                 proof,
@@ -486,7 +450,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         }
         let _: Vec<ForeignProofEntry> = self
             .db
-            .insert(&self.proofs_table)
+            .insert(Self::PROOFS_TABLE)
             .content(entries)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -500,7 +464,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         let entries: Vec<ForeignProofEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE mint_url = $mint_url AND mint_pk = $mint_pk")
-            .bind(("table", self.proofs_table.clone()))
+            .bind(("table", Self::PROOFS_TABLE))
             .bind(("mint_url", mint_url.clone()))
             .bind(("mint_pk", *mint_pk))
             .await
@@ -518,7 +482,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         let _: Vec<ForeignProofEntry> = self
             .db
             .query("DELETE FROM type::table($table) WHERE array::any($ys, proof.y)")
-            .bind(("table", self.proofs_table.clone()))
+            .bind(("table", Self::PROOFS_TABLE))
             .bind(("ys", ys.to_vec()))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -543,12 +507,7 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DebitRepository {
-            db: sdb,
-            table: String::from("test"),
-            onchain_melts: String::from("onchain_melts"),
-            onchain_mints: String::from("onchain_mints"),
-        }
+        DebitRepository { db: sdb }
     }
 
     #[tokio::test]
@@ -575,11 +534,7 @@ mod tests {
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        ForeignOfflineRepository {
-            db: sdb,
-            fps_table: String::from("fps_table"),
-            proofs_table: String::from("proofs_table"),
-        }
+        ForeignOfflineRepository { db: sdb }
     }
 
     #[tokio::test]
