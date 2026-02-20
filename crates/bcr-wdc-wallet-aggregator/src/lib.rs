@@ -18,6 +18,7 @@ use bcr_common::{
         exchange as wire_exchange,
     },
 };
+use bcr_wdc_utils::surreal;
 use utoipa::OpenApi;
 // ----- local modules
 mod commitment;
@@ -42,7 +43,7 @@ pub struct AppConfig {
     clwdr_nats_url: Option<reqwest::Url>,
     clwdr_rest_url: Option<reqwest::Url>,
     signer_url: reqwest::Url,
-    commit_repo_cfg: persistence::surreal::DBCommitmentsConnectionConfig,
+    commit_repo_cfg: surreal::DBConnConfig,
 }
 
 #[derive(Clone, FromRef)]

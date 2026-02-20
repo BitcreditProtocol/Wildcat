@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use bcr_common::client::quote::Client as QuoteClient;
+use bcr_wdc_utils::surreal;
 // ----- local modules
 mod admin;
 mod ebill;
@@ -29,7 +30,7 @@ pub type ProdQuotingService = service::Service;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    quotes: persistence::surreal::ConnectionConfig,
+    quotes: surreal::DBConnConfig,
     keys: keys::KeysRestConfig,
     ebill_client: ebill::EBillClientConfig,
     clowder_rest_url: reqwest::Url,
