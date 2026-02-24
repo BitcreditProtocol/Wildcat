@@ -5,8 +5,7 @@ use anyhow::{anyhow, Result};
 use bcr_common::{
     cashu,
     client::{
-        ebill::Client as EbillClient, keys::Client as KeysClient, quote::Client as QuoteClient,
-        swap::Client as SwapClient,
+        core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
     },
     wire::{identity as wire_identity, quotes as wire_quotes},
 };
@@ -96,9 +95,8 @@ impl Default for RestClient {
 pub struct Service<T> {
     base_url: String,
     ebill_cl: EbillClient,
-    key_cl: KeysClient,
+    core_cl: CoreClient,
     quote_cl: QuoteClient,
-    swap_cl: SwapClient,
     treasury_cl: TreasuryClient,
     client: RestClient,
     _marker: PhantomData<T>,
@@ -109,9 +107,8 @@ impl<T> Service<T> {
         let url = reqwest::Url::parse(&base_url).unwrap();
         Self {
             ebill_cl: EbillClient::new(url.clone()),
-            key_cl: KeysClient::new(url.clone()),
+            core_cl: CoreClient::new(url.clone()),
             quote_cl: QuoteClient::new(url.clone()),
-            swap_cl: SwapClient::new(url.clone()),
             treasury_cl: TreasuryClient::new(url),
             client: RestClient::new(),
             _marker: PhantomData,
@@ -144,11 +141,11 @@ impl Service<UserService> {
     }
 
     pub async fn list_keysets(&self) -> Vec<cashu::KeySetInfo> {
-        self.key_cl.list_keyset_info().await.unwrap()
+        self.core_cl.list_keyset_info().await.unwrap()
     }
 
     pub async fn list_keys(&self, kid: cashu::Id) -> cashu::KeySet {
-        self.key_cl.keys(kid).await.unwrap()
+        self.core_cl.keys(kid).await.unwrap()
     }
 
     pub async fn accept_quote(&self, qid: Uuid) {
@@ -161,7 +158,7 @@ impl Service<UserService> {
         outputs: Vec<cashu::BlindedMessage>,
         sk: cashu::SecretKey,
     ) -> Vec<cashu::BlindSignature> {
-        self.key_cl.mint(qid, outputs, sk).await.unwrap()
+        self.core_cl.mint(qid, outputs, sk).await.unwrap()
     }
     /// GET v1/info
     pub async fn mint_info(&self) -> cashu::nut06::MintInfo {
@@ -174,7 +171,7 @@ impl Service<UserService> {
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
     ) -> Vec<cashu::BlindSignature> {
-        self.swap_cl.swap(inputs, outputs).await.unwrap()
+        self.core_cl.swap(inputs, outputs).await.unwrap()
     }
 }
 
