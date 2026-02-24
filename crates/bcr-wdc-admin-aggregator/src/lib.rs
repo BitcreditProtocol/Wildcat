@@ -24,47 +24,42 @@ mod types;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    pub keys_url: bcr_common::client::Url,
+    pub core_url: bcr_common::client::Url,
     pub quotes_url: bcr_common::client::Url,
     pub ebill_url: bcr_common::client::Url,
     pub clowder_url: bcr_common::client::Url,
     pub treasury_url: bcr_wdc_treasury_client::Url,
-    pub swap_url: bcr_common::client::Url,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    pub keys_cl: bcr_common::client::keys::Client,
+    pub core_cl: bcr_common::client::core::Client,
     pub quotes_cl: bcr_common::client::quote::Client,
     pub ebill_cl: bcr_common::client::ebill::Client,
     pub clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
     pub treasury_cl: bcr_wdc_treasury_client::TreasuryClient,
-    pub swap_cl: bcr_common::client::swap::Client,
 }
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
-            keys_url,
+            core_url,
             quotes_url,
             ebill_url,
             clowder_url,
             treasury_url,
-            swap_url,
         } = cfg;
-        let keys_cl = bcr_common::client::keys::Client::new(keys_url);
+        let core_cl = bcr_common::client::core::Client::new(core_url);
         let quotes_cl = bcr_common::client::quote::Client::new(quotes_url);
         let ebill_cl = bcr_common::client::ebill::Client::new(ebill_url);
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
         let treasury_cl = bcr_wdc_treasury_client::TreasuryClient::new(treasury_url);
-        let swap_cl = bcr_common::client::swap::Client::new(swap_url);
         AppController {
-            keys_cl,
+            core_cl,
             quotes_cl,
             ebill_cl,
             clwdr_cl: Arc::new(clwdr_cl),
             treasury_cl,
-            swap_cl,
         }
     }
 }
@@ -72,12 +67,13 @@ impl AppController {
 pub mod endpoints {
     pub const HEALTH: &str = "/health";
     pub const MINT_INFO: &str = "/v1/admin/mint/info";
-    // Keys-Client
+    // Core-Client
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
     pub const ENABLE_REDEMPTION: &str = "/v1/admin/credit/enable_redemption";
     pub const MINT_OP_STATUS: &str = "/v1/admin/credit/mint_op_status/{qid}";
     pub const LIST_MINT_OPS: &str = "/v1/admin/credit/mint_ops/{kid}";
+    pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
     // Quotes-Client
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const LIST_CREDIT_QUOTES: &str = "/v1/admin/credit/quote";
@@ -102,8 +98,6 @@ pub mod endpoints {
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
     pub const EBILL_PAY_COMPLETE: &str = "/v1/admin/treasury/ebill/payment_complete/{bid}";
-    // Swap-Client
-    pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -112,7 +106,7 @@ pub fn routes(ctrl: AppController) -> Router {
     let admin = Router::new()
         .route(endpoints::HEALTH, get(admin::get_health))
         .route(endpoints::MINT_INFO, get(admin::get_mint_info))
-        // keys service
+        // core service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
         .route(endpoints::MINT_OP_STATUS, get(admin::get_mintop_status))
@@ -121,6 +115,7 @@ pub fn routes(ctrl: AppController) -> Router {
             endpoints::ENABLE_REDEMPTION,
             post(admin::post_enable_redemption),
         )
+        .route(endpoints::POST_TOKEN_STATUS, post(admin::post_token_status))
         // quotes service
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
         .route(endpoints::LIST_CREDIT_QUOTES, get(admin::list_quotes))
@@ -177,9 +172,7 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::EBILL_PAY_COMPLETE,
             get(admin::get_ebill_mint_complete),
-        )
-        // swap service
-        .route(endpoints::POST_TOKEN_STATUS, post(admin::post_token_status));
+        );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
 
@@ -187,12 +180,14 @@ pub fn routes(ctrl: AppController) -> Router {
 #[openapi(
     components(schemas(
         wire_info::WildcatInfo,
-        // keys service
+        // core service
         cashu::Id,
         cashu::KeySetInfo,
         wire_keys::MintOperationStatus,
         wire_keys::DeactivateKeysetRequest,
         wire_keys::DeactivateKeysetResponse,
+        types::TokenStateRequest,
+        types::TokenStateResponse,
         // quotes service
         wire_quotes::ListSort,
         wire_quotes::InfoReply,
@@ -216,19 +211,17 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_signatures::RequestToMintFromEBillResponse,
         web_wallet::ECashBalance,
         web_wallet::EbillPaymentComplete,
-        // swap service
-        types::TokenStateRequest,
-        types::TokenStateResponse,
     ),),
     paths(
         admin::get_health,
         admin::get_mint_info,
-        // keys service
+        // core service
         admin::get_keyset_info,
         admin::list_keyset_infos,
         admin::get_mintop_status,
         admin::list_mintops,
         admin::post_enable_redemption,
+        admin::post_token_status,
         // quotes service
         admin::get_quote,
         admin::list_quotes,
@@ -253,8 +246,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::post_ebill_reqtopay,
         admin::get_sat_balance,
         admin::get_ebill_mint_complete,
-        // swap service
-        admin::post_token_status,
     )
 )]
 pub struct ApiDoc;

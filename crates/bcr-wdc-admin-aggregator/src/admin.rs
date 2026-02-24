@@ -57,7 +57,7 @@ pub async fn get_keyset_info(
 ) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Received keyset info request for {kid}");
 
-    let info = ctrl.keys_cl.keyset_info(kid).await?;
+    let info = ctrl.core_cl.keyset_info(kid).await?;
     Ok(Json(info))
 }
 
@@ -76,7 +76,7 @@ pub async fn list_keyset_infos(
 ) -> Result<Json<Vec<cashu::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
-    let infos = ctrl.keys_cl.list_keyset_info().await?;
+    let infos = ctrl.core_cl.list_keyset_info().await?;
     Ok(Json(infos))
 }
 
@@ -98,7 +98,7 @@ pub async fn get_mintop_status(
 ) -> Result<Json<wire_keys::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request");
 
-    let status = ctrl.keys_cl.mint_operation_status(qid).await?;
+    let status = ctrl.core_cl.mint_operation_status(qid).await?;
     Ok(Json(status))
 }
 
@@ -120,7 +120,7 @@ pub async fn list_mintops(
 ) -> Result<Json<Vec<uuid::Uuid>>> {
     tracing::debug!("Received list mint operation request");
 
-    let ids = ctrl.keys_cl.list_mint_operations(kid).await?;
+    let ids = ctrl.core_cl.list_mint_operations(kid).await?;
     Ok(Json(ids))
 }
 
@@ -140,7 +140,7 @@ pub async fn post_enable_redemption(
 ) -> Result<Json<wire_keys::DeactivateKeysetResponse>> {
     tracing::debug!("Received enable redemption request");
 
-    let kid = ctrl.keys_cl.deactivate_keyset(request.kid).await?;
+    let kid = ctrl.core_cl.deactivate_keyset(request.kid).await?;
     Ok(Json(wire_keys::DeactivateKeysetResponse { kid }))
 }
 
@@ -670,9 +670,9 @@ pub async fn post_token_status(
     tracing::debug!("Received token state request {}", head);
 
     let token = bcr_common::wallet::Token::from_str(&req.token)?;
-    let kinfos = ctrl.keys_cl.list_keyset_info().await?;
+    let kinfos = ctrl.core_cl.list_keyset_info().await?;
     let ys = token.proofs(&kinfos)?.ys()?;
-    let states = ctrl.swap_cl.check_state(ys).await?;
+    let states = ctrl.core_cl.check_state(ys).await?;
     let is_any_spent = states
         .into_iter()
         .map(|s| s.state)

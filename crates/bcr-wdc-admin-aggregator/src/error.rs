@@ -4,8 +4,8 @@ use axum::http::StatusCode;
 use bcr_common::{
     cashu,
     client::{
-        ebill::Error as EbillClientError, keys::Error as KeysClientError,
-        quote::Error as QuotesClientError, swap::Error as SwapClientError,
+        core::Error as CoreClientError, ebill::Error as EbillClientError,
+        quote::Error as QuotesClientError,
     },
 };
 use bcr_wdc_treasury_client::Error as TreasuryClientError;
@@ -20,8 +20,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("cdk00 {0}")]
     Cdk00(#[from] cashu::nut00::Error),
-    #[error("SwapClient: {0}")]
-    SwapClient(#[from] SwapClientError),
+    #[error("CoreClient: {0}")]
+    CoreClient(#[from] CoreClientError),
     #[error("TreasuryClient: {0}")]
     TreasuryClient(#[from] TreasuryClientError),
     #[error("ClowderClient: {0}")]
@@ -30,8 +30,6 @@ pub enum Error {
     EBillClient(#[from] EbillClientError),
     #[error("QuotesClient: {0}")]
     QuotesClient(#[from] QuotesClientError),
-    #[error("KeysClient: {0}")]
-    KeysClient(#[from] KeysClientError),
 
     #[error("resource not found: {0}")]
     ResourceNotFound(String),
@@ -43,10 +41,10 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
-            Error::KeysClient(KeysClientError::KeysetIdNotFound(e)) => {
+            Error::CoreClient(CoreClientError::KeysetIdNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
-            Error::KeysClient(KeysClientError::MintOpNotFound(e)) => {
+            Error::CoreClient(CoreClientError::MintOpNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
             Error::QuotesClient(QuotesClientError::ResourceNotFound(e)) => {
