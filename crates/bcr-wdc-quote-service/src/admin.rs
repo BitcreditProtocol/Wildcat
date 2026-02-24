@@ -6,7 +6,7 @@ use bcr_common::wire::quotes as wire_quotes;
 use crate::{
     error::Result,
     quotes,
-    service::{self, calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
+    service::{calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
 };
 
 /// --------------------------- List quotes

@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::keys::{Client as KeysClient, Error as KeysError},
+    client::core::{Client as CoreClient, Error as CoreError},
     core::BillId,
 };
 use uuid::Uuid;
@@ -20,11 +20,11 @@ pub struct KeysRestConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct KeysRestHandler(KeysClient);
+pub struct KeysRestHandler(CoreClient);
 
 impl KeysRestHandler {
     pub fn new(cfg: KeysRestConfig) -> Self {
-        let cl = KeysClient::new(cfg.base_url);
+        let cl = CoreClient::new(cfg.base_url);
         Self(cl)
     }
 }
@@ -63,8 +63,8 @@ impl KeysHandler for KeysRestHandler {
         let response = self.0.mint_operation_status(qid).await;
         match response {
             Ok(status) => Ok(MintingStatus::Enabled(status.current)),
-            Err(KeysError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
-            Err(e) => Err(Error::KeysHandler(e)),
+            Err(CoreError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
+            Err(e) => Err(Error::CoreHandler(e)),
         }
     }
 }
