@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::cashu::{nut00 as cdk00, Amount};
-use bcr_common::client::keys::Client as KeysClient;
+use bcr_common::client::core::Client as CoreClient;
 use bcr_wdc_utils::keys::test_utils as keys_test;
 // ----- local imports
 
@@ -11,7 +11,7 @@ async fn restore() {
     let (server, _) =
         bcr_wdc_core_service::test_utils::build_test_server(Some(entry.clone())).await;
     let server_url = server.server_address().expect("address");
-    let client = KeysClient::new(server_url);
+    let client = CoreClient::new(server_url);
 
     let (msg, _, _) = keys_test::generate_blind(entry.0.id, Amount::from(16));
 

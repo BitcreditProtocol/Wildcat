@@ -226,7 +226,6 @@ mod tests {
     use bcr_wdc_utils::signatures::test_utils::generate_blinds;
     use cashu::Amount;
     use mockall::predicate::eq;
-    use secp256k1::Keypair;
     use std::str::FromStr;
 
     fn seed() -> [u8; 64] {
@@ -345,7 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deactivate_no_keysetID() {
+    async fn deactivate_no_keysetid() {
         let factory = Factory::new(&seed(), DerivationPath::default());
         let mut keys_repo = MockKeysRepository::new();
         let signatures_repo = MockSignaturesRepository::new();
