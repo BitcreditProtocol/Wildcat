@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::{
     extract::FromRef,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use bcr_common::client::quote::Client as QuoteClient;
@@ -87,15 +87,15 @@ where
         .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
         .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
         .route(QuoteClient::RESOLVE_EP_V1, delete(web::cancel))
-        .route(QuoteClient::RESOLVE_EP_V1, post(web::resolve_offer));
+        .route(QuoteClient::RESOLVE_EP_V1, patch(web::resolve_offer));
 
     let admin_routes = Router::new()
         .route(QuoteClient::LIST_EP_V1, get(admin::list_quotes))
         .route("/v1/admin/credit/quote/{qid}", get(admin::lookup_quote))
-        .route(QuoteClient::UPDATE_EP_V1, post(admin::update_quote))
+        .route(QuoteClient::UPDATE_EP_V1, patch(admin::update_quote))
         .route(
             "/v1/admin/credit/quote/enable_mint/{id}",
-            post(admin::enable_minting),
+            patch(admin::enable_minting),
         );
 
     Router::new()
