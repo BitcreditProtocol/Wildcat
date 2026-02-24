@@ -25,10 +25,8 @@ pub enum Error {
     BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("CDK Client error: {0}")]
     Cdk(#[from] CDKError),
-    #[error("Keyset Client: {0}")]
-    Keys(#[from] bcr_common::client::keys::Error),
-    #[error("Swap Client: {0}")]
-    Swap(#[from] bcr_common::client::swap::Error),
+    #[error("Core Client: {0}")]
+    Core(#[from] bcr_common::client::core::Error),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] TreasuryClientError),
     #[error("EBPP Client error: {0}")]
@@ -59,17 +57,16 @@ impl axum::response::IntoResponse for Error {
 
             Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Swap(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
-            Error::Keys(bcr_common::client::keys::Error::InvalidRequest) => {
+            Error::Core(bcr_common::client::core::Error::InvalidRequest) => {
                 (StatusCode::BAD_REQUEST, String::new())
             }
-            Error::Keys(bcr_common::client::keys::Error::KeysetIdNotFound(_)) => {
+            Error::Core(bcr_common::client::core::Error::KeysetIdNotFound(_)) => {
                 (StatusCode::NOT_FOUND, self.to_string())
             }
-            Error::Keys(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Core(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Cdk(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrCommonBorsh(_) => (StatusCode::BAD_REQUEST, String::new()),

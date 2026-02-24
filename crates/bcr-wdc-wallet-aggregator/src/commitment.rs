@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut07 as cdk07},
     cdk::{self, wallet::MintConnector},
-    client::{keys::Client as KeysClient, swap::Client as SwapClient},
+    client::core::Client as CoreClient,
     core::signature::deserialize_borsh_msg,
     wire::{keys as wire_keys, swap as wire_swap},
 };
@@ -61,8 +61,7 @@ impl Service {
         &self,
         now: TStamp,
         request: wire_swap::CommitmentRequest,
-        swap_cl: &SwapClient,
-        keys_cl: &KeysClient,
+        core_cl: &CoreClient,
         cdk_mint_cl: &cdk::wallet::HttpClient,
     ) -> Result<wire_swap::CommitmentResponse> {
         let payload: wire_swap::CommitmentContent = deserialize_borsh_msg(&request.content)?;
@@ -70,9 +69,9 @@ impl Service {
         if payload.expiration < now + Self::MIN_EXPIRATION {
             return Err(Error::InvalidInput(String::from("expiration too soon")));
         }
-        validate_commitment_inputs(keys_cl, swap_cl, cdk_mint_cl, &payload.inputs).await?;
+        validate_commitment_inputs(core_cl, cdk_mint_cl, &payload.inputs).await?;
         // crsat
-        let signatures = keys_cl.restore(payload.outputs.clone()).await?;
+        let signatures = core_cl.restore(payload.outputs.clone()).await?;
         if !signatures.is_empty() {
             return Err(Error::InvalidInput(String::from("crsat blinds seen")));
         }
@@ -135,14 +134,13 @@ impl Service {
 }
 
 async fn validate_commitment_inputs(
-    key_cl: &KeysClient,
-    swap_cl: &SwapClient,
+    core_cl: &CoreClient,
     cdk_mint_cl: &cdk::wallet::HttpClient,
     inputs: &[wire_keys::ProofFingerprint],
 ) -> Result<()> {
     //crsat hypothesis
     let ys: Vec<cashu::PublicKey> = inputs.iter().map(|p| p.y).collect();
-    let state = swap_cl.check_state(ys.clone()).await?;
+    let state = core_cl.check_state(ys.clone()).await?;
     let any_spent = state
         .into_iter()
         .any(|state| matches!(state.state, cdk07::State::Spent));
@@ -154,9 +152,9 @@ async fn validate_commitment_inputs(
         by_kids.entry(fp.keyset_id).or_default().push(fp);
     }
     for (kid, fps) in by_kids {
-        if key_cl.keyset_info(kid).await.is_ok() {
+        if core_cl.keyset_info(kid).await.is_ok() {
             for fp in fps {
-                key_cl.verify_fingerprint(fp).await?;
+                core_cl.verify_fingerprint(fp).await?;
             }
         }
     }

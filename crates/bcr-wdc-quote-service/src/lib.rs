@@ -94,7 +94,7 @@ where
         .route("/v1/admin/credit/quote/{qid}", get(admin::lookup_quote))
         .route(QuoteClient::UPDATE_EP_V1, patch(admin::update_quote))
         .route(
-            "/v1/admin/credit/quote/enable_mint/{id}",
+            QuoteClient::ENABLE_MINTING_EP_V1,
             patch(admin::enable_minting),
         );
 
