@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{client::keys::Client as KeysClient, client::swap::Client as SwapClient};
+use bcr_common::client::core::Client as CoreClient;
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
@@ -90,32 +90,32 @@ where
 {
     let web = Router::new()
         .route("/health", get(get_health))
-        .route(KeysClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
-        .route(KeysClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
-        .route(KeysClient::KEYS_EP_V1, get(web::lookup_keys))
-        .route(KeysClient::LISTKEYS_EP_V1, get(web::list_keys))
-        .route(KeysClient::MINT_EP_V1, post(web::mint_ebill))
-        .route(KeysClient::RESTORE_EP_V1, post(web::restore))
-        .route(SwapClient::SWAP_EP_V1, post(web::swap_tokens))
-        .route(SwapClient::BURN_EP_V1, post(web::burn_tokens))
-        .route(SwapClient::CHECKSTATE_EP_V1, post(web::check_state));
+        .route(CoreClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
+        .route(CoreClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
+        .route(CoreClient::KEYS_EP_V1, get(web::lookup_keys))
+        .route(CoreClient::LISTKEYS_EP_V1, get(web::list_keys))
+        .route(CoreClient::MINT_EP_V1, post(web::mint_ebill))
+        .route(CoreClient::RESTORE_EP_V1, post(web::restore))
+        .route(CoreClient::SWAP_EP_V1, post(web::swap_tokens))
+        .route(CoreClient::BURN_EP_V1, post(web::burn_tokens))
+        .route(CoreClient::CHECKSTATE_EP_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route(
-            KeysClient::KEYSFOREXPIRATION_EP_V1,
+            CoreClient::KEYSFOREXPIRATION_EP_V1,
             get(admin::get_keyset_for_date),
         )
-        .route(KeysClient::SIGN_EP_V1, post(admin::sign_blind))
-        .route(KeysClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
-        .route(KeysClient::MINTOPSTATUS_EP_V1, get(admin::mintop_status))
-        .route(KeysClient::LISTMINTOPS_EP_V1, get(admin::list_mintops))
-        .route(KeysClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
+        .route(CoreClient::SIGN_EP_V1, post(admin::sign_blind))
+        .route(CoreClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
+        .route(CoreClient::MINTOPSTATUS_EP_V1, get(admin::mintop_status))
+        .route(CoreClient::LISTMINTOPS_EP_V1, get(admin::list_mintops))
+        .route(CoreClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
         .route(
-            KeysClient::VERIFY_FINGERPRINT_EP_V1,
+            CoreClient::VERIFY_FINGERPRINT_EP_V1,
             post(admin::verify_fingerprint),
         )
-        .route(KeysClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate))
-        .route(SwapClient::RECOVER_EP_V1, post(admin::recover_tokens));
+        .route(CoreClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate))
+        .route(CoreClient::RECOVER_EP_V1, post(admin::recover_tokens));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
