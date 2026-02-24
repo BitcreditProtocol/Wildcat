@@ -5,7 +5,7 @@ use axum::extract::{Json, State};
 use bcr_common::{
     cashu,
     cdk::wallet::{HttpClient, MintConnector},
-    client::keys::{Client as KeysClient, Result as KeysResult},
+    client::core::{Client as CoreClient, Result as CoreResult},
     core::signature::unblind_ecash_signature,
     wallet::Token,
 };
@@ -16,7 +16,7 @@ use crate::error::Result;
 // ----- end imports
 
 pub struct Service {
-    pub crkeys: KeysClient,
+    pub crcore: CoreClient,
     pub dbmint: HttpClient,
 }
 
@@ -40,7 +40,7 @@ pub async fn free_money(
     tracing::debug!("Free money request");
 
     let cashu::KeysetResponse { keysets } = cntrl.dbmint.get_mint_keysets().await?;
-    let kinfos = cntrl.crkeys.list_keyset_info().await?;
+    let kinfos = cntrl.crcore.list_keyset_info().await?;
 
     let token = match request.issue {
         IssueType::KeysetId(kid) => {
@@ -48,8 +48,8 @@ pub async fn free_money(
                 let keys = cntrl.dbmint.get_mint_keyset(kinfo.id).await?;
                 mint_debit(&cntrl.dbmint, request.amount, keys, request.whoami).await?
             } else if let Some(kinfo) = kinfos.iter().find(|ks| ks.id == kid && ks.active) {
-                let keys = cntrl.crkeys.keys(kinfo.id).await?;
-                mint_credit(&cntrl.crkeys, request.amount, keys, request.whoami).await?
+                let keys = cntrl.crcore.keys(kinfo.id).await?;
+                mint_credit(&cntrl.crcore, request.amount, keys, request.whoami).await?
             } else {
                 return Err(crate::error::Error::InvalidInput(format!(
                     "Unknown/Invalid keyset: {kid}"
@@ -61,8 +61,8 @@ pub async fn free_money(
                 let keys = cntrl.dbmint.get_mint_keyset(kinfo.id).await?;
                 mint_debit(&cntrl.dbmint, request.amount, keys, request.whoami).await?
             } else if let Some(kinfo) = kinfos.iter().find(|k| k.active && k.unit == unit) {
-                let keys = cntrl.crkeys.keys(kinfo.id).await?;
-                mint_credit(&cntrl.crkeys, request.amount, keys, request.whoami).await?
+                let keys = cntrl.crcore.keys(kinfo.id).await?;
+                mint_credit(&cntrl.crcore, request.amount, keys, request.whoami).await?
             } else {
                 return Err(crate::error::Error::InvalidInput(format!(
                     "Unsupported currency unit: {unit}",
@@ -74,7 +74,7 @@ pub async fn free_money(
 }
 
 async fn mint_credit(
-    client: &KeysClient,
+    client: &CoreClient,
     amount: cashu::Amount,
     keys: cashu::KeySet,
     mint_url: cashu::MintUrl,
@@ -87,7 +87,7 @@ async fn mint_credit(
         .map(|blind| client.sign(blind))
         .collect();
     let signatures: Vec<cashu::BlindSignature> =
-        joined.await.into_iter().collect::<KeysResult<_>>()?;
+        joined.await.into_iter().collect::<CoreResult<_>>()?;
     let mut proofs = Vec::with_capacity(signatures.len());
     for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
         // WARNING: due to a bug in `into_iter()` in cashu 0.13.1 we need to `iter()` and clone the secret

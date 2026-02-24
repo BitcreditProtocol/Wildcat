@@ -28,7 +28,7 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 type ProdCrsatService = foreign::crsat::Service;
 type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
-type ProdCrsatKeysClient = foreign::clients::CrsatKeysClient;
+type ProdCrsatKeysClient = foreign::clients::CrsatCoreClient;
 type ProdClowderClient = foreign::clients::ClowderCl;
 type ProdSatService = foreign::sat::Service;
 type ProdSatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
@@ -209,7 +209,7 @@ impl AppController {
             .expect("Failed to create signer");
 
         let dev = devmode::Service {
-            crkeys: bcr_common::client::keys::Client::new(credit_keys_url),
+            crcore: bcr_common::client::core::Client::new(credit_keys_url),
             dbmint: dbmint.clone(),
         };
         Self {
