@@ -19,24 +19,24 @@ use crate::{
 
 // ----- end imports
 
-///--------------------------- KeysCl
-pub struct CrsatKeysClient {
-    keys: bcr_common::client::keys::Client,
+///--------------------------- CrsatCoreClient
+pub struct CrsatCoreClient {
+    core: bcr_common::client::core::Client,
 }
 
-impl CrsatKeysClient {
+impl CrsatCoreClient {
     pub fn new(url: reqwest::Url) -> Self {
-        let keys = bcr_common::client::keys::Client::new(url);
-        Self { keys }
+        let core = bcr_common::client::core::Client::new(url);
+        Self { core }
     }
 }
 
 #[async_trait]
-impl proof::KeysClient for CrsatKeysClient {
+impl proof::KeysClient for CrsatCoreClient {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::with_capacity(blinds.len());
         for b in blinds {
-            let sig = self.keys.sign(b).await?;
+            let sig = self.core.sign(b).await?;
             signatures.push(sig);
         }
         Ok(signatures)
@@ -44,13 +44,13 @@ impl proof::KeysClient for CrsatKeysClient {
 }
 
 #[async_trait]
-impl crsat::KeysClient for CrsatKeysClient {
+impl crsat::KeysClient for CrsatCoreClient {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
     ) -> Result<cashu::KeySet> {
-        let kid = self.keys.keys_for_expiration(expiration).await?;
-        let keyset = self.keys.keys(kid).await?;
+        let kid = self.core.keys_for_expiration(expiration).await?;
+        let keyset = self.core.keys(kid).await?;
         Ok(keyset)
     }
 }
