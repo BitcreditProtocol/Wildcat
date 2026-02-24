@@ -36,10 +36,7 @@ pub async fn enquire_quote(
 }
 
 /// --------------------------- Look up quote
-fn convert_to_enquire_reply(
-    quote: quotes::Quote,
-    minted_amount: bcr_common::cashu::Amount,
-) -> wire_quotes::StatusReply {
+fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
     match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::StatusReply::Pending,
         quotes::Status::Canceled { tstamp } => wire_quotes::StatusReply::Canceled { tstamp },
@@ -79,7 +76,7 @@ fn convert_to_enquire_reply(
             keyset_id,
             discounted,
             wallet_pubkey,
-            minted_amount,
+            minted_amount: bcr_common::cashu::Amount::ZERO,
         },
     }
 }
@@ -92,13 +89,7 @@ pub async fn lookup_quote(
 
     let now = chrono::Utc::now();
     let quote = ctrl.lookup(id, now).await?;
-
-    let minted_amount = match ctrl.keys_hndlr.get_minting_status(id).await {
-        Ok(crate::service::MintingStatus::Enabled(current)) => current,
-        _ => bcr_common::cashu::Amount::ZERO,
-    };
-
-    Ok(Json(convert_to_enquire_reply(quote, minted_amount)))
+    Ok(Json(convert_to_enquire_reply(quote)))
 }
 
 /// --------------------------- Resolve quote offer
@@ -127,6 +118,6 @@ pub async fn cancel(
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
     let quote = ctrl.lookup(id, now).await?;
-    let reply = convert_to_enquire_reply(quote, bcr_common::cashu::Amount::ZERO);
+    let reply = convert_to_enquire_reply(quote);
     Ok(Json(reply))
 }
