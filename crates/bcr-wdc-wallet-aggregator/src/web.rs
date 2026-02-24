@@ -8,7 +8,7 @@ use bcr_common::{
     cdk::{self, wallet::MintConnector},
     client::{
         clowder::Client as ClowderClient,
-        keys::{Client as KeysClient, Error as KeysError},
+        core::{Client as CoreClient, Error as CoreError},
     },
     wire::{
         clowder::{self as wire_clowder, messages},
@@ -147,7 +147,7 @@ pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cas
     tracing::debug!("Requested /v1/keys");
 
     let mut keys = ctrl.cdk_client.get_mint_keys().await?;
-    let mut bcr_keys = ctrl.keys_client.list_keys().await.unwrap_or_default();
+    let mut bcr_keys = ctrl.core_client.list_keys().await.unwrap_or_default();
     keys.append(&mut bcr_keys);
     let response = cashu::KeysResponse { keysets: keys };
     Ok(Json(response))
@@ -167,7 +167,7 @@ pub async fn get_mint_keysets(
 
     let mut infos = ctrl.cdk_client.get_mint_keysets().await?;
     let mut bcr_infos = ctrl
-        .keys_client
+        .core_client
         .list_keyset_info()
         .await
         .unwrap_or_default();
@@ -192,7 +192,7 @@ pub async fn get_mint_keyset(
 ) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/keys/{}", kid);
 
-    let bcr_response = ctrl.keys_client.keys(kid).await;
+    let bcr_response = ctrl.core_client.keys(kid).await;
     if let Ok(keys) = bcr_response {
         let response = cashu::KeysResponse {
             keysets: vec![keys],
@@ -223,7 +223,7 @@ pub async fn get_keyset_info(
 ) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Requested /v1/keysets/{}", kid);
 
-    if let Ok(info) = ctrl.keys_client.keyset_info(kid).await {
+    if let Ok(info) = ctrl.core_client.keyset_info(kid).await {
         Ok(Json(info))
     } else {
         let keysets = ctrl.cdk_client.get_mint_keysets().await?.keysets;
@@ -268,7 +268,7 @@ pub async fn post_swap(
         )));
     }
     let keyscl = KeysClients {
-        credit: ctrl.keys_client.clone(),
+        credit: ctrl.core_client.clone(),
         debit: ctrl.cdk_client.clone(),
     };
     let input_type =
@@ -282,7 +282,7 @@ pub async fn post_swap(
 
     let signatures = match swap_type {
         SwapType::CrSat2CrSat => {
-            ctrl.swap_client
+            ctrl.core_client
                 .swap(proofs.clone(), blinded_messages.clone())
                 .await?
         }
@@ -328,7 +328,7 @@ pub async fn post_check_state(
     tracing::debug!("Requested /v1/checkstate");
 
     let n = request.ys.len();
-    let credit_states = ctrl.swap_client.check_state(request.ys.clone()).await?;
+    let credit_states = ctrl.core_client.check_state(request.ys.clone()).await?;
     let debit_states = ctrl.cdk_client.post_check_state(request).await?.states;
     if debit_states.len() != n || credit_states.len() != n {
         return Err(Error::NotYet(
@@ -366,7 +366,7 @@ pub async fn post_restore(
     tracing::debug!("Requested /v1/restore");
 
     let outputs = request.outputs.clone();
-    let crsat_signatures = ctrl.keys_client.restore(outputs.clone()).await?;
+    let crsat_signatures = ctrl.core_client.restore(outputs.clone()).await?;
     let restore_resp = ctrl.cdk_client.post_restore(request).await?;
     let sat_signatures = restore_resp
         .outputs
@@ -692,13 +692,7 @@ pub async fn post_commit(
     let now = chrono::Utc::now();
     let response = ctrl
         .commit_srv
-        .commit(
-            now,
-            request,
-            &ctrl.swap_client,
-            &ctrl.keys_client,
-            &ctrl.cdk_client,
-        )
+        .commit(now, request, &ctrl.core_client, &ctrl.cdk_client)
         .await?;
     Ok(Json(response))
 }
@@ -739,7 +733,7 @@ trait KeyClientT {
 }
 
 struct KeysClients {
-    credit: KeysClient,
+    credit: CoreClient,
     debit: cdk::wallet::HttpClient,
 }
 #[async_trait]
@@ -748,8 +742,8 @@ impl KeyClientT for KeysClients {
         let cr_response = self.credit.keyset_info(keyset_id).await;
         match cr_response {
             Ok(info) => return Ok(info.unit),
-            Err(KeysError::KeysetIdNotFound(_)) => {}
-            Err(e) => return Err(Error::Keys(e)),
+            Err(CoreError::KeysetIdNotFound(_)) => {}
+            Err(e) => return Err(Error::Core(e)),
         }
         let db_response = self.debit.get_mint_keyset(keyset_id).await;
         match db_response {

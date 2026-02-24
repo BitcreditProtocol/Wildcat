@@ -36,8 +36,7 @@ pub type TStamp = chrono::DateTime<chrono::Utc>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     cdk_mint_url: MintUrl,
-    keys_client_url: reqwest::Url,
-    swap_client_url: reqwest::Url,
+    core_client_url: reqwest::Url,
     treasury_client_url: bcr_wdc_treasury_client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     clwdr_nats_url: Option<reqwest::Url>,
@@ -49,8 +48,7 @@ pub struct AppConfig {
 #[derive(Clone, FromRef)]
 pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
-    keys_client: bcr_common::client::keys::Client,
-    swap_client: bcr_common::client::swap::Client,
+    core_client: bcr_common::client::core::Client,
     treasury_client: bcr_wdc_treasury_client::TreasuryClient,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
     clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
@@ -63,8 +61,7 @@ impl AppController {
     pub async fn new(cfg: AppConfig) -> error::Result<Self> {
         let AppConfig {
             cdk_mint_url,
-            keys_client_url,
-            swap_client_url,
+            core_client_url,
             treasury_client_url,
             ebpp_client_url,
             clwdr_nats_url,
@@ -74,8 +71,7 @@ impl AppController {
         } = cfg;
 
         let cdk_client = HttpClient::new(cdk_mint_url);
-        let keys_client = bcr_common::client::keys::Client::new(keys_client_url);
-        let swap_client = bcr_common::client::swap::Client::new(swap_client_url);
+        let core_client = bcr_common::client::core::Client::new(core_client_url);
         let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
@@ -101,8 +97,7 @@ impl AppController {
 
         Ok(Self {
             cdk_client,
-            keys_client,
-            swap_client,
+            core_client,
             treasury_client,
             ebpp_client,
             clwdr_stream_client,
