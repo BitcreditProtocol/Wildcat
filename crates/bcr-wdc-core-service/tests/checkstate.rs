@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::swap::Client as SwapClient};
+use bcr_common::{cashu, client::core::Client as CoreClient};
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 // ----- local imports
 
@@ -10,7 +10,7 @@ use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as sig
 async fn checkstate() {
     let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
-    let client = SwapClient::new(server_url);
+    let client = CoreClient::new(server_url);
 
     let mut keys_entry = keys_test::generate_keyset();
     keys_entry.0.active = false;
