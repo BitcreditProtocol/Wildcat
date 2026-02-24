@@ -183,6 +183,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let keyset_id = match mint_quote_status_reply {
         StatusReply::Offered { keyset_id, .. } => Some(keyset_id),
         StatusReply::Accepted { keyset_id, .. } => Some(keyset_id),
+        StatusReply::MintingEnabled { keyset_id, .. } => Some(keyset_id),
         _ => None,
     }
     .unwrap();
