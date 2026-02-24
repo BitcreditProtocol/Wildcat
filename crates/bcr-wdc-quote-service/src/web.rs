@@ -72,10 +72,11 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
             wallet_pubkey,
             discounted,
             ..
-        } => wire_quotes::StatusReply::Accepted {
+        } => wire_quotes::StatusReply::MintingEnabled {
             keyset_id,
             discounted,
             wallet_pubkey,
+            minted_amount: bcr_common::cashu::Amount::ZERO,
         },
     }
 }
