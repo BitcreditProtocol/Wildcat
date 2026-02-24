@@ -22,8 +22,8 @@ pub enum Error {
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
-    #[error("keys handler error {0}")]
-    KeysHandler(#[from] bcr_common::client::keys::Error),
+    #[error("core handler error {0}")]
+    CoreHandler(#[from] bcr_common::client::core::Error),
     #[error("wallet error {0}")]
     Wallet(WalletError),
     #[error("ebill client error {0}")]
@@ -72,7 +72,7 @@ impl axum::response::IntoResponse for Error {
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 
             Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::KeysHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CoreHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrCommonBorsh(_) => (
