@@ -49,12 +49,10 @@ pub enum Error {
     Secp256k1(#[from] bitcoin::secp256k1::Error),
     #[error("Serde_json error {0}")]
     SerdeJson(#[from] serde_json::Error),
-    #[error("keys client {0}")]
-    KeyClient(#[from] bcr_common::client::keys::Error),
+    #[error("core client {0}")]
+    CoreClient(#[from] bcr_common::client::core::Error),
     #[error("clowder client {0}")]
     ClowderClient(#[from] clwdr_client::ClowderClientError),
-    #[error("Swap client {0}")]
-    SwapClient(#[from] bcr_common::client::swap::Error),
     #[error("Quote client error {0}")]
     QuoteClient(#[from] bcr_common::client::quote::Error),
     // internal errors
@@ -103,7 +101,7 @@ impl axum::response::IntoResponse for Error {
             Error::EBillNotFound(id) => {
                 (StatusCode::NOT_FOUND, format!("EBill ID not found: {id}"))
             }
-            Error::KeyClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::RequestIDNotFound(request_id) => (
                 StatusCode::BAD_REQUEST,
@@ -127,7 +125,6 @@ impl axum::response::IntoResponse for Error {
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::SwapClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
