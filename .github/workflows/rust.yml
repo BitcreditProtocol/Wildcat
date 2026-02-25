@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   security-events: write
-  actions: read
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
@@ -33,9 +32,9 @@ jobs:
           echo "After cleanup:"
           df -h
 
-      - name: Create GitHub App token
+      - name: Create GitHub app token
         id: app-token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
           private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
@@ -47,11 +46,10 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@v4
+        with:
           submodules: recursive
           token: ${{ steps.app-token.outputs.token }}
-
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -63,7 +61,7 @@ jobs:
         run: rustup component add clippy rustfmt
 
       - name: Activate cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           prefix-key: "wildcat-01"
 
@@ -71,7 +69,7 @@ jobs:
         run: cargo install cargo-deny clippy-sarif sarif-fmt
 
       - name: Check
-        run: cargo check --verbose
+        run: cargo check
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -79,17 +77,16 @@ jobs:
       - name: Clippy
         run:
           cargo clippy
-          --verbose
           --all-features
           --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
-      - name: Cargo deny
+      - name: Cargo deny 
         run: cargo deny check
         continue-on-error: true
 
       - name: Upload analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         continue-on-error: true
         with:
           sarif_file: rust-clippy-results.sarif
