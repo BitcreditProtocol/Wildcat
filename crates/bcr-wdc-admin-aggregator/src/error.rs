@@ -5,10 +5,9 @@ use bcr_common::{
     cashu,
     client::{
         core::Error as CoreClientError, ebill::Error as EbillClientError,
-        quote::Error as QuotesClientError,
+        quote::Error as QuotesClientError, treasury::Error as TreasuryClientError,
     },
 };
-use bcr_wdc_treasury_client::Error as TreasuryClientError;
 use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports

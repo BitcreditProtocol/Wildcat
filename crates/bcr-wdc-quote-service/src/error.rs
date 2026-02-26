@@ -2,8 +2,10 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::{cashu::nut02 as cdk02, core::signature::ECashSignatureError};
-use bcr_wdc_treasury_client::Error as WalletError;
+use bcr_common::{
+    cashu::nut02 as cdk02, client::treasury::Error as TreasuryError,
+    core::signature::ECashSignatureError,
+};
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -24,8 +26,6 @@ pub enum Error {
     QuotesRepository(AnyError),
     #[error("core handler error {0}")]
     CoreHandler(#[from] bcr_common::client::core::Error),
-    #[error("wallet error {0}")]
-    Wallet(WalletError),
     #[error("ebill client error {0}")]
     EbillClient(#[from] bcr_common::client::ebill::Error),
 
@@ -71,7 +71,6 @@ impl axum::response::IntoResponse for Error {
             }
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 
-            Error::Wallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CoreHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

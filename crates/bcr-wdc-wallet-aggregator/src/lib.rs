@@ -36,8 +36,8 @@ pub type TStamp = chrono::DateTime<chrono::Utc>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     cdk_mint_url: MintUrl,
-    core_client_url: reqwest::Url,
-    treasury_client_url: bcr_wdc_treasury_client::Url,
+    core_client_url: bcr_common::client::Url,
+    treasury_client_url: bcr_common::client::Url,
     ebpp_client_url: bcr_wdc_ebpp_client::Url,
     clwdr_nats_url: Option<reqwest::Url>,
     clwdr_rest_url: Option<reqwest::Url>,
@@ -49,7 +49,7 @@ pub struct AppConfig {
 pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
     core_client: bcr_common::client::core::Client,
-    treasury_client: bcr_wdc_treasury_client::TreasuryClient,
+    treasury_client: bcr_common::client::treasury::Client,
     ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
     clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
     clwdr_rest_client: Option<Arc<clwdr_client::ClowderRestClient>>,
@@ -72,7 +72,7 @@ impl AppController {
 
         let cdk_client = HttpClient::new(cdk_mint_url);
         let core_client = bcr_common::client::core::Client::new(core_client_url);
-        let treasury_client = bcr_wdc_treasury_client::TreasuryClient::new(treasury_client_url);
+        let treasury_client = bcr_common::client::treasury::Client::new(treasury_client_url);
         let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
 
         let clwdr_stream_client = if let Some(url) = clwdr_nats_url {

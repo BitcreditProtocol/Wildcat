@@ -13,10 +13,9 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-common = {workspace = true, features = ["authorized"]}
+bcr-common = {workspace = true}
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true}
-bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
 bcr-wdc-webapi = {workspace = true}
 bitcoin.workspace = true
 borsh.workspace = true

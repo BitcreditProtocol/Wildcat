@@ -7,8 +7,7 @@ license.workspace = true
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-common = {workspace = true, features = ["authorized"]}
-bcr-wdc-treasury-client = {workspace = true, features = ["authorized"]}
+bcr-common = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}

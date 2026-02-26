@@ -2,7 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
-use bcr_wdc_webapi::wallet::Network;
+use bcr_common::wire::wallet::Network;
 // ----- local imports
 use crate::error::Result;
 use crate::service::Service;

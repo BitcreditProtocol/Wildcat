@@ -1,15 +1,15 @@
 // ----- standard library imports
 use std::marker::PhantomData;
 // ----- extra library imports
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bcr_common::{
     cashu,
     client::{
         core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
+        treasury::Client as TreasuryClient,
     },
     wire::{identity as wire_identity, quotes as wire_quotes},
 };
-use bcr_wdc_treasury_client::TreasuryClient;
 use reqwest::Client as HttpClient;
 use reqwest::Url;
 use serde::de::DeserializeOwned;
@@ -208,36 +208,6 @@ impl Service<AdminService> {
         username: &str,
         password: &str,
     ) -> Result<()> {
-        self.ebill_cl
-            .authenticate(
-                token_url.clone(),
-                client_id,
-                client_secret,
-                username,
-                password,
-            )
-            .await
-            .map_err(|e| anyhow!(e))?;
-        self.quote_cl
-            .authenticate(
-                token_url.clone(),
-                client_id,
-                client_secret,
-                username,
-                password,
-            )
-            .await
-            .map_err(|e| anyhow!(e))?;
-        self.treasury_cl
-            .authenticate(
-                token_url.clone(),
-                client_id,
-                client_secret,
-                username,
-                password,
-            )
-            .await
-            .map_err(|e| anyhow!(e))?;
         self.client
             .authenticate(token_url, client_id, client_secret, username, password)
             .await

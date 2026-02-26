@@ -12,7 +12,7 @@ members = [
     "crates/bcr-wdc-ebpp", "crates/bcr-wdc-ebpp-client",
     "crates/bcr-wdc-core-service",
     "crates/bcr-wdc-quote-service",
-    "crates/bcr-wdc-treasury-service", "crates/bcr-wdc-treasury-client",
+    "crates/bcr-wdc-treasury-service",
     "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
     "crates/bcr-wdc-webapi",
@@ -29,7 +29,6 @@ bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
-bcr-wdc-treasury-client = {path = "./crates/bcr-wdc-treasury-client"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
 bdk_core = {version = "0.6"}
