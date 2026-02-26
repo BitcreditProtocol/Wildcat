@@ -9,6 +9,7 @@ use bcr_common::{
     client::{
         clowder::Client as ClowderClient,
         core::{Client as CoreClient, Error as CoreError},
+        treasury::Client as TreasuryClient,
     },
     wire::{
         clowder::{self as wire_clowder, messages},
@@ -17,7 +18,6 @@ use bcr_common::{
         swap as wire_swap,
     },
 };
-use bcr_wdc_treasury_client::TreasuryClient;
 use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
 use futures::future::JoinAll;
 // ----- local imports

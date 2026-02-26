@@ -6,8 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{cashu, cdk};
-use bcr_wdc_treasury_client::TreasuryClient;
+use bcr_common::{cashu, cdk, client::treasury::Client as TreasuryClient};
 use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1;
 use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};

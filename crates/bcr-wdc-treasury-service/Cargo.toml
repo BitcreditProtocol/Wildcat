@@ -8,9 +8,8 @@ license.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
-bcr-common = {workspace = true, features = ["authorized"]}
+bcr-common = {workspace = true, features = ["mint"]}
 bcr-ebill-core = {workspace = true}
-bcr-wdc-treasury-client = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = { workspace = true}
 bip39 = {workspace = true}

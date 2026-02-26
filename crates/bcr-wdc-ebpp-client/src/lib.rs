@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_webapi::wallet as web_wallet;
+use bcr_common::wire::wallet as wire_wallet;
 use thiserror::Error;
 // ----- local imports
 pub use reqwest::Url;
@@ -18,8 +18,6 @@ pub enum Error {
 pub struct EBPPClient {
     cl: reqwest::Client,
     base: reqwest::Url,
-    #[cfg(feature = "authorized")]
-    auth: bcr_wdc_utils::client::AuthorizationPlugin,
 }
 
 impl EBPPClient {
@@ -27,42 +25,16 @@ impl EBPPClient {
         Self {
             cl: reqwest::Client::new(),
             base,
-            #[cfg(feature = "authorized")]
-            auth: Default::default(),
         }
     }
 
-    #[cfg(feature = "authorized")]
-    pub async fn authenticate(
-        &mut self,
-        token_url: Url,
-        client_id: &str,
-        client_secret: &str,
-        username: &str,
-        password: &str,
-    ) -> Result<()> {
-        self.auth
-            .authenticate(
-                self.cl.clone(),
-                token_url,
-                client_id,
-                client_secret,
-                username,
-                password,
-            )
-            .await?;
-        Ok(())
-    }
-
-    #[cfg(feature = "authorized")]
     pub async fn balance(&self) -> Result<bdk_wallet::Balance> {
         let url = self
             .base
             .join("/v1/admin/ebpp/onchain/balance")
             .expect("balance relative path");
         let request = self.cl.get(url);
-        let response: web_wallet::Balance =
-            self.auth.authorize(request).send().await?.json().await?;
+        let response: wire_wallet::Balance = request.send().await?.json().await?;
         Ok(bdk_wallet::Balance::from(response))
     }
 
@@ -72,7 +44,7 @@ impl EBPPClient {
             .join("/v1/ebpp/onchain/network")
             .expect("network relative path");
         let request = self.cl.get(url);
-        let response: web_wallet::Network = request.send().await?.json().await?;
+        let response: wire_wallet::Network = request.send().await?.json().await?;
         Ok(response.network)
     }
 }

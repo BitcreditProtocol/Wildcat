@@ -6,9 +6,8 @@ use bcr_common::{
     cashu,
     cdk::{self, wallet::MintConnector},
     core::signature::serialize_n_schnorr_sign_borsh_msg,
-    wire::{clowder as wire_clowder, keys as wire_keys},
+    wire::{clowder as wire_clowder, exchange as wire_exchange, keys as wire_keys},
 };
-use bcr_wdc_webapi::exchange as web_exchange;
 use bitcoin::hex::prelude::*;
 use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
@@ -209,7 +208,7 @@ impl proof::KeysClient for SatKeysClient {
             .iter()
             .fold(cashu::Amount::ZERO, |acc, b| acc + b.amount);
         let nonce: [u8; 16] = rand::random();
-        let message = web_exchange::RequestToMintFromForeigneCashPayload {
+        let message = wire_exchange::RequestToMintFromForeignECashPayload {
             foreign_amount_sat: total.into(),
             nonce: nonce.as_hex().to_string(),
         };
@@ -217,7 +216,7 @@ impl proof::KeysClient for SatKeysClient {
         let pk = cashu::PublicKey::from(kp.public_key());
         let (payload, signature) =
             serialize_n_schnorr_sign_borsh_msg(&message, &self.signing_keys)?;
-        let description = serde_json::to_string(&web_exchange::RequestToMintFromForeigneCash {
+        let description = serde_json::to_string(&wire_exchange::RequestToMintFromForeignECash {
             payload,
             signature,
         })?;

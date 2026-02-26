@@ -11,9 +11,9 @@ use bcr_common::{
     wire::{
         bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
         keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
+        treasury as wire_treasury, wallet as wire_wallet,
     },
 };
-use bcr_wdc_webapi::wallet as web_wallet;
 use utoipa::OpenApi;
 // ----- local modules
 mod admin;
@@ -28,7 +28,7 @@ pub struct AppConfig {
     pub quotes_url: bcr_common::client::Url,
     pub ebill_url: bcr_common::client::Url,
     pub clowder_url: bcr_common::client::Url,
-    pub treasury_url: bcr_wdc_treasury_client::Url,
+    pub treasury_url: bcr_common::client::Url,
 }
 
 #[derive(Clone, FromRef)]
@@ -37,7 +37,7 @@ pub struct AppController {
     pub quotes_cl: bcr_common::client::quote::Client,
     pub ebill_cl: bcr_common::client::ebill::Client,
     pub clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
-    pub treasury_cl: bcr_wdc_treasury_client::TreasuryClient,
+    pub treasury_cl: bcr_common::client::treasury::Client,
 }
 
 impl AppController {
@@ -53,7 +53,7 @@ impl AppController {
         let quotes_cl = bcr_common::client::quote::Client::new(quotes_url);
         let ebill_cl = bcr_common::client::ebill::Client::new(ebill_url);
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
-        let treasury_cl = bcr_wdc_treasury_client::TreasuryClient::new(treasury_url);
+        let treasury_cl = bcr_common::client::treasury::Client::new(treasury_url);
         AppController {
             core_cl,
             quotes_cl,
@@ -183,7 +183,7 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         cashu::Id,
         cashu::KeySetInfo,
-        wire_keys::MintOperationStatus,
+        wire_treasury::MintOperationStatus,
         wire_keys::DeactivateKeysetRequest,
         wire_keys::DeactivateKeysetResponse,
         types::TokenStateRequest,
@@ -209,8 +209,8 @@ pub fn routes(ctrl: AppController) -> Router {
         // treasury service
         wire_signatures::RequestToMintFromEBillRequest,
         wire_signatures::RequestToMintFromEBillResponse,
-        web_wallet::ECashBalance,
-        web_wallet::EbillPaymentComplete,
+        wire_wallet::ECashBalance,
+        wire_wallet::EbillPaymentComplete,
     ),),
     paths(
         admin::get_health,

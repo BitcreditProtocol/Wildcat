@@ -8,14 +8,14 @@ use axum::{
 };
 use bcr_common::{
     cashu::{self, ProofsMethods},
+    client::treasury::Error as TreasuryClientError,
     core::BillId,
     wire::{
         bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
         keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
+        treasury as wire_treasury, wallet as wire_wallet,
     },
 };
-use bcr_wdc_treasury_client::Error as TreasuryClientError;
-use bcr_wdc_webapi::wallet as web_wallet;
 use clwdr_client::model::ClowderNodeInfo;
 // ----- local imports
 use crate::{
@@ -87,7 +87,7 @@ pub async fn list_keyset_infos(
         ("qid" = uuid::Uuid, Path, description = "the quote id this minting operation is associated with")
     ),
     responses (
-        (status = 200, description = "Successful response", body = wire_keys::MintOperationStatus , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_treasury::MintOperationStatus , content_type = "application/json"),
         (status = 404, description = "resource id not found"),
     )
 )]
@@ -95,7 +95,7 @@ pub async fn list_keyset_infos(
 pub async fn get_mintop_status(
     State(ctrl): State<AppController>,
     Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<wire_keys::MintOperationStatus>> {
+) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request");
 
     let status = ctrl.core_cl.mint_operation_status(qid).await?;
@@ -568,13 +568,13 @@ pub async fn post_ebill_reqtopay(
     get,
     path = endpoints::GET_SAT_BALANCE,
     responses (
-        (status = 200, description = "Successful response", body = web_wallet::ECashBalance, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_wallet::ECashBalance, content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn get_sat_balance(
     State(ctrl): State<AppController>,
-) -> Result<Json<web_wallet::ECashBalance>> {
+) -> Result<Json<wire_wallet::ECashBalance>> {
     tracing::debug!("Received request for treasury sat balance");
 
     let response = ctrl.treasury_cl.sat_balance().await?;
@@ -585,7 +585,7 @@ pub async fn get_sat_balance(
     get,
     path = endpoints::EBILL_PAY_COMPLETE,
     responses (
-        (status = 200, description = "Successful response", body = web_wallet::EbillPaymentComplete, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_wallet::EbillPaymentComplete, content_type = "application/json"),
         (status = 404, description = "bill id not found"),
     )
 )]
@@ -593,7 +593,7 @@ pub async fn get_sat_balance(
 pub async fn get_ebill_mint_complete(
     State(ctrl): State<AppController>,
     Path(bid): Path<BillId>,
-) -> Result<Json<web_wallet::EbillPaymentComplete>> {
+) -> Result<Json<wire_wallet::EbillPaymentComplete>> {
     tracing::debug!("Received request for ebill payment complete {bid}");
 
     let response = ctrl.treasury_cl.is_ebill_mint_complete(bid).await;
@@ -602,7 +602,7 @@ pub async fn get_ebill_mint_complete(
             Err(Error::ResourceNotFound(resource))
         }
         Err(err) => Err(Error::TreasuryClient(err)),
-        Ok(response) => Ok(Json(web_wallet::EbillPaymentComplete {
+        Ok(response) => Ok(Json(wire_wallet::EbillPaymentComplete {
             complete: response,
         })),
     }

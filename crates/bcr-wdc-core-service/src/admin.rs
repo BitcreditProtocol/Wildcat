@@ -2,7 +2,10 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
-use bcr_common::{cashu, wire::keys as wire_keys, wire::swap as wire_swap};
+use bcr_common::{
+    cashu,
+    wire::{keys as wire_keys, swap as wire_swap, treasury as wire_treasury},
+};
 // ----- local imports
 use crate::{error::Result, keys, swap};
 
@@ -64,8 +67,8 @@ pub async fn deactivate(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn new_mintop(
     State(ctrl): State<Arc<keys::service::Service>>,
-    Json(request): Json<wire_keys::NewMintOperationRequest>,
-) -> Result<Json<wire_keys::NewMintOperationResponse>> {
+    Json(request): Json<wire_treasury::NewMintOperationRequest>,
+) -> Result<Json<wire_treasury::NewMintOperationResponse>> {
     tracing::debug!("Received new mint operation request");
 
     ctrl.new_minting_operation(
@@ -76,12 +79,14 @@ pub async fn new_mintop(
         request.bill_id,
     )
     .await?;
-    let response = wire_keys::NewMintOperationResponse {};
+    let response = wire_treasury::NewMintOperationResponse {};
     Ok(Json(response))
 }
 
-fn convert_mintop_status(status: keys::service::MintOperation) -> wire_keys::MintOperationStatus {
-    wire_keys::MintOperationStatus {
+fn convert_mintop_status(
+    status: keys::service::MintOperation,
+) -> wire_treasury::MintOperationStatus {
+    wire_treasury::MintOperationStatus {
         kid: status.kid,
         quote_id: status.uid,
         target: status.target,
@@ -93,7 +98,7 @@ fn convert_mintop_status(status: keys::service::MintOperation) -> wire_keys::Min
 pub async fn mintop_status(
     State(ctrl): State<Arc<keys::service::Service>>,
     Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<wire_keys::MintOperationStatus>> {
+) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request {qid}");
 
     let status = ctrl.mintop_status(qid).await?;

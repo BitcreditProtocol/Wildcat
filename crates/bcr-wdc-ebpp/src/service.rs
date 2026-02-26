@@ -8,6 +8,7 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
+use bcr_common::wire::exchange as wire_exchange;
 use bcr_common::{
     cashu,
     cdk_common::{
@@ -26,7 +27,6 @@ use bcr_common::{
     },
     wire::signatures as wire_signatures,
 };
-use bcr_wdc_webapi::exchange as web_exchange;
 use bdk_wallet::bitcoin as btc;
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -155,7 +155,7 @@ impl MintPayment for Service {
         let parsed_description = ParsedDescription::parse(&options.description.unwrap_or_default());
         let payment_type = match parsed_description {
             Ok(ParsedDescription::ForeignECash(request)) => {
-                let payload: web_exchange::RequestToMintFromForeigneCashPayload =
+                let payload: wire_exchange::RequestToMintFromForeignECashPayload =
                     deserialize_borsh_msg(&request.payload).map_err(Error::from)?;
                 tracing::debug!(
                     "Parsed foreign ecash request, {} for {}",
@@ -620,7 +620,7 @@ async fn check_incoming_payment(
 enum ParsedDescription {
     Dev,
     EbillRequestToPay(wire_signatures::SignedRequestToMintFromEBillDesc),
-    ForeignECash(web_exchange::RequestToMintFromForeigneCash),
+    ForeignECash(wire_exchange::RequestToMintFromForeignECash),
     ClowderOnchain(Uuid),
 }
 impl ParsedDescription {
@@ -630,7 +630,7 @@ impl ParsedDescription {
         {
             Ok(Self::EbillRequestToPay(ebill_request))
         } else if let Ok(foreign_ecash_request) =
-            serde_json::from_str::<web_exchange::RequestToMintFromForeigneCash>(input)
+            serde_json::from_str::<wire_exchange::RequestToMintFromForeignECash>(input)
         {
             Ok(Self::ForeignECash(foreign_ecash_request))
         } else if let Some(uuid_str) = input.strip_prefix("clowder:") {
