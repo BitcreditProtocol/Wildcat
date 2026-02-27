@@ -3,7 +3,7 @@ name: build and push nightly Docker images
 on:
   push:
     branches:
-      - dev
+      - master
 
   workflow_dispatch:
 
@@ -43,7 +43,7 @@ jobs:
       id: filter
       uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
       with:
-        base: dev
+        base: master
         filters: |
           code:
             - 'crates/**'
@@ -52,6 +52,7 @@ jobs:
             - 'Cargo.lock'
             - 'recipe.json'
             - 'docker/**/Dockerfile'
+            - '.github/workflows/nightly.yml'
 
 # ───────────────────────────────
 # build base image, cache, upload local artifact
