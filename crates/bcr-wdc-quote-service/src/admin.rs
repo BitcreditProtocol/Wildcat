@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_common::wire::quotes as wire_quotes;
@@ -91,7 +92,7 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     params: Query<wire_quotes::ListParam>,
 ) -> Result<Json<wire_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
@@ -177,7 +178,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_quote(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<wire_quotes::InfoReply>> {
     tracing::debug!("Received mint quote lookup request {id}");
@@ -190,7 +191,7 @@ pub async fn lookup_quote(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn update_quote(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<wire_quotes::UpdateQuoteRequest>,
 ) -> Result<Json<wire_quotes::UpdateQuoteResponse>> {
@@ -212,7 +213,7 @@ pub async fn update_quote(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn enable_minting(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<wire_quotes::EnableMintingRequest>,
 ) -> Result<Json<wire_quotes::EnableMintingResponse>> {

@@ -3,43 +3,38 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::core::{Client as CoreClient, Error as CoreError},
+    client::{
+        core::{Client as CoreClient, Error as CoreError},
+        ebill::Client as EbillClient,
+    },
     core::BillId,
+    wire::quotes as wire_quotes,
 };
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    service::{KeysHandler, MintingStatus},
+    service::{MintingStatus, WdcClient},
 };
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct KeysRestConfig {
-    pub base_url: reqwest::Url,
-}
-
 #[derive(Debug, Clone)]
-pub struct KeysRestHandler(CoreClient);
-
-impl KeysRestHandler {
-    pub fn new(cfg: KeysRestConfig) -> Self {
-        let cl = CoreClient::new(cfg.base_url);
-        Self(cl)
-    }
+pub struct WildcatCl {
+    pub core: CoreClient,
+    pub ebill: EbillClient,
 }
 
 #[async_trait]
-impl KeysHandler for KeysRestHandler {
+impl WdcClient for WildcatCl {
     async fn get_keyset_with_redemption_date(
         &self,
         redemption_date: chrono::NaiveDate,
     ) -> Result<cashu::Id> {
-        let kid = self.0.keys_for_expiration(redemption_date).await?;
+        let kid = self.core.keys_for_expiration(redemption_date).await?;
         Ok(kid)
     }
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet> {
-        let keyset = self.0.keys(keyset_id).await?;
+        let keyset = self.core.keys(keyset_id).await?;
         Ok(keyset)
     }
     async fn add_new_mint_operation(
@@ -50,22 +45,31 @@ impl KeysHandler for KeysRestHandler {
         target: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()> {
-        self.0
+        self.core
             .new_mint_operation(qid, kid, pk, target, bill_id)
             .await?;
         Ok(())
     }
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        let signatures = self.0.sign(msg).await?;
+        let signatures = self.core.sign(msg).await?;
         Ok(signatures)
     }
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {
-        let response = self.0.mint_operation_status(qid).await;
+        let response = self.core.mint_operation_status(qid).await;
         match response {
             Ok(status) => Ok(MintingStatus::Enabled(status.current)),
             Err(CoreError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
             Err(e) => Err(Error::CoreHandler(e)),
         }
+    }
+    async fn validate_and_decrypt_shared_bill(
+        &self,
+        shared_bill: &wire_quotes::SharedBill,
+    ) -> Result<wire_quotes::BillInfo> {
+        self.ebill
+            .validate_and_decrypt_shared_bill(shared_bill)
+            .await
+            .map_err(Error::EbillClient)
     }
 }
 
@@ -85,7 +89,7 @@ pub mod test_utils {
     }
 
     #[async_trait]
-    impl KeysHandler for DummyKeysHandler {
+    impl WdcClient for DummyKeysHandler {
         async fn get_keyset_with_redemption_date(
             &self,
             redemption_date: chrono::NaiveDate,

@@ -6,13 +6,15 @@ use axum::{
     routing::{delete, get, patch, post},
     Router,
 };
-use bcr_common::client::quote::Client as QuoteClient;
+use bcr_common::client::{
+    core::Client as CoreClient, ebill::Client as EBillClient, quote::Client as QuoteClient,
+    Url as ClientUrl,
+};
 use bcr_wdc_utils::surreal;
 // ----- local modules
 mod admin;
-mod ebill;
+mod client;
 mod error;
-mod keys;
 mod persistence;
 mod quotes;
 mod service;
@@ -25,28 +27,27 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
 
-pub type ProdKeysHandler = keys::KeysRestHandler;
 pub type ProdQuotingService = service::Service;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     quotes: surreal::DBConnConfig,
-    keys: keys::KeysRestConfig,
-    ebill_client: ebill::EBillClientConfig,
+    core_url: ClientUrl,
+    ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    quote: ProdQuotingService,
+    quote: Arc<ProdQuotingService>,
 }
 
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
             quotes,
-            keys,
-            ebill_client,
+            core_url,
+            ebill_url,
             clowder_rest_url,
         } = cfg;
         let quotes_repository = ProdQuoteRepository::new(quotes)
@@ -63,23 +64,26 @@ impl AppController {
             .get_mint_url(*public_key)
             .await
             .expect("Failed to get mint URL");
-        let keys_hndlr = ProdKeysHandler::new(keys);
-        let ebill = ebill::EBillClient::new(ebill_client);
+        let core_cl = CoreClient::new(core_url);
+        let ebill_cl = EBillClient::new(ebill_url);
+        let wdc_cl = client::WildcatCl {
+            core: core_cl,
+            ebill: ebill_cl,
+        };
         let quoting_service = ProdQuotingService {
-            keys_hndlr: Arc::new(keys_hndlr),
-            quotes: Arc::new(quotes_repository),
-            ebill: Arc::new(ebill),
+            wdc_client: Box::new(wdc_cl),
+            quotes: Box::new(quotes_repository),
             mint_url,
         };
 
         Self {
-            quote: quoting_service,
+            quote: Arc::new(quoting_service),
         }
     }
 }
 pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
 where
-    service::Service: FromRef<Cntrlr> + Send + Sync + 'static,
+    Arc<service::Service>: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
     let user_routes = Router::new()
