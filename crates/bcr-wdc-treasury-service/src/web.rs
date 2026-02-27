@@ -10,7 +10,7 @@ use bcr_common::{
 use bitcoin::base64::prelude::*;
 use uuid::Uuid;
 // ----- local imports
-use crate::{debit, error::Result, foreign, AppController};
+use crate::{credit, debit, error::Result, foreign, AppController};
 
 // ----- end imports
 
@@ -364,5 +364,15 @@ pub async fn mint_onchain(
         tracing::debug!("Sent mint to clowder");
     }
 
+    Ok(Json(response))
+}
+
+pub async fn mint_ebill(
+    State(ctrl): State<Arc<credit::Service>>,
+    Json(req): Json<cashu::MintRequest<uuid::Uuid>>,
+) -> Result<Json<cashu::MintResponse>> {
+    tracing::debug!("Received mint request for {}", req.quote);
+
+    let response = ctrl.mint(req).await?;
     Ok(Json(response))
 }
