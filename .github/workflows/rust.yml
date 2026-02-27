@@ -52,7 +52,10 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          protoc --version
 
       - name: install rust
         run: rustup update stable
