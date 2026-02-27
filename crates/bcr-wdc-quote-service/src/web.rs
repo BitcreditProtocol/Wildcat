@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_common::{
@@ -12,7 +13,7 @@ use crate::{error::Result, quotes, service::Service};
 
 ///--------------------------- Enquire mint quote
 pub async fn enquire_quote(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Json(signed_request): Json<wire_quotes::SignedEnquireRequest>,
 ) -> Result<Json<wire_quotes::EnquireReply>> {
     tracing::debug!("Received mint quote request for bill",);
@@ -82,7 +83,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
 }
 
 pub async fn lookup_quote(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<wire_quotes::StatusReply>> {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
@@ -94,7 +95,7 @@ pub async fn lookup_quote(
 
 /// --------------------------- Resolve quote offer
 pub async fn resolve_offer(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<wire_quotes::ResolveOffer>,
 ) -> Result<()> {
@@ -110,7 +111,7 @@ pub async fn resolve_offer(
 
 /// --------------------------- Cancel quote inquiry
 pub async fn cancel(
-    State(ctrl): State<Service>,
+    State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<wire_quotes::StatusReply>> {
     tracing::debug!("Received mint quote cancel request for id: {}", id);

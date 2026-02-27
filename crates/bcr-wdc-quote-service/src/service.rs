@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -46,7 +45,7 @@ pub enum MintingStatus {
 }
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysHandler: Send + Sync {
+pub trait WdcClient: Send + Sync {
     async fn get_keyset_with_redemption_date(
         &self,
         redemption_date: chrono::NaiveDate,
@@ -62,11 +61,6 @@ pub trait KeysHandler: Send + Sync {
     ) -> Result<()>;
     async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait EBillNode: Sync {
     async fn validate_and_decrypt_shared_bill(
         &self,
         shared_bill: &wire_quotes::SharedBill,
@@ -74,11 +68,9 @@ pub trait EBillNode: Sync {
 }
 
 // ---------- Service
-#[derive(Clone)]
 pub struct Service {
-    pub keys_hndlr: Arc<dyn KeysHandler + Send + Sync>,
-    pub quotes: Arc<dyn Repository + Send + Sync>,
-    pub ebill: Arc<dyn EBillNode + Send + Sync>,
+    pub wdc_client: Box<dyn WdcClient + Send + Sync>,
+    pub quotes: Box<dyn Repository + Send + Sync>,
     pub mint_url: cashu::MintUrl,
 }
 
@@ -116,7 +108,7 @@ impl Service {
         &self,
         shared_bill: &wire_quotes::SharedBill,
     ) -> Result<wire_quotes::BillInfo> {
-        self.ebill
+        self.wdc_client
             .validate_and_decrypt_shared_bill(shared_bill)
             .await
     }
@@ -298,7 +290,7 @@ impl Service {
         };
         let maturity_date = quote.bill.maturity_date;
         let kid = self
-            .keys_hndlr
+            .wdc_client
             .get_keyset_with_redemption_date(maturity_date)
             .await?;
         let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
@@ -329,9 +321,9 @@ impl Service {
         };
         let fees_amount = quote.bill.sum - discounted;
         let fees_amount = cashu::Amount::from(fees_amount.to_sat());
-        let keys = self.keys_hndlr.get_keys(keyset_id).await?;
+        let keys = self.wdc_client.get_keys(keyset_id).await?;
         let fees_token = mint_fees(
-            self.keys_hndlr.as_ref(),
+            self.wdc_client.as_ref(),
             fees_amount,
             keys,
             self.mint_url.clone(),
@@ -343,7 +335,7 @@ impl Service {
         self.quotes
             .update_status_if_accepted(quote.id, quote.status)
             .await?;
-        self.keys_hndlr
+        self.wdc_client
             .add_new_mint_operation(
                 qid,
                 keyset_id,
@@ -361,7 +353,7 @@ pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super:
 }
 
 async fn mint_fees(
-    keyscl: &dyn KeysHandler,
+    keyscl: &dyn WdcClient,
     fees_amount: cashu::Amount,
     keys: cashu::KeySet,
     mint_url: cashu::MintUrl,
@@ -431,14 +423,12 @@ mod tests {
         let mut quotes = MockRepository::new();
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes.expect_store().returning(|_| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let rnd_bill = generate_random_bill();
         let service = Service {
-            quotes: Arc::new(quotes),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(quotes),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test = service
@@ -468,13 +458,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let service = Service {
-            quotes: Arc::new(repo),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
@@ -506,13 +494,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let service = Service {
-            quotes: Arc::new(repo),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
@@ -547,13 +533,11 @@ mod tests {
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let service = Service {
-            quotes: Arc::new(repo),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
@@ -589,13 +573,11 @@ mod tests {
             });
         repo.expect_update_status_if_offered()
             .returning(|_, _| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let service = Service {
-            quotes: Arc::new(repo),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
@@ -635,13 +617,11 @@ mod tests {
         repo.expect_update_status_if_offered()
             .returning(|_, _| Ok(()));
         repo.expect_store().returning(|_| Ok(()));
-        let keys_hndlr = MockKeysHandler::new();
-        let ebill = MockEBillNode::new();
+        let wdc_client = MockWdcClient::new();
 
         let service = Service {
-            quotes: Arc::new(repo),
-            keys_hndlr: Arc::new(keys_hndlr),
-            ebill: Arc::new(ebill),
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
