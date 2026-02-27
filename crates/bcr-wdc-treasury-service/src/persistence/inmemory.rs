@@ -1,14 +1,19 @@
 // ----- standard library imports
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{cashu, wire::keys::ProofFingerprint};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use uuid::Uuid;
 // ----- local imports
-use crate::{error::Result, foreign};
+use crate::{
+    credit,
+    error::{Error, Result},
+    foreign,
+};
 
 // ----- end imports
 
@@ -125,6 +130,75 @@ impl foreign::OfflineRepository for InMemoryOfflineRepository {
         for proofs in locked.values_mut() {
             proofs.retain(|p| !ys.contains(&p.y().expect("proof should have y")));
         }
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+type MintOperationsReferences = (
+    HashMap<uuid::Uuid, credit::MintOperation>,
+    HashMap<cashu::Id, Vec<uuid::Uuid>>,
+);
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone)]
+pub struct MintOpMap {
+    operations: Arc<RwLock<MintOperationsReferences>>,
+}
+#[async_trait]
+impl credit::MintOpRepository for MintOpMap {
+    async fn store(&self, mint_op: credit::MintOperation) -> Result<()> {
+        let mut wlocked = self.operations.write().unwrap();
+        let (cs, cs_kid) = &mut *wlocked;
+        if cs.contains_key(&mint_op.uid) {
+            return Err(Error::InvalidInput(format!(
+                "mint_op {}, already exists",
+                mint_op.uid
+            )));
+        }
+        let uid = mint_op.uid;
+        let kid = mint_op.kid;
+        cs.insert(mint_op.uid, mint_op);
+        cs_kid
+            .entry(kid)
+            .and_modify(|conds| conds.push(uid))
+            .or_insert(vec![uid]);
+        Ok(())
+    }
+    async fn load(&self, uid: Uuid) -> Result<credit::MintOperation> {
+        let rlocked = self.operations.read().unwrap();
+        let (cs, _) = &*rlocked;
+        let op = cs
+            .get(&uid)
+            .ok_or(Error::InvalidInput(format!("mint_op {uid} not found")))?;
+        Ok(op.clone())
+    }
+    async fn list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
+        let rlocked = self.operations.read().unwrap();
+        let (cs, cs_kid) = &*rlocked;
+        let empty = Vec::default();
+        let uids = cs_kid.get(&kid).unwrap_or(&empty);
+        let mut a = Vec::with_capacity(uids.len());
+        for uid in uids {
+            if let Some(condition) = cs.get(uid) {
+                a.push(condition.clone())
+            }
+        }
+        Ok(a)
+    }
+    async fn update(&self, uid: uuid::Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
+        let mut wlocked = self.operations.write().unwrap();
+        let (cs, _) = &mut *wlocked;
+        let operation = cs.get_mut(&uid).ok_or(Error::Internal(format!(
+            "MintOperation internal uuid does not exist {uid}"
+        )))?;
+        if operation.minted != old {
+            return Err(Error::Internal(format!(
+                "MintOperation internal minted value changed {} != {}",
+                operation.minted, old
+            )));
+        }
+        operation.minted = new;
         Ok(())
     }
 }

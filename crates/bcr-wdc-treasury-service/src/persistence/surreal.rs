@@ -2,71 +2,22 @@
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{
-    cashu::{self, secret::Secret, Amount},
-    wire::keys as wire_keys,
-};
+use bcr_common::{cashu, core, wire::keys as wire_keys};
 use bcr_wdc_utils::surreal;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use surrealdb::{engine::any::Any, RecordId, Result as SurrealResult, Surreal};
+use surrealdb::{
+    engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
+    Result as SurrealResult, Surreal,
+};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    debit,
+    credit, debit,
     error::{Error, Result},
     foreign, persistence,
 };
 
 // ----- end imports
-
-// cashu::PreMint is not Deserialize
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct DBEntryPremint {
-    blinded: cashu::BlindedMessage,
-    secret: Secret,
-    r: cashu::SecretKey,
-    amount: Amount,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct DBEntryPremintSecret {
-    request_id: Uuid,
-    kid: cashu::Id,
-    secrets: Vec<DBEntryPremint>,
-}
-
-impl std::convert::From<DBEntryPremint> for cashu::PreMint {
-    fn from(entry: DBEntryPremint) -> Self {
-        Self {
-            blinded_message: entry.blinded,
-            secret: entry.secret,
-            r: entry.r,
-            amount: entry.amount,
-        }
-    }
-}
-
-impl std::convert::From<cashu::PreMint> for DBEntryPremint {
-    fn from(entry: cashu::PreMint) -> Self {
-        Self {
-            blinded: entry.blinded_message,
-            secret: entry.secret,
-            r: entry.r,
-            amount: entry.amount,
-        }
-    }
-}
-
-impl std::convert::From<DBEntryPremintSecret> for cashu::PreMintSecrets {
-    fn from(entry: DBEntryPremintSecret) -> Self {
-        let DBEntryPremintSecret { kid, secrets, .. } = entry;
-        let secrets: Vec<cashu::PreMint> = secrets.into_iter().map(|e| e.into()).collect();
-        Self {
-            keyset_id: kid,
-            secrets,
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct DebitRepository {
@@ -210,6 +161,136 @@ impl ForeignOnlineRepository {
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
         Ok(Self { db: db_connection })
+    }
+}
+
+////////////////////////////////////////////////////////////////////// MintOp DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MintOpDBEntry {
+    id: RecordId,
+    kid: cashu::Id,
+    pub_key: cashu::PublicKey,
+    target: cashu::Amount,
+    minted: cashu::Amount,
+    bill_id: core::BillId,
+}
+
+fn convert_to_mintopdbentry(entry: credit::MintOperation, table: &str) -> MintOpDBEntry {
+    let credit::MintOperation {
+        uid,
+        kid,
+        pub_key,
+        target,
+        minted,
+        bill_id,
+    } = entry;
+    let id = RecordId::from_table_key(table, uid);
+    MintOpDBEntry {
+        id,
+        kid,
+        pub_key,
+        target,
+        minted,
+        bill_id,
+    }
+}
+impl std::convert::From<MintOpDBEntry> for credit::MintOperation {
+    fn from(entry: MintOpDBEntry) -> Self {
+        let key = entry.id.key();
+        let uid = Uuid::try_from(key.clone()).expect("key is a uuid");
+        Self {
+            uid,
+            kid: entry.kid,
+            pub_key: entry.pub_key,
+            target: entry.target,
+            minted: entry.minted,
+            bill_id: entry.bill_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DBMintOps {
+    db: Surreal<surrealdb::engine::any::Any>,
+}
+
+impl DBMintOps {
+    const TABLE: &'static str = "mint_ops";
+
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
+        Ok(Self { db: db_connection })
+    }
+}
+
+#[async_trait]
+impl credit::MintOpRepository for DBMintOps {
+    async fn store(&self, mint_op: credit::MintOperation) -> Result<()> {
+        let uid = mint_op.uid;
+        let entry = convert_to_mintopdbentry(mint_op, Self::TABLE);
+        let res: SurrealResult<Option<MintOpDBEntry>> =
+            self.db.insert(&entry.id).content(entry).await;
+        match res {
+            Ok(..) => Ok(()),
+            Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
+                Err(Error::InvalidInput(format!("mintop already exist {uid}")))
+            }
+            Err(e) => Err(Error::DB(anyhow!(e))),
+        }
+    }
+
+    async fn load(&self, uid: Uuid) -> Result<credit::MintOperation> {
+        let rid = RecordId::from_table_key(Self::TABLE, uid);
+        let res: SurrealResult<Option<MintOpDBEntry>> = self.db.select(rid.clone()).await;
+        match res {
+            Ok(Some(entry)) => Ok(credit::MintOperation::from(entry)),
+            Ok(None) => Err(Error::InvalidInput(format!("mintop not found {uid}"))),
+            Err(e) => Err(Error::DB(anyhow!(e))),
+        }
+    }
+
+    async fn list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
+        let ops: Vec<MintOpDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE kid == $kid")
+            .bind(("table", Self::TABLE))
+            .bind(("kid", kid))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+
+        let ops = ops.into_iter().map(credit::MintOperation::from).collect();
+        Ok(ops)
+    }
+    async fn update(&self, uid: Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::TABLE, uid);
+        let before: Option<MintOpDBEntry> = self
+            .db
+            .query("UPDATE $rid SET minted = $new WHERE minted == $old RETURN BEFORE")
+            .bind(("rid", rid))
+            .bind(("new", new))
+            .bind(("old", old))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(before) = before else {
+            return Err(Error::InvalidInput(format!(
+                "mintop {uid} and {old} amount not found"
+            )));
+        };
+        debug_assert_eq!(before.minted, old, "Minted amount did not match for {uid}");
+        if before.minted != old {
+            tracing::error!(
+                "Minted amount did not match for mintop {uid}: expected {old}, got {}",
+                before.minted,
+            );
+        }
+        Ok(())
     }
 }
 
@@ -495,14 +576,14 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::credit::MintOpRepository;
     use crate::foreign::OfflineRepository;
     use crate::persistence::Repository;
     use bcr_common::core_tests;
-    use bcr_common::core_tests::generate_random_keypair;
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
 
-    async fn init_deb_mem_db() -> DebitRepository {
+    async fn init_debit_mem_db() -> DebitRepository {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
@@ -512,7 +593,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mint_quote() {
-        let db = init_deb_mem_db().await;
+        let db = init_debit_mem_db().await;
 
         let quote = debit::MintQuote {
             qid: Uuid::new_v4().to_string(),
@@ -541,13 +622,13 @@ mod tests {
     async fn offline_search_fps() {
         let db = init_foreignoffline_mem_db().await;
 
-        let alpha_pk = generate_random_keypair().public_key();
+        let alpha_pk = core_tests::generate_random_keypair().public_key();
         let alpha = (
             alpha_pk,
             cashu::MintUrl::from_str("http://example.com").unwrap(),
         );
-        let y = cashu::PublicKey::from(generate_random_keypair().public_key());
-        let c = cashu::PublicKey::from(generate_random_keypair().public_key());
+        let y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        let c = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
         let fps = vec![
             wire_keys::ProofFingerprint {
                 amount: 10,
@@ -560,8 +641,8 @@ mod tests {
             wire_keys::ProofFingerprint {
                 amount: 10,
                 keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
-                y: cashu::PublicKey::from(generate_random_keypair().public_key()),
-                c: cashu::PublicKey::from(generate_random_keypair().public_key()),
+                y: cashu::PublicKey::from(core_tests::generate_random_keypair().public_key()),
+                c: cashu::PublicKey::from(core_tests::generate_random_keypair().public_key()),
                 witness: None,
                 dleq: None,
             },
@@ -578,5 +659,122 @@ mod tests {
         let (mint, fp) = result.unwrap();
         assert_eq!(mint.0, alpha.0);
         assert_eq!(fp.y, y);
+    }
+
+    async fn init_mintops_mem_db() -> DBMintOps {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBMintOps { db: sdb }
+    }
+
+    #[tokio::test]
+    async fn store_mintop() {
+        let db = init_mintops_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core_tests::generate_random_keypair();
+        let op = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op).await.unwrap();
+    }
+    #[tokio::test]
+    async fn store_mintop_twice() {
+        let db = init_mintops_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core_tests::generate_random_keypair();
+        let op = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op.clone()).await.unwrap();
+        let res = db.store(op).await;
+        assert!(matches!(res, Err(Error::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn load_mintop() {
+        let db = init_mintops_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core_tests::generate_random_keypair();
+        let op = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op.clone()).await.unwrap();
+        let res = db.load(op.uid).await.unwrap();
+        assert_eq!(res.kid, kid);
+        assert_eq!(res.pub_key, kp.public_key().into());
+    }
+
+    #[tokio::test]
+    async fn update_mintop() {
+        let db = init_mintops_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core_tests::generate_random_keypair();
+        let op = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op.clone()).await.unwrap();
+        db.update(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
+            .await
+            .unwrap();
+        let res = db.load(op.uid).await.unwrap();
+        assert_eq!(res.kid, kid);
+        assert_eq!(res.minted, cashu::Amount::from(100u64));
+    }
+
+    #[tokio::test]
+    async fn list_mintops() {
+        let db = init_mintops_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core_tests::generate_random_keypair();
+        let op1 = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op1.clone()).await.unwrap();
+        let op2 = credit::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.store(op2.clone()).await.unwrap();
+        let res = db.list(kid).await.unwrap();
+        assert_eq!(res.len(), 2);
+        let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
+        assert!(rids.contains(&op1.uid));
+        assert!(rids.contains(&op2.uid));
     }
 }

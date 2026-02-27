@@ -6,12 +6,16 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{cashu, cdk, client::treasury::Client as TreasuryClient};
+use bcr_common::{
+    cashu, cdk,
+    client::{core::Client as CoreClient, treasury::Client as TreasuryClient},
+};
 use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1;
 use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
+mod credit;
 mod debit;
 mod devmode;
 mod error;
@@ -24,7 +28,6 @@ mod web;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
-type ProdCrsatService = foreign::crsat::Service;
 type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
 type ProdCrsatKeysClient = foreign::clients::CrsatCoreClient;
@@ -36,15 +39,18 @@ type ProdSatKeysClient = foreign::clients::SatKeysClient;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    credit_keys_url: reqwest::Url,
+    debit: DebitConfig,
+    foreign: ForeignConfig,
+    credit: CreditConfig,
+    clwdr_nats_url: Option<reqwest::Url>,
+    keys_url: reqwest::Url,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct DebitConfig {
     cdk_mintd_url: cashu::MintUrl,
     debit_repo: surreal::DBConnConfig,
-    crsatonline_repo: surreal::DBConnConfig,
-    crsatoffline_repo: surreal::DBConnConfig,
-    satonline_repo: surreal::DBConnConfig,
-    satoffline_repo: surreal::DBConnConfig,
     clowder_url: reqwest::Url,
-    clwdr_nats_url: Option<reqwest::Url>,
     signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
@@ -53,6 +59,19 @@ pub struct AppConfig {
     min_confirmations: u32,
     min_melt_threshold: bitcoin::Amount,
     min_mint_threshold: bitcoin::Amount,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct ForeignConfig {
+    crsatonline_repo: surreal::DBConnConfig,
+    crsatoffline_repo: surreal::DBConnConfig,
+    satonline_repo: surreal::DBConnConfig,
+    satoffline_repo: surreal::DBConnConfig,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct CreditConfig {
+    mintops: surreal::DBConnConfig,
 }
 
 #[derive(Clone)]
@@ -64,8 +83,9 @@ struct Parameters {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
+    credit: Arc<credit::Service>,
     debit: debit::Service,
-    crsat: Arc<ProdCrsatService>,
+    crsat: Arc<foreign::crsat::Service>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
     clwdr_nats: Option<Arc<ClowderNatsClient>>,
@@ -78,16 +98,17 @@ pub struct AppController {
 impl AppController {
     pub async fn new(seed: [u8; 64], secret: secp256k1::SecretKey, cfg: AppConfig) -> Self {
         let AppConfig {
-            credit_keys_url,
+            debit,
+            foreign,
+            credit,
+            clwdr_nats_url,
+            keys_url,
+        } = cfg;
+        let DebitConfig {
             cdk_mintd_url,
             clowder_url,
-            clwdr_nats_url,
             signer_url,
             debit_repo,
-            crsatonline_repo,
-            crsatoffline_repo,
-            satonline_repo,
-            satoffline_repo,
             sat_wallet,
             wildcat,
             monitor_interval_sec,
@@ -95,7 +116,14 @@ impl AppController {
             min_confirmations,
             min_melt_threshold,
             min_mint_threshold,
-        } = cfg;
+        } = debit;
+        let ForeignConfig {
+            crsatonline_repo,
+            crsatoffline_repo,
+            satonline_repo,
+            satoffline_repo,
+        } = foreign;
+        let CreditConfig { mintops } = credit;
 
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
             .await
@@ -109,7 +137,7 @@ impl AppController {
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
         let clowder_cl = debit::ClowderCl(ClowderRestClient::new(clowder_url.clone()));
-        let clwdr_nats = if let Some(url) = clwdr_nats_url {
+        let clwdr_nats = if let Some(url) = clwdr_nats_url.clone() {
             Some(Arc::new(
                 ClowderNatsClient::new(url)
                     .await
@@ -151,7 +179,7 @@ impl AppController {
                 .await
                 .expect("Failed to create crsat offline repository"),
         );
-        let crsatkeys = ProdCrsatKeysClient::new(credit_keys_url.clone());
+        let crsatkeys = ProdCrsatKeysClient::new(keys_url.clone());
         let clwdr_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
@@ -165,7 +193,7 @@ impl AppController {
                 &online, &offline, &clwdr, &fctry, interval,
             ))
         };
-        let crsat = Arc::new(ProdCrsatService {
+        let crsat = Arc::new(foreign::crsat::Service {
             online_repo: crsatonlinerepo,
             offline_repo: crsatofflinerepo,
             keys: Box::new(crsatkeys),
@@ -208,10 +236,23 @@ impl AppController {
             .expect("Failed to create signer");
 
         let dev = devmode::Service {
-            crcore: bcr_common::client::core::Client::new(credit_keys_url),
+            crcore: bcr_common::client::core::Client::new(keys_url.clone()),
             dbmint: dbmint.clone(),
         };
+        let mintops_repo = persistence::surreal::DBMintOps::new(mintops)
+            .await
+            .expect("Failed to create mintops repository");
+        let corecl = credit::CoreCl(CoreClient::new(keys_url));
+        let clowdercl = credit::new_clowder_client(clwdr_nats_url)
+            .await
+            .expect("Failed to create clowder client");
+        let credit = Arc::new(credit::Service {
+            mintops: Box::new(mintops_repo),
+            corecl: Box::new(corecl),
+            clowdercl,
+        });
         Self {
+            credit,
             debit,
             crsat,
             sat,
@@ -268,7 +309,8 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::MINTQUOTE_ONCHAIN_GET_EP_V1,
             get(web::get_mint_quote_onchain),
         )
-        .route(TreasuryClient::MINT_ONCHAIN_EP_V1, post(web::mint_onchain));
+        .route(TreasuryClient::MINT_ONCHAIN_EP_V1, post(web::mint_onchain))
+        .route(TreasuryClient::MINT_EP_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
             TreasuryClient::REQTOPAY_EP_V1,
@@ -286,6 +328,12 @@ pub fn routes(app: AppController) -> Router {
         .route(
             TreasuryClient::IS_EBILL_MINT_COMPLETE_EP_V1,
             get(admin::is_ebill_minting_completed),
+        )
+        .route(TreasuryClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
+        .route(TreasuryClient::LISTMINTOPS_EP_V1, get(admin::list_mintops))
+        .route(
+            TreasuryClient::MINTOPSTATUS_EP_V1,
+            get(admin::mintop_status),
         );
     admin.merge(web).with_state(app)
 }
