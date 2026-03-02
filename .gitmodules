@@ -1,6 +1,3 @@
 [submodule "bcr-common"]
 	path = bcr-common
 	url = https://github.com/BitcreditProtocol/bcr-common.git
-[submodule "deploy"]
-	path = deploy
-	url = https://github.com/BitcreditProtocol/Wildcat-deployment.git
