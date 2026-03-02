@@ -8,7 +8,7 @@ use bcr_common::{
         ebill::Client as EbillClient,
     },
     core::BillId,
-    wire::quotes as wire_quotes,
+    wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use uuid::Uuid;
 // ----- local modules
@@ -75,6 +75,11 @@ impl WdcClient for WildcatCl {
             .ebill
             .validate_and_decrypt_shared_bill(shared_bill)
             .await?;
+        Ok(ebill)
+    }
+
+    async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill> {
+        let ebill = self.ebill.get_bill(&bid).await?;
         Ok(ebill)
     }
 }

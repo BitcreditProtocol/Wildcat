@@ -5,7 +5,7 @@ use bcr_common::{
     cashu,
     core::{BillId, NodeId},
     wallet::Token,
-    wire::quotes as wire_quotes,
+    wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use bitcoin::Amount;
 use futures::future::JoinAll;
@@ -65,6 +65,7 @@ pub trait WdcClient: Send + Sync {
         &self,
         shared_bill: &wire_quotes::SharedBill,
     ) -> Result<wire_quotes::BillInfo>;
+    async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill>;
 }
 
 // ---------- Service
