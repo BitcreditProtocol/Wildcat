@@ -48,7 +48,7 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
           token: ${{ steps.app-token.outputs.token }}
@@ -63,7 +63,7 @@ jobs:
         run: rustup update stable
 
       - name: Activate cache
-        uses: Swatinem/rust-cache@v2.8.0
+        uses: Swatinem/rust-cache@v2.8.2
         with:
           prefix-key: "wildcat-01"
 
@@ -72,7 +72,7 @@ jobs:
         run: cargo run -p bcr-wdc-admin-aggregator --bin gen_api
 
       - name: upload new openapi.json file
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: "openapi.json"
           path: openapi.json
