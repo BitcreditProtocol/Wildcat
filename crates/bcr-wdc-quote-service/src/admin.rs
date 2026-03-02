@@ -210,16 +210,3 @@ pub async fn update_quote(
     };
     Ok(Json(response))
 }
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn enable_minting(
-    State(ctrl): State<Arc<Service>>,
-    Path(id): Path<uuid::Uuid>,
-    Json(req): Json<wire_quotes::EnableMintingRequest>,
-) -> Result<Json<wire_quotes::EnableMintingResponse>> {
-    tracing::debug!("Received enable mint for quote request");
-
-    ctrl.enable_minting(id).await?;
-    let response = wire_quotes::EnableMintingResponse {};
-    Ok(Json(response))
-}
