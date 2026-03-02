@@ -28,7 +28,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    let app = bcr_wdc_quote_service::AppController::new(maincfg.appcfg).await;
+    let (app, routine_hndl) = bcr_wdc_quote_service::init_app(maincfg.appcfg).await;
     let router = bcr_wdc_quote_service::routes(app);
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
@@ -39,6 +39,7 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("Failed to start server");
+    routine_hndl.stop().await;
 }
 
 async fn shutdown_signal() {
