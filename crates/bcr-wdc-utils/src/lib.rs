@@ -6,6 +6,7 @@ pub mod client;
 pub mod convert;
 pub mod info;
 pub mod keys;
+pub mod routine;
 pub mod signatures;
 pub mod surreal;
 pub mod built_info {
