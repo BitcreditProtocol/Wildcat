@@ -176,10 +176,6 @@ impl Service<UserService> {
 }
 
 impl Service<AdminService> {
-    pub async fn enable_minting_for_quote_id(&self, qid: Uuid) {
-        self.quote_cl.enable_minting(qid).await.unwrap();
-    }
-
     pub async fn offer_quote(
         &self,
         quote_id: Uuid,

@@ -78,7 +78,6 @@ pub mod endpoints {
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const LIST_CREDIT_QUOTES: &str = "/v1/admin/credit/quote";
     pub const UPDATE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
-    pub const ENABLE_QUOTE_MINTING: &str = "/v1/admin/credit/quote/enable_mint/{qid}";
     // EBills-Client
     pub const GET_IDENTITY: &str = "/v1/admin/ebill/identity";
     pub const GET_EBILL: &str = "/v1/admin/ebill/bills/{bid}";
@@ -120,10 +119,6 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
         .route(endpoints::LIST_CREDIT_QUOTES, get(admin::list_quotes))
         .route(endpoints::UPDATE_CREDIT_QUOTE, put(admin::update_quote))
-        .route(
-            endpoints::ENABLE_QUOTE_MINTING,
-            post(admin::post_enable_quote_minting),
-        )
         // ebills service
         .route(endpoints::GET_IDENTITY, get(admin::get_identity))
         .route(endpoints::GET_EBILL, get(admin::get_ebill))
@@ -194,7 +189,6 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_quotes::ListReplyLight,
         wire_quotes::UpdateQuoteRequest,
         wire_quotes::UpdateQuoteResponse,
-        wire_quotes::EnableMintingResponse,
         // ebills service
         wire_identity::Identity,
         wire_bill::BitcreditBill,
@@ -226,7 +220,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_quote,
         admin::list_quotes,
         admin::update_quote,
-        admin::post_enable_quote_minting,
         // ebills service
         admin::get_identity,
         admin::get_ebill,

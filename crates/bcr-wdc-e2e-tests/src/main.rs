@@ -189,7 +189,6 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     .unwrap();
 
     user_service.accept_quote(quote_id).await;
-    admin_service.enable_minting_for_quote_id(quote_id).await;
 
     let keysets = user_service.list_keysets().await;
     assert!(keysets.iter().any(|ks| ks.id == keyset_id));
