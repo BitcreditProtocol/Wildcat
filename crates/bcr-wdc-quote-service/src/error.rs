@@ -2,10 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::{
-    cashu::nut02 as cdk02, client::treasury::Error as TreasuryError,
-    core::signature::ECashSignatureError,
-};
+use bcr_common::{cashu::nut02 as cdk02, core::signature::ECashSignatureError};
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
