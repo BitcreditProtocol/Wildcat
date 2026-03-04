@@ -3,9 +3,8 @@
 use async_trait::async_trait;
 use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
 use bcr_wdc_utils::keys as keys_utils;
-use uuid::Uuid;
 // ----- local imports
-use crate::{error::Result, keys::service::MintOperation};
+use crate::error::Result;
 // ----- local modules
 pub mod inmemory;
 pub mod surreal;
@@ -22,20 +21,6 @@ pub trait KeysRepository: Send + Sync {
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
     async fn update_info(&self, info: MintKeySetInfo) -> Result<()>;
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait MintOpRepository: Send + Sync {
-    async fn store(&self, mint_operation: MintOperation) -> Result<()>;
-    async fn load(&self, uid: Uuid) -> Result<MintOperation>;
-    async fn list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
-    async fn update(
-        &self,
-        uid: Uuid,
-        old_minted: cashu::Amount,
-        new_minted: cashu::Amount,
-    ) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]

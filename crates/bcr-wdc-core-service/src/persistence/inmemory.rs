@@ -7,11 +7,9 @@ use std::{
 use async_trait::async_trait;
 use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
 use bcr_wdc_utils::keys::KeysetEntry;
-use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    keys::service::MintOperation,
     persistence,
 };
 
@@ -75,68 +73,6 @@ impl persistence::KeysRepository for KeyMap {
             .cloned()
             .collect();
         Ok(infos)
-    }
-}
-
-type MintOperationsReferences = (
-    HashMap<uuid::Uuid, MintOperation>,
-    HashMap<cashu::Id, Vec<uuid::Uuid>>,
-);
-
-#[derive(Default, Debug, Clone)]
-pub struct MintOpMap {
-    conditions: Arc<RwLock<MintOperationsReferences>>,
-}
-#[async_trait]
-impl persistence::MintOpRepository for MintOpMap {
-    async fn store(&self, mint_op: MintOperation) -> Result<()> {
-        let mut wlocked = self.conditions.write().unwrap();
-        let (cs, cs_kid) = &mut *wlocked;
-        if cs.contains_key(&mint_op.uid) {
-            return Err(Error::MintOpAlreadyExist(mint_op.uid));
-        }
-        let uid = mint_op.uid;
-        let kid = mint_op.kid;
-        cs.insert(mint_op.uid, mint_op);
-        cs_kid
-            .entry(kid)
-            .and_modify(|conds| conds.push(uid))
-            .or_insert(vec![uid]);
-        Ok(())
-    }
-    async fn load(&self, uid: Uuid) -> Result<MintOperation> {
-        let rlocked = self.conditions.read().unwrap();
-        let (cs, _) = &*rlocked;
-        let op = cs.get(&uid).ok_or(Error::MintOpNotFound(uid))?;
-        Ok(op.clone())
-    }
-    async fn list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {
-        let rlocked = self.conditions.read().unwrap();
-        let (cs, cs_kid) = &*rlocked;
-        let empty = Vec::default();
-        let uids = cs_kid.get(&kid).unwrap_or(&empty);
-        let mut a = Vec::with_capacity(uids.len());
-        for uid in uids {
-            if let Some(condition) = cs.get(uid) {
-                a.push(condition.clone())
-            }
-        }
-        Ok(a)
-    }
-    async fn update(&self, uid: uuid::Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
-        let mut wlocked = self.conditions.write().unwrap();
-        let (cs, _) = &mut *wlocked;
-        let condition = cs.get_mut(&uid).ok_or(Error::Internal(format!(
-            "MintCondition internal uid does not exist {uid}"
-        )))?;
-        if condition.minted != old {
-            return Err(Error::Internal(format!(
-                "MintCondition internal minted value changed {} != {}",
-                condition.minted, old
-            )));
-        }
-        condition.minted = new;
-        Ok(())
     }
 }
 
