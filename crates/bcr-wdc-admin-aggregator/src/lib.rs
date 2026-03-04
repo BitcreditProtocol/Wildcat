@@ -71,8 +71,6 @@ pub mod endpoints {
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
     pub const ENABLE_REDEMPTION: &str = "/v1/admin/credit/enable_redemption";
-    pub const MINT_OP_STATUS: &str = "/v1/admin/credit/mint_op_status/{qid}";
-    pub const LIST_MINT_OPS: &str = "/v1/admin/credit/mint_ops/{kid}";
     pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
     // Quotes-Client
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
@@ -94,6 +92,8 @@ pub mod endpoints {
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client
+    pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/credit/mint_op_status/{qid}";
+    pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/credit/mint_ops/{kid}";
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
     pub const EBILL_PAY_COMPLETE: &str = "/v1/admin/treasury/ebill/payment_complete/{bid}";
@@ -108,8 +108,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
-        .route(endpoints::MINT_OP_STATUS, get(admin::get_mintop_status))
-        .route(endpoints::LIST_MINT_OPS, get(admin::list_mintops))
         .route(
             endpoints::ENABLE_REDEMPTION,
             post(admin::post_enable_redemption),
@@ -159,6 +157,8 @@ pub fn routes(ctrl: AppController) -> Router {
             get(admin::get_clowder_status),
         )
         // treasury service
+        .route(endpoints::MINT_OP_STATUS, get(admin::get_mintop_status))
+        .route(endpoints::LIST_MINT_OPS, get(admin::list_mintops))
         .route(
             endpoints::POST_EBILL_REQTOPAY,
             post(admin::post_ebill_reqtopay),
@@ -178,7 +178,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         cashu::Id,
         cashu::KeySetInfo,
-        wire_treasury::MintOperationStatus,
         wire_keys::DeactivateKeysetRequest,
         wire_keys::DeactivateKeysetResponse,
         types::TokenStateRequest,
@@ -203,6 +202,7 @@ pub fn routes(ctrl: AppController) -> Router {
         // treasury service
         wire_signatures::RequestToMintFromEBillRequest,
         wire_signatures::RequestToMintFromEBillResponse,
+        wire_treasury::MintOperationStatus,
         wire_wallet::ECashBalance,
         wire_wallet::EbillPaymentComplete,
     ),),

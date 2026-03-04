@@ -98,7 +98,7 @@ pub async fn get_mintop_status(
 ) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request");
 
-    let status = ctrl.core_cl.mint_operation_status(qid).await?;
+    let status = ctrl.treasury_cl.mint_operation_status(qid).await?;
     Ok(Json(status))
 }
 
@@ -120,7 +120,7 @@ pub async fn list_mintops(
 ) -> Result<Json<Vec<uuid::Uuid>>> {
     tracing::debug!("Received list mint operation request");
 
-    let ids = ctrl.core_cl.list_mint_operations(kid).await?;
+    let ids = ctrl.treasury_cl.list_mint_operations(kid).await?;
     Ok(Json(ids))
 }
 

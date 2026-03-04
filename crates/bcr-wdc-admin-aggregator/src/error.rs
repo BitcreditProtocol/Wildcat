@@ -43,7 +43,7 @@ impl axum::response::IntoResponse for Error {
             Error::CoreClient(CoreClientError::KeysetIdNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
-            Error::CoreClient(CoreClientError::MintOpNotFound(e)) => {
+            Error::TreasuryClient(TreasuryClientError::MintOpNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
             Error::QuotesClient(QuotesClientError::ResourceNotFound(e)) => {
