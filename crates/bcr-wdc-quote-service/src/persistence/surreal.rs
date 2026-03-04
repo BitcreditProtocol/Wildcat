@@ -49,11 +49,6 @@ impl From<quotes::Quote> for QuoteDBEntry {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-struct CountResult {
-    count: u64,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
 struct LightQuoteDBEntry {
     qid: uuid::Uuid,
     status: quotes::StatusDiscriminants,
@@ -115,41 +110,42 @@ impl DBQuotes {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> SurrealResult<(Vec<LightQuoteDBEntry>, u64)> {
-        let mut where_clause = String::new();
+    ) -> SurrealResult<Vec<LightQuoteDBEntry>> {
+        let mut statement = String::from(
+            "SELECT qid, status.status as status, bill.sum AS sum, bill.maturity_date as maturity_date FROM type::table($table)",
+        );
+
         let mut first = true;
 
         add_filter_statement!(
-            where_clause,
+            statement,
             first,
             filters.bill_maturity_date_from,
             "bill.maturity_date >= $bill_maturity_date_from"
         );
         add_filter_statement!(
-            where_clause,
+            statement,
             first,
             filters.bill_maturity_date_to,
             "bill.maturity_date <= $bill_maturity_date_to"
         );
         let status = filters.status;
-        add_filter_statement!(where_clause, first, status, "status.status == $status");
-        add_filter_statement!(where_clause, first, filters.bill_id, "bill.id == $bill_id");
+        add_filter_statement!(statement, first, status, "status.status == $status");
+        add_filter_statement!(statement, first, filters.bill_id, "bill.id == $bill_id");
         add_filter_statement!(
-            where_clause,
+            statement,
             first,
             filters.bill_drawee_id,
             "bill.drawee.node_id == $bill_drawee_id"
         );
         add_filter_statement!(
-            where_clause,
+            statement,
             first,
             filters.bill_drawer_id,
             "bill.drawer.node_id == $bill_drawer_id"
         );
         add_filter_statement!(
-            where_clause,
+            statement,
             first,
             filters.bill_payer_id,
             "bill.payer.node_id == $bill_payer_id"
@@ -157,43 +153,25 @@ impl DBQuotes {
         #[allow(unused_assignments)]
         {
             add_filter_statement!(
-                where_clause,
+                statement,
                 first,
                 filters.bill_holder_id,
                 "bill.holder.node_id == $bill_holder_id"
             );
         }
-
-        let order_clause = match sort {
-            Some(SortOrder::BillMaturityDateAsc) => " ORDER BY maturity_date ASC",
-            Some(SortOrder::BillMaturityDateDesc) => " ORDER BY maturity_date DESC",
-            None => "",
-        };
-
-        let mut data_statement = format!(
-            "SELECT qid, status.status as status, bill.sum AS sum, bill.maturity_date as maturity_date FROM type::table($table){where_clause}{order_clause}",
-        );
-        if let Some(limit) = limit {
-            data_statement += &format!(" LIMIT {limit}");
-            if let Some(offset) = offset {
-                data_statement += &format!(" START {offset}");
-            }
+        if let Some(sort) = sort {
+            statement += match sort {
+                SortOrder::BillMaturityDateAsc => " ORDER BY maturity_date ASC",
+                SortOrder::BillMaturityDateDesc => " ORDER BY maturity_date DESC",
+            };
         }
-        let count_statement =
-            format!("SELECT count() as count FROM type::table($table){where_clause} GROUP ALL",);
-
-        let combined = format!("{data_statement}; {count_statement}");
-        let mut result = self
+        let query = self
             .db
-            .query(combined)
+            .query(statement)
             .bind(("table", Self::TABLE))
-            .bind(filters)
-            .await?;
+            .bind(filters);
 
-        let items: Vec<LightQuoteDBEntry> = result.take(0)?;
-        let count: Option<CountResult> = result.take(1)?;
-        let total = count.map(|c| c.count).unwrap_or(0);
-        Ok((items, total))
+        query.await?.take(0)
     }
 
     async fn list_by_status(
@@ -332,18 +310,16 @@ impl Repository for DBQuotes {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> Result<(Vec<quotes::LightQuote>, u64)> {
-        let (db_result, total) = self
-            .light_list(filters, sort, limit, offset)
+    ) -> Result<Vec<quotes::LightQuote>> {
+        let db_result = self
+            .light_list(filters, sort)
             .await
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         let response = db_result
             .into_iter()
             .map(std::convert::Into::into)
             .collect();
-        Ok((response, total))
+        Ok(response)
     }
 
     async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<quotes::Quote>> {
@@ -570,44 +546,40 @@ mod tests {
             .unwrap();
 
         let filters = service::ListFilters::default();
-        let (items, total) = db.list_light(filters, None, None, None).await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(total, 1);
+        let res = db.list_light(filters, None).await.unwrap();
+        assert_eq!(res.len(), 1);
 
         let date = chrono::NaiveDate::from_ymd_opt(2021, 1, 1);
         let filters = service::ListFilters {
             bill_maturity_date_from: date,
             ..Default::default()
         };
-        let (items, total) = db.list_light(filters, None, None, None).await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(total, 1);
+        let res = db.list_light(filters, None).await.unwrap();
+        assert_eq!(res.len(), 1);
 
         let date = chrono::NaiveDate::from_ymd_opt(2022, 1, 1);
         let filters = service::ListFilters {
             bill_maturity_date_from: date,
             ..Default::default()
         };
-        let (items, total) = db.list_light(filters, None, None, None).await.unwrap();
-        assert_eq!(items.len(), 0);
-        assert_eq!(total, 0);
+        let res = db.list_light(filters, None).await.unwrap();
+        assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
             bill_drawee_id: Some(random_identity_public_data().1.node_id),
             ..Default::default()
         };
-        let (items, _) = db.list_light(filters, None, None, None).await.unwrap();
-        assert_eq!(items.len(), 0);
+        let res = db.list_light(filters, None).await.unwrap();
+        assert_eq!(res.len(), 0);
 
         let filters = service::ListFilters {
             status: Some(quotes::StatusDiscriminants::Pending),
             bill_drawee_id: Some(entry.bill.drawee.node_id),
             ..Default::default()
         };
-        let (items, total) = db.list_light(filters, None, None, None).await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(total, 1);
+        let res = db.list_light(filters, None).await.unwrap();
+        assert_eq!(res.len(), 1);
     }
 
     #[tokio::test]
@@ -660,26 +632,24 @@ mod tests {
         let _: QuoteDBEntry = db.db.insert(rid).content(entry).await.unwrap().unwrap();
 
         let filters = service::ListFilters::default();
-        let (items, total) = db
-            .list_light(filters, Some(SortOrder::BillMaturityDateAsc), None, None)
+        let res = db
+            .list_light(filters, Some(SortOrder::BillMaturityDateAsc))
             .await
             .unwrap();
-        assert_eq!(items.len(), 3);
-        assert_eq!(total, 3);
-        assert_eq!(items[0].id, qid2);
-        assert_eq!(items[1].id, qid1);
-        assert_eq!(items[2].id, qid3);
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid2);
+        assert_eq!(res[1].id, qid1);
+        assert_eq!(res[2].id, qid3);
 
         let filters = service::ListFilters::default();
-        let (items, total) = db
-            .list_light(filters, Some(SortOrder::BillMaturityDateDesc), None, None)
+        let res = db
+            .list_light(filters, Some(SortOrder::BillMaturityDateDesc))
             .await
             .unwrap();
-        assert_eq!(items.len(), 3);
-        assert_eq!(total, 3);
-        assert_eq!(items[0].id, qid3);
-        assert_eq!(items[1].id, qid1);
-        assert_eq!(items[2].id, qid2);
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid3);
+        assert_eq!(res[1].id, qid1);
+        assert_eq!(res[2].id, qid2);
     }
 
     #[tokio::test]

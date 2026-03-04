@@ -33,9 +33,7 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo
     }
 }
 
-fn convert_into_list_params(
-    params: wire_quotes::ListParam,
-) -> (ListFilters, Option<SortOrder>, Option<u32>, Option<u32>) {
+fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Option<SortOrder>) {
     let wire_quotes::ListParam {
         bill_maturity_date_from,
         bill_maturity_date_to,
@@ -46,8 +44,6 @@ fn convert_into_list_params(
         bill_payer_id,
         bill_holder_id,
         sort,
-        limit,
-        offset,
     } = params;
     let status = match status {
         None => None,
@@ -91,22 +87,21 @@ fn convert_into_list_params(
         bill_payer_id,
         bill_holder_id,
     };
-    (filters, sort, limit, offset)
+    (filters, sort)
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<Arc<Service>>,
     Query(params): Query<wire_quotes::ListParam>,
-) -> Result<Json<wire_quotes::PaginatedResponse<wire_quotes::LightInfo>>> {
+) -> Result<Json<wire_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
 
     let now = chrono::Utc::now();
-    let (filters, sort, limit, offset) = convert_into_list_params(params);
-    let (quotes, total) = ctrl.list_light(filters, sort, limit, offset, now).await?;
-    let response = wire_quotes::PaginatedResponse {
-        data: quotes.into_iter().map(convert_into_light_quote).collect(),
-        total,
+    let (filters, sort) = convert_into_list_params(params);
+    let quotes = ctrl.list_light(filters, sort, now).await?;
+    let response = wire_quotes::ListReplyLight {
+        quotes: quotes.into_iter().map(convert_into_light_quote).collect(),
     };
     Ok(Json(response))
 }

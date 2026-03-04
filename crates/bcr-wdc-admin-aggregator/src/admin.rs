@@ -64,7 +64,7 @@ pub async fn get_keyset_info(
 #[utoipa::path(
     get,
     path = endpoints::LIST_KEYSET_INFOS,
-    params(types::KeysetListParam),
+    params(wire_common::Pagination),
     responses (
         (status = 200, description = "Successful response", body = wire_common::PaginatedResponse<cashu::KeySetInfo> , content_type = "application/json"),
     )
@@ -72,19 +72,17 @@ pub async fn get_keyset_info(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keyset_infos(
     State(ctrl): State<AppController>,
-    Query(params): Query<types::KeysetListParam>,
+    Query(pagination): Query<wire_common::Pagination>,
 ) -> Result<Json<wire_common::PaginatedResponse<cashu::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
     let infos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
     let total = infos.len() as u64;
-    let data = if let Some(limit) = params.limit {
-        let offset = params.offset.unwrap_or(0) as usize;
-        infos
-            .into_iter()
-            .skip(offset)
-            .take(limit as usize)
-            .collect()
+    let data = if let Some(limit) = pagination.limit {
+        let offset = pagination.offset.unwrap_or(0);
+        let start = (offset as usize).min(infos.len());
+        let end = (start + limit as usize).min(infos.len());
+        infos[start..end].to_vec()
     } else {
         infos
     };
@@ -180,20 +178,30 @@ pub async fn get_quote(
 #[utoipa::path(
     get,
     path = endpoints::LIST_CREDIT_QUOTES,
-    params(wire_quotes::ListParam),
+    params(wire_quotes::ListParam, wire_common::Pagination),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::PaginatedResponse<wire_quotes::LightInfo> , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_common::PaginatedResponse<wire_quotes::LightInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<AppController>,
     Query(list_params): Query<wire_quotes::ListParam>,
-) -> Result<Json<wire_quotes::PaginatedResponse<wire_quotes::LightInfo>>> {
+    Query(pagination): Query<wire_common::Pagination>,
+) -> Result<Json<wire_common::PaginatedResponse<wire_quotes::LightInfo>>> {
     tracing::debug!("Received list quotes request");
 
-    let statuss = ctrl.quotes_cl.list(list_params).await?;
-    Ok(Json(statuss))
+    let result = ctrl.quotes_cl.list(list_params).await?;
+    let total = result.quotes.len() as u64;
+    let data = if let Some(limit) = pagination.limit {
+        let offset = pagination.offset.unwrap_or(0);
+        let start = (offset as usize).min(result.quotes.len());
+        let end = (start + limit as usize).min(result.quotes.len());
+        result.quotes[start..end].to_vec()
+    } else {
+        result.quotes
+    };
+    Ok(Json(wire_common::PaginatedResponse { data, total }))
 }
 
 #[utoipa::path(

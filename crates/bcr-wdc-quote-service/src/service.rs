@@ -249,11 +249,9 @@ impl Service {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-        limit: Option<u32>,
-        offset: Option<u32>,
         now: TStamp,
-    ) -> Result<(Vec<LightQuote>, u64)> {
-        let (mut lights, total) = self.quotes.list_light(filters, sort, limit, offset).await?;
+    ) -> Result<Vec<LightQuote>> {
+        let mut lights = self.quotes.list_light(filters, sort).await?;
 
         for light in lights.iter_mut() {
             if matches!(light.status, StatusDiscriminants::Offered) {
@@ -273,7 +271,7 @@ impl Service {
                 }
             }
         }
-        Ok((lights, total))
+        Ok(lights)
     }
 
     pub async fn offer(
