@@ -120,10 +120,10 @@ pub async fn mintop_status(
 pub async fn list_mintops(
     State(ctrl): State<Arc<credit::Service>>,
     Path(kid): Path<cashu::Id>,
-) -> Result<Json<Vec<cashu::Amount>>> {
+) -> Result<Json<Vec<uuid::Uuid>>> {
     tracing::debug!("Received list mint operations request");
 
     let mint_ops = ctrl.list_mintops_for_kid(kid).await?;
-    let response = mint_ops.into_iter().map(|mop| mop.minted).collect();
+    let response = mint_ops.into_iter().map(|mop| mop.uid).collect();
     Ok(Json(response))
 }
