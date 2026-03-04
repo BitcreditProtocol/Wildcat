@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{
-        core::{Client as CoreClient, Error as CoreError},
-        ebill::Client as EbillClient,
+        core::Client as CoreClient,
+        ebill::Client as EBillClient,
+        treasury::{Client as TreasuryClient, Error as TreasuryError},
     },
     core::BillId,
     wire::{bill as wire_bill, quotes as wire_quotes},
@@ -21,7 +22,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct WildcatCl {
     pub core: CoreClient,
-    pub ebill: EbillClient,
+    pub treasury: TreasuryClient,
+    pub ebill: EBillClient,
 }
 
 #[async_trait]
@@ -47,7 +49,7 @@ impl WdcClient for WildcatCl {
         target: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()> {
-        self.core
+        self.treasury
             .new_mint_operation(qid, kid, pk, target, bill_id)
             .await?;
         Ok(())
@@ -59,11 +61,11 @@ impl WdcClient for WildcatCl {
     }
 
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {
-        let response = self.core.mint_operation_status(qid).await;
+        let response = self.treasury.mint_operation_status(qid).await;
         match response {
             Ok(status) => Ok(MintingStatus::Enabled(status.current)),
-            Err(CoreError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
-            Err(e) => Err(Error::CoreHandler(e)),
+            Err(TreasuryError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
+            Err(e) => Err(Error::TreasuryClient(e)),
         }
     }
 

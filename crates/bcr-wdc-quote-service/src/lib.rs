@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_common::client::{
     core::Client as CoreClient, ebill::Client as EBillClient, quote::Client as QuoteClient,
-    Url as ClientUrl,
+    treasury::Client as TreasuryClient, Url as ClientUrl,
 };
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules
@@ -34,6 +34,7 @@ pub type ProdQuotingService = service::Service;
 pub struct AppConfig {
     quotes: surreal::DBConnConfig,
     core_url: ClientUrl,
+    treasury_url: ClientUrl,
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
     monitor_interval_seconds: u64,
@@ -48,6 +49,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     let AppConfig {
         quotes,
         core_url,
+        treasury_url,
         ebill_url,
         clowder_rest_url,
         monitor_interval_seconds,
@@ -66,11 +68,13 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         .get_mint_url(*public_key)
         .await
         .expect("Failed to get mint URL");
-    let core_cl = CoreClient::new(core_url);
-    let ebill_cl = EBillClient::new(ebill_url);
+    let core = CoreClient::new(core_url);
+    let treasury_cl = TreasuryClient::new(treasury_url);
+    let ebill = EBillClient::new(ebill_url);
     let wdc_cl = client::WildcatCl {
-        core: core_cl,
-        ebill: ebill_cl,
+        core,
+        treasury: treasury_cl,
+        ebill,
     };
     let quoting_service = ProdQuotingService {
         wdc_client: Box::new(wdc_cl),
