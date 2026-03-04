@@ -1,34 +1,17 @@
 // ----- standard library imports
-use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::{
-    cashu,
-    cdk_common::mint::MintKeySetInfo,
-    core::{self, BillId},
-};
-use uuid::Uuid;
+use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo, core};
 // ----- local imports
 use crate::{
     error::{Error, Result},
     keys::{factory::Factory, ClowderClient},
-    persistence::{KeysRepository, MintOpRepository, SignaturesRepository},
+    persistence::{KeysRepository, SignaturesRepository},
 };
 
 // ----- end imports
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct MintOperation {
-    pub uid: Uuid,
-    pub kid: cashu::Id,
-    pub pub_key: cashu::PublicKey,
-    pub target: cashu::Amount,
-    pub minted: cashu::Amount,
-    pub bill_id: BillId,
-}
-
 pub struct Service {
     pub keys: Box<dyn KeysRepository>,
-    pub mintops: Box<dyn MintOpRepository>,
     pub signatures: Box<dyn SignaturesRepository>,
     pub clowder: Box<dyn ClowderClient>,
     pub keygen: Factory,
@@ -114,104 +97,6 @@ impl Service {
             .await?;
         Ok(signature)
     }
-
-    pub async fn new_minting_operation(
-        &self,
-        uid: Uuid,
-        kid: cashu::Id,
-        pub_key: cashu::PublicKey,
-        amount: cashu::Amount,
-        bill_id: BillId,
-    ) -> Result<()> {
-        if self.keys.info(kid).await?.is_none() {
-            return Err(Error::KeysetNotFound(kid));
-        }
-        let new = MintOperation {
-            uid,
-            kid,
-            pub_key,
-            target: amount,
-            minted: cashu::Amount::ZERO,
-            bill_id,
-        };
-        self.mintops.store(new).await?;
-        Ok(())
-    }
-
-    pub async fn mintop_status(&self, uid: Uuid) -> Result<MintOperation> {
-        let operation = self.mintops.load(uid).await?;
-        Ok(operation)
-    }
-
-    pub async fn list_mintops_for_kid(&self, kid: cashu::Id) -> Result<Vec<MintOperation>> {
-        self.mintops.list(kid).await
-    }
-
-    pub async fn mint(&self, request: &cashu::MintRequest<Uuid>) -> Result<cashu::MintResponse> {
-        // basic checks
-        if request.signature.is_none() {
-            return Err(Error::InvalidMintRequest(String::from("signature missing")));
-        }
-        bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
-            .map_err(|e| Error::InvalidMintRequest(e.to_string()))?;
-        //  check if the ids of the outputs are all the same
-        let unique_ids: Vec<_> = request
-            .outputs
-            .iter()
-            .map(|p| p.keyset_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-        if unique_ids.len() != 1 {
-            return Err(Error::InvalidMintRequest(String::from(
-                "multiple keyset IDs",
-            )));
-        }
-        let output_amount = request
-            .outputs
-            .iter()
-            .fold(cashu::Amount::ZERO, |acc, blind| acc + blind.amount);
-        let kid = unique_ids.first().expect("unique_ids len should be 1");
-        let operation = self.mintops.load(request.quote).await?;
-        let signature_verification = request.verify_signature(operation.pub_key);
-        if signature_verification.is_err() {
-            return Err(Error::InvalidMintRequest(String::from(
-                "signature verification failed",
-            )));
-        }
-        if operation.minted + output_amount > operation.target {
-            return Err(Error::InvalidMintRequest(String::from(
-                "outputs amount exceeds allowance",
-            )));
-        }
-        let keyset = self.keys(*kid).await?;
-        let mut signatures = Vec::with_capacity(request.outputs.len());
-        for blind in &request.outputs {
-            let signature = core::signature::sign_ecash(&keyset, blind)?;
-            self.signatures
-                .store(blind.blinded_secret, signature.clone())
-                .await?;
-            signatures.push(signature);
-        }
-        self.mintops
-            .update(
-                operation.uid,
-                operation.minted,
-                operation.minted + output_amount,
-            )
-            .await?;
-        let signatures = self
-            .clowder
-            .mint_ebill(
-                keyset.id,
-                request.quote,
-                output_amount,
-                operation.bill_id.clone(),
-                signatures,
-            )
-            .await?;
-        Ok(cashu::MintResponse { signatures })
-    }
 }
 
 #[cfg(test)]
@@ -220,11 +105,8 @@ mod tests {
     use crate::{
         btc32::DerivationPath,
         keys::MockClowderClient,
-        persistence::{MockKeysRepository, MockMintOpRepository, MockSignaturesRepository},
+        persistence::{MockKeysRepository, MockSignaturesRepository},
     };
-    use bcr_common::core_tests::random_bill_id;
-    use bcr_wdc_utils::signatures::test_utils::generate_blinds;
-    use cashu::Amount;
     use mockall::predicate::eq;
     use std::str::FromStr;
 
@@ -240,7 +122,6 @@ mod tests {
         let factory = Factory::new(&seed(), DerivationPath::default());
         let mut keys_repo = MockKeysRepository::new();
         let signatures_repo = MockSignaturesRepository::new();
-        let mintop_repo = MockMintOpRepository::new();
         let clowder_cl = MockClowderClient::new();
         let maturity = chrono::NaiveDate::from_ymd_opt(2030, 12, 31).unwrap();
         let maturity_timestamp =
@@ -260,7 +141,6 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
         };
         let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
         assert_eq!(kid, expected_id);
@@ -272,7 +152,6 @@ mod tests {
         let factory = Factory::new(&seed(), DerivationPath::default());
         let mut keys_repo = MockKeysRepository::new();
         let signatures_repo = MockSignaturesRepository::new();
-        let mintop_repo = MockMintOpRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let maturity = chrono::NaiveDate::from_ymd_opt(2027, 6, 30).unwrap();
         let datetime = maturity.and_hms_opt(0, 0, 0).unwrap().and_utc();
@@ -300,7 +179,6 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
         };
         let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
         assert_eq!(kid, expected_id);
@@ -311,7 +189,6 @@ mod tests {
         let factory = Factory::new(&seed(), DerivationPath::default());
         let mut keys_repo = MockKeysRepository::new();
         let signatures_repo = MockSignaturesRepository::new();
-        let mintop_repo = MockMintOpRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
@@ -337,7 +214,6 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
         };
         let deactivated = service.deactivate(kid).await.unwrap();
         assert_eq!(deactivated, kid);
@@ -348,7 +224,6 @@ mod tests {
         let factory = Factory::new(&seed(), DerivationPath::default());
         let mut keys_repo = MockKeysRepository::new();
         let signatures_repo = MockSignaturesRepository::new();
-        let mintop_repo = MockMintOpRepository::new();
         let clowder_cl = MockClowderClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         keys_repo
@@ -361,190 +236,8 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
         };
         let err = service.deactivate(kid).await.unwrap_err();
         assert!(matches!(err, Error::KeysetNotFound(id) if id == kid));
-    }
-
-    #[tokio::test]
-    async fn new_minting_operation_missing_keyset() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let mintop_repo = MockMintOpRepository::new();
-        let clowder_cl = MockClowderClient::new();
-        let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
-        let uid = Uuid::new_v4();
-        let pub_key = bcr_common::core_tests::generate_random_keypair()
-            .public_key()
-            .into();
-        let amount = Amount::from(32);
-        let bill_id = random_bill_id();
-        keys_repo
-            .expect_info()
-            .times(1)
-            .with(eq(kid))
-            .returning(|_| Ok(None));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
-        };
-        let err = service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, Error::KeysetNotFound(id) if id == kid));
-    }
-
-    #[tokio::test]
-    async fn new_minting_operation_ok() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let mut mintop_repo = MockMintOpRepository::new();
-        let clowder_cl = MockClowderClient::new();
-        let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
-        let kid = kinfo.id;
-        let uid = Uuid::new_v4();
-        let pub_key = bcr_common::core_tests::generate_random_keypair()
-            .public_key()
-            .into();
-        let amount = Amount::from(64);
-        let bill_id = random_bill_id();
-        keys_repo
-            .expect_info()
-            .times(1)
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(kinfo.clone())));
-        let mintop = MintOperation {
-            uid,
-            kid,
-            pub_key,
-            target: amount,
-            minted: Amount::ZERO,
-            bill_id: bill_id.clone(),
-        };
-        mintop_repo
-            .expect_store()
-            .times(1)
-            .with(eq(mintop))
-            .returning(|_| Ok(()));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
-        };
-        service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id)
-            .await
-            .unwrap();
-    }
-    #[tokio::test]
-    async fn mint_ok() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let mut signatures_repo = MockSignaturesRepository::new();
-        let mut mintop_repo = MockMintOpRepository::new();
-        let mut clowder_cl = MockClowderClient::new();
-        let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
-        let kid = kinfo.id;
-        let uid = Uuid::new_v4();
-        let kp = bcr_common::core_tests::generate_random_keypair();
-        let pub_key = cashu::PublicKey::from(kp.public_key());
-        let amounts = [Amount::from(128), Amount::from(64)];
-        let total = amounts
-            .iter()
-            .fold(Amount::ZERO, |acc, amount| acc + *amount);
-        let bill_id = random_bill_id();
-        mintop_repo
-            .expect_update()
-            .times(1)
-            .with(eq(uid), eq(Amount::ZERO), eq(total))
-            .returning(|_, _, _| Ok(()));
-        keys_repo
-            .expect_keyset()
-            .times(1)
-            .with(eq(kid))
-            .returning(move |_| Ok(Some(keyset.clone())));
-        signatures_repo
-            .expect_store()
-            .times(amounts.len())
-            .returning(|_, _| Ok(()));
-        let mintop = MintOperation {
-            uid,
-            kid,
-            pub_key,
-            target: total,
-            minted: Amount::ZERO,
-            bill_id: bill_id.clone(),
-        };
-        mintop_repo
-            .expect_load()
-            .times(1)
-            .with(eq(uid))
-            .returning(move |_| Ok(mintop.clone()));
-        clowder_cl
-            .expect_mint_ebill()
-            .times(1)
-            .returning(|_, _, _, _, signatures| Ok(signatures));
-
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
-        };
-        let outputs = generate_blinds(kid, &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
-        let response = service.mint(&request).await.unwrap();
-        assert_eq!(response.signatures.len(), amounts.len());
-    }
-
-    #[tokio::test]
-    async fn mint_missing_mintop() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let mut mintop_repo = MockMintOpRepository::new();
-        let clowder_cl = MockClowderClient::new();
-        let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
-        let uid = Uuid::new_v4();
-        let kp = bcr_common::core_tests::generate_random_keypair();
-        let amounts = [Amount::from(128)];
-        mintop_repo
-            .expect_load()
-            .times(1)
-            .with(eq(uid))
-            .returning(move |_| Err(Error::MintOpNotFound(uid)));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            mintops: Box::new(mintop_repo),
-        };
-        let outputs = generate_blinds(kid, &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
-        let err = service.mint(&request).await.unwrap_err();
-        assert!(matches!(err, Error::MintOpNotFound(id) if id == uid));
     }
 }

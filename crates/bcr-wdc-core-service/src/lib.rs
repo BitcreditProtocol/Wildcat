@@ -24,7 +24,6 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     keys: surreal::DBConnConfig,
-    mintops: surreal::DBConnConfig,
     proofs: surreal::DBConnConfig,
     signatures: surreal::DBConnConfig,
     clowder: keys::clowder::ClowderClientConfig,
@@ -41,7 +40,6 @@ impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
         let AppConfig {
             keys,
-            mintops,
             signatures,
             proofs,
             clowder,
@@ -51,9 +49,6 @@ impl AppController {
         let keys_repo = persistence::surreal::DBKeys::new(keys)
             .await
             .expect("DB connection to keys failed");
-        let mintops_repo = persistence::surreal::DBMintOps::new(mintops)
-            .await
-            .expect("DB connection to mintops failed");
         let signatures_repo = persistence::surreal::DBSignatures::new(signatures)
             .await
             .expect("DB connection to signatures failed");
@@ -66,7 +61,6 @@ impl AppController {
             .expect("clowder client");
         let keys_service = keys::service::Service {
             keys: Box::new(keys_repo),
-            mintops: Box::new(mintops_repo),
             signatures: Box::new(signatures_repo),
             clowder: Box::from(clowder_cl),
             keygen,
@@ -94,7 +88,6 @@ where
         .route(CoreClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
         .route(CoreClient::KEYS_EP_V1, get(web::lookup_keys))
         .route(CoreClient::LISTKEYS_EP_V1, get(web::list_keys))
-        .route(CoreClient::MINT_EP_V1, post(web::mint_ebill))
         .route(CoreClient::RESTORE_EP_V1, post(web::restore))
         .route(CoreClient::SWAP_EP_V1, post(web::swap_tokens))
         .route(CoreClient::BURN_EP_V1, post(web::burn_tokens))
@@ -106,9 +99,6 @@ where
             get(admin::get_keyset_for_date),
         )
         .route(CoreClient::SIGN_EP_V1, post(admin::sign_blind))
-        .route(CoreClient::NEWMINTOP_EP_V1, post(admin::new_mintop))
-        .route(CoreClient::MINTOPSTATUS_EP_V1, get(admin::mintop_status))
-        .route(CoreClient::LISTMINTOPS_EP_V1, get(admin::list_mintops))
         .route(CoreClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
         .route(
             CoreClient::VERIFY_FINGERPRINT_EP_V1,
@@ -127,7 +117,6 @@ async fn get_health() -> &'static str {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
-    pub use crate::keys::service::MintOperation;
     use bcr_wdc_utils::KeysetEntry;
 
     fn test_controller() -> AppController {
@@ -135,12 +124,10 @@ pub mod test_utils {
         let derivation_path = btc32::DerivationPath::default();
         let keys_repo = persistence::inmemory::KeyMap::default();
         let signatures_repo = persistence::inmemory::SignatureMap::default();
-        let mintops_repo = persistence::inmemory::MintOpMap::default();
         let keygen = keys::factory::Factory::new(&seed, derivation_path);
         let keysrv = keys::service::Service {
             keys: Box::new(keys_repo),
             signatures: Box::new(signatures_repo),
-            mintops: Box::new(mintops_repo),
             keygen,
             clowder: Box::new(keys::clowder::DummyClowderClient),
         };

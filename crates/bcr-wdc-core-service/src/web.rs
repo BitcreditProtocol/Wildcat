@@ -69,17 +69,6 @@ pub async fn list_keys(
     Ok(Json(response))
 }
 
-/// --------------------------- Mint
-pub async fn mint_ebill(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Json(req): Json<cashu::MintRequest<uuid::Uuid>>,
-) -> Result<Json<cashu::MintResponse>> {
-    tracing::debug!("Received mint request for {}", req.quote);
-
-    let response = ctrl.mint(&req).await?;
-    Ok(Json(response))
-}
-
 /// --------------------------- Restore signatures
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn restore(

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     cashu,
-    wire::{keys as wire_keys, swap as wire_swap, treasury as wire_treasury},
+    wire::{keys as wire_keys, swap as wire_swap},
 };
 // ----- local imports
 use crate::{error::Result, keys, swap};
@@ -61,60 +61,6 @@ pub async fn deactivate(
 
     let kid = ctrl.deactivate(request.kid).await?;
     let response = wire_keys::DeactivateKeysetResponse { kid };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn new_mintop(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Json(request): Json<wire_treasury::NewMintOperationRequest>,
-) -> Result<Json<wire_treasury::NewMintOperationResponse>> {
-    tracing::debug!("Received new mint operation request");
-
-    ctrl.new_minting_operation(
-        request.quote_id,
-        request.kid,
-        request.pub_key,
-        request.target,
-        request.bill_id,
-    )
-    .await?;
-    let response = wire_treasury::NewMintOperationResponse {};
-    Ok(Json(response))
-}
-
-fn convert_mintop_status(
-    status: keys::service::MintOperation,
-) -> wire_treasury::MintOperationStatus {
-    wire_treasury::MintOperationStatus {
-        kid: status.kid,
-        quote_id: status.uid,
-        target: status.target,
-        current: status.minted,
-    }
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn mintop_status(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<wire_treasury::MintOperationStatus>> {
-    tracing::debug!("Received mint operation status request {qid}");
-
-    let status = ctrl.mintop_status(qid).await?;
-    let status = convert_mintop_status(status);
-    Ok(Json(status))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_mintops(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Path(kid): Path<cashu::Id>,
-) -> Result<Json<Vec<cashu::Amount>>> {
-    tracing::debug!("Received list mint operations request");
-
-    let mint_ops = ctrl.list_mintops_for_kid(kid).await?;
-    let response = mint_ops.into_iter().map(|mop| mop.minted).collect();
     Ok(Json(response))
 }
 
