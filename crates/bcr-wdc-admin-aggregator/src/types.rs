@@ -19,3 +19,9 @@ pub enum TokenState {
 pub struct TokenStateResponse {
     pub state: TokenState,
 }
+
+#[derive(Debug, Default, serde::Deserialize, utoipa::IntoParams)]
+pub struct KeysetListParam {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}

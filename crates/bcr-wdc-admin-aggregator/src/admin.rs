@@ -64,20 +64,31 @@ pub async fn get_keyset_info(
 #[utoipa::path(
     get,
     path = endpoints::LIST_KEYSET_INFOS,
-    params(
-    ),
+    params(types::KeysetListParam),
     responses (
-        (status = 200, description = "Successful response", body = Vec<cashu::KeySetInfo> , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::PaginatedResponse<cashu::KeySetInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keyset_infos(
     State(ctrl): State<AppController>,
-) -> Result<Json<Vec<cashu::KeySetInfo>>> {
+    Query(params): Query<types::KeysetListParam>,
+) -> Result<Json<wire_quotes::PaginatedResponse<cashu::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
     let infos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
-    Ok(Json(infos))
+    let total = infos.len() as u64;
+    let data = if let Some(limit) = params.limit {
+        let offset = params.offset.unwrap_or(0) as usize;
+        infos
+            .into_iter()
+            .skip(offset)
+            .take(limit as usize)
+            .collect()
+    } else {
+        infos
+    };
+    Ok(Json(wire_quotes::PaginatedResponse { data, total }))
 }
 
 #[utoipa::path(
@@ -171,14 +182,14 @@ pub async fn get_quote(
     path = endpoints::LIST_CREDIT_QUOTES,
     params(wire_quotes::ListParam),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::ListReplyLight , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::PaginatedResponse<wire_quotes::LightInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<AppController>,
     Query(list_params): Query<wire_quotes::ListParam>,
-) -> Result<Json<wire_quotes::ListReplyLight>> {
+) -> Result<Json<wire_quotes::PaginatedResponse<wire_quotes::LightInfo>>> {
     tracing::debug!("Received list quotes request");
 
     let statuss = ctrl.quotes_cl.list(list_params).await?;

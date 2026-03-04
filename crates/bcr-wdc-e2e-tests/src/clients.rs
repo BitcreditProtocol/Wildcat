@@ -190,7 +190,9 @@ impl Service<AdminService> {
             .unwrap()
     }
 
-    pub async fn admin_credit_quote_list(&self) -> Result<wire_quotes::ListReplyLight> {
+    pub async fn admin_credit_quote_list(
+        &self,
+    ) -> Result<wire_quotes::PaginatedResponse<wire_quotes::LightInfo>> {
         self.quote_cl
             .list(wire_quotes::ListParam::default())
             .await

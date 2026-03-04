@@ -28,7 +28,9 @@ pub trait Repository {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> Result<Vec<LightQuote>>;
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<(Vec<LightQuote>, u64)>;
     async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> Result<()>;
 }

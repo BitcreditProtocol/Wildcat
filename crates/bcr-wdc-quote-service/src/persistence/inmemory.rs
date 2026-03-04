@@ -99,7 +99,9 @@ impl Repository for QuotesIDMap {
         &self,
         filters: ListFilters,
         sort: Option<SortOrder>,
-    ) -> Result<Vec<quotes::LightQuote>> {
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<(Vec<quotes::LightQuote>, u64)> {
         let mut a: Vec<quotes::Quote> = self
             .quotes
             .read()
@@ -174,8 +176,14 @@ impl Repository for QuotesIDMap {
                 }
             });
         }
-        let b = a
-            .into_iter()
+        let total = a.len() as u64;
+        let iter: Box<dyn Iterator<Item = quotes::Quote>> = if let Some(limit) = limit {
+            let offset = offset.unwrap_or(0) as usize;
+            Box::new(a.into_iter().skip(offset).take(limit as usize))
+        } else {
+            Box::new(a.into_iter())
+        };
+        let b = iter
             .map(|quote| quotes::LightQuote {
                 id: quote.id,
                 status: quote.status.discriminant(),
@@ -183,6 +191,6 @@ impl Repository for QuotesIDMap {
                 maturity_date: quote.bill.maturity_date,
             })
             .collect();
-        Ok(b)
+        Ok((b, total))
     }
 }
