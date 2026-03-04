@@ -247,7 +247,7 @@ impl credit::MintOpRepository for DBMintOps {
         let res: SurrealResult<Option<MintOpDBEntry>> = self.db.select(rid.clone()).await;
         match res {
             Ok(Some(entry)) => Ok(credit::MintOperation::from(entry)),
-            Ok(None) => Err(Error::InvalidInput(format!("mintop not found {uid}"))),
+            Ok(None) => Err(Error::RequestIDNotFound(uid)),
             Err(e) => Err(Error::DB(anyhow!(e))),
         }
     }

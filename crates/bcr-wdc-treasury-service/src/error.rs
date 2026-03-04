@@ -104,7 +104,7 @@ impl axum::response::IntoResponse for Error {
             Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::RequestIDNotFound(request_id) => (
-                StatusCode::BAD_REQUEST,
+                StatusCode::NOT_FOUND,
                 format!("Request ID not found: {request_id}"),
             ),
             Error::UnknownKeyset(keyset) => {
