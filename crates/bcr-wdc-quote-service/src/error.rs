@@ -21,10 +21,12 @@ pub enum Error {
     Chrono(#[from] chrono::ParseError),
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
-    #[error("core handler error {0}")]
-    CoreHandler(#[from] bcr_common::client::core::Error),
+    #[error("core client error {0}")]
+    CoreClient(#[from] bcr_common::client::core::Error),
     #[error("ebill client error {0}")]
     EbillClient(#[from] bcr_common::client::ebill::Error),
+    #[error("treasury client error {0}")]
+    TreasuryClient(#[from] bcr_common::client::treasury::Error),
 
     #[error("quote {0} incorrect status, expected {1}, found {2}")]
     InvalidQuoteStatus(
@@ -68,8 +70,9 @@ impl axum::response::IntoResponse for Error {
             }
             Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
 
-            Error::CoreHandler(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrCommonBorsh(_) => (
                 StatusCode::BAD_REQUEST,
