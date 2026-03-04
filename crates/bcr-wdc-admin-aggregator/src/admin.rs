@@ -11,9 +11,9 @@ use bcr_common::{
     client::treasury::Error as TreasuryClientError,
     core::BillId,
     wire::{
-        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
-        keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
-        treasury as wire_treasury, wallet as wire_wallet,
+        bill as wire_bill, clowder as wire_clowder, common as wire_common,
+        identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
+        signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
     },
 };
 use clwdr_client::model::ClowderNodeInfo;
@@ -66,14 +66,14 @@ pub async fn get_keyset_info(
     path = endpoints::LIST_KEYSET_INFOS,
     params(types::KeysetListParam),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::PaginatedResponse<cashu::KeySetInfo> , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_common::PaginatedResponse<cashu::KeySetInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keyset_infos(
     State(ctrl): State<AppController>,
     Query(params): Query<types::KeysetListParam>,
-) -> Result<Json<wire_quotes::PaginatedResponse<cashu::KeySetInfo>>> {
+) -> Result<Json<wire_common::PaginatedResponse<cashu::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
     let infos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
@@ -88,7 +88,7 @@ pub async fn list_keyset_infos(
     } else {
         infos
     };
-    Ok(Json(wire_quotes::PaginatedResponse { data, total }))
+    Ok(Json(wire_common::PaginatedResponse { data, total }))
 }
 
 #[utoipa::path(
