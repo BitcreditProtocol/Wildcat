@@ -64,7 +64,7 @@ jobs:
         run: rustup component add llvm-tools-preview
 
       - name: Activate cache
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           prefix-key: "wildcat-01"
 
@@ -81,7 +81,7 @@ jobs:
         run: grcov --source-dir . --binary-path target/debug --branch --keep-only "crates/*"  -o lcov.info -t lcov `find crates -name coverage`
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
