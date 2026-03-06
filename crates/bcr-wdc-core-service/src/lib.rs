@@ -94,6 +94,7 @@ where
         .route(CoreClient::CHECKSTATE_EP_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
+        .route(CoreClient::NEW_KEYSET_EP_V1, post(admin::new_keyset))
         .route(
             CoreClient::KEYSFOREXPIRATION_EP_V1,
             get(admin::get_keyset_for_date),

@@ -3,13 +3,30 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_common::{
-    cashu,
+    cashu, cdk_common,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 // ----- local imports
 use crate::{error::Result, keys, swap};
 
 // ----- end imports
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn new_keyset(
+    State(ctrl): State<Arc<keys::service::Service>>,
+    Json(request): Json<wire_keys::NewKeysetRequest>,
+) -> Result<Json<cdk_common::mint::MintKeySetInfo>> {
+    tracing::debug!("Received new keyset request");
+
+    let now = chrono::Utc::now();
+    let expiration = request
+        .expiration
+        .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc());
+    let kinfo = ctrl
+        .create(request.unit, now, expiration, request.fees_ppk)
+        .await?;
+    Ok(Json(kinfo))
+}
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sign_blind(

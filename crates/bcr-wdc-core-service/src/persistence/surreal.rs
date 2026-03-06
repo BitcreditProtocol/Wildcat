@@ -238,6 +238,7 @@ impl persistence::KeysRepository for DBKeys {
             Err(Error::KeysetNotFound(kid))
         }
     }
+
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let infos: Vec<KeysInfoDBEntry> = self
             .db

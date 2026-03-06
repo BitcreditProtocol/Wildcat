@@ -6,6 +6,7 @@ use crate::{
     error::{Error, Result},
     keys::{factory::Factory, ClowderClient},
     persistence::{KeysRepository, SignaturesRepository},
+    TStamp,
 };
 
 // ----- end imports
@@ -24,6 +25,19 @@ pub struct Service {
 }
 
 impl Service {
+    pub async fn create(
+        &self,
+        unit: cashu::CurrencyUnit,
+        now: TStamp,
+        expiration: Option<TStamp>,
+        fees_ppk: u64,
+    ) -> Result<MintKeySetInfo> {
+        let entry = self.keygen._generate(unit, now, expiration, fees_ppk);
+        let kinfo = entry.0.clone();
+        self.keys.store(entry).await?;
+        Ok(kinfo)
+    }
+
     pub async fn get_keyset_id_for_date(&self, date: chrono::NaiveDate) -> Result<cashu::Id> {
         let datetime = date.and_time(chrono::NaiveTime::MIN).and_utc();
         let tstamp = std::cmp::max(datetime.timestamp(), 0) as u64;
