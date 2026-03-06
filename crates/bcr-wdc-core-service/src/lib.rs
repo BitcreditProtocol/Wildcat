@@ -95,10 +95,6 @@ where
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route(CoreClient::NEW_KEYSET_EP_V1, post(admin::new_keyset))
-        .route(
-            CoreClient::KEYSFOREXPIRATION_EP_V1,
-            get(admin::get_keyset_for_date),
-        )
         .route(CoreClient::SIGN_EP_V1, post(admin::sign_blind))
         .route(CoreClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
         .route(

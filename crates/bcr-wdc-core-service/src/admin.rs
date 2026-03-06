@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::{Json, Path, State};
+use axum::extract::{Json, State};
 use bcr_common::{
     cashu, cdk_common,
     wire::{keys as wire_keys, swap as wire_swap},
@@ -56,17 +56,6 @@ pub async fn verify_fingerprint(
     tracing::debug!("Received verify fingerprint request");
 
     ctrl.verify_fingerprint(fp.into()).await
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_keyset_for_date(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Path(date): Path<chrono::NaiveDate>,
-) -> Result<Json<cashu::Id>> {
-    tracing::debug!("Received get_keyset_for_date request");
-
-    let kid = ctrl.get_keyset_id_for_date(date).await?;
-    Ok(Json(kid))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
