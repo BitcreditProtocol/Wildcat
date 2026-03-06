@@ -37,9 +37,36 @@ impl persistence::KeysRepository for KeyMap {
         let a = rlocked.get(&kid).map(|(_, keyset)| keyset).cloned();
         Ok(a)
     }
-    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
+
+    async fn list_info(
+        &self,
+        unit: Option<cashu::CurrencyUnit>,
+        min_expiration_tstamp: Option<u64>,
+        max_expiration_tstamp: Option<u64>,
+    ) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
-        let a = rlocked.iter().map(|(_, (info, _))| info).cloned().collect();
+        let a = rlocked
+            .iter()
+            .filter_map(|(_, (info, _))| {
+                if let Some(unit) = unit.clone() {
+                    if info.unit != unit {
+                        return None;
+                    }
+                }
+                if info.final_expiry.unwrap_or_default()
+                    <= min_expiration_tstamp.unwrap_or_default()
+                {
+                    return None;
+                }
+                if info.final_expiry.unwrap_or_default()
+                    >= max_expiration_tstamp.unwrap_or_default()
+                {
+                    return None;
+                }
+                Some(info)
+            })
+            .cloned()
+            .collect();
         Ok(a)
     }
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {

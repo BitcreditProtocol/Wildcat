@@ -10,6 +10,12 @@ use crate::{
 
 // ----- end imports
 
+pub struct ListFilters {
+    pub unit: Option<cashu::CurrencyUnit>,
+    pub min_expiration: Option<chrono::NaiveDate>,
+    pub max_expiration: Option<chrono::NaiveDate>,
+}
+
 pub struct Service {
     pub keys: Box<dyn KeysRepository>,
     pub signatures: Box<dyn SignaturesRepository>,
@@ -19,10 +25,7 @@ pub struct Service {
 
 impl Service {
     pub async fn get_keyset_id_for_date(&self, date: chrono::NaiveDate) -> Result<cashu::Id> {
-        let datetime = date
-            .and_hms_opt(0, 0, 0)
-            .expect("get_keyset_id_for_date with 00:00:00 time")
-            .and_utc();
+        let datetime = date.and_time(chrono::NaiveTime::MIN).and_utc();
         let tstamp = std::cmp::max(datetime.timestamp(), 0) as u64;
         let infos = self.keys.infos_for_expiration_date(tstamp).await?;
         let info = infos
@@ -62,8 +65,16 @@ impl Service {
         Ok(())
     }
 
-    pub async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
-        self.keys.list_info().await
+    pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<MintKeySetInfo>> {
+        let min_tstamp = filters
+            .min_expiration
+            .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+        let max_tstamp = filters
+            .max_expiration
+            .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+        self.keys
+            .list_info(filters.unit, min_tstamp, max_tstamp)
+            .await
     }
 
     pub async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
@@ -124,8 +135,10 @@ mod tests {
         let signatures_repo = MockSignaturesRepository::new();
         let clowder_cl = MockClowderClient::new();
         let maturity = chrono::NaiveDate::from_ymd_opt(2030, 12, 31).unwrap();
-        let maturity_timestamp =
-            maturity.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() as u64;
+        let maturity_timestamp = maturity
+            .and_time(chrono::NaiveTime::MIN)
+            .and_utc()
+            .timestamp() as u64;
         let (mut kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         kinfo.final_expiry = Some(maturity_timestamp);
         let expected_id = kinfo.id;
@@ -154,7 +167,7 @@ mod tests {
         let signatures_repo = MockSignaturesRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let maturity = chrono::NaiveDate::from_ymd_opt(2027, 6, 30).unwrap();
-        let datetime = maturity.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let datetime = maturity.and_time(chrono::NaiveTime::MIN).and_utc();
         let maturity_timestamp = datetime.timestamp() as u64;
         let expected_entry = expected_factory.generate(datetime);
         let expected_id = expected_entry.0.id;

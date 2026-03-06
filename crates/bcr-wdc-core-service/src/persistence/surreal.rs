@@ -142,6 +142,7 @@ impl persistence::KeysRepository for DBKeys {
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         Ok(())
     }
+
     async fn info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
         let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let info: Option<KeysInfoDBEntry> = self
@@ -155,6 +156,7 @@ impl persistence::KeysRepository for DBKeys {
         let info = info.map(MintKeySetInfo::from);
         Ok(info)
     }
+
     async fn keyset(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
         let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let entry: Option<KeysDBEntry> = self
@@ -165,11 +167,33 @@ impl persistence::KeysRepository for DBKeys {
         let keyset = entry.map(KeysetEntry::from).map(|(_, keyset)| keyset);
         Ok(keyset)
     }
-    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>> {
+
+    async fn list_info(
+        &self,
+        unit: Option<cashu::CurrencyUnit>,
+        min_exp_tstamp: Option<u64>,
+        max_exp_tstamp: Option<u64>,
+    ) -> Result<Vec<MintKeySetInfo>> {
+        let mut statement = String::from("SELECT VALUE info FROM type::table($table)");
+        let mut joiner = "WHERE";
+        if unit.is_some() {
+            statement.push_str(&format!(" {joiner} info.unit = $unit"));
+            joiner = "AND";
+        }
+        if min_exp_tstamp.is_some() {
+            statement.push_str(&format!(" {joiner} info.final_expiry >= $min"));
+            joiner = "AND";
+        }
+        if max_exp_tstamp.is_some() {
+            statement.push_str(&format!(" {joiner} info.final_expiry <= $max"));
+        }
         let infos: Vec<KeysInfoDBEntry> = self
             .db
-            .query("SELECT VALUE info FROM type::table($table)")
+            .query(statement)
             .bind(("table", Self::TABLE))
+            .bind(("unit", unit.map(|u| u.to_string())))
+            .bind(("min", min_exp_tstamp))
+            .bind(("max", max_exp_tstamp))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
@@ -177,6 +201,7 @@ impl persistence::KeysRepository for DBKeys {
         let infos = infos.into_iter().map(MintKeySetInfo::from).collect();
         Ok(infos)
     }
+
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
         let response: Vec<KeysDBEntry> = self
             .db
@@ -193,6 +218,7 @@ impl persistence::KeysRepository for DBKeys {
             .collect();
         Ok(sets)
     }
+
     async fn update_info(&self, info: MintKeySetInfo) -> Result<()> {
         let info = KeysInfoDBEntry::from(info);
         let kid = info.kid;
@@ -440,8 +466,85 @@ mod tests {
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
 
-        let rinfos = db.list_info().await.unwrap();
+        let rinfos = db.list_info(None, None, None).await.unwrap();
         assert_eq!(rinfos.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn list_info_with_unit() {
+        let db = init_keys_mem_db().await;
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.unit = cashu::CurrencyUnit::Sat;
+            info.final_expiry = Some(10);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.unit = cashu::CurrencyUnit::Usd;
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+
+        let rinfos = db
+            .list_info(Some(cashu::CurrencyUnit::Sat), None, None)
+            .await
+            .unwrap();
+        assert_eq!(rinfos.len(), 1);
+        assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Sat);
+    }
+
+    #[tokio::test]
+    async fn list_info_with_min_expiration() {
+        let db = init_keys_mem_db().await;
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.final_expiry = Some(10);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.final_expiry = Some(20);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+
+        let rinfos = db.list_info(None, None, None).await.unwrap();
+        assert_eq!(rinfos.len(), 2);
+        let rinfos = db.list_info(None, Some(15), None).await.unwrap();
+        assert_eq!(rinfos.len(), 1);
+        assert_eq!(rinfos[0].final_expiry, Some(20));
+    }
+
+    #[tokio::test]
+    async fn list_info_with_max_expiration() {
+        let db = init_keys_mem_db().await;
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.final_expiry = Some(10);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+        {
+            let (mut info, keyset) = keys_test::generate_random_keyset();
+            info.final_expiry = Some(20);
+            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
+            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
+            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
+        }
+
+        let rinfos = db.list_info(None, None, None).await.unwrap();
+        assert_eq!(rinfos.len(), 2);
+        let rinfos = db.list_info(None, None, Some(15)).await.unwrap();
+        assert_eq!(rinfos.len(), 1);
+        assert_eq!(rinfos[0].final_expiry, Some(10));
     }
 
     #[tokio::test]
