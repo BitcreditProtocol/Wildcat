@@ -158,7 +158,7 @@ impl Service<UserService> {
         outputs: Vec<cashu::BlindedMessage>,
         sk: cashu::SecretKey,
     ) -> Vec<cashu::BlindSignature> {
-        self.core_cl.mint(qid, outputs, sk).await.unwrap()
+        self.treasury_cl.mint(qid, outputs, sk).await.unwrap()
     }
     /// GET v1/info
     pub async fn mint_info(&self) -> cashu::nut06::MintInfo {
