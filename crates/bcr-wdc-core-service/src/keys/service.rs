@@ -32,28 +32,10 @@ impl Service {
         expiration: Option<TStamp>,
         fees_ppk: u64,
     ) -> Result<MintKeySetInfo> {
-        let entry = self.keygen._generate(unit, now, expiration, fees_ppk);
+        let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
         let kinfo = entry.0.clone();
         self.keys.store(entry).await?;
         Ok(kinfo)
-    }
-
-    pub async fn get_keyset_id_for_date(&self, date: chrono::NaiveDate) -> Result<cashu::Id> {
-        let datetime = date.and_time(chrono::NaiveTime::MIN).and_utc();
-        let tstamp = std::cmp::max(datetime.timestamp(), 0) as u64;
-        let infos = self.keys.infos_for_expiration_date(tstamp).await?;
-        let info = infos
-            .iter()
-            .find(|info| info.final_expiry.unwrap_or_default() == tstamp);
-        if let Some(info) = info {
-            return Ok(info.id);
-        }
-        let new_keyset = self.keygen.generate(datetime);
-        let kid = new_keyset.0.id;
-        let kset = new_keyset.1.clone();
-        self.keys.store(new_keyset).await?;
-        self.clowder.new_keyset(cashu::KeySet::from(kset)).await?;
-        Ok(kid)
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
@@ -140,75 +122,6 @@ mod tests {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
         )
         .unwrap().to_seed("")
-    }
-
-    #[tokio::test]
-    async fn infos_for_expiration_date_existing() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let clowder_cl = MockClowderClient::new();
-        let maturity = chrono::NaiveDate::from_ymd_opt(2030, 12, 31).unwrap();
-        let maturity_timestamp = maturity
-            .and_time(chrono::NaiveTime::MIN)
-            .and_utc()
-            .timestamp() as u64;
-        let (mut kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
-        kinfo.final_expiry = Some(maturity_timestamp);
-        let expected_id = kinfo.id;
-        let cloned_info = kinfo.clone();
-        keys_repo
-            .expect_infos_for_expiration_date()
-            .times(1)
-            .with(eq(maturity_timestamp))
-            .returning(move |_| Ok(vec![cloned_info.clone()]));
-
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-        };
-        let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
-        assert_eq!(kid, expected_id);
-    }
-
-    #[tokio::test]
-    async fn infos_for_expiration_new_keyset() {
-        let expected_factory = Factory::new(&seed(), DerivationPath::default());
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let mut clowder_cl = MockClowderClient::new();
-        let maturity = chrono::NaiveDate::from_ymd_opt(2027, 6, 30).unwrap();
-        let datetime = maturity.and_time(chrono::NaiveTime::MIN).and_utc();
-        let maturity_timestamp = datetime.timestamp() as u64;
-        let expected_entry = expected_factory.generate(datetime);
-        let expected_id = expected_entry.0.id;
-        keys_repo
-            .expect_infos_for_expiration_date()
-            .times(1)
-            .with(eq(maturity_timestamp))
-            .returning(|_| Ok(Vec::new()));
-        keys_repo
-            .expect_store()
-            .times(1)
-            .withf(move |entry| {
-                entry.0.id == expected_id && entry.0.final_expiry == Some(maturity_timestamp)
-            })
-            .returning(|_| Ok(()));
-        clowder_cl
-            .expect_new_keyset()
-            .times(1)
-            .returning(|_| Ok(()));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-        };
-        let kid = service.get_keyset_id_for_date(maturity).await.unwrap();
-        assert_eq!(kid, expected_id);
     }
 
     #[tokio::test]
