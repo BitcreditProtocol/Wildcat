@@ -141,7 +141,10 @@ impl Service<UserService> {
     }
 
     pub async fn list_keysets(&self) -> Vec<cashu::KeySetInfo> {
-        self.core_cl.list_keyset_info().await.unwrap()
+        self.core_cl
+            .list_keyset_info(Default::default())
+            .await
+            .unwrap()
     }
 
     pub async fn list_keys(&self, kid: cashu::Id) -> cashu::KeySet {

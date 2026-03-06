@@ -40,7 +40,7 @@ pub async fn free_money(
     tracing::debug!("Free money request");
 
     let cashu::KeysetResponse { keysets } = cntrl.dbmint.get_mint_keysets().await?;
-    let kinfos = cntrl.crcore.list_keyset_info().await?;
+    let kinfos = cntrl.crcore.list_keyset_info(Default::default()).await?;
 
     let token = match request.issue {
         IssueType::KeysetId(kid) => {

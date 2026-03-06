@@ -168,7 +168,7 @@ pub async fn get_mint_keysets(
     let mut infos = ctrl.cdk_client.get_mint_keysets().await?;
     let mut bcr_infos = ctrl
         .core_client
-        .list_keyset_info()
+        .list_keyset_info(Default::default())
         .await
         .unwrap_or_default();
     infos.keysets.append(&mut bcr_infos);
