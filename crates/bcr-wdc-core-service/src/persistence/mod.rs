@@ -17,7 +17,12 @@ pub trait KeysRepository: Send + Sync {
     async fn store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
     async fn info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
     async fn keyset(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
-    async fn list_info(&self) -> Result<Vec<MintKeySetInfo>>;
+    async fn list_info(
+        &self,
+        currency: Option<cashu::CurrencyUnit>,
+        min_expiration_tstamp: Option<u64>,
+        max_expiration_tstamp: Option<u64>,
+    ) -> Result<Vec<MintKeySetInfo>>;
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
     async fn update_info(&self, info: MintKeySetInfo) -> Result<()>;
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;

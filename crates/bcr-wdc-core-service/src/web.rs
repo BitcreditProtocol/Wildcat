@@ -1,8 +1,11 @@
 // ----- standard library imports
 use std::sync::Arc;
 // ----- extra library imports
-use axum::extract::{Json, Path, State};
-use bcr_common::{cashu, wire::swap as wire_swap};
+use axum::extract::{Json, Path, Query, State};
+use bcr_common::{
+    cashu,
+    wire::{keys as wire_keys, swap as wire_swap},
+};
 // ----- local imports
 use crate::{error::Result, keys, swap};
 
@@ -21,14 +24,24 @@ pub async fn lookup_keyset(
 }
 
 /// --------------------------- list keysets info
+fn convert_keyset_filters(filters: wire_keys::KeysetInfoFilters) -> keys::service::ListFilters {
+    keys::service::ListFilters {
+        unit: filters.unit,
+        min_expiration: filters.min_expiration,
+        max_expiration: filters.max_expiration,
+    }
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keysets(
     State(ctrl): State<Arc<keys::service::Service>>,
+    Query(filters): Query<wire_keys::KeysetInfoFilters>,
 ) -> Result<Json<cashu::KeysetResponse>> {
     tracing::debug!("Received keysets list request");
 
+    let list_filters = convert_keyset_filters(filters);
     let infos = ctrl
-        .list_info()
+        .list_info(list_filters)
         .await?
         .into_iter()
         .map(cashu::KeySetInfo::from)
