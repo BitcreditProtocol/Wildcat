@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use bcr_common::{cashu, client::core::Client as CoreClient};
 // ----- local imports
-use crate::{debit::service::WildcatService, error::Result};
+use crate::{debit::WildcatClient, error::Result};
 
 // ----- end imports
 
@@ -25,7 +25,7 @@ impl WildcatCl {
 }
 
 #[async_trait]
-impl WildcatService for WildcatCl {
+impl WildcatClient for WildcatCl {
     async fn burn(&self, inputs: &[cashu::Proof]) -> Result<()> {
         self.core_cl.burn(inputs.to_vec()).await?;
         Ok(())

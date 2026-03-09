@@ -17,7 +17,7 @@ use bcr_common::{
 };
 // ----- local imports
 use crate::{
-    debit::service::Wallet,
+    debit::Wallet,
     error::{Error, Result},
 };
 
@@ -131,9 +131,5 @@ impl Wallet for CDKWallet {
 
     async fn balance(&self) -> Result<Amount> {
         self.wlt.total_balance().await.map_err(Error::CDKWallet)
-    }
-
-    async fn active_keyset(&self) -> Result<cashu::KeySetInfo> {
-        self.wlt.get_active_keyset().await.map_err(Error::CDKWallet)
     }
 }
