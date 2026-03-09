@@ -48,8 +48,11 @@ impl crsat::KeysClient for CrsatCoreClient {
         &self,
         expiration: chrono::NaiveDate,
     ) -> Result<cashu::KeySet> {
-        let kid = self.core.keys_for_expiration(expiration).await?;
-        let keyset = self.core.keys(kid).await?;
+        let kinfo = self
+            .core
+            .get_or_create_credit_keyset_with_expiration(expiration)
+            .await?;
+        let keyset = self.core.keys(kinfo.id).await?;
         Ok(keyset)
     }
 }
