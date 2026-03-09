@@ -93,12 +93,12 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<Arc<Service>>,
-    params: Query<wire_quotes::ListParam>,
+    Query(params): Query<wire_quotes::ListParam>,
 ) -> Result<Json<wire_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
 
     let now = chrono::Utc::now();
-    let (filters, sort) = convert_into_list_params(params.0);
+    let (filters, sort) = convert_into_list_params(params);
     let quotes = ctrl.list_light(filters, sort, now).await?;
     let response = wire_quotes::ListReplyLight {
         quotes: quotes.into_iter().map(convert_into_light_quote).collect(),

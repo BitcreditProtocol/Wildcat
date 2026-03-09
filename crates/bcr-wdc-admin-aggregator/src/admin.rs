@@ -648,7 +648,12 @@ pub async fn post_token_status(
     tracing::debug!("Received token state request {}", head);
 
     let token = bcr_common::wallet::Token::from_str(&req.token)?;
-    let kinfos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
+
+    let kinfo_filters = wire_keys::KeysetInfoFilters {
+        unit: token.unit(),
+        ..Default::default()
+    };
+    let kinfos = ctrl.core_cl.list_keyset_info(kinfo_filters).await?;
     let ys = token.proofs(&kinfos)?.ys()?;
     let states = ctrl.core_cl.check_state(ys).await?;
     let is_any_spent = states

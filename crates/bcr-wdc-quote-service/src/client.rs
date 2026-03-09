@@ -32,8 +32,11 @@ impl WdcClient for WildcatCl {
         &self,
         redemption_date: chrono::NaiveDate,
     ) -> Result<cashu::Id> {
-        let kid = self.core.keys_for_expiration(redemption_date).await?;
-        Ok(kid)
+        let kinfo = self
+            .core
+            .get_or_create_credit_keyset_with_expiration(redemption_date)
+            .await?;
+        Ok(kinfo.id)
     }
 
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet> {
