@@ -5,7 +5,6 @@ use std::{
     time::Duration,
 };
 // ----- extra library imports
-use async_trait::async_trait;
 use bcr_common::{
     cashu,
     cdk::{self, wallet::MintConnector},
@@ -18,8 +17,8 @@ use bcr_wdc_utils::signatures as signatures_utils;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
+    debit::{ClowderClient, Repository, Wallet, WildcatClient},
     error::{Error, Result},
-    persistence::Repository,
     TStamp,
 };
 
@@ -61,47 +60,6 @@ pub struct OnchainMeltQuote {
     pub expiry: u64,
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait Wallet: Send + Sync {
-    async fn mint_quote(
-        &self,
-        amount: cashu::Amount,
-        signed_request: wire_signatures::SignedRequestToMintFromEBillDesc,
-    ) -> Result<cdk::wallet::MintQuote>;
-    async fn mint(&self, quote: String) -> Result<cashu::MintQuoteState>;
-    async fn keysets_info(&self, kids: &[cashu::Id]) -> Result<Vec<cashu::KeySetInfo>>;
-    async fn swap_to_messages(
-        &self,
-        outputs: &[cashu::BlindedMessage],
-    ) -> Result<Vec<cashu::BlindSignature>>;
-    async fn balance(&self) -> Result<cashu::Amount>;
-    async fn active_keyset(&self) -> Result<cashu::KeySetInfo>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait WildcatService: Send + Sync {
-    async fn burn(&self, inputs: &[cashu::Proof]) -> Result<()>;
-    async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait ClowderReadService: Send + Sync {
-    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait ClowderWriteService: Send + Sync {
-    async fn pay_bill(
-        &self,
-        req: clowder_messages::BillPaymentRequest,
-        resp: clowder_messages::BillPaymentResponse,
-    ) -> Result<()>;
-}
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MintQuote {
     pub qid: String,
@@ -113,10 +71,9 @@ pub struct MintQuote {
 #[derive(Clone)]
 pub struct Service {
     pub wallet: Arc<dyn Wallet>,
-    pub wdc: Arc<dyn WildcatService>,
+    pub wdc: Arc<dyn WildcatClient>,
     pub repo: Arc<dyn Repository>,
-    pub clowder_read: Arc<dyn ClowderReadService>,
-    pub clowder_write: Option<Arc<dyn ClowderWriteService>>,
+    pub clowder_cl: Arc<dyn ClowderClient>,
     pub signing_keys: bitcoin::secp256k1::Keypair,
     pub monitor_interval: tokio::time::Duration,
     pub quote_expiry_seconds: u64,
@@ -193,7 +150,7 @@ impl Service {
                 quote,
                 self.wallet.clone(),
                 self.repo.clone(),
-                self.clowder_write.clone(),
+                self.clowder_cl.clone(),
                 self.monitor_interval,
                 self.cancel.clone(),
             ));
@@ -209,7 +166,7 @@ impl Service {
         deadline: TStamp,
     ) -> Result<cdk::wallet::MintQuote> {
         let clowder_qid = Uuid::new_v4();
-        let sweeping_address = self.clowder_read.get_sweep(clowder_qid).await?;
+        let sweeping_address = self.clowder_cl.get_sweep(clowder_qid).await?;
         let request = wire_signatures::RequestToMintFromEBillDesc {
             ebill_id: ebill_id.clone(),
             deadline,
@@ -232,7 +189,7 @@ impl Service {
             mint_quote,
             self.wallet.clone(),
             self.repo.clone(),
-            self.clowder_write.clone(),
+            self.clowder_cl.clone(),
             self.monitor_interval,
             self.cancel.clone(),
         ));
@@ -312,7 +269,7 @@ async fn monitor_quote(
     mut quote: MintQuote,
     wlt: Arc<dyn Wallet>,
     repo: Arc<dyn Repository>,
-    clowder_write: Option<Arc<dyn ClowderWriteService>>,
+    clowder: Arc<dyn ClowderClient>,
     interval: tokio::time::Duration,
     cancel: tokio_util::sync::CancellationToken,
 ) {
@@ -338,15 +295,13 @@ async fn monitor_quote(
         }
         break;
     }
-    if let Some(clwdr) = &clowder_write {
-        let req = clowder_messages::BillPaymentRequest {
-            bill_id: ebill_id.clone(),
-            payment_clowder_quote: clowder_qid,
-        };
-        let resp = clowder_messages::BillPaymentResponse {};
-        if let Err(e) = clwdr.pay_bill(req, resp).await {
-            tracing::warn!("Failed to call clowder pay_bill for ebill {ebill_id}: {e}");
-        }
+    let req = clowder_messages::BillPaymentRequest {
+        bill_id: ebill_id.clone(),
+        payment_clowder_quote: clowder_qid,
+    };
+    let resp = clowder_messages::BillPaymentResponse {};
+    if let Err(e) = clowder.pay_bill(req, resp).await {
+        tracing::warn!("Failed to call clowder pay_bill for ebill {ebill_id}: {e}");
     }
     quote.mint_complete = true;
     let result = repo.update_quote(quote).await;
@@ -365,7 +320,7 @@ async fn monitor_quote(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persistence::MockRepository;
+    use crate::debit::{MockClowderClient, MockRepository, MockWallet, MockWildcatClient};
     use bcr_common::{cdk_common, core_tests::generate_random_ecash_keyset};
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
@@ -379,15 +334,14 @@ mod tests {
             bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb")
                 .unwrap()
                 .assume_checked();
-        let (info, _) = generate_random_ecash_keyset();
         let btc_amount = bitcoin::Amount::from_sat(1000);
         let amount = cashu::Amount::from(btc_amount.to_sat());
         let ebill_id =
             BillId::from_str("bitcrt285psGq4Lz4fEQwfM3We5HPznJq8p1YvRaddszFaU5dY").unwrap();
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let mut repo = MockRepository::new();
         let mut wallet = MockWallet::new();
-        let mut clowder = MockClowderReadService::new();
+        let mut clowder = MockClowderClient::new();
         let mint_quote = cdk::wallet::MintQuote {
             id: String::from("mint_quote_id"),
             mint_url: cdk_common::mint_url::MintUrl::from_str("http://test_mint_url.com:3338")
@@ -412,10 +366,6 @@ mod tests {
             .expect_mint_quote()
             .times(1)
             .returning(move |_, _| Ok(mint_quote.clone()));
-        wallet
-            .expect_active_keyset()
-            .times(1)
-            .returning(move || Ok(info.clone().into()));
 
         repo.expect_store_quote()
             .withf(move |q| q.qid == qid_cloned && q.ebill_id == ebill_cloned)
@@ -432,8 +382,7 @@ mod tests {
             repo: Arc::new(repo),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
@@ -451,10 +400,10 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_no_inputs() {
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let wallet = MockWallet::new();
         let repo = MockRepository::new();
-        let clowder = MockClowderReadService::new();
+        let clowder = MockClowderClient::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let cdk_mint = cdk::wallet::HttpClient::new(
@@ -465,8 +414,7 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -485,10 +433,10 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_no_outputs() {
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let wallet = MockWallet::new();
         let repo = MockRepository::new();
-        let clowder = MockClowderReadService::new();
+        let clowder = MockClowderClient::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let cdk_mint = cdk::wallet::HttpClient::new(
@@ -499,8 +447,7 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -516,10 +463,10 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_unmatched_amounts() {
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let wallet = MockWallet::new();
         let repo = MockRepository::new();
-        let clowder = MockClowderReadService::new();
+        let clowder = MockClowderClient::new();
 
         let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
         let cdk_mint = cdk::wallet::HttpClient::new(
@@ -530,8 +477,7 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -551,10 +497,10 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_inactive_keyset() {
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
-        let clowder = MockClowderReadService::new();
+        let clowder = MockClowderClient::new();
         wallet.expect_keysets_info().returning(|kids| {
             let mut infos = Vec::new();
             for kid in kids {
@@ -578,8 +524,7 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -599,10 +544,10 @@ mod tests {
 
     #[tokio::test]
     async fn redeem_unknow_keyset() {
-        let wdc = MockWildcatService::new();
+        let wdc = MockWildcatClient::new();
         let repo = MockRepository::new();
         let mut wallet = MockWallet::new();
-        let clowder = MockClowderReadService::new();
+        let clowder = MockClowderClient::new();
         wallet
             .expect_keysets_info()
             .returning(|kids| Err(Error::UnknownKeyset(kids[0])));
@@ -616,8 +561,7 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder),
-            clowder_write: None,
+            clowder_cl: Arc::new(clowder),
             monitor_interval: tokio::time::Duration::from_secs(5),
             quote_expiry_seconds: 3600,
             cancel: tokio_util::sync::CancellationToken::new(),

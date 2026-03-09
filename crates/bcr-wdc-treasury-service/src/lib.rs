@@ -136,28 +136,26 @@ impl AppController {
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
-        let clowder_cl = debit::ClowderCl(ClowderRestClient::new(clowder_url.clone()));
+        let clowder_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clwdr_nats = if let Some(url) = clwdr_nats_url.clone() {
-            Some(Arc::new(
-                ClowderNatsClient::new(url)
-                    .await
-                    .expect("Failed to create clowder nats client"),
-            ))
+            let cl = ClowderNatsClient::new(url)
+                .await
+                .expect("Failed to create clowder nats client");
+            Some(Arc::new(cl))
         } else {
             None
         };
-        let clowder_write: Option<Arc<dyn debit::ClowderWriteService>> =
-            clwdr_nats.as_ref().map(|c| {
-                Arc::new(debit::ClowderNatsCl(c.clone())) as Arc<dyn debit::ClowderWriteService>
-            });
+        let clowder_cl = debit::ClowderCl {
+            rest: clowder_rest.clone(),
+            nats: clwdr_nats.clone(),
+        };
         let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            clowder_read: Arc::new(clowder_cl),
-            clowder_write,
+            clowder_cl: Arc::new(clowder_cl),
             monitor_interval,
             quote_expiry_seconds,
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -257,8 +255,8 @@ impl AppController {
             crsat,
             sat,
             signer: Arc::new(signer),
-            clwdr_nats,
             clwdr_rest,
+            clwdr_nats,
             dbmint,
             dev: Arc::new(dev),
             params: Parameters {
