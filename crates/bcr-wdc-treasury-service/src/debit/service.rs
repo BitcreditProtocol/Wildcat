@@ -52,6 +52,8 @@ pub struct ClowderMintQuoteOnchain {
     pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     pub amount: cashu::Amount,
     pub expiry: u64,
+    pub blinded_messages: Vec<cashu::nuts::BlindedMessage>,
+    pub commitment: bitcoin::secp256k1::schnorr::Signature,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

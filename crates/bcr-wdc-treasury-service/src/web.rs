@@ -231,20 +231,30 @@ pub async fn mint_quote_onchain(
     let cdk_quote = Uuid::parse_str(&cdk_response.quote)
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid CDK quote ID")))?;
 
+    let body = wire_mint::MintQuoteOnchainResponseBody {
+        quote: cdk_quote,
+        address: address_response.address.clone(),
+        amount: request.amount,
+        expiry,
+        blinded_messages: request.blinded_messages.clone(),
+    };
+    let borsh_bytes = borsh::to_vec(&body)?;
+    let commitment = ctrl.signer.sign_schnorr_preimage(&borsh_bytes).await?;
+
     let data = debit::ClowderMintQuoteOnchain {
         clowder_quote,
         cdk_quote,
-        address: address_response.address.clone(),
+        address: address_response.address,
         amount: cashu::Amount::from(request.amount.to_sat()),
         expiry,
+        blinded_messages: request.blinded_messages,
+        commitment,
     };
     ctrl.debit.repo.store_onchain_mint(cdk_quote, data).await?;
 
     let wallet_response = wire_mint::MintQuoteOnchainResponse {
-        quote: cdk_quote,
-        address: address_response.address,
-        amount: request.amount,
-        expiry,
+        body,
+        commitment,
         state: Some(cashu::MintQuoteState::Unpaid),
     };
     Ok(Json(wallet_response))
@@ -281,11 +291,17 @@ pub async fn get_mint_quote_onchain(
         }
     };
 
-    Ok(Json(wire_mint::MintQuoteOnchainResponse {
+    let body = wire_mint::MintQuoteOnchainResponseBody {
         quote: data.cdk_quote,
         address: data.address,
         amount: bitcoin::Amount::from_sat(data.amount.into()),
         expiry: data.expiry,
+        blinded_messages: data.blinded_messages,
+    };
+
+    Ok(Json(wire_mint::MintQuoteOnchainResponse {
+        body,
+        commitment: data.commitment,
         state: Some(state),
     }))
 }
