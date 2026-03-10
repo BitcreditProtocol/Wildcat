@@ -9,9 +9,9 @@ use axum::{
 use bcr_common::{
     cashu,
     wire::{
-        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
-        keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
-        treasury as wire_treasury, wallet as wire_wallet,
+        bill as wire_bill, clowder as wire_clowder, common as wire_common,
+        identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
+        signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
     },
 };
 use utoipa::OpenApi;
@@ -175,6 +175,9 @@ pub fn routes(ctrl: AppController) -> Router {
 #[openapi(
     components(schemas(
         wire_info::WildcatInfo,
+        // common
+        wire_common::PaginatedResponse<cashu::KeySetInfo>,
+        wire_common::PaginatedResponse<wire_quotes::LightInfo>,
         // core service
         cashu::Id,
         cashu::KeySetInfo,
@@ -185,7 +188,7 @@ pub fn routes(ctrl: AppController) -> Router {
         // quotes service
         wire_quotes::ListSort,
         wire_quotes::InfoReply,
-        wire_quotes::ListReplyLight,
+        wire_quotes::LightInfo,
         wire_quotes::UpdateQuoteRequest,
         wire_quotes::UpdateQuoteResponse,
         // ebills service

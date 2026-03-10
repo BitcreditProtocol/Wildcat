@@ -11,9 +11,9 @@ use bcr_common::{
     client::treasury::Error as TreasuryClientError,
     core::BillId,
     wire::{
-        bill as wire_bill, clowder as wire_clowder, identity as wire_identity, info as wire_info,
-        keys as wire_keys, quotes as wire_quotes, signatures as wire_signatures,
-        treasury as wire_treasury, wallet as wire_wallet,
+        bill as wire_bill, clowder as wire_clowder, common as wire_common,
+        identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
+        signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
     },
 };
 use clwdr_client::model::ClowderNodeInfo;
@@ -64,20 +64,29 @@ pub async fn get_keyset_info(
 #[utoipa::path(
     get,
     path = endpoints::LIST_KEYSET_INFOS,
-    params(
-    ),
+    params(wire_common::Pagination),
     responses (
-        (status = 200, description = "Successful response", body = Vec<cashu::KeySetInfo> , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_common::PaginatedResponse<cashu::KeySetInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keyset_infos(
     State(ctrl): State<AppController>,
-) -> Result<Json<Vec<cashu::KeySetInfo>>> {
+    Query(pagination): Query<wire_common::Pagination>,
+) -> Result<Json<wire_common::PaginatedResponse<cashu::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
     let infos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
-    Ok(Json(infos))
+    let total = infos.len() as u64;
+    let data = if let Some(limit) = pagination.limit {
+        let offset = pagination.offset.unwrap_or(0);
+        let start = (offset as usize).min(infos.len());
+        let end = (start + limit as usize).min(infos.len());
+        infos[start..end].to_vec()
+    } else {
+        infos
+    };
+    Ok(Json(wire_common::PaginatedResponse { data, total }))
 }
 
 #[utoipa::path(
@@ -169,20 +178,30 @@ pub async fn get_quote(
 #[utoipa::path(
     get,
     path = endpoints::LIST_CREDIT_QUOTES,
-    params(wire_quotes::ListParam),
+    params(wire_quotes::ListParam, wire_common::Pagination),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::ListReplyLight , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_common::PaginatedResponse<wire_quotes::LightInfo> , content_type = "application/json"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_quotes(
     State(ctrl): State<AppController>,
     Query(list_params): Query<wire_quotes::ListParam>,
-) -> Result<Json<wire_quotes::ListReplyLight>> {
+    Query(pagination): Query<wire_common::Pagination>,
+) -> Result<Json<wire_common::PaginatedResponse<wire_quotes::LightInfo>>> {
     tracing::debug!("Received list quotes request");
 
-    let statuss = ctrl.quotes_cl.list(list_params).await?;
-    Ok(Json(statuss))
+    let result = ctrl.quotes_cl.list(list_params).await?;
+    let total = result.quotes.len() as u64;
+    let data = if let Some(limit) = pagination.limit {
+        let offset = pagination.offset.unwrap_or(0);
+        let start = (offset as usize).min(result.quotes.len());
+        let end = (start + limit as usize).min(result.quotes.len());
+        result.quotes[start..end].to_vec()
+    } else {
+        result.quotes
+    };
+    Ok(Json(wire_common::PaginatedResponse { data, total }))
 }
 
 #[utoipa::path(
