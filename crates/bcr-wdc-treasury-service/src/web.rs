@@ -201,13 +201,20 @@ pub async fn melt_onchain(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_quote_onchain(
     State(ctrl): State<AppController>,
-    Json(request): Json<wire_mint::MintQuoteOnchainRequest>,
-) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
+    Json(request): Json<wire_mint::OnchainMintQuoteRequest>,
+) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
     tracing::debug!("Received mint_quote_onchain request");
 
-    if request.amount < ctrl.params.min_mint_threshold {
+    let amount_sat: u64 = request
+        .blinded_messages
+        .iter()
+        .fold(cashu::Amount::ZERO, |acc, b| acc + b.amount)
+        .into();
+    let payment_amount = bitcoin::Amount::from_sat(amount_sat + 1); // 1 sat fee
+
+    if payment_amount < ctrl.params.min_mint_threshold {
         return Err(crate::error::Error::InsufficientOnchainMintAmount(
-            request.amount,
+            payment_amount,
         ));
     }
 
@@ -222,7 +229,7 @@ pub async fn mint_quote_onchain(
     let expiry = (chrono::Utc::now().timestamp() + ctrl.debit.quote_expiry_seconds as i64) as u64;
     let description = format!("clowder:{}", clowder_quote);
     let quote_request = cashu::MintQuoteBolt11Request {
-        amount: cashu::Amount::from(request.amount.to_sat()),
+        amount: cashu::Amount::from(amount_sat),
         unit: cashu::CurrencyUnit::Sat,
         description: Some(description),
         pubkey: None,
@@ -231,10 +238,10 @@ pub async fn mint_quote_onchain(
     let cdk_quote = Uuid::parse_str(&cdk_response.quote)
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid CDK quote ID")))?;
 
-    let body = wire_mint::MintQuoteOnchainResponseBody {
+    let body = wire_mint::OnchainMintQuoteResponseBody {
         quote: cdk_quote,
         address: address_response.address.clone(),
-        amount: request.amount,
+        payment_amount,
         expiry,
         blinded_messages: request.blinded_messages.clone(),
     };
@@ -245,14 +252,14 @@ pub async fn mint_quote_onchain(
         clowder_quote,
         cdk_quote,
         address: address_response.address,
-        amount: cashu::Amount::from(request.amount.to_sat()),
+        amount: cashu::Amount::from(amount_sat),
         expiry,
         blinded_messages: request.blinded_messages,
         commitment,
     };
     ctrl.debit.repo.store_onchain_mint(cdk_quote, data).await?;
 
-    let wallet_response = wire_mint::MintQuoteOnchainResponse {
+    let wallet_response = wire_mint::OnchainMintQuoteResponse {
         body,
         commitment,
         state: Some(cashu::MintQuoteState::Unpaid),
@@ -264,7 +271,7 @@ pub async fn mint_quote_onchain(
 pub async fn get_mint_quote_onchain(
     State(ctrl): State<AppController>,
     Path(quote_id): Path<String>,
-) -> Result<Json<wire_mint::MintQuoteOnchainResponse>> {
+) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
     tracing::debug!("Received get_mint_quote_onchain request");
 
     let cdk_quote = Uuid::parse_str(&quote_id)
@@ -291,15 +298,16 @@ pub async fn get_mint_quote_onchain(
         }
     };
 
-    let body = wire_mint::MintQuoteOnchainResponseBody {
+    let amount_sat: u64 = data.amount.into();
+    let body = wire_mint::OnchainMintQuoteResponseBody {
         quote: data.cdk_quote,
         address: data.address,
-        amount: bitcoin::Amount::from_sat(data.amount.into()),
+        payment_amount: bitcoin::Amount::from_sat(amount_sat + 1), // 1 sat fee
         expiry: data.expiry,
         blinded_messages: data.blinded_messages,
     };
 
-    Ok(Json(wire_mint::MintQuoteOnchainResponse {
+    Ok(Json(wire_mint::OnchainMintQuoteResponse {
         body,
         commitment: data.commitment,
         state: Some(state),
@@ -309,12 +317,11 @@ pub async fn get_mint_quote_onchain(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_onchain(
     State(ctrl): State<AppController>,
-    Json(request): Json<cashu::MintRequest<String>>,
-) -> Result<Json<cashu::MintResponse>> {
+    Json(request): Json<wire_mint::OnchainMintRequest>,
+) -> Result<Json<wire_mint::MintResponse>> {
     tracing::debug!("Received mint_onchain request");
 
-    let cdk_quote = Uuid::parse_str(&request.quote)
-        .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
+    let cdk_quote = request.quote;
     let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
 
     let current_time = chrono::Utc::now().timestamp() as u64;
@@ -324,8 +331,8 @@ pub async fn mint_onchain(
         )));
     }
 
-    let kid = request
-        .outputs
+    let kid = data
+        .blinded_messages
         .first()
         .ok_or(crate::error::Error::InvalidInput(String::from(
             "Missing output",
@@ -339,8 +346,8 @@ pub async fn mint_onchain(
 
     tracing::debug!("Clowder payment check {:?} sats", payment_response.amount);
 
-    let outputs_amount: u64 = request
-        .outputs
+    let outputs_amount: u64 = data
+        .blinded_messages
         .iter()
         .fold(cashu::Amount::ZERO, |acc, o| acc + o.amount)
         .into();
@@ -362,7 +369,7 @@ pub async fn mint_onchain(
 
     let mint_request = cashu::MintRequest {
         quote: data.cdk_quote.to_string(),
-        outputs: request.outputs,
+        outputs: data.blinded_messages,
         signature: None,
     };
     let response = ctrl.dbmint.post_mint(mint_request).await?;
@@ -380,7 +387,9 @@ pub async fn mint_onchain(
         tracing::debug!("Sent mint to clowder");
     }
 
-    Ok(Json(response))
+    Ok(Json(wire_mint::MintResponse {
+        signatures: response.signatures,
+    }))
 }
 
 pub async fn mint_ebill(
