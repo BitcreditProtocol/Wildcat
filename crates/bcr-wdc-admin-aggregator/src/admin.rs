@@ -16,7 +16,7 @@ use bcr_common::{
         signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
     },
 };
-use clwdr_client::model::ClowderNodeInfo;
+use wire_clowder::ClowderNodeInfo;
 // ----- local imports
 use crate::{
     endpoints,

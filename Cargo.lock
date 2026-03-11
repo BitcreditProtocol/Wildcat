@@ -2010,7 +2010,7 @@ dependencies = [
 [[package]]
 name = "clwdr-client"
 version = "0.3.0"
-source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=d03dfb5c2d0529b85163372819cb23c4a98c58a2#d03dfb5c2d0529b85163372819cb23c4a98c58a2"
+source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=f44bfde094d55b1b12140fdf610cf45eb74dd02e#f44bfde094d55b1b12140fdf610cf45eb74dd02e"
 dependencies = [
  "async-nats",
  "bcr-common",
@@ -5201,9 +5201,9 @@ dependencies = [
 
 [[package]]
 name = "quick_cache"
-version = "0.6.18"
+version = "0.6.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ada44a88ef953a3294f6eb55d2007ba44646015e18613d2f213016379203ef3"
+checksum = "530e84778a55de0f52645a51d4e3b9554978acd6a1e7cd50b6a6784692b3029e"
 dependencies = [
  "ahash 0.8.12",
  "equivalent",
@@ -6766,7 +6766,7 @@ dependencies = [
  "getrandom 0.2.17",
  "lru",
  "parking_lot",
- "quick_cache 0.6.18",
+ "quick_cache 0.6.19",
  "revision 0.10.0",
  "vart 0.9.3",
 ]

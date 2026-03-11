@@ -412,7 +412,7 @@ pub async fn post_restore(
 )]
 pub async fn get_clowder_info(
     State(ctrl): State<AppController>,
-) -> Result<Json<clwdr_client::model::ClowderNodeInfo>> {
+) -> Result<Json<wire_clowder::ClowderNodeInfo>> {
     let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
 
     Ok(Json(clowder_client.get_info().await?))
@@ -427,8 +427,8 @@ pub async fn get_clowder_info(
 )]
 pub async fn post_clowder_path(
     State(ctrl): State<AppController>,
-    Json(request): Json<clwdr_client::model::PathRequest>,
-) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
+    Json(request): Json<wire_clowder::PathRequest>,
+) -> Result<Json<wire_clowder::ConnectedMintsResponse>> {
     let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
 
     Ok(Json(
@@ -445,7 +445,7 @@ pub async fn post_clowder_path(
 )]
 pub async fn get_clowder_betas(
     State(ctrl): State<AppController>,
-) -> Result<Json<clwdr_client::model::ConnectedMintsResponse>> {
+) -> Result<Json<wire_clowder::ConnectedMintsResponse>> {
     let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
 
     Ok(Json(clowder_client.get_betas().await?))

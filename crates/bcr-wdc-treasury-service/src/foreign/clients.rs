@@ -131,7 +131,7 @@ impl foreign::ClowderClient for ClowderCl {
             acc + cashu::Amount::from(fp.amount)
         });
         let fps_len = fps.len();
-        let fps: Vec<clwdr_model::ProofFingerprint> = fps.into_iter().collect();
+        let fps: Vec<wire_keys::ProofFingerprint> = fps.into_iter().collect();
         let clwdr_model::IntermintOriginResponse {
             node_id: origin_id,
             mint_url: origin_url,
