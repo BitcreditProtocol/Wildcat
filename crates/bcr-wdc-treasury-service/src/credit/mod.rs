@@ -30,7 +30,7 @@ pub trait MintOpRepository: Send + Sync {
     async fn store(&self, mint_operation: MintOperation) -> Result<()>;
     async fn load(&self, uid: Uuid) -> Result<MintOperation>;
     async fn list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
-    async fn update(
+    async fn update_minted_field(
         &self,
         uid: Uuid,
         old_minted: cashu::Amount,

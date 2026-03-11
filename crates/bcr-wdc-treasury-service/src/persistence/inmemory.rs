@@ -186,7 +186,12 @@ impl credit::MintOpRepository for MintOpMap {
         }
         Ok(a)
     }
-    async fn update(&self, uid: uuid::Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
+    async fn update_minted_field(
+        &self,
+        uid: uuid::Uuid,
+        old: cashu::Amount,
+        new: cashu::Amount,
+    ) -> Result<()> {
         let mut wlocked = self.operations.write().unwrap();
         let (cs, _) = &mut *wlocked;
         let operation = cs.get_mut(&uid).ok_or(Error::Internal(format!(

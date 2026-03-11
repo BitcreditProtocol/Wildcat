@@ -54,8 +54,8 @@ pub struct DebitConfig {
     signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
-    monitor_interval_sec: u64,
-    quote_expiry_seconds: u64,
+    monitor_interval_sec: u32,
+    quote_expiry_seconds: u32,
     min_confirmations: u32,
     min_melt_threshold: bitcoin::Amount,
     min_mint_threshold: bitcoin::Amount,
@@ -76,9 +76,7 @@ pub struct CreditConfig {
 
 #[derive(Clone)]
 struct Parameters {
-    pub min_confirmations: u32,
     pub min_melt_threshold: bitcoin::Amount,
-    pub min_mint_threshold: bitcoin::Amount,
 }
 
 #[derive(Clone, FromRef)]
@@ -135,7 +133,7 @@ impl AppController {
         let signing_keys =
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         tracing::info!("signing public key: {}", signing_keys.public_key());
-        let monitor_interval = tokio::time::Duration::from_secs(monitor_interval_sec);
+        let monitor_interval = chrono::Duration::seconds(monitor_interval_sec as i64);
         let clowder_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clwdr_nats = if let Some(url) = clwdr_nats_url.clone() {
             let cl = ClowderNatsClient::new(url)
@@ -145,22 +143,29 @@ impl AppController {
         } else {
             None
         };
+        let signer = SignatoryNatsClient::new(signer_url, None)
+            .await
+            .expect("Failed to create signer");
+        let clowder_signer = Arc::new(signer);
         let clowder_cl = debit::ClowderCl {
             rest: clowder_rest.clone(),
             nats: clwdr_nats.clone(),
+            signatory: clowder_signer.clone(),
+            min_confirmations,
         };
         let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
         let debit = debit::Service {
             wallet: Arc::new(wallet),
             signing_keys,
+            monitor_interval,
+            quote_expiry: chrono::Duration::seconds(quote_expiry_seconds as i64),
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder_cl),
-            monitor_interval,
-            quote_expiry_seconds,
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: dbmint.clone(),
+            min_mint_threshold,
         };
         debit
             .init_monitors_for_past_ebills()
@@ -181,7 +186,7 @@ impl AppController {
         let clwdr_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
         let clowder = Arc::new(ProdClowderClient::new(clowder_url));
         let factory = Arc::new(foreign::clients::MintClientFactory {});
-        let interval = std::time::Duration::from_secs(monitor_interval_sec);
+        let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
         let settler = {
             let online: Arc<dyn foreign::OnlineRepository> = crsatonlinerepo.clone();
             let offline: Arc<dyn foreign::OfflineRepository> = crsatofflinerepo.clone();
@@ -229,10 +234,6 @@ impl AppController {
             settler,
         });
 
-        let signer = SignatoryNatsClient::new(signer_url, None)
-            .await
-            .expect("Failed to create signer");
-
         let dev = devmode::Service {
             crcore: bcr_common::client::core::Client::new(keys_url.clone()),
             dbmint: dbmint.clone(),
@@ -254,16 +255,12 @@ impl AppController {
             debit,
             crsat,
             sat,
-            signer: Arc::new(signer),
+            signer: clowder_signer,
             clwdr_rest,
             clwdr_nats,
             dbmint,
             dev: Arc::new(dev),
-            params: Parameters {
-                min_confirmations,
-                min_melt_threshold,
-                min_mint_threshold,
-            },
+            params: Parameters { min_melt_threshold },
         }
     }
 
@@ -303,11 +300,6 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::MINTQUOTE_ONCHAIN_EP_V1,
             post(web::mint_quote_onchain),
         )
-        .route(
-            "/v1/mint/quote/onchain/:quote_id",
-            get(web::get_mint_quote_onchain),
-        )
-        .route("/v1/mint/onchain", post(web::mint_onchain))
         .route(TreasuryClient::MINT_EP_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
