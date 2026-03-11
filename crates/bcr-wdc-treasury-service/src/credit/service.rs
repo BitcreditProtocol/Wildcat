@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{cashu, core::BillId};
 use futures::future::JoinAll;
@@ -56,18 +55,6 @@ impl Service {
         }
         bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        //  check if the ids of the outputs are all the same
-        let unique_ids: Vec<_> = request
-            .outputs
-            .iter()
-            .map(|p| p.keyset_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-        if unique_ids.len() != 1 {
-            return Err(Error::InvalidInput(String::from("multiple keyset IDs")));
-        }
-        let kid = unique_ids.first().expect("unique_ids len should be 1");
         let output_amount = request
             .outputs
             .iter()
@@ -77,7 +64,11 @@ impl Service {
         if signature_verification.is_err() {
             return Err(Error::InvalidInput(String::from("invalid signature")));
         }
-        if operation.kid != *kid {
+        let same_kid = request
+            .outputs
+            .iter()
+            .all(|blind| blind.keyset_id == operation.kid);
+        if !same_kid {
             return Err(Error::InvalidInput(String::from("invalid keyset id")));
         }
         if operation.minted + output_amount > operation.target {
@@ -91,7 +82,7 @@ impl Service {
         let signatures: Vec<cashu::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
         self.mintops
-            .update(
+            .update_minted_field(
                 operation.uid,
                 operation.minted,
                 operation.minted + output_amount,
@@ -100,7 +91,7 @@ impl Service {
         let response = self
             .clowdercl
             .minting_ebill(
-                *kid,
+                operation.kid,
                 request.quote,
                 output_amount,
                 operation.bill_id.clone(),
@@ -111,7 +102,7 @@ impl Service {
             Ok(signatures) => Ok(cashu::MintResponse { signatures }),
             Err(e) => {
                 self.mintops
-                    .update(
+                    .update_minted_field(
                         operation.uid,
                         operation.minted + output_amount,
                         operation.minted,
@@ -218,7 +209,7 @@ mod tests {
             .fold(cashu::Amount::ZERO, |acc, amount| acc + *amount);
         let bill_id = core_tests::random_bill_id();
         mintop_repo
-            .expect_update()
+            .expect_update_minted_field()
             .times(1)
             .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
             .returning(|_, _, _| Ok(()));

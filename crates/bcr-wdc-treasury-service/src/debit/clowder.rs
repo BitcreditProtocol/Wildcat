@@ -2,8 +2,13 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, wire::clowder::messages as clowder_messages};
-use clwdr_client::{ClowderNatsClient, ClowderRestClient};
+use bcr_common::{
+    cashu,
+    wire::{clowder::messages as clowder_messages, mint as wire_mint},
+};
+use bitcoin::{base64::prelude::*, hashes::Hash};
+use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
+use uuid::Uuid;
 // ----- local imports
 use crate::{
     debit::ClowderClient,
@@ -15,6 +20,8 @@ use crate::{
 pub struct ClowderCl {
     pub rest: Arc<ClowderRestClient>,
     pub nats: Option<Arc<ClowderNatsClient>>,
+    pub signatory: Arc<SignatoryNatsClient>,
+    pub min_confirmations: u32,
 }
 
 #[async_trait]
@@ -42,5 +49,69 @@ impl ClowderClient for ClowderCl {
             .await
             .map(|_| ())
             .map_err(Error::ClowderClient)
+    }
+
+    async fn request_onchain_mint_address(
+        &self,
+        qid: Uuid,
+        kid: cashu::Id,
+    ) -> Result<bitcoin::Address> {
+        let (info, address_response) = futures::try_join!(
+            self.rest.get_info(),
+            self.rest.request_mint_address(qid, kid)
+        )?;
+        let address = address_response
+            .address
+            .require_network(info.network)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+        Ok(address)
+    }
+
+    async fn verify_onchain_mint_payment(
+        &self,
+        qid: Uuid,
+        kid: cashu::Id,
+    ) -> Result<bitcoin::Amount> {
+        let response = self
+            .rest
+            .verify_mint_payment(qid, kid, self.min_confirmations)
+            .await?;
+        Ok(response.amount)
+    }
+
+    async fn mint_onchain(
+        &self,
+        qid: Uuid,
+        kid: cashu::Id,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let Some(nats) = &self.nats else {
+            return Ok(signatures);
+        };
+        let output_amount = signatures
+            .iter()
+            .fold(cashu::Amount::ZERO, |acc, sig| acc + sig.amount);
+        let request = clowder_messages::MintOnchainRequest {
+            quote_id: qid,
+            keyset_id: kid,
+            amount: output_amount,
+        };
+        let response = clowder_messages::MintOnchainResponse { signatures };
+        let response = nats.mint_onchain(request, response).await?;
+        Ok(response.signatures)
+    }
+
+    async fn sign_onchain_mint_response(
+        &self,
+        msg: &wire_mint::OnchainMintQuoteResponseBody,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        let serialized = borsh::to_vec(msg)?;
+        let hash = bitcoin::hashes::sha256::Hash::hash(&serialized);
+        let signature = self
+            .signatory
+            .sign_schnorr_hash(&hash.to_byte_array())
+            .await?;
+        let b64 = BASE64_STANDARD.encode(serialized);
+        Ok((b64, signature))
     }
 }

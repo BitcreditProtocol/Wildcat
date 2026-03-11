@@ -2,7 +2,6 @@
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 // ----- extra library imports
 use bcr_common::{
@@ -10,14 +9,15 @@ use bcr_common::{
     cdk::{self, wallet::MintConnector},
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
     wire::{
-        clowder::messages as clowder_messages, melt as wire_melt, signatures as wire_signatures,
+        clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint,
+        signatures as wire_signatures,
     },
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    debit::{ClowderClient, Repository, Wallet, WildcatClient},
+    debit::{ClowderClient, MintStatus, OnChainMintOperation, Repository, Wallet, WildcatClient},
     error::{Error, Result},
     TStamp,
 };
@@ -46,17 +46,6 @@ fn create_clowder_melt_bolt11(amount: cashu::Amount) -> cashu::lightning_invoice
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ClowderMintQuoteOnchain {
-    pub clowder_quote: uuid::Uuid,
-    pub cdk_quote: uuid::Uuid,
-    pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-    pub amount: cashu::Amount,
-    pub expiry: u64,
-    pub blinded_messages: Vec<cashu::nuts::BlindedMessage>,
-    pub commitment: bitcoin::secp256k1::schnorr::Signature,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnchainMeltQuote {
     pub request: wire_melt::MeltQuoteOnchainRequest,
     pub expiry: u64,
@@ -77,14 +66,78 @@ pub struct Service {
     pub repo: Arc<dyn Repository>,
     pub clowder_cl: Arc<dyn ClowderClient>,
     pub signing_keys: bitcoin::secp256k1::Keypair,
-    pub monitor_interval: tokio::time::Duration,
-    pub quote_expiry_seconds: u64,
+    pub monitor_interval: chrono::Duration,
+    pub quote_expiry: chrono::Duration,
     pub cancel: tokio_util::sync::CancellationToken,
     pub hndls: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     pub dbmint: cdk::wallet::HttpClient,
+    pub min_mint_threshold: bitcoin::Amount,
 }
 
 impl Service {
+    const MIN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+    pub async fn new_onchain_mintop(
+        &self,
+        request: wire_mint::OnchainMintQuoteRequest,
+        now: TStamp,
+    ) -> Result<wire_mint::OnchainMintQuoteResponse> {
+        bcr_wdc_utils::signatures::basic_blinds_checks(&request.blinded_messages)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let qid = Uuid::new_v4();
+        let blinds_camount = request
+            .blinded_messages
+            .iter()
+            .fold(cashu::Amount::ZERO, |total, b| total + b.amount);
+        let blinds_amount = bitcoin::Amount::from_sat(blinds_camount.into());
+        if blinds_amount < self.min_mint_threshold {
+            return Err(Error::InvalidInput(String::from("mint amount too low")));
+        }
+        let kid = self.wdc.get_active_keyset().await?;
+        let same_kid = request.blinded_messages.iter().all(|b| b.keyset_id == kid);
+        if !same_kid {
+            return Err(Error::InvalidInput(String::from("invalid keyset id")));
+        }
+        let address = self
+            .clowder_cl
+            .request_onchain_mint_address(qid, kid)
+            .await?;
+        let expiry = now + self.quote_expiry;
+        let mintop = OnChainMintOperation {
+            qid,
+            target: blinds_camount,
+            recipient: address.as_unchecked().clone(),
+            expiry,
+            status: MintStatus::Pending(request.blinded_messages.clone()),
+        };
+        self.repo.store_onchain_mintop(mintop).await?;
+        let body = wire_mint::OnchainMintQuoteResponseBody {
+            quote: qid,
+            address: address.into_unchecked(),
+            payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
+            blinded_messages: request.blinded_messages,
+            expiry: expiry.timestamp().max(0) as u64,
+        };
+
+        let (content, commitment) = self.clowder_cl.sign_onchain_mint_response(&body).await?;
+        let hndlr = tokio::spawn(monitor_onchain_mintop(
+            qid,
+            kid,
+            self.monitor_interval.to_std().unwrap_or(Self::MIN_INTERVAL),
+            self.quote_expiry,
+            self.wdc.clone(),
+            self.clowder_cl.clone(),
+            self.repo.clone(),
+            self.cancel.clone(),
+        ));
+        self.hndls.lock().unwrap().push(hndlr);
+        let response = wire_mint::OnchainMintQuoteResponse {
+            commitment,
+            content,
+        };
+        Ok(response)
+    }
+
     pub async fn balance(&self) -> Result<cashu::Amount> {
         self.wallet.balance().await
     }
@@ -102,7 +155,7 @@ impl Service {
         &self,
         request: wire_melt::MeltQuoteOnchainRequest,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        let expiry = (chrono::Utc::now().timestamp() + self.quote_expiry_seconds as i64) as u64;
+        let expiry = (chrono::Utc::now() + self.quote_expiry).timestamp().max(0) as u64;
         let amount = cashu::Amount::from(request.request.amount.to_sat());
 
         let bolt11 = create_clowder_melt_bolt11(amount);
@@ -153,7 +206,7 @@ impl Service {
                 self.wallet.clone(),
                 self.repo.clone(),
                 self.clowder_cl.clone(),
-                self.monitor_interval,
+                self.monitor_interval.to_std().unwrap_or(Self::MIN_INTERVAL),
                 self.cancel.clone(),
             ));
             self.hndls.lock().unwrap().push(hndl);
@@ -192,7 +245,7 @@ impl Service {
             self.wallet.clone(),
             self.repo.clone(),
             self.clowder_cl.clone(),
-            self.monitor_interval,
+            self.monitor_interval.to_std().unwrap_or(Self::MIN_INTERVAL),
             self.cancel.clone(),
         ));
         self.hndls.lock().unwrap().push(hndl);
@@ -250,7 +303,7 @@ impl Service {
         let mut response = self.wallet.swap_to_messages(outputs).await;
         while response.is_err() && retries <= 3 {
             tracing::warn!("swap failed, attempt {retries}, retry in 1 second");
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             response = self.wallet.swap_to_messages(outputs).await;
             retries += 1;
         }
@@ -265,6 +318,90 @@ impl Service {
         };
         Ok(quote.mint_complete)
     }
+}
+
+async fn monitor_onchain_mintop(
+    qid: Uuid,
+    kid: cashu::Id,
+    interval: std::time::Duration,
+    expiry: chrono::Duration,
+    wildcat_cl: Arc<dyn WildcatClient>,
+    clowder_cl: Arc<dyn ClowderClient>,
+    repo: Arc<dyn Repository>,
+    cancel: tokio_util::sync::CancellationToken,
+) {
+    let mut total = chrono::Duration::zero();
+    while (total < expiry) && !cancel.is_cancelled() {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::info!("Monitor for onchain mintop {qid} cancelled");
+                return;
+            }
+            _ = tokio::time::sleep(interval) => {}
+        }
+        total = total + chrono::Duration::from_std(interval).unwrap_or_default();
+        let amount = match clowder_cl.verify_onchain_mint_payment(qid, kid).await {
+            Ok(amount) => amount,
+            Err(e) => {
+                tracing::warn!("Failed to verify onchain mintop {qid}: {e}");
+                continue;
+            }
+        };
+        if amount == bitcoin::Amount::ZERO {
+            tracing::info!("Onchain mintop {qid} not received yet");
+            continue;
+        }
+        let mintop = match repo.load_onchain_mintop(qid).await {
+            Ok(mintop) => mintop,
+            Err(e) => {
+                tracing::error!("Failed to load onchain mintop {qid} from repo: {e}");
+                continue;
+            }
+        };
+        let camount = cashu::Amount::from(amount.to_sat());
+        if camount < mintop.target {
+            tracing::info!(
+                "Onchain mintop {qid} underpaid, {camount} < {}",
+                mintop.target
+            );
+            continue;
+        }
+        let MintStatus::Pending(blinds) = mintop.status else {
+            tracing::info!("Onchain mintop {qid} already processed");
+            return;
+        };
+        let signatures = match wildcat_cl.sign(blinds).await {
+            Ok(signatures) => signatures,
+            Err(e) => {
+                tracing::warn!("onchain mintop {qid}, failed sign {e}");
+                continue;
+            }
+        };
+        match clowder_cl.mint_onchain(qid, kid, signatures.clone()).await {
+            Ok(_) => {
+                tracing::info!("Onchain mintop {qid} successfully minted on clowder");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to mint on clowder for onchain mintop {qid}: {e}, retrying in {} second", interval.as_secs()
+                );
+                tokio::time::sleep(interval).await;
+                continue;
+            }
+        };
+        let new_status = MintStatus::Paid(signatures);
+        match repo.update_onchain_mintop_status(qid, new_status).await {
+            Ok(_) => {
+                tracing::info!("Onchain mintop {qid} marked as paid in repo");
+                return;
+            }
+            Err(e) => {
+                tracing::error!("Failed to update onchain mintop {qid} status in repo: {e}");
+                continue;
+            }
+        };
+    }
+    tracing::info!("Monitor for onchain mintop {qid} expired, exiting");
 }
 
 async fn monitor_quote(
@@ -323,7 +460,7 @@ async fn monitor_quote(
 mod tests {
     use super::*;
     use crate::debit::{MockClowderClient, MockRepository, MockWallet, MockWildcatClient};
-    use bcr_common::{cdk_common, core_tests::generate_random_ecash_keyset};
+    use bcr_common::cdk_common;
     use bcr_wdc_utils::keys::test_utils::generate_keyset;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::{nut23 as cdk23, Amount};
@@ -382,12 +519,13 @@ mod tests {
             signing_keys,
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             clowder_cl: Arc::new(clowder),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
         let quote = service
             .mint_from_ebill(
@@ -417,13 +555,13 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
-
         let (_, keyset) = generate_keyset();
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
             .into_iter()
@@ -450,16 +588,15 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
-
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
-
         service.redeem(&proofs, &[]).await.unwrap_err();
     }
 
@@ -480,20 +617,19 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
-
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(16_u64)])
             .into_iter()
             .map(|b| b.0)
             .collect();
-
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
 
@@ -527,20 +663,19 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
-
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(16_u64)])
             .into_iter()
             .map(|b| b.0)
             .collect();
-
         service.redeem(&proofs, &blinds).await.unwrap_err();
     }
 
@@ -564,11 +699,12 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            monitor_interval: tokio::time::Duration::from_secs(5),
-            quote_expiry_seconds: 3600,
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
             cancel: tokio_util::sync::CancellationToken::new(),
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
         };
 
         let (_, keyset) = generate_keyset();

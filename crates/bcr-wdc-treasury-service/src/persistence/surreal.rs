@@ -100,32 +100,46 @@ impl debit::Repository for DebitRepository {
         result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
     }
 
-    async fn store_onchain_mint(
-        &self,
-        quote_id: uuid::Uuid,
-        data: debit::ClowderMintQuoteOnchain,
-    ) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::MINTS_TABLE, quote_id);
-        let _: Option<debit::ClowderMintQuoteOnchain> = self
+    async fn store_onchain_mintop(&self, op: debit::OnChainMintOperation) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
+        let _: Option<debit::OnChainMintOperation> = self
             .db
             .insert(rid)
-            .content(data)
+            .content(op)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
-    async fn load_onchain_mint(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<debit::ClowderMintQuoteOnchain> {
-        let rid = RecordId::from_table_key(Self::MINTS_TABLE, quote_id);
-        let result: Option<debit::ClowderMintQuoteOnchain> = self
+    async fn load_onchain_mintop(&self, qid: Uuid) -> Result<debit::OnChainMintOperation> {
+        let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
+        let result: Option<debit::OnChainMintOperation> = self
             .db
             .select(rid)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
+        result.ok_or_else(|| Error::RequestIDNotFound(qid))
+    }
+
+    async fn update_onchain_mintop_status(
+        &self,
+        qid: Uuid,
+        status: debit::MintStatus,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
+        let entry: Option<debit::OnChainMintOperation> = self
+            .db
+            .query("UPDATE $rid SET status = $status")
+            .bind(("rid", rid))
+            .bind(("status", status))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if entry.is_none() {
+            return Err(Error::RequestIDNotFound(qid));
+        }
+        Ok(())
     }
 }
 
@@ -266,7 +280,12 @@ impl credit::MintOpRepository for DBMintOps {
         let ops = ops.into_iter().map(credit::MintOperation::from).collect();
         Ok(ops)
     }
-    async fn update(&self, uid: Uuid, old: cashu::Amount, new: cashu::Amount) -> Result<()> {
+    async fn update_minted_field(
+        &self,
+        uid: Uuid,
+        old: cashu::Amount,
+        new: cashu::Amount,
+    ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, uid);
         let before: Option<MintOpDBEntry> = self
             .db
@@ -580,6 +599,7 @@ mod tests {
     use crate::debit::Repository;
     use crate::foreign::OfflineRepository;
     use bcr_common::core_tests;
+    use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
 
@@ -608,6 +628,33 @@ mod tests {
         assert_eq!(list[0].qid, quote.qid);
 
         db.update_quote(quote).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn update_onchain_mintop_status() {
+        let db = init_debit_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let amounts = vec![cashu::Amount::from(100u64)];
+        let blinds = signature_tests::generate_blinds(kid, &amounts)
+            .into_iter()
+            .map(|(blind, _, _)| blind)
+            .collect();
+        let op = debit::OnChainMintOperation {
+            qid: Uuid::new_v4(),
+            target: cashu::Amount::ZERO,
+            recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
+            expiry: chrono::Utc::now() + chrono::Duration::hours(1),
+            status: debit::MintStatus::Pending(blinds),
+        };
+        db.store_onchain_mintop(op.clone()).await.unwrap();
+        let signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
+        let status = debit::MintStatus::Paid(signatures);
+        db.update_onchain_mintop_status(op.qid, status)
+            .await
+            .unwrap();
+        let res = db.load_onchain_mintop(op.qid).await.unwrap();
+        assert!(matches!(res.status, debit::MintStatus::Paid(_)));
     }
 
     async fn init_foreignoffline_mem_db() -> ForeignOfflineRepository {
@@ -725,7 +772,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_mintop() {
+    async fn update_minted_field() {
         let db = init_mintops_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
@@ -739,7 +786,7 @@ mod tests {
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.store(op.clone()).await.unwrap();
-        db.update(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
+        db.update_minted_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
             .await
             .unwrap();
         let res = db.load(op.uid).await.unwrap();
