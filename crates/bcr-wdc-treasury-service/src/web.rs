@@ -259,10 +259,10 @@ pub async fn mint_quote_onchain(
     };
     ctrl.debit.repo.store_onchain_mint(cdk_quote, data).await?;
 
+    let content = BASE64_STANDARD.encode(&borsh_bytes);
     let wallet_response = wire_mint::OnchainMintQuoteResponse {
-        body,
+        content,
         commitment,
-        state: Some(cashu::MintQuoteState::Unpaid),
     };
     Ok(Json(wallet_response))
 }
@@ -278,26 +278,6 @@ pub async fn get_mint_quote_onchain(
         .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid quote ID")))?;
     let data = ctrl.debit.repo.load_onchain_mint(cdk_quote).await?;
 
-    let cdk_status = ctrl.dbmint.get_mint_quote_status(&quote_id).await?;
-
-    // CDK and the payment processor don't know payment status
-    let state = if cdk_status.state == cashu::MintQuoteState::Issued {
-        cashu::MintQuoteState::Issued
-    } else {
-        let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
-            .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
-        let payment = ctrl
-            .clwdr_rest
-            .verify_mint_payment(data.clowder_quote, dummy_kid, ctrl.params.min_confirmations)
-            .await?;
-
-        if payment.amount.to_sat() >= data.amount.into() {
-            cashu::MintQuoteState::Paid
-        } else {
-            cashu::MintQuoteState::Unpaid
-        }
-    };
-
     let amount_sat: u64 = data.amount.into();
     let body = wire_mint::OnchainMintQuoteResponseBody {
         quote: data.cdk_quote,
@@ -306,11 +286,12 @@ pub async fn get_mint_quote_onchain(
         expiry: data.expiry,
         blinded_messages: data.blinded_messages,
     };
+    let borsh_bytes = borsh::to_vec(&body)?;
+    let content = BASE64_STANDARD.encode(&borsh_bytes);
 
     Ok(Json(wire_mint::OnchainMintQuoteResponse {
-        body,
+        content,
         commitment: data.commitment,
-        state: Some(state),
     }))
 }
 

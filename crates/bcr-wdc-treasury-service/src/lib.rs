@@ -304,10 +304,10 @@ pub fn routes(app: AppController) -> Router {
             post(web::mint_quote_onchain),
         )
         .route(
-            TreasuryClient::MINTQUOTE_ONCHAIN_GET_EP_V1,
+            "/v1/mint/quote/onchain/:quote_id",
             get(web::get_mint_quote_onchain),
         )
-        .route(TreasuryClient::MINT_ONCHAIN_EP_V1, post(web::mint_onchain))
+        .route("/v1/mint/onchain", post(web::mint_onchain))
         .route(TreasuryClient::MINT_EP_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
