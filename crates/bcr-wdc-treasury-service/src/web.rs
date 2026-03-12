@@ -240,7 +240,7 @@ pub async fn mint_quote_onchain(
 
     let body = wire_mint::OnchainMintQuoteResponseBody {
         quote: cdk_quote,
-        address: address_response.address.clone(),
+        address: address_response.address.assume_checked_ref().to_string(),
         payment_amount,
         expiry,
         blinded_messages: request.blinded_messages.clone(),
@@ -281,7 +281,7 @@ pub async fn get_mint_quote_onchain(
     let amount_sat: u64 = data.amount.into();
     let body = wire_mint::OnchainMintQuoteResponseBody {
         quote: data.cdk_quote,
-        address: data.address,
+        address: data.address.assume_checked_ref().to_string(),
         payment_amount: bitcoin::Amount::from_sat(amount_sat + 1), // 1 sat fee
         expiry: data.expiry,
         blinded_messages: data.blinded_messages,
