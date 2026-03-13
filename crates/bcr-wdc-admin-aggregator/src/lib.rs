@@ -8,6 +8,10 @@ use axum::{
 };
 use bcr_common::{
     cashu,
+    client::{
+        core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
+        treasury::Client as TreasuryClient, Url as ClientUrl,
+    },
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
@@ -24,11 +28,11 @@ mod types;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    pub core_url: bcr_common::client::Url,
-    pub quotes_url: bcr_common::client::Url,
-    pub ebill_url: bcr_common::client::Url,
-    pub clowder_url: bcr_common::client::Url,
-    pub treasury_url: bcr_common::client::Url,
+    pub core_url: ClientUrl,
+    pub quotes_url: ClientUrl,
+    pub ebill_url: ClientUrl,
+    pub clowder_url: ClientUrl,
+    pub treasury_url: ClientUrl,
 }
 
 #[derive(Clone, FromRef)]
@@ -49,11 +53,28 @@ impl AppController {
             clowder_url,
             treasury_url,
         } = cfg;
-        let core_cl = bcr_common::client::core::Client::new(core_url);
-        let quotes_cl = bcr_common::client::quote::Client::new(quotes_url);
-        let ebill_cl = bcr_common::client::ebill::Client::new(ebill_url);
+        let core_cl = CoreClient::new(core_url);
+        let quotes_cl = QuoteClient::new(quotes_url);
+        let ebill_cl = EbillClient::new(ebill_url);
         let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
-        let treasury_cl = bcr_common::client::treasury::Client::new(treasury_url);
+        let treasury_cl = TreasuryClient::new(treasury_url);
+
+        // pre-flight checklist
+        let filters = wire_keys::KeysetInfoFilters {
+            unit: Some(CoreClient::debit_unit()),
+            ..Default::default()
+        };
+        let kinfos = core_cl
+            .list_keyset_info(filters)
+            .await
+            .expect("pre-flight check failed: core service is not responding");
+        if kinfos.is_empty() {
+            tracing::warn!("pre-flight check warning: core service has no keysets configured");
+            core_cl
+                .new_keyset(CoreClient::debit_unit(), None, 0)
+                .await
+                .expect("pre-flight check failed: core service is not responding to new_keyset");
+        }
         AppController {
             core_cl,
             quotes_cl,
