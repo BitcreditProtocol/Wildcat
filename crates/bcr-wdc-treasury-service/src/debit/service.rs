@@ -113,7 +113,7 @@ impl Service {
         self.repo.store_onchain_mintop(mintop).await?;
         let body = wire_mint::OnchainMintQuoteResponseBody {
             quote: qid,
-            address: address.into_unchecked(),
+            address: address.to_string(),
             payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
             blinded_messages: request.blinded_messages,
             expiry: expiry.timestamp().max(0) as u64,
