@@ -39,7 +39,7 @@ bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
 chrono = {version = "0.4"}
-clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "f44bfde094d55b1b12140fdf610cf45eb74dd02e"}
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", rev = "96d92f8eabb8cb22653cddb385f752e3026a3e11"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
