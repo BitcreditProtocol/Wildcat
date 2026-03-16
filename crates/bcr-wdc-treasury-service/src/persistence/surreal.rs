@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -178,9 +179,9 @@ impl ForeignOnlineRepository {
     }
 }
 
-////////////////////////////////////////////////////////////////////// MintOp DB
+////////////////////////////////////////////////////////////////////// Credit DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MintOpDBEntry {
+pub struct CrMintOpDBEntry {
     id: RecordId,
     kid: cashu::Id,
     pub_key: cashu::PublicKey,
@@ -189,7 +190,7 @@ pub struct MintOpDBEntry {
     bill_id: core::BillId,
 }
 
-fn convert_to_mintopdbentry(entry: credit::MintOperation, table: &str) -> MintOpDBEntry {
+fn convert_to_crmintopdbentry(entry: credit::MintOperation, table: &str) -> CrMintOpDBEntry {
     let credit::MintOperation {
         uid,
         kid,
@@ -199,7 +200,7 @@ fn convert_to_mintopdbentry(entry: credit::MintOperation, table: &str) -> MintOp
         bill_id,
     } = entry;
     let id = RecordId::from_table_key(table, uid);
-    MintOpDBEntry {
+    CrMintOpDBEntry {
         id,
         kid,
         pub_key,
@@ -208,8 +209,9 @@ fn convert_to_mintopdbentry(entry: credit::MintOperation, table: &str) -> MintOp
         bill_id,
     }
 }
-impl std::convert::From<MintOpDBEntry> for credit::MintOperation {
-    fn from(entry: MintOpDBEntry) -> Self {
+
+impl std::convert::From<CrMintOpDBEntry> for credit::MintOperation {
+    fn from(entry: CrMintOpDBEntry) -> Self {
         let key = entry.id.key();
         let uid = Uuid::try_from(key.clone()).expect("key is a uuid");
         Self {
@@ -223,13 +225,37 @@ impl std::convert::From<MintOpDBEntry> for credit::MintOperation {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CrMeltOpDBEntry {
+    id: RecordId,
+    melted: cashu::Amount,
+}
+
+fn convert_to_crmeltopdbentry(entry: credit::MeltOperation, table: &str) -> CrMeltOpDBEntry {
+    let credit::MeltOperation { kid, melted } = entry;
+    let id = RecordId::from_table_key(table, kid.to_string());
+    CrMeltOpDBEntry { id, melted }
+}
+
+impl std::convert::From<CrMeltOpDBEntry> for credit::MeltOperation {
+    fn from(entry: CrMeltOpDBEntry) -> Self {
+        let key = entry.id.key();
+        let kid = cashu::Id::from_str(&key.to_string()).expect("key is a cashu::Id");
+        Self {
+            kid,
+            melted: entry.melted,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct DBMintOps {
+pub struct DBCredit {
     db: Surreal<surrealdb::engine::any::Any>,
 }
 
-impl DBMintOps {
-    const TABLE: &'static str = "mint_ops";
+impl DBCredit {
+    const MINT_OPS: &'static str = "mint_ops";
+    const MELT_OPS: &'static str = "melt_ops";
 
     pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -241,11 +267,11 @@ impl DBMintOps {
 }
 
 #[async_trait]
-impl credit::MintOpRepository for DBMintOps {
-    async fn store(&self, mint_op: credit::MintOperation) -> Result<()> {
+impl credit::Repository for DBCredit {
+    async fn mint_store(&self, mint_op: credit::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
-        let entry = convert_to_mintopdbentry(mint_op, Self::TABLE);
-        let res: SurrealResult<Option<MintOpDBEntry>> =
+        let entry = convert_to_crmintopdbentry(mint_op, Self::MINT_OPS);
+        let res: SurrealResult<Option<CrMintOpDBEntry>> =
             self.db.insert(&entry.id).content(entry).await;
         match res {
             Ok(..) => Ok(()),
@@ -256,9 +282,9 @@ impl credit::MintOpRepository for DBMintOps {
         }
     }
 
-    async fn load(&self, uid: Uuid) -> Result<credit::MintOperation> {
-        let rid = RecordId::from_table_key(Self::TABLE, uid);
-        let res: SurrealResult<Option<MintOpDBEntry>> = self.db.select(rid.clone()).await;
+    async fn mint_load(&self, uid: Uuid) -> Result<credit::MintOperation> {
+        let rid = RecordId::from_table_key(Self::MINT_OPS, uid);
+        let res: SurrealResult<Option<CrMintOpDBEntry>> = self.db.select(rid.clone()).await;
         match res {
             Ok(Some(entry)) => Ok(credit::MintOperation::from(entry)),
             Ok(None) => Err(Error::RequestIDNotFound(uid)),
@@ -266,11 +292,11 @@ impl credit::MintOpRepository for DBMintOps {
         }
     }
 
-    async fn list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
-        let ops: Vec<MintOpDBEntry> = self
+    async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
+        let ops: Vec<CrMintOpDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE kid == $kid")
-            .bind(("table", Self::TABLE))
+            .bind(("table", Self::MINT_OPS))
             .bind(("kid", kid))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -280,14 +306,14 @@ impl credit::MintOpRepository for DBMintOps {
         let ops = ops.into_iter().map(credit::MintOperation::from).collect();
         Ok(ops)
     }
-    async fn update_minted_field(
+    async fn mint_update_field(
         &self,
         uid: Uuid,
         old: cashu::Amount,
         new: cashu::Amount,
     ) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::TABLE, uid);
-        let before: Option<MintOpDBEntry> = self
+        let rid = RecordId::from_table_key(Self::MINT_OPS, uid);
+        let before: Option<CrMintOpDBEntry> = self
             .db
             .query("UPDATE $rid SET minted = $new WHERE minted == $old RETURN BEFORE")
             .bind(("rid", rid))
@@ -305,8 +331,62 @@ impl credit::MintOpRepository for DBMintOps {
         debug_assert_eq!(before.minted, old, "Minted amount did not match for {uid}");
         if before.minted != old {
             tracing::error!(
-                "Minted amount did not match for mintop {uid}: expected {old}, got {}",
+                "mintop {uid}: amount did not match expected {old}, got {}",
                 before.minted,
+            );
+        }
+        Ok(())
+    }
+
+    async fn melt_store(&self, melt_op: credit::MeltOperation) -> Result<()> {
+        let kid = melt_op.kid;
+        let entry = convert_to_crmeltopdbentry(melt_op, Self::MELT_OPS);
+        let res: SurrealResult<Option<CrMeltOpDBEntry>> =
+            self.db.insert(&entry.id).content(entry).await;
+        match res {
+            Ok(..) => Ok(()),
+            Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
+                Err(Error::InvalidInput(format!("meltop already exists {kid}")))
+            }
+            Err(e) => Err(Error::DB(anyhow!(e))),
+        }
+    }
+    async fn melt_load(&self, kid: cashu::Id) -> Result<credit::MeltOperation> {
+        let rid = RecordId::from_table_key(Self::MELT_OPS, kid.to_string());
+        let res: SurrealResult<Option<CrMeltOpDBEntry>> = self.db.select(rid.clone()).await;
+        match res {
+            Ok(Some(entry)) => Ok(credit::MeltOperation::from(entry)),
+            Ok(None) => Err(Error::UnknownKeyset(kid)),
+            Err(e) => Err(Error::DB(anyhow!(e))),
+        }
+    }
+    async fn melt_update_field(
+        &self,
+        kid: cashu::Id,
+        old: cashu::Amount,
+        new: cashu::Amount,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::MELT_OPS, kid.to_string());
+        let before: Option<CrMeltOpDBEntry> = self
+            .db
+            .query("UPDATE $rid SET melted = $new WHERE melted == $old RETURN BEFORE")
+            .bind(("rid", rid))
+            .bind(("new", new))
+            .bind(("old", old))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(before) = before else {
+            return Err(Error::InvalidInput(format!(
+                "meltop {kid} and {old} amount not found"
+            )));
+        };
+        debug_assert_eq!(before.melted, old, "Melted amount did not match for {kid}");
+        if before.melted != old {
+            tracing::error!(
+                "meltop {kid}: amount did not match expected {old}, got {}",
+                before.melted,
             );
         }
         Ok(())
@@ -595,9 +675,10 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credit::MintOpRepository;
-    use crate::debit::Repository;
-    use crate::foreign::OfflineRepository;
+    use crate::{
+        credit::Repository as CreditRepo, debit::Repository as DebitRepo,
+        foreign::OfflineRepository,
+    };
     use bcr_common::core_tests;
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
@@ -708,17 +789,17 @@ mod tests {
         assert_eq!(fp.y, y);
     }
 
-    async fn init_mintops_mem_db() -> DBMintOps {
+    async fn init_credit_mem_db() -> DBCredit {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        DBMintOps { db: sdb }
+        DBCredit { db: sdb }
     }
 
     #[tokio::test]
-    async fn store_mintop() {
-        let db = init_mintops_mem_db().await;
+    async fn credit_mint_store_ok() {
+        let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core_tests::generate_random_keypair();
@@ -730,11 +811,11 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op).await.unwrap();
+        db.mint_store(op).await.unwrap();
     }
     #[tokio::test]
-    async fn store_mintop_twice() {
-        let db = init_mintops_mem_db().await;
+    async fn credit_mint_store_twice() {
+        let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core_tests::generate_random_keypair();
@@ -746,14 +827,14 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op.clone()).await.unwrap();
-        let res = db.store(op).await;
+        db.mint_store(op.clone()).await.unwrap();
+        let res = db.mint_store(op).await;
         assert!(matches!(res, Err(Error::InvalidInput(_))));
     }
 
     #[tokio::test]
-    async fn load_mintop() {
-        let db = init_mintops_mem_db().await;
+    async fn credit_mint_update_field() {
+        let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core_tests::generate_random_keypair();
@@ -765,15 +846,15 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op.clone()).await.unwrap();
-        let res = db.load(op.uid).await.unwrap();
+        db.mint_store(op.clone()).await.unwrap();
+        let res = db.mint_load(op.uid).await.unwrap();
         assert_eq!(res.kid, kid);
         assert_eq!(res.pub_key, kp.public_key().into());
     }
 
     #[tokio::test]
     async fn update_minted_field() {
-        let db = init_mintops_mem_db().await;
+        let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core_tests::generate_random_keypair();
@@ -785,18 +866,18 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op.clone()).await.unwrap();
-        db.update_minted_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
+        db.mint_store(op.clone()).await.unwrap();
+        db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
             .await
             .unwrap();
-        let res = db.load(op.uid).await.unwrap();
+        let res = db.mint_load(op.uid).await.unwrap();
         assert_eq!(res.kid, kid);
         assert_eq!(res.minted, cashu::Amount::from(100u64));
     }
 
     #[tokio::test]
-    async fn list_mintops() {
-        let db = init_mintops_mem_db().await;
+    async fn credit_mint_list() {
+        let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core_tests::generate_random_keypair();
@@ -808,7 +889,7 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op1.clone()).await.unwrap();
+        db.mint_store(op1.clone()).await.unwrap();
         let op2 = credit::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -817,11 +898,29 @@ mod tests {
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
-        db.store(op2.clone()).await.unwrap();
-        let res = db.list(kid).await.unwrap();
+        db.mint_store(op2.clone()).await.unwrap();
+        let res = db.mint_list(kid).await.unwrap();
         assert_eq!(res.len(), 2);
         let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
         assert!(rids.contains(&op1.uid));
         assert!(rids.contains(&op2.uid));
+    }
+
+    #[tokio::test]
+    async fn credit_melt_update_field() {
+        let db = init_credit_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let melt_op = credit::MeltOperation {
+            kid,
+            melted: cashu::Amount::ZERO,
+        };
+        db.melt_store(melt_op.clone()).await.unwrap();
+        db.melt_update_field(kid, cashu::Amount::ZERO, cashu::Amount::from(50u64))
+            .await
+            .unwrap();
+        let res = db.melt_load(kid).await.unwrap();
+        assert_eq!(res.kid, kid);
+        assert_eq!(res.melted, cashu::Amount::from(50u64));
     }
 }

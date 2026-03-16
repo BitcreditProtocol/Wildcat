@@ -49,7 +49,7 @@ pub struct AppConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct DebitConfig {
     cdk_mintd_url: cashu::MintUrl,
-    debit_repo: surreal::DBConnConfig,
+    db: surreal::DBConnConfig,
     clowder_url: reqwest::Url,
     signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
@@ -71,7 +71,7 @@ pub struct ForeignConfig {
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct CreditConfig {
-    mintops: surreal::DBConnConfig,
+    db: surreal::DBConnConfig,
 }
 
 #[derive(Clone)]
@@ -106,7 +106,7 @@ impl AppController {
             cdk_mintd_url,
             clowder_url,
             signer_url,
-            debit_repo,
+            db: debit_repo,
             sat_wallet,
             wildcat,
             monitor_interval_sec,
@@ -121,7 +121,7 @@ impl AppController {
             satonline_repo,
             satoffline_repo,
         } = foreign;
-        let CreditConfig { mintops } = credit;
+        let CreditConfig { db: mintops } = credit;
 
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
             .await
@@ -238,7 +238,7 @@ impl AppController {
             crcore: bcr_common::client::core::Client::new(keys_url.clone()),
             dbmint: dbmint.clone(),
         };
-        let mintops_repo = persistence::surreal::DBMintOps::new(mintops)
+        let credit_repo = persistence::surreal::DBCredit::new(mintops)
             .await
             .expect("Failed to create mintops repository");
         let corecl = credit::CoreCl(CoreClient::new(keys_url));
@@ -246,7 +246,7 @@ impl AppController {
             .await
             .expect("Failed to create clowder client");
         let credit = Arc::new(credit::Service {
-            mintops: Box::new(mintops_repo),
+            repo: Box::new(credit_repo),
             corecl: Box::new(corecl),
             clowdercl,
         });

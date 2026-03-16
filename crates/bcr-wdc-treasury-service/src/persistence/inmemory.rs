@@ -19,7 +19,7 @@ use crate::{
 
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryOnlineRepository {
+pub struct OnlineRepository {
     proofs: Arc<Mutex<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>>,
     htlc: Arc<
         Mutex<HashMap<Sha256Hash, Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>>,
@@ -27,7 +27,7 @@ pub struct InMemoryOnlineRepository {
 }
 
 #[async_trait]
-impl foreign::OnlineRepository for InMemoryOnlineRepository {
+impl foreign::OnlineRepository for OnlineRepository {
     async fn store(
         &self,
         mint: (secp256k1::PublicKey, cashu::MintUrl),
@@ -74,14 +74,14 @@ impl foreign::OnlineRepository for InMemoryOnlineRepository {
 
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryOfflineRepository {
+pub struct OfflineRepository {
     fingerprints:
         Arc<Mutex<HashMap<Sha256Hash, ((secp256k1::PublicKey, cashu::MintUrl), ProofFingerprint)>>>,
     proofs: Arc<Mutex<HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>>>>,
 }
 
 #[async_trait]
-impl foreign::OfflineRepository for InMemoryOfflineRepository {
+impl foreign::OfflineRepository for OfflineRepository {
     async fn store_fps(
         &self,
         alpha: (secp256k1::PublicKey, cashu::MintUrl),
@@ -142,13 +142,14 @@ type MintOperationsReferences = (
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
-pub struct MintOpMap {
-    operations: Arc<RwLock<MintOperationsReferences>>,
+pub struct CreditRepository {
+    mintops: Arc<RwLock<MintOperationsReferences>>,
+    meltops: Arc<RwLock<HashMap<cashu::Id, credit::MeltOperation>>>,
 }
 #[async_trait]
-impl credit::MintOpRepository for MintOpMap {
-    async fn store(&self, mint_op: credit::MintOperation) -> Result<()> {
-        let mut wlocked = self.operations.write().unwrap();
+impl credit::Repository for CreditRepository {
+    async fn mint_store(&self, mint_op: credit::MintOperation) -> Result<()> {
+        let mut wlocked = self.mintops.write().unwrap();
         let (cs, cs_kid) = &mut *wlocked;
         if cs.contains_key(&mint_op.uid) {
             return Err(Error::InvalidInput(format!(
@@ -165,16 +166,16 @@ impl credit::MintOpRepository for MintOpMap {
             .or_insert(vec![uid]);
         Ok(())
     }
-    async fn load(&self, uid: Uuid) -> Result<credit::MintOperation> {
-        let rlocked = self.operations.read().unwrap();
+    async fn mint_load(&self, uid: Uuid) -> Result<credit::MintOperation> {
+        let rlocked = self.mintops.read().unwrap();
         let (cs, _) = &*rlocked;
         let op = cs
             .get(&uid)
             .ok_or(Error::InvalidInput(format!("mint_op {uid} not found")))?;
         Ok(op.clone())
     }
-    async fn list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
-        let rlocked = self.operations.read().unwrap();
+    async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<credit::MintOperation>> {
+        let rlocked = self.mintops.read().unwrap();
         let (cs, cs_kid) = &*rlocked;
         let empty = Vec::default();
         let uids = cs_kid.get(&kid).unwrap_or(&empty);
@@ -186,13 +187,13 @@ impl credit::MintOpRepository for MintOpMap {
         }
         Ok(a)
     }
-    async fn update_minted_field(
+    async fn mint_update_field(
         &self,
         uid: uuid::Uuid,
         old: cashu::Amount,
         new: cashu::Amount,
     ) -> Result<()> {
-        let mut wlocked = self.operations.write().unwrap();
+        let mut wlocked = self.mintops.write().unwrap();
         let (cs, _) = &mut *wlocked;
         let operation = cs.get_mut(&uid).ok_or(Error::Internal(format!(
             "MintOperation internal uuid does not exist {uid}"
@@ -204,6 +205,41 @@ impl credit::MintOpRepository for MintOpMap {
             )));
         }
         operation.minted = new;
+        Ok(())
+    }
+    async fn melt_store(&self, melt_operation: credit::MeltOperation) -> Result<()> {
+        let mut wlocked = self.meltops.write().unwrap();
+        let melt_kid = melt_operation.kid;
+        if wlocked.contains_key(&melt_kid) {
+            return Err(Error::InvalidInput(format!(
+                "melt_op for kid {melt_kid} already exists"
+            )));
+        }
+        wlocked.insert(melt_kid, melt_operation);
+        Ok(())
+    }
+    async fn melt_load(&self, kid: cashu::Id) -> Result<credit::MeltOperation> {
+        let rlocked = self.meltops.read().unwrap();
+        let melt_op = rlocked.get(&kid).ok_or(Error::UnknownKeyset(kid))?;
+        Ok(melt_op.clone())
+    }
+    async fn melt_update_field(
+        &self,
+        kid: cashu::Id,
+        old_melted: cashu::Amount,
+        new_melted: cashu::Amount,
+    ) -> Result<()> {
+        let mut wlocked = self.meltops.write().unwrap();
+        let melt_op = wlocked.get_mut(&kid).ok_or(Error::Internal(format!(
+            "MeltOperation internal kid does not exist {kid}"
+        )))?;
+        if melt_op.melted != old_melted {
+            return Err(Error::Internal(format!(
+                "MeltOperation internal melted value changed {} != {}",
+                melt_op.melted, old_melted
+            )));
+        }
+        melt_op.melted = new_melted;
         Ok(())
     }
 }
