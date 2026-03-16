@@ -24,17 +24,32 @@ pub struct MintOperation {
     pub bill_id: BillId,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct MeltOperation {
+    pub kid: cashu::Id,
+    pub melted: cashu::Amount,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait MintOpRepository: Send + Sync {
-    async fn store(&self, mint_operation: MintOperation) -> Result<()>;
-    async fn load(&self, uid: Uuid) -> Result<MintOperation>;
-    async fn list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
-    async fn update_minted_field(
+pub trait Repository: Send + Sync {
+    async fn mint_store(&self, mint_operation: MintOperation) -> Result<()>;
+    async fn mint_load(&self, uid: Uuid) -> Result<MintOperation>;
+    async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
+    async fn mint_update_field(
         &self,
         uid: Uuid,
         old_minted: cashu::Amount,
         new_minted: cashu::Amount,
+    ) -> Result<()>;
+
+    async fn melt_store(&self, melt_operation: MeltOperation) -> Result<()>;
+    async fn melt_load(&self, kid: cashu::Id) -> Result<MeltOperation>;
+    async fn melt_update_field(
+        &self,
+        kid: cashu::Id,
+        old_melted: cashu::Amount,
+        new_melted: cashu::Amount,
     ) -> Result<()>;
 }
 
@@ -43,6 +58,8 @@ pub trait MintOpRepository: Send + Sync {
 pub trait CoreClient: Send + Sync {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn sign(&self, blind: cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
+    async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+    async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]

@@ -90,4 +90,14 @@ impl credit::CoreClient for CoreCl {
         let res = self.0.sign(&blind).await?;
         Ok(res)
     }
+
+    async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.0.burn(proofs).await?;
+        Ok(())
+    }
+
+    async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.0.recover(proofs).await?;
+        Ok(())
+    }
 }
