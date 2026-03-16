@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -32,7 +33,7 @@ impl credit::ClowderClient for DummyClwdr {
     }
 }
 
-pub struct ClwdrCl(pub ClowderNatsClient);
+pub struct ClwdrCl(pub Arc<ClowderNatsClient>);
 #[async_trait]
 impl credit::ClowderClient for ClwdrCl {
     async fn minting_ebill(
@@ -58,22 +59,17 @@ impl credit::ClowderClient for ClwdrCl {
         Ok(res.signatures)
     }
 }
-pub async fn new_clowder_client(
-    url: Option<reqwest::Url>,
-) -> Result<Box<dyn credit::ClowderClient>> {
-    let cl: Box<dyn credit::ClowderClient> = match url {
+pub fn new_clowder_client(
+    client: Option<Arc<ClowderNatsClient>>,
+) -> Box<dyn credit::ClowderClient> {
+    let cl: Box<dyn credit::ClowderClient> = match client {
         None => Box::new(DummyClwdr {}),
-        Some(url) => {
-            let clowder_client = ClowderNatsClient::new(url)
-                .await
-                .map_err(Error::ClowderClient)?;
-            Box::new(ClwdrCl(clowder_client))
-        }
+        Some(client) => Box::new(ClwdrCl(client)),
     };
-    Ok(cl)
+    cl
 }
 
-pub struct CoreCl(pub CoreClient);
+pub struct CoreCl(pub Arc<CoreClient>);
 #[async_trait]
 impl credit::CoreClient for CoreCl {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo> {

@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::ops::Deref;
+use std::{ops::Deref, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -20,14 +20,7 @@ use crate::{
 
 ///--------------------------- CrsatCoreClient
 pub struct CrsatCoreClient {
-    core: bcr_common::client::core::Client,
-}
-
-impl CrsatCoreClient {
-    pub fn new(url: reqwest::Url) -> Self {
-        let core = bcr_common::client::core::Client::new(url);
-        Self { core }
-    }
+    pub core: Arc<bcr_common::client::core::Client>,
 }
 
 #[async_trait]
@@ -59,14 +52,7 @@ impl crsat::KeysClient for CrsatCoreClient {
 
 ///--------------------------- ClowderCl
 pub struct ClowderCl {
-    clwdr: ClowderRestClient,
-}
-
-impl ClowderCl {
-    pub fn new(url: reqwest::Url) -> Self {
-        let clwdr = ClowderRestClient::new(url);
-        Self { clwdr }
-    }
+    pub clwdr: Arc<ClowderRestClient>,
 }
 
 #[async_trait]

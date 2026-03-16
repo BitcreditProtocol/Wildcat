@@ -16,7 +16,7 @@ use crate::error::Result;
 // ----- end imports
 
 pub struct Service {
-    pub crcore: CoreClient,
+    pub crcore: Arc<CoreClient>,
     pub dbmint: HttpClient,
 }
 
