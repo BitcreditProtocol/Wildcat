@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_common::{
     cashu, cdk,
-    client::{core::Client as CoreClient, treasury::Client as TreasuryClient},
+    client::{core::Client as CoreClient, treasury::Client as TreasuryClient, Url as ClientUrl},
 };
 use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1;
@@ -30,8 +30,6 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
-type ProdCrsatKeysClient = foreign::clients::CrsatCoreClient;
-type ProdClowderClient = foreign::clients::ClowderCl;
 type ProdSatService = foreign::sat::Service;
 type ProdSatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
 type ProdSatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
@@ -42,16 +40,16 @@ pub struct AppConfig {
     debit: DebitConfig,
     foreign: ForeignConfig,
     credit: CreditConfig,
-    clwdr_nats_url: Option<reqwest::Url>,
-    keys_url: reqwest::Url,
+    core_url: ClientUrl,
+    clowder_rest_url: reqwest::Url,
+    clowder_nats_url: Option<reqwest::Url>,
+    signer_url: reqwest::Url,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct DebitConfig {
     cdk_mintd_url: cashu::MintUrl,
     db: surreal::DBConnConfig,
-    clowder_url: reqwest::Url,
-    signer_url: reqwest::Url,
     sat_wallet: debit::CDKWalletConfig,
     wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u32,
@@ -99,13 +97,13 @@ impl AppController {
             debit,
             foreign,
             credit,
-            clwdr_nats_url,
-            keys_url,
+            core_url,
+            clowder_rest_url,
+            clowder_nats_url,
+            signer_url,
         } = cfg;
         let DebitConfig {
             cdk_mintd_url,
-            clowder_url,
-            signer_url,
             db: debit_repo,
             sat_wallet,
             wildcat,
@@ -123,6 +121,24 @@ impl AppController {
         } = foreign;
         let CreditConfig { db: mintops } = credit;
 
+        //clients
+        let core_client = Arc::new(CoreClient::new(core_url));
+        let clowder_rest_client = Arc::new(ClowderRestClient::new(clowder_rest_url));
+        let clowder_nats_client = if let Some(url) = clowder_nats_url {
+            Some(Arc::new(
+                ClowderNatsClient::new(url)
+                    .await
+                    .expect("Failed to create clowder nats client"),
+            ))
+        } else {
+            None
+        };
+        let signer_client = Arc::new(
+            SignatoryNatsClient::new(signer_url, None)
+                .await
+                .expect("Failed to create signer"),
+        );
+
         let wallet = debit::CDKWallet::new(sat_wallet, seed)
             .await
             .expect("Failed to create wallet");
@@ -134,23 +150,10 @@ impl AppController {
             secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
         tracing::info!("signing public key: {}", signing_keys.public_key());
         let monitor_interval = chrono::Duration::seconds(monitor_interval_sec as i64);
-        let clowder_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
-        let clwdr_nats = if let Some(url) = clwdr_nats_url.clone() {
-            let cl = ClowderNatsClient::new(url)
-                .await
-                .expect("Failed to create clowder nats client");
-            Some(Arc::new(cl))
-        } else {
-            None
-        };
-        let signer = SignatoryNatsClient::new(signer_url, None)
-            .await
-            .expect("Failed to create signer");
-        let clowder_signer = Arc::new(signer);
         let clowder_cl = debit::ClowderCl {
-            rest: clowder_rest.clone(),
-            nats: clwdr_nats.clone(),
-            signatory: clowder_signer.clone(),
+            rest: clowder_rest_client.clone(),
+            nats: clowder_nats_client.clone(),
+            signatory: signer_client.clone(),
             min_confirmations,
         };
         let dbmint = cdk::wallet::HttpClient::new(cdk_mintd_url.clone());
@@ -182,9 +185,12 @@ impl AppController {
                 .await
                 .expect("Failed to create crsat offline repository"),
         );
-        let crsatkeys = ProdCrsatKeysClient::new(keys_url.clone());
-        let clwdr_rest = Arc::new(ClowderRestClient::new(clowder_url.clone()));
-        let clowder = Arc::new(ProdClowderClient::new(clowder_url));
+        let crsatcore = foreign::clients::CrsatCoreClient {
+            core: core_client.clone(),
+        };
+        let clowder = Arc::new(foreign::clients::ClowderCl {
+            clwdr: clowder_rest_client.clone(),
+        });
         let factory = Arc::new(foreign::clients::MintClientFactory {});
         let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
         let settler = {
@@ -199,7 +205,7 @@ impl AppController {
         let crsat = Arc::new(foreign::crsat::Service {
             online_repo: crsatonlinerepo,
             offline_repo: crsatofflinerepo,
-            keys: Box::new(crsatkeys),
+            keys: Box::new(crsatcore),
             clowder: clowder.clone(),
             mint_factory: factory.clone(),
             settler,
@@ -235,16 +241,14 @@ impl AppController {
         });
 
         let dev = devmode::Service {
-            crcore: bcr_common::client::core::Client::new(keys_url.clone()),
+            crcore: core_client.clone(),
             dbmint: dbmint.clone(),
         };
         let credit_repo = persistence::surreal::DBCredit::new(mintops)
             .await
             .expect("Failed to create mintops repository");
-        let corecl = credit::CoreCl(CoreClient::new(keys_url));
-        let clowdercl = credit::new_clowder_client(clwdr_nats_url)
-            .await
-            .expect("Failed to create clowder client");
+        let corecl = credit::CoreCl(core_client.clone());
+        let clowdercl = credit::new_clowder_client(clowder_nats_client.clone());
         let credit = Arc::new(credit::Service {
             repo: Box::new(credit_repo),
             corecl: Box::new(corecl),
@@ -255,9 +259,9 @@ impl AppController {
             debit,
             crsat,
             sat,
-            signer: clowder_signer,
-            clwdr_rest,
-            clwdr_nats,
+            signer: signer_client.clone(),
+            clwdr_rest: clowder_rest_client.clone(),
+            clwdr_nats: clowder_nats_client.clone(),
             dbmint,
             dev: Arc::new(dev),
             params: Parameters { min_melt_threshold },
