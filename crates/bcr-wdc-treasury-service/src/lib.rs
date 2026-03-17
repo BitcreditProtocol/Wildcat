@@ -72,15 +72,10 @@ pub struct CreditConfig {
     db: surreal::DBConnConfig,
 }
 
-#[derive(Clone)]
-struct Parameters {
-    pub min_melt_threshold: bitcoin::Amount,
-}
-
 #[derive(Clone, FromRef)]
 pub struct AppController {
     credit: Arc<credit::Service>,
-    debit: debit::Service,
+    debit: Arc<debit::Service>,
     crsat: Arc<foreign::crsat::Service>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
@@ -88,7 +83,6 @@ pub struct AppController {
     clwdr_rest: Arc<ClowderRestClient>,
     dbmint: cdk::wallet::HttpClient,
     dev: Arc<devmode::Service>,
-    params: Parameters,
 }
 
 impl AppController {
@@ -169,6 +163,7 @@ impl AppController {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: dbmint.clone(),
             min_mint_threshold,
+            min_melt_threshold,
         };
         debit
             .init_monitors_for_past_ebills()
@@ -249,14 +244,14 @@ impl AppController {
             .expect("Failed to create mintops repository");
         let corecl = credit::CoreCl(core_client.clone());
         let clowdercl = credit::new_clowder_client(clowder_nats_client.clone());
-        let credit = Arc::new(credit::Service {
+        let credit = credit::Service {
             repo: Box::new(credit_repo),
             corecl: Box::new(corecl),
             clowdercl,
-        });
+        };
         Self {
-            credit,
-            debit,
+            credit: Arc::new(credit),
+            debit: Arc::new(debit),
             crsat,
             sat,
             signer: signer_client.clone(),
@@ -264,7 +259,6 @@ impl AppController {
             clwdr_nats: clowder_nats_client.clone(),
             dbmint,
             dev: Arc::new(dev),
-            params: Parameters { min_melt_threshold },
         }
     }
 

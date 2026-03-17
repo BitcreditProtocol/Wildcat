@@ -26,9 +26,9 @@ pub enum Error {
     BcrBorshSignature(#[from] bcr_common::core::signature::BorshMsgSignatureError),
     #[error("borsh {0}")]
     Borsh(#[from] borsh::io::Error),
+    #[error("bitcoin::address: {0}")]
+    BtcParse(#[from] bitcoin::address::ParseError),
 
-    #[error("cashu::nut20 {0}")]
-    CDK20(#[from] CDK20Error),
     #[error("cashu::nut00 {0}")]
     CDK00(#[from] CDK00Error),
     #[error("cashu::nut10 {0}")]
@@ -39,6 +39,8 @@ pub enum Error {
     CDK12(#[from] CDK12Error),
     #[error("cashu::nut13 {0}")]
     CDK13(#[from] CDK13Error),
+    #[error("cashu::nut20 {0}")]
+    CDK20(#[from] CDK20Error),
     #[error("CDK Wallet {0}")]
     CDKWallet(#[from] cdk::Error),
     #[error("CDK secret {0}")]
@@ -130,12 +132,13 @@ impl axum::response::IntoResponse for Error {
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BtcParse(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

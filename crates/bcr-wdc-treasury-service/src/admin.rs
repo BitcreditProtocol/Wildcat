@@ -17,7 +17,7 @@ use crate::{credit, debit, error::Result, foreign};
 // ----- sat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_to_pay_ebill(
-    State(ctrl): State<debit::Service>,
+    State(ctrl): State<Arc<debit::Service>>,
     Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
 ) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
     tracing::debug!("Received request to mint from ebill");
@@ -33,7 +33,7 @@ pub async fn request_to_pay_ebill(
 }
 
 pub async fn sat_balance(
-    State(ctrl): State<debit::Service>,
+    State(ctrl): State<Arc<debit::Service>>,
 ) -> Result<Json<wire_wallet::ECashBalance>> {
     tracing::debug!("Received request to sat_balance");
 
@@ -66,7 +66,7 @@ pub async fn sat_try_htlc_swap(
 }
 
 pub async fn is_ebill_minting_completed(
-    State(ctrl): State<debit::Service>,
+    State(ctrl): State<Arc<debit::Service>>,
     Path(bill_id): Path<BillId>,
 ) -> Result<Json<wire_wallet::EbillPaymentComplete>> {
     tracing::debug!("Received request for ebill payment completed {bill_id}");

@@ -1,12 +1,13 @@
 // ----- standard library imports
 use std::{
     collections::HashSet,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 // ----- extra library imports
 use bcr_common::{
-    cashu,
-    cdk::{self, wallet::MintConnector},
+    cashu::{self, ProofsMethods},
+    cdk,
     core::{signature::serialize_n_schnorr_sign_borsh_msg, BillId},
     wire::{
         clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint,
@@ -17,39 +18,14 @@ use bcr_wdc_utils::signatures as signatures_utils;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    debit::{ClowderClient, MintStatus, OnChainMintOperation, Repository, Wallet, WildcatClient},
+    debit::{
+        self, ClowderClient, MintStatus, OnChainMintOperation, Repository, Wallet, WildcatClient,
+    },
     error::{Error, Result},
     TStamp,
 };
 
 // ----- end imports
-
-fn create_clowder_melt_bolt11(amount: cashu::Amount) -> cashu::lightning_invoice::Bolt11Invoice {
-    use bitcoin::hashes::{sha256, Hash};
-    use cashu::lightning_invoice as ln;
-
-    // Random unused values
-    let payment_hash = sha256::Hash::hash(&rand::random::<[u8; 32]>());
-    let payment_secret = ln::PaymentSecret(rand::random());
-    let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-    let description = format!("clowder:melt:{}", u64::from(amount));
-
-    ln::InvoiceBuilder::new(ln::Currency::Bitcoin)
-        .description(description)
-        .payment_hash(payment_hash)
-        .payment_secret(payment_secret)
-        .current_timestamp()
-        .amount_milli_satoshis(u64::from(amount) * 1000) // msat
-        .min_final_cltv_expiry_delta(144)
-        .build_signed(|hash| secp256k1::global::SECP256K1.sign_ecdsa_recoverable(hash, &sk))
-        .unwrap()
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct OnchainMeltQuote {
-    pub request: wire_melt::MeltQuoteOnchainRequest,
-    pub expiry: u64,
-}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MintQuote {
@@ -59,7 +35,6 @@ pub struct MintQuote {
     pub mint_complete: bool,
 }
 
-#[derive(Clone)]
 pub struct Service {
     pub wallet: Arc<dyn Wallet>,
     pub wdc: Arc<dyn WildcatClient>,
@@ -72,6 +47,7 @@ pub struct Service {
     pub hndls: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     pub dbmint: cdk::wallet::HttpClient,
     pub min_mint_threshold: bitcoin::Amount,
+    pub min_melt_threshold: bitcoin::Amount,
 }
 
 impl Service {
@@ -154,45 +130,96 @@ impl Service {
     pub async fn create_onchain_melt_quote(
         &self,
         request: wire_melt::MeltQuoteOnchainRequest,
+        now: TStamp,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        let expiry = (chrono::Utc::now() + self.quote_expiry).timestamp().max(0) as u64;
-        let amount = cashu::Amount::from(request.request.amount.to_sat());
-
-        let bolt11 = create_clowder_melt_bolt11(amount);
-        let melt_quote_req = cashu::MeltQuoteBolt11Request {
-            request: bolt11,
-            unit: cashu::CurrencyUnit::Sat,
-            options: None,
-        };
-
-        let cdk_quote = match self.dbmint.post_melt_quote(melt_quote_req).await {
-            Ok(resp) => {
-                tracing::info!("CDK melt quote created: {}", resp.quote);
-                Uuid::parse_str(&resp.quote)
-                    .map_err(|_| Error::InvalidInput("Invalid CDK quote ID".into()))?
-            }
-            Err(e) => {
-                tracing::error!("Failed to create CDK melt quote: {:?}", e);
-                return Err(Error::Internal(format!("CDK quote creation failed: {}", e)));
-            }
-        };
-
-        let data = OnchainMeltQuote {
-            request: request.clone(),
+        if request.unit != cashu::CurrencyUnit::Sat {
+            return Err(Error::InvalidInput(String::from("invalid currency unit")));
+        }
+        if request.request.amount < self.min_melt_threshold {
+            return Err(Error::InvalidInput(String::from("melt amount too low")));
+        }
+        let address = self
+            .clowder_cl
+            .verify_onchain_address(request.request.address)
+            .await?;
+        let expiry = now + self.quote_expiry;
+        let qid = Uuid::new_v4();
+        let op = debit::OnchainMeltOperation {
+            qid,
+            address: address.to_string(),
+            amount: request.request.amount,
             expiry,
+            fees: bitcoin::Amount::ZERO,
+            status: debit::MeltStatus::Pending {
+                change: request.change,
+            },
         };
-        self.repo.store_onchain_melt(cdk_quote, data).await?;
-
+        self.repo.store_onchain_meltop(op).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
-            txid: None,
-            quote: cdk_quote,
+            quote: qid,
             fee_reserve: bitcoin::Amount::ZERO,
-            change: None,
             amount: request.request.amount,
             unit: Some(request.unit),
             state: cashu::nuts::MeltQuoteState::Unpaid,
-            expiry,
+            expiry: expiry.timestamp().max(0) as u64,
         })
+    }
+
+    pub async fn melt_onchain(
+        &self,
+        request: cashu::MeltRequest<Uuid>,
+        now: TStamp,
+    ) -> Result<wire_melt::MeltOnchainResponse> {
+        let qid = request.quote_id().clone();
+        let op = self.repo.load_onchain_meltop(qid).await?;
+        if now > op.expiry {
+            return Err(Error::InvalidInput(String::from("Melt quote has expired")));
+        }
+        let proofs = request.inputs().clone();
+        let inputs_amount = proofs.total_amount()?;
+        let req_camount = cashu::Amount::from((op.amount + op.fees).to_sat());
+        if inputs_amount < req_camount {
+            return Err(Error::InvalidInput(format!(
+                "input amount, required: {req_camount}, provided: {inputs_amount}"
+            )));
+        }
+        let unchecked = bitcoin::Address::from_str(&op.address)?;
+        let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
+        self.wdc.burn(proofs.clone()).await?;
+        let txs = match self
+            .clowder_cl
+            .melt_onchain(qid, op.amount, recipient, proofs)
+            .await
+        {
+            Ok(txs) => txs,
+            Err(e) => {
+                let ys = request.inputs().ys()?;
+                tracing::warn!(
+                    "Failed to melt onchain for quote {qid}: {e}, recovering proofs {:?}",
+                    ys
+                );
+                self.wdc.recover(request.inputs().clone()).await?;
+                return Err(Error::Internal(format!("Failed to melt onchain: {e}")));
+            }
+        };
+        let new = debit::MeltStatus::Paid {
+            tx: txs.clone(),
+            change: Vec::new(),
+        };
+        match self.repo.update_onchain_meltop_status(qid, new).await {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("DB Failure, lost MeltStatus update for {qid} with txs {txs:?}");
+                return Err(e);
+            }
+        }
+        let response = wire_melt::MeltOnchainResponse {
+            quote: qid,
+            txid: Some(txs),
+            change: Vec::new(),
+            state: cashu::MeltQuoteState::Paid,
+        };
+        Ok(response)
     }
 
     pub async fn init_monitors_for_past_ebills(&self) -> Result<()> {
@@ -251,7 +278,6 @@ impl Service {
         self.hndls.lock().unwrap().push(hndl);
         Ok(quote)
     }
-
     pub async fn redeem(
         &self,
         inputs: &[cashu::Proof],
@@ -296,7 +322,7 @@ impl Service {
             return Err(Error::UnmatchingAmount(total_input, balance));
         }
         // 4. burning crsat, implicitly checking proofs
-        self.wdc.burn(inputs).await?;
+        self.wdc.burn(inputs.to_vec()).await?;
 
         // attempting a swap for 3 times with 1 sec pause
         let mut retries = 1_usize;
@@ -526,6 +552,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let quote = service
             .mint_from_ebill(
@@ -561,6 +588,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let (_, keyset) = generate_keyset();
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
@@ -594,6 +622,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
@@ -623,6 +652,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
@@ -669,6 +699,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let (_, keyset) = generate_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
@@ -705,6 +736,7 @@ mod tests {
             hndls: Arc::new(Mutex::new(Vec::new())),
             dbmint: cdk_mint,
             min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
         };
 
         let (_, keyset) = generate_keyset();
