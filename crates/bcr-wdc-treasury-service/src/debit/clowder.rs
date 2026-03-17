@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    wire::{clowder::messages as clowder_messages, mint as wire_mint},
+    wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::{base64::prelude::*, hashes::Hash};
 use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
@@ -113,5 +113,34 @@ impl ClowderClient for ClowderCl {
             .await?;
         let b64 = BASE64_STANDARD.encode(serialized);
         Ok((b64, signature))
+    }
+
+    async fn verify_onchain_address(
+        &self,
+        address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<bitcoin::Address> {
+        let info = self.rest.get_info().await?;
+        let address = address.require_network(info.network)?;
+        Ok(address)
+    }
+
+    async fn melt_onchain(
+        &self,
+        qid: Uuid,
+        amount: bitcoin::Amount,
+        address: bitcoin::Address,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<wire_melt::MeltTx> {
+        let Some(nats) = &self.nats else {
+            return Err(Error::ClowderUnavailable);
+        };
+        let request = clowder_messages::MeltOnchainRequest {
+            quote: qid,
+            address: address.into_unchecked(),
+            amount,
+            proofs,
+        };
+        let response = nats.melt_onchain(request).await?;
+        Ok(response.txid)
     }
 }

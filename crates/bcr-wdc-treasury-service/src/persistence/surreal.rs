@@ -76,31 +76,6 @@ impl debit::Repository for DebitRepository {
         Ok(entries)
     }
 
-    async fn store_onchain_melt(
-        &self,
-        quote_id: uuid::Uuid,
-        data: debit::OnchainMeltQuote,
-    ) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::MELTS_TABLE, quote_id);
-        let _: Option<debit::OnchainMeltQuote> = self
-            .db
-            .insert(rid)
-            .content(data)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(())
-    }
-
-    async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<debit::OnchainMeltQuote> {
-        let rid = RecordId::from_table_key(Self::MELTS_TABLE, quote_id);
-        let result: Option<debit::OnchainMeltQuote> = self
-            .db
-            .select(rid)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::RequestIDNotFound(quote_id))
-    }
-
     async fn store_onchain_mintop(&self, op: debit::OnChainMintOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
         let _: Option<debit::OnChainMintOperation> = self
@@ -129,6 +104,46 @@ impl debit::Repository for DebitRepository {
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
         let entry: Option<debit::OnChainMintOperation> = self
+            .db
+            .query("UPDATE $rid SET status = $status")
+            .bind(("rid", rid))
+            .bind(("status", status))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if entry.is_none() {
+            return Err(Error::RequestIDNotFound(qid));
+        }
+        Ok(())
+    }
+
+    async fn store_onchain_meltop(&self, op: debit::OnchainMeltOperation) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, op.qid);
+        let _: Option<debit::OnchainMeltOperation> = self
+            .db
+            .insert(rid)
+            .content(op)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+    async fn load_onchain_meltop(&self, qid: Uuid) -> Result<debit::OnchainMeltOperation> {
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
+        let result: Option<debit::OnchainMeltOperation> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        result.ok_or_else(|| Error::RequestIDNotFound(qid))
+    }
+    async fn update_onchain_meltop_status(
+        &self,
+        qid: Uuid,
+        status: debit::MeltStatus,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
+        let entry: Option<debit::OnchainMeltOperation> = self
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))

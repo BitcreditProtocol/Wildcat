@@ -3,7 +3,10 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu, cdk,
-    wire::{clowder::messages as wire_clowder, mint as wire_mint, signatures as wire_signatures},
+    wire::{
+        clowder::messages as wire_clowder, melt as wire_melt, mint as wire_mint,
+        signatures as wire_signatures,
+    },
 };
 use uuid::Uuid;
 // ----- local modules
@@ -17,7 +20,7 @@ use crate::{error::Result, TStamp};
 // ----- end imports
 
 pub use clowder::ClowderCl;
-pub use service::{MintQuote, OnchainMeltQuote, Service};
+pub use service::{MintQuote, Service};
 pub use wallet::{CDKWallet, CDKWalletConfig};
 pub use wildcat::{WildcatCl, WildcatClientConfig};
 
@@ -42,7 +45,8 @@ pub trait Wallet: Send + Sync {
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>>;
-    async fn burn(&self, inputs: &[cashu::Proof]) -> Result<()>;
+    async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
+    async fn recover(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn get_active_keyset(&self) -> Result<cashu::Id>;
 }
@@ -76,6 +80,17 @@ pub trait ClowderClient: Send + Sync {
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    async fn verify_onchain_address(
+        &self,
+        address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<bitcoin::Address>;
+    async fn melt_onchain(
+        &self,
+        qid: Uuid,
+        amount: bitcoin::Amount,
+        address: bitcoin::Address,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<wire_melt::MeltTx>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -92,16 +107,37 @@ pub struct OnChainMintOperation {
     pub status: MintStatus,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum MeltStatus {
+    Pending {
+        change: Vec<cashu::BlindedMessage>,
+    },
+    Paid {
+        tx: wire_melt::MeltTx,
+        change: Vec<cashu::BlindSignature>,
+    },
+}
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OnchainMeltOperation {
+    pub qid: Uuid,
+    pub address: String,
+    pub amount: bitcoin::Amount,
+    pub expiry: TStamp,
+    pub fees: bitcoin::Amount,
+    pub status: MeltStatus,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
     async fn store_quote(&self, quote: MintQuote) -> Result<()>;
     async fn update_quote(&self, quote: MintQuote) -> Result<()>;
     async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
-    async fn store_onchain_melt(&self, quote_id: uuid::Uuid, data: OnchainMeltQuote) -> Result<()>;
-    async fn load_onchain_melt(&self, quote_id: uuid::Uuid) -> Result<OnchainMeltQuote>;
 
     async fn store_onchain_mintop(&self, op: OnChainMintOperation) -> Result<()>;
     async fn load_onchain_mintop(&self, qid: Uuid) -> Result<OnChainMintOperation>;
     async fn update_onchain_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
+    async fn store_onchain_meltop(&self, op: OnchainMeltOperation) -> Result<()>;
+    async fn load_onchain_meltop(&self, qid: Uuid) -> Result<OnchainMeltOperation>;
+    async fn update_onchain_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
 }

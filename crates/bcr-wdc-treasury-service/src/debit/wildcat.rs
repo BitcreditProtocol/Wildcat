@@ -42,8 +42,13 @@ impl WildcatClient for WildcatCl {
         Ok(signatures)
     }
 
-    async fn burn(&self, inputs: &[cashu::Proof]) -> Result<()> {
-        self.core_cl.burn(inputs.to_vec()).await?;
+    async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()> {
+        self.core_cl.burn(inputs).await?;
+        Ok(())
+    }
+
+    async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.core_cl.recover(proofs).await?;
         Ok(())
     }
 
