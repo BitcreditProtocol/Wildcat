@@ -58,8 +58,8 @@ impl WdcClient for WildcatCl {
         Ok(())
     }
 
-    async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        let signatures = self.core.sign(msg).await?;
+    async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
+        let signatures = self.core.sign(msgs).await?;
         Ok(signatures)
     }
 
