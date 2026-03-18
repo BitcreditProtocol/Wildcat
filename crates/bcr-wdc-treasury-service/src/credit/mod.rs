@@ -7,11 +7,11 @@ use uuid::Uuid;
 mod client;
 mod service;
 // ----- local imports
-use crate::error::Result;
+use crate::{error::Result, TStamp};
 
 // ----- end imports
 
-pub use client::{new_clowder_client, CoreCl};
+pub use client::{new_clowder_client, WildcatCl};
 pub use service::Service;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -55,11 +55,14 @@ pub trait Repository: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait CoreClient: Send + Sync {
+pub trait WildcatClient: Send + Sync {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn sign(&self, blind: cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+
+    async fn request_to_pay(&self, bid: BillId, expire: TStamp) -> Result<()>;
+    async fn is_bill_paid(&self, bid: BillId) -> Result<bool>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -73,4 +76,6 @@ pub trait ClowderClient: Send + Sync {
         bid: BillId,
         signs: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
+
+    async fn request_to_pay_ebill(&self, rqid: Uuid, bid: BillId) -> Result<()>;
 }
