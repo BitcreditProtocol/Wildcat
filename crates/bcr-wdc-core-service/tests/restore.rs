@@ -16,7 +16,7 @@ async fn restore() {
     let (msg, _, _) = keys_test::generate_blind(entry.0.id, Amount::from(16));
 
     client
-        .sign(&msg)
+        .sign(&[msg.clone()])
         .await
         .expect("sign blind in prep for test");
 

@@ -96,13 +96,33 @@ impl Service {
         self.signatures.load(blind).await
     }
 
-    pub async fn sign_blind(&self, blind: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        let keyset = self.keys(blind.keyset_id).await?;
-        let signature = core::signature::sign_ecash(&keyset, blind)?;
+    pub async fn sign_blinds(
+        &self,
+        mut blinds: impl Iterator<Item = &cashu::BlindedMessage>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let Some(first_b) = blinds.next() else {
+            return Ok(Vec::new());
+        };
+        let mut keyset = self.keys(first_b.keyset_id).await?;
+        let first_s = core::signature::sign_ecash(&keyset, first_b)?;
         self.signatures
-            .store(blind.blinded_secret, signature.clone())
+            .store(first_b.blinded_secret, first_s.clone())
             .await?;
-        Ok(signature)
+        let mut signatures = vec![first_s];
+        for blind in blinds {
+            let cur_keyset = if blind.keyset_id == keyset.id {
+                &keyset
+            } else {
+                keyset = self.keys(blind.keyset_id).await?;
+                &keyset
+            };
+            let signature = core::signature::sign_ecash(cur_keyset, blind)?;
+            self.signatures
+                .store(blind.blinded_secret, signature.clone())
+                .await?;
+            signatures.push(signature);
+        }
+        Ok(signatures)
     }
 }
 
@@ -114,6 +134,7 @@ mod tests {
         keys::MockClowderClient,
         persistence::{MockKeysRepository, MockSignaturesRepository},
     };
+    use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use mockall::predicate::eq;
     use std::str::FromStr;
 
@@ -179,5 +200,87 @@ mod tests {
         };
         let err = service.deactivate(kid).await.unwrap_err();
         assert!(matches!(err, Error::KeysetNotFound(id) if id == kid));
+    }
+
+    #[tokio::test]
+    async fn sign_blinds() {
+        let factory = Factory::new(&seed(), DerivationPath::default());
+        let mut keys_repo = MockKeysRepository::new();
+        let mut signatures_repo = MockSignaturesRepository::new();
+        let clowder_cl = MockClowderClient::new();
+        let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
+        let amounts = vec![
+            cashu::Amount::from(64),
+            cashu::Amount::from(512),
+            cashu::Amount::from(32),
+        ];
+        keys_repo
+            .expect_keyset()
+            .times(1)
+            .with(eq(kinfo.id))
+            .returning(move |_| Ok(Some(keyset.clone())));
+        signatures_repo
+            .expect_store()
+            .times(amounts.len())
+            .returning(|_, _| Ok(()));
+        let service = Service {
+            keys: Box::new(keys_repo),
+            signatures: Box::new(signatures_repo),
+            keygen: factory,
+            clowder: Box::new(clowder_cl),
+        };
+        let blinds = signature_tests::generate_blinds(kinfo.id, &amounts)
+            .into_iter()
+            .map(|(b, _, _)| b)
+            .collect::<Vec<_>>();
+        let signatures = service.sign_blinds(blinds.iter()).await.unwrap();
+        assert_eq!(signatures.len(), blinds.len());
+        assert_eq!(signatures[0].amount, blinds[0].amount);
+        assert_eq!(signatures[1].amount, blinds[1].amount);
+        assert_eq!(signatures[2].amount, blinds[2].amount);
+    }
+
+    #[tokio::test]
+    async fn sign_blinds_different_keysets() {
+        let factory = Factory::new(&seed(), DerivationPath::default());
+        let mut keys_repo = MockKeysRepository::new();
+        let mut signatures_repo = MockSignaturesRepository::new();
+        let clowder_cl = MockClowderClient::new();
+        let (kinfo1, keyset1) = bcr_common::core_tests::generate_random_ecash_keyset();
+        let (kinfo2, keyset2) = bcr_common::core_tests::generate_random_ecash_keyset();
+        keys_repo
+            .expect_keyset()
+            .times(1)
+            .with(eq(kinfo1.id))
+            .returning(move |_| Ok(Some(keyset1.clone())));
+        keys_repo
+            .expect_keyset()
+            .times(1)
+            .with(eq(kinfo2.id))
+            .returning(move |_| Ok(Some(keyset2.clone())));
+        signatures_repo
+            .expect_store()
+            .times(4)
+            .returning(|_, _| Ok(()));
+        let service = Service {
+            keys: Box::new(keys_repo),
+            signatures: Box::new(signatures_repo),
+            keygen: factory,
+            clowder: Box::new(clowder_cl),
+        };
+        let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(32)];
+        let blinds1 = signature_tests::generate_blinds(kinfo1.id, &amounts)
+            .into_iter()
+            .map(|(b, _, _)| b);
+        let blinds2 = signature_tests::generate_blinds(kinfo2.id, &amounts)
+            .into_iter()
+            .map(|(b, _, _)| b);
+        let blinds = blinds1.chain(blinds2).collect::<Vec<_>>();
+        let result = service.sign_blinds(blinds.iter()).await.unwrap();
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].amount, amounts[0]);
+        assert_eq!(result[1].amount, amounts[1]);
+        assert_eq!(result[2].amount, amounts[0]);
+        assert_eq!(result[3].amount, amounts[1]);
     }
 }

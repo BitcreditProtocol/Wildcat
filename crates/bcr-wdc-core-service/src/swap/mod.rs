@@ -12,7 +12,10 @@ pub mod service;
 #[async_trait]
 pub trait SigningService: Send + Sync {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo>;
-    async fn sign_blind(&self, blind: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
+    async fn sign_blinds(
+        &self,
+        blinds: &[cashu::BlindedMessage],
+    ) -> Result<Vec<cashu::BlindSignature>>;
     async fn verify_proof(&self, proof: &cashu::Proof) -> Result<()>;
 }
 
@@ -22,8 +25,12 @@ impl SigningService for KeysService {
         self.info(*id).await.map(cashu::KeySetInfo::from)
     }
 
-    async fn sign_blind(&self, blind: &cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        self.sign_blind(blind).await
+    async fn sign_blinds(
+        &self,
+        blinds: &[cashu::BlindedMessage],
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let signatures = self.sign_blinds(blinds.into_iter()).await?;
+        Ok(signatures)
     }
 
     async fn verify_proof(&self, proof: &cashu::Proof) -> Result<()> {
