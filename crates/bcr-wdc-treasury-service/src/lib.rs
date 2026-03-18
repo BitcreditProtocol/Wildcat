@@ -8,7 +8,10 @@ use axum::{
 };
 use bcr_common::{
     cashu, cdk,
-    client::{core::Client as CoreClient, treasury::Client as TreasuryClient, Url as ClientUrl},
+    client::{
+        core::Client as CoreClient, ebill::Client as EbClient, treasury::Client as TreasuryClient,
+        Url as ClientUrl,
+    },
 };
 use bcr_wdc_utils::surreal;
 use bitcoin::secp256k1;
@@ -41,6 +44,7 @@ pub struct AppConfig {
     foreign: ForeignConfig,
     credit: CreditConfig,
     core_url: ClientUrl,
+    ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
     clowder_nats_url: Option<reqwest::Url>,
     signer_url: reqwest::Url,
@@ -92,6 +96,7 @@ impl AppController {
             foreign,
             credit,
             core_url,
+            ebill_url,
             clowder_rest_url,
             clowder_nats_url,
             signer_url,
@@ -117,6 +122,7 @@ impl AppController {
 
         //clients
         let core_client = Arc::new(CoreClient::new(core_url));
+        let ebill_client = EbClient::new(ebill_url);
         let clowder_rest_client = Arc::new(ClowderRestClient::new(clowder_rest_url));
         let clowder_nats_client = if let Some(url) = clowder_nats_url {
             Some(Arc::new(
@@ -242,11 +248,14 @@ impl AppController {
         let credit_repo = persistence::surreal::DBCredit::new(mintops)
             .await
             .expect("Failed to create mintops repository");
-        let corecl = credit::CoreCl(core_client.clone());
+        let wdccl = credit::WildcatCl {
+            core: core_client.clone(),
+            ebill: Box::new(ebill_client),
+        };
         let clowdercl = credit::new_clowder_client(clowder_nats_client.clone());
         let credit = credit::Service {
             repo: Box::new(credit_repo),
-            corecl: Box::new(corecl),
+            wildcatcl: Box::new(wdccl),
             clowdercl,
         };
         Self {

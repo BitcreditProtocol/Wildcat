@@ -8,7 +8,7 @@ use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    credit::{ClowderClient, CoreClient, MeltOperation, MintOperation, Repository},
+    credit::{ClowderClient, MeltOperation, MintOperation, Repository, WildcatClient},
     error::{Error, Result},
 };
 
@@ -16,7 +16,7 @@ use crate::{
 
 pub struct Service {
     pub repo: Box<dyn Repository>,
-    pub corecl: Box<dyn CoreClient>,
+    pub wildcatcl: Box<dyn WildcatClient>,
     pub clowdercl: Box<dyn ClowderClient>,
 }
 
@@ -43,7 +43,7 @@ impl Service {
                 return Err(e);
             }
         }
-        let _kinfo = self.corecl.info(kid).await?;
+        let _kinfo = self.wildcatcl.info(kid).await?;
         let new = MintOperation {
             uid,
             kid,
@@ -94,7 +94,7 @@ impl Service {
         let joined: JoinAll<_> = request
             .outputs
             .into_iter()
-            .map(|blind| self.corecl.sign(blind))
+            .map(|blind| self.wildcatcl.sign(blind))
             .collect();
         let signatures: Vec<cashu::BlindSignature> =
             joined.await.into_iter().collect::<Result<_>>()?;
@@ -131,7 +131,7 @@ impl Service {
     }
 
     pub async fn new_meltop(&self, kid: cashu::Id) -> Result<()> {
-        let _kinfo = self.corecl.info(kid).await?;
+        let _kinfo = self.wildcatcl.info(kid).await?;
         let new = MeltOperation {
             kid,
             melted: cashu::Amount::ZERO,
@@ -164,7 +164,7 @@ impl Service {
         self.repo
             .melt_update_field(kid, meltop.melted, new_melt)
             .await?;
-        let result = self.corecl.burn(proofs).await;
+        let result = self.wildcatcl.burn(proofs).await;
         if let Err(e) = result {
             tracing::warn!("burn failed, reverting melt update for {kid}");
             let revert_result = self
@@ -183,7 +183,7 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credit::{MockClowderClient, MockCoreClient, MockRepository};
+    use crate::credit::{MockClowderClient, MockRepository, MockWildcatClient};
     use bcr_common::{cashu, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use mockall::predicate::eq;
@@ -192,7 +192,7 @@ mod tests {
     async fn new_minting_operation_missing_keyset() {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
-        let mut core_cl = MockCoreClient::new();
+        let mut core_cl = MockWildcatClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         let uid = Uuid::new_v4();
         let pub_key = bcr_common::core_tests::generate_random_keypair()
@@ -211,7 +211,7 @@ mod tests {
             .returning(|_| Err(Error::InvalidInput(String::new())));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
         let err = service
@@ -225,7 +225,7 @@ mod tests {
     async fn new_minting_operation_ok() {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
-        let mut core_cl = MockCoreClient::new();
+        let mut core_cl = MockWildcatClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -257,7 +257,7 @@ mod tests {
             .returning(|_| Ok(()));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
         service
@@ -270,7 +270,7 @@ mod tests {
     async fn mint_ok() {
         let mut mintop_repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
-        let mut core_cl = MockCoreClient::new();
+        let mut core_cl = MockWildcatClient::new();
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -309,7 +309,7 @@ mod tests {
 
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
@@ -328,7 +328,7 @@ mod tests {
     async fn mint_missing_mintop() {
         let mut mintop_repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
-        let core_cl = MockCoreClient::new();
+        let core_cl = MockWildcatClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         let uid = Uuid::new_v4();
         let kp = bcr_common::core_tests::generate_random_keypair();
@@ -340,7 +340,7 @@ mod tests {
             .returning(move |_| Err(Error::InvalidInput(String::new())));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
@@ -359,7 +359,7 @@ mod tests {
     async fn melt_multiple_kids() {
         let repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
-        let core_cl = MockCoreClient::new();
+        let core_cl = MockWildcatClient::new();
         let (_, keyset1) = bcr_common::core_tests::generate_random_ecash_keyset();
         let (_, keyset2) = bcr_common::core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(32)];
@@ -368,7 +368,7 @@ mod tests {
         proofs.extend(proof2);
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
         service.melt(proofs).await.unwrap_err();
@@ -378,7 +378,7 @@ mod tests {
     async fn melt_ok() {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
-        let mut core_cl = MockCoreClient::new();
+        let mut core_cl = MockWildcatClient::new();
         let (_, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = keyset.id;
         let amounts = [cashu::Amount::from(32), cashu::Amount::from(64)];
@@ -406,7 +406,7 @@ mod tests {
             .returning(|_| Ok(()));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
         let melted = service.melt(proofs).await.unwrap();
@@ -416,11 +416,11 @@ mod tests {
     #[tokio::test]
     async fn melt_empty_proofs() {
         let repo = MockRepository::new();
-        let core_cl = MockCoreClient::new();
+        let core_cl = MockWildcatClient::new();
         let clowder_cl = MockClowderClient::new();
         let service = Service {
             repo: Box::new(repo),
-            corecl: Box::new(core_cl),
+            wildcatcl: Box::new(core_cl),
             clowdercl: Box::new(clowder_cl),
         };
         let result = service.melt(Vec::new()).await.unwrap();

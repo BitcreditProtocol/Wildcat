@@ -55,8 +55,10 @@ pub enum Error {
     CoreClient(#[from] bcr_common::client::core::Error),
     #[error("clowder client {0}")]
     ClowderClient(#[from] clwdr_client::ClowderClientError),
-    #[error("Quote client error {0}")]
+    #[error("quote client {0}")]
     QuoteClient(#[from] bcr_common::client::quote::Error),
+    #[error("ebill client {0}")]
+    EbillClient(#[from] bcr_common::client::ebill::Error),
     // internal errors
     #[error("internal sat wallet has not enough funds: requested {0}, available {1}")]
     InsufficientFunds(cdk::Amount, cdk::Amount),
@@ -104,6 +106,7 @@ impl axum::response::IntoResponse for Error {
                 (StatusCode::NOT_FOUND, format!("EBill ID not found: {id}"))
             }
             Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::RequestIDNotFound(request_id) => (
                 StatusCode::NOT_FOUND,
