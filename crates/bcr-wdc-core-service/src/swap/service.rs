@@ -45,20 +45,6 @@ impl Service {
         Ok(statuses)
     }
 
-    async fn sign_blinds(
-        &self,
-        sign_service: &dyn SigningService,
-        blinds: &[cashu::BlindedMessage],
-    ) -> Result<Vec<cashu::BlindSignature>> {
-        let joined: JoinAll<_> = blinds
-            .iter()
-            .map(|blind| sign_service.sign_blind(blind))
-            .collect();
-        let signatures: Vec<cashu::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
-        Ok(signatures)
-    }
-
     pub async fn check_spendable(&self, ys: &[cashu::PublicKey]) -> Result<Vec<cashu::ProofState>> {
         let joined = ys
             .iter()
@@ -84,7 +70,8 @@ impl Service {
         outputs: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(inputs).map_err(Error::InvalidInput)?;
+        signatures_utils::basic_proofs_checks(inputs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         signatures_utils::basic_blinds_checks(outputs).map_err(Error::InvalidOutput)?;
         // 3. inputs and outputs grouped by keyset ID have equal amounts
         let unique_ids: HashSet<_> = inputs.iter().map(|p| p.keyset_id).collect();
@@ -114,7 +101,7 @@ impl Service {
         // 2. verify proofs signatures
         self.verify_proofs_signatures(sign_service, inputs).await?;
         // generate signatures
-        let signatures = self.sign_blinds(sign_service, outputs).await?;
+        let signatures = sign_service.sign_blinds(outputs).await?;
         self.proofs.insert(inputs).await?;
         Ok(signatures)
     }
@@ -125,7 +112,8 @@ impl Service {
         proofs: &[cashu::Proof],
     ) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(proofs).map_err(Error::InvalidInput)?;
+        signatures_utils::basic_proofs_checks(proofs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         // expensive verifications
         let unique_ids: HashSet<_> = proofs.iter().map(|p| p.keyset_id).collect();
         // 1. verify keysets are inactive

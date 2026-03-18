@@ -27,7 +27,7 @@ pub enum Error {
     #[error("cdk::nut12 error: {0}")]
     CDKNUT12(#[from] cdk12::Error),
     #[error("invalid inputs {0}")]
-    InvalidInput(signatures_utils::ChecksError),
+    InvalidInput(String),
     #[error("invalid outputs {0}")]
     InvalidOutput(signatures_utils::ChecksError),
 

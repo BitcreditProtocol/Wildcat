@@ -31,11 +31,11 @@ pub async fn new_keyset(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sign_blind(
     State(ctrl): State<Arc<keys::service::Service>>,
-    Json(blind): Json<cashu::BlindedMessage>,
-) -> Result<Json<cashu::BlindSignature>> {
+    Json(blinds): Json<Vec<cashu::BlindedMessage>>,
+) -> Result<Json<Vec<cashu::BlindSignature>>> {
     tracing::debug!("Received sign blind request");
 
-    ctrl.sign_blind(&blind).await.map(Json)
+    ctrl.sign_blinds(blinds.iter()).await.map(Json)
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
