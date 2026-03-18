@@ -5,11 +5,10 @@ use axum::extract::{Json, State};
 use bcr_common::{
     cashu,
     cdk::wallet::{HttpClient, MintConnector},
-    client::core::{Client as CoreClient, Result as CoreResult},
+    client::core::Client as CoreClient,
     core::signature::unblind_ecash_signature,
     wallet::Token,
 };
-use futures::future::JoinAll;
 // ----- local imports
 use crate::error::Result;
 
@@ -82,12 +81,7 @@ async fn mint_credit(
     let premints =
         cashu::PreMintSecrets::random(keys.id, amount, &cashu::amount::SplitTarget::None)?;
     let blinded_messages = premints.blinded_messages();
-    let joined: JoinAll<_> = blinded_messages
-        .iter()
-        .map(|blind| client.sign(blind))
-        .collect();
-    let signatures: Vec<cashu::BlindSignature> =
-        joined.await.into_iter().collect::<CoreResult<_>>()?;
+    let signatures = client.sign(&blinded_messages).await?;
     let mut proofs = Vec::with_capacity(signatures.len());
     for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
         // WARNING: due to a bug in `into_iter()` in cashu 0.13.1 we need to `iter()` and clone the secret

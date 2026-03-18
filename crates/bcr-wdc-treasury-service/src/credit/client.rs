@@ -102,8 +102,8 @@ impl credit::WildcatClient for WildcatCl {
         }
     }
 
-    async fn sign(&self, blind: cashu::BlindedMessage) -> Result<cashu::BlindSignature> {
-        let res = self.core.sign(&blind).await?;
+    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
+        let res = self.core.sign(blinds).await?;
         Ok(res)
     }
 

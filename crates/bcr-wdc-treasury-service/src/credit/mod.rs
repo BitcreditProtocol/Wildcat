@@ -57,7 +57,7 @@ pub trait Repository: Send + Sync {
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
-    async fn sign(&self, blind: cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
+    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 
