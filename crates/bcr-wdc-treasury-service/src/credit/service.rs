@@ -4,7 +4,6 @@ use bcr_common::{
     cashu::{self, ProofsMethods},
     core::BillId,
 };
-use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -91,13 +90,7 @@ impl Service {
         if operation.minted + output_amount > operation.target {
             return Err(Error::InvalidInput(String::from("exceeding amount")));
         }
-        let joined: JoinAll<_> = request
-            .outputs
-            .into_iter()
-            .map(|blind| self.wildcatcl.sign(blind))
-            .collect();
-        let signatures: Vec<cashu::BlindSignature> =
-            joined.await.into_iter().collect::<Result<_>>()?;
+        let signatures = self.wildcatcl.sign(&request.outputs).await?;
         self.repo
             .mint_update_field(
                 operation.uid,
@@ -286,8 +279,10 @@ mod tests {
             .times(1)
             .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
             .returning(|_, _, _| Ok(()));
-        core_cl.expect_sign().times(2).returning(move |msg| {
-            Ok(core_tests::generate_ecash_signatures(&keyset, &[msg.amount])[0].clone())
+        core_cl.expect_sign().times(1).returning(move |msgs| {
+            let amounts: Vec<cashu::Amount> = msgs.iter().map(|msg| msg.amount).collect();
+            let signs = core_tests::generate_ecash_signatures(&keyset, &amounts);
+            Ok(signs)
         });
         let mintop = MintOperation {
             uid,

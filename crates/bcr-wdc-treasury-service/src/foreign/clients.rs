@@ -26,11 +26,7 @@ pub struct CrsatCoreClient {
 #[async_trait]
 impl proof::KeysClient for CrsatCoreClient {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let mut signatures: Vec<cashu::BlindSignature> = Vec::with_capacity(blinds.len());
-        for b in blinds {
-            let sig = self.core.sign(b).await?;
-            signatures.push(sig);
-        }
+        let signatures = self.core.sign(blinds).await?;
         Ok(signatures)
     }
 }

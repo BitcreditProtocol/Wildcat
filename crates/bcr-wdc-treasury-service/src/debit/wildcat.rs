@@ -2,7 +2,6 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{cashu, client::core::Client as CoreClient, wire::keys as wire_keys};
-use futures::future::JoinAll;
 // ----- local imports
 use crate::{
     debit::WildcatClient,
@@ -31,14 +30,7 @@ impl WildcatCl {
 #[async_trait]
 impl WildcatClient for WildcatCl {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>> {
-        let joined: JoinAll<_> = blinds
-            .iter()
-            .map(|blind| self.core_cl.sign(blind))
-            .collect();
-        let signatures: Vec<cashu::BlindSignature> = joined
-            .await
-            .into_iter()
-            .collect::<std::result::Result<_, _>>()?;
+        let signatures = self.core_cl.sign(&blinds).await?;
         Ok(signatures)
     }
 
