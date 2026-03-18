@@ -486,8 +486,7 @@ async fn monitor_quote(
 mod tests {
     use super::*;
     use crate::debit::{MockClowderClient, MockRepository, MockWallet, MockWildcatClient};
-    use bcr_common::cdk_common;
-    use bcr_wdc_utils::keys::test_utils::generate_keyset;
+    use bcr_common::{cdk_common, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::{nut23 as cdk23, Amount};
     use secp256k1::global::SECP256K1;
@@ -590,7 +589,7 @@ mod tests {
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
             .into_iter()
             .map(|b| b.0)
@@ -624,7 +623,7 @@ mod tests {
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         service.redeem(&proofs, &[]).await.unwrap_err();
     }
@@ -654,7 +653,7 @@ mod tests {
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(16_u64)])
             .into_iter()
@@ -701,7 +700,7 @@ mod tests {
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(16_u64)])
             .into_iter()
@@ -739,7 +738,7 @@ mod tests {
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
 
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = signatures_test::generate_proofs(&keyset, &[Amount::from(8_u64)]);
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(16_u64)])
             .into_iter()
@@ -747,5 +746,152 @@ mod tests {
             .collect();
 
         service.redeem(&proofs, &blinds).await.unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn new_onchain_mintop() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let wallet = MockWallet::new();
+        let mut clowder = MockClowderClient::new();
+        let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
+        let (info, keyset) = core_tests::generate_random_ecash_keyset();
+        wdc.expect_get_active_keyset()
+            .times(1)
+            .returning(move || Ok(info.id));
+        clowder
+            .expect_request_onchain_mint_address()
+            .times(1)
+            .returning(|_, _| {
+                Ok(
+                    bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb")
+                        .unwrap()
+                        .assume_checked(),
+                )
+            });
+        repo.expect_store_onchain_mintop()
+            .times(1)
+            .returning(|_| Ok(()));
+        clowder
+            .expect_sign_onchain_mint_response()
+            .times(1)
+            .returning(|_| {
+                let signature =
+                    bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+                Ok((String::new(), signature))
+            });
+        let service = Service {
+            wallet: Arc::new(wallet),
+            signing_keys,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+        };
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let request = wire_mint::OnchainMintQuoteRequest {
+            blinded_messages: blinds,
+        };
+        service
+            .new_onchain_mintop(request, chrono::Utc::now())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn new_onchain_mintop_blinds_less_than_threshold() {
+        let wdc = MockWildcatClient::new();
+        let repo = MockRepository::new();
+        let wallet = MockWallet::new();
+        let clowder = MockClowderClient::new();
+        let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
+        let service = Service {
+            wallet: Arc::new(wallet),
+            signing_keys,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::from_sat(1000),
+            min_melt_threshold: bitcoin::Amount::ZERO,
+        };
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let request = wire_mint::OnchainMintQuoteRequest {
+            blinded_messages: blinds,
+        };
+        service
+            .new_onchain_mintop(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn new_onchain_mintop_blinds_different_kids() {
+        let mut wdc = MockWildcatClient::new();
+        let repo = MockRepository::new();
+        let wallet = MockWallet::new();
+        let clowder = MockClowderClient::new();
+        let signing_keys = bitcoin::secp256k1::Keypair::new(SECP256K1, &mut rand::thread_rng());
+        let cdk_mint = cdk::wallet::HttpClient::new(
+            cashu::MintUrl::from_str("http://test_mint_url.com:3338").unwrap(),
+        );
+        let (info1, keyset1) = core_tests::generate_random_ecash_keyset();
+        let (_, keyset2) = core_tests::generate_random_ecash_keyset();
+        wdc.expect_get_active_keyset()
+            .times(1)
+            .returning(move || Ok(info1.id));
+        let service = Service {
+            wallet: Arc::new(wallet),
+            signing_keys,
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            monitor_interval: chrono::Duration::seconds(5),
+            quote_expiry: chrono::Duration::seconds(3600),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            hndls: Arc::new(Mutex::new(Vec::new())),
+            dbmint: cdk_mint,
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+        };
+        let blinds1: Vec<_> = signatures_test::generate_blinds(keyset1.id, &[Amount::from(8_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let blinds2: Vec<_> = signatures_test::generate_blinds(keyset2.id, &[Amount::from(8_u64)])
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let mut blinded_messages = Vec::new();
+        blinded_messages.extend(blinds1);
+        blinded_messages.extend(blinds2);
+        let request = wire_mint::OnchainMintQuoteRequest { blinded_messages };
+        service
+            .new_onchain_mintop(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
     }
 }
