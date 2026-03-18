@@ -8,7 +8,6 @@ use bcr_common::{
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use bitcoin::Amount;
-use futures::future::JoinAll;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -59,7 +58,7 @@ pub trait WdcClient: Send + Sync {
         target: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()>;
-    async fn sign(&self, msg: &cashu::BlindedMessage) -> Result<cashu::BlindSignature>;
+    async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus>;
     async fn validate_and_decrypt_shared_bill(
         &self,
@@ -366,8 +365,7 @@ async fn mint_fees(
                 Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}"))
             })?;
     let blinds = premints.blinded_messages();
-    let joined: JoinAll<_> = blinds.iter().map(|blind| keyscl.sign(blind)).collect();
-    let signatures: Vec<cashu::BlindSignature> = joined.await.into_iter().collect::<Result<_>>()?;
+    let signatures = keyscl.sign(&blinds).await?;
     let mut proofs = Vec::new();
     for (signature, premint) in signatures.into_iter().zip(premints.iter()) {
         let proof =
