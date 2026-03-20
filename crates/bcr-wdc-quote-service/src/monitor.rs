@@ -201,5 +201,14 @@ mod tests {
             srvc: Arc::new(serv),
         };
         monitor.check_quote_ebill(qid).await.unwrap();
+        // ||||||| parent of 1b0a4c4 ([bcr-wdc-quote-service] general minor improvements to quote-service)
+        //     async fn run_task(&self) -> AnyResult<()> {
+        //         self.check_quotes().await;
+        //         Ok(())
+        // =======
+        //     async fn run_task(&self, now: TStamp) -> AnyResult<Option<std::time::Duration>> {
+        //         self.check_quotes(now).await;
+        //         Ok(None)
+        // >>>>>>> 1b0a4c4 ([bcr-wdc-quote-service] general minor improvements to quote-service)
     }
 }
