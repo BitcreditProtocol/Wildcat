@@ -77,14 +77,14 @@ impl Routine for EbillMonitor {
 mod tests {
     use super::*;
     use crate::{persistence::MockRepository, quotes, service::MockWdcClient};
-    use bcr_common::{cashu, core_tests};
-    use mockall::predicate::eq;
+    use bcr_common::{cashu, core_tests, wire::bill as wire_bill, wire_tests};
+    use mockall::predicate::{always, eq};
     use std::str::FromStr;
     use uuid::Uuid;
     pub const TEST_URL: &str = "http://localhost:8000";
 
     #[tokio::test]
-    async fn ebillmonitor_check_quotes_not_yet_received() {
+    async fn ebillmonitor_check_quote_ebill_not_yet_received() {
         let mut repo = MockRepository::new();
         let mut wdc = MockWdcClient::new();
         let qid = Uuid::new_v4();
@@ -109,6 +109,89 @@ mod tests {
             .times(1)
             .with(eq(bid))
             .returning(|_| Err(Error::ResourceNotFound(String::new())));
+        let serv = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+        };
+        let monitor = EbillMonitor {
+            srvc: Arc::new(serv),
+        };
+        monitor.check_quote_ebill(qid).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn ebillmonitor_check_quote_enableminting() {
+        let mut repo = MockRepository::new();
+        let mut wdc = MockWdcClient::new();
+        let qid = Uuid::new_v4();
+        let keyset = core_tests::generate_random_ecash_keyset().1;
+        let pk = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        let quote = quotes::Quote {
+            id: qid,
+            status: quotes::Status::Accepted {
+                discounted: bitcoin::Amount::from_sat(1000),
+                wallet_pubkey: pk.clone(),
+                keyset_id: keyset.id,
+            },
+            submitted: chrono::DateTime::default(),
+            bill: quotes::BillInfo {
+                sum: bitcoin::Amount::from_sat(2000),
+                ..quotes::BillInfo::random()
+            },
+        };
+        let bid = quote.bill.id.clone();
+        repo.expect_load()
+            .times(2)
+            .with(eq(qid))
+            .returning(move |_| Ok(Some(quote.clone())));
+        let bill = wire_bill::BitcreditBill {
+            id: bid.clone(),
+            participants: wire_bill::BillParticipants {
+                drawee: wire_tests::random_identity_public_data().1,
+                drawer: wire_tests::random_identity_public_data().1,
+                payee: wire_bill::BillParticipant::Ident(
+                    wire_tests::random_identity_public_data().1,
+                ),
+                endorsee: None,
+                endorsements: vec![],
+                endorsements_count: 0,
+                all_participant_node_ids: vec![],
+            },
+            data: wire_bill::BillData::default(),
+
+            status: wire_bill::BillStatus::default(),
+            current_waiting_state: None,
+        };
+        wdc.expect_get_ebill()
+            .times(1)
+            .with(eq(bid.clone()))
+            .returning(move |_| Ok(bill.clone()));
+        let cloned = cashu::KeySet::from(keyset.clone());
+        wdc.expect_get_keys()
+            .times(1)
+            .with(eq(keyset.id))
+            .returning(move |_| Ok(cloned.clone()));
+        let cloned = keyset.clone();
+        wdc.expect_sign().times(1).returning(move |blnds| {
+            let amounts = blnds.iter().map(|b| b.amount).collect::<Vec<_>>();
+            let signatures = core_tests::generate_ecash_signatures(&cloned, &amounts);
+            Ok(signatures)
+        });
+        repo.expect_update_status_if_accepted()
+            .times(1)
+            .with(eq(qid), always())
+            .returning(|_, _| Ok(()));
+        wdc.expect_add_new_mint_operation()
+            .times(1)
+            .with(
+                eq(qid),
+                eq(keyset.id),
+                eq(pk),
+                eq(cashu::Amount::from(1000)),
+                eq(bid),
+            )
+            .returning(|_, _, _, _, _| Ok(()));
         let serv = Service {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),
