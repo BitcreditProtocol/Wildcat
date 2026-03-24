@@ -82,7 +82,7 @@ impl Service {
             .quotes
             .load(qid)
             .await?
-            .ok_or(Error::QuoteIDNotFound(qid))?;
+            .ok_or(Error::ResourceNotFound(qid.to_string()))?;
         let changed = quote.check_expire(now);
         if changed {
             self.quotes
@@ -186,7 +186,7 @@ impl Service {
     pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::QuoteIDNotFound(id));
+            return Err(Error::ResourceNotFound(id.to_string()));
         }
         let mut quote = old.unwrap();
         quote.cancel(submitted)?;
@@ -199,7 +199,7 @@ impl Service {
     pub async fn deny(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::QuoteIDNotFound(id));
+            return Err(Error::ResourceNotFound(id.to_string()));
         }
         let mut quote = old.unwrap();
         quote.deny(submitted)?;
@@ -212,7 +212,7 @@ impl Service {
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::QuoteIDNotFound(id));
+            return Err(Error::ResourceNotFound(id.to_string()));
         }
         let mut quote = old.unwrap();
         quote.reject(tstamp)?;
@@ -225,7 +225,7 @@ impl Service {
     pub async fn accept(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
-            return Err(Error::QuoteIDNotFound(id));
+            return Err(Error::ResourceNotFound(id.to_string()));
         }
         let mut quote = old.unwrap();
         quote.accept(submitted)?;
@@ -306,7 +306,7 @@ impl Service {
             .quotes
             .load(qid)
             .await?
-            .ok_or(Error::QuoteIDNotFound(qid))?;
+            .ok_or(Error::ResourceNotFound(qid.to_string()))?;
         let Status::Accepted {
             keyset_id,
             discounted,

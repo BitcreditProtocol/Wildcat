@@ -344,8 +344,8 @@ impl Repository for DBQuotes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{quotes::BillInfo, service};
-    use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
+    use crate::{quotes, service};
+    use bcr_common::wire_tests::random_identity_public_data;
     use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
     use surrealdb::RecordId;
@@ -358,37 +358,12 @@ mod tests {
         DBQuotes { db: sdb }
     }
 
-    impl Default for BillInfo {
-        fn default() -> Self {
-            Self {
-                id: random_bill_id(),
-                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                    .unwrap(),
-                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                    .unwrap(),
-                payee: BillParticipant::Ident(
-                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                        .unwrap(),
-                ),
-                endorsees: Vec::default(),
-                current_holder: BillParticipant::Ident(
-                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                        .unwrap(),
-                ),
-                sum: bitcoin::Amount::default(),
-                maturity_date: chrono::NaiveDate::default(),
-                file_urls: Vec::default(),
-                shared_bill_data: String::default(),
-            }
-        }
-    }
-
     #[tokio::test]
     async fn update_status_if_pending_ok() {
         let db = init_mem_db().await;
 
         let mut quote = quotes::Quote {
-            bill: quotes::BillInfo::default(),
+            bill: quotes::BillInfo::random(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Pending {
@@ -414,7 +389,7 @@ mod tests {
         let db = init_mem_db().await;
 
         let mut quote = quotes::Quote {
-            bill: quotes::BillInfo::default(),
+            bill: quotes::BillInfo::random(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Rejected {
@@ -452,7 +427,7 @@ mod tests {
         let db = init_mem_db().await;
 
         let mut quote = quotes::Quote {
-            bill: quotes::BillInfo::default(),
+            bill: quotes::BillInfo::random(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Offered {
@@ -481,7 +456,7 @@ mod tests {
         let now = TStamp::from_timestamp(10000, 0).unwrap();
 
         let mut quote = quotes::Quote {
-            bill: quotes::BillInfo::default(),
+            bill: quotes::BillInfo::random(),
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Denied { tstamp: now },
@@ -533,7 +508,7 @@ mod tests {
                 ),
                 endorsees: vec![],
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-                ..Default::default()
+                ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
         };
@@ -595,7 +570,7 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-                ..Default::default()
+                ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
         };
@@ -610,7 +585,7 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
-                ..Default::default()
+                ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
         };
@@ -625,7 +600,7 @@ mod tests {
             },
             bill: quotes::BillInfo {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-                ..Default::default()
+                ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
         };
@@ -669,7 +644,7 @@ mod tests {
                     convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
                         .unwrap(),
                 ),
-                ..Default::default()
+                ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
         };

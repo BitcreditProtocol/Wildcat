@@ -1,6 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::{cashu, core::BillId, wire::quotes as wire_quotes};
+#[cfg(test)]
+use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
 use bcr_ebill_core::protocol::blockchain::bill::participant::{
     BillIdentParticipant, BillParticipant,
 };
@@ -64,6 +66,30 @@ impl From<BillInfo> for wire_quotes::BillInfo {
             sum: bill.sum.to_sat(),
             maturity_date: bill.maturity_date,
             file_urls: bill.file_urls,
+        }
+    }
+}
+
+#[cfg(test)]
+impl BillInfo {
+    pub fn random() -> Self {
+        Self {
+            id: random_bill_id(),
+            drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                .unwrap(),
+            drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
+                .unwrap(),
+            payee: BillParticipant::Ident(
+                convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
+            ),
+            endorsees: Vec::default(),
+            current_holder: BillParticipant::Ident(
+                convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
+            ),
+            sum: bitcoin::Amount::default(),
+            maturity_date: chrono::NaiveDate::default(),
+            file_urls: Vec::default(),
+            shared_bill_data: String::default(),
         }
     }
 }

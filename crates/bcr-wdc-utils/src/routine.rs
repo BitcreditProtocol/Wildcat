@@ -8,9 +8,12 @@ use tokio_util::sync::CancellationToken;
 
 // ----- end imports
 
+pub type TStamp = chrono::DateTime<chrono::Utc>;
+
 #[async_trait]
 pub trait Routine: Send + 'static {
-    async fn run_task(&self) -> AnyResult<()>;
+    // the routine can optionally return the next sleep time
+    async fn run_task(&self, now: TStamp) -> AnyResult<Option<std::time::Duration>>;
 }
 
 pub struct RoutineHandle {
@@ -18,14 +21,22 @@ pub struct RoutineHandle {
     pub task: tokio::task::JoinHandle<()>,
 }
 
-async fn run_routine<R: Routine>(routine: R, cancel: CancellationToken, interval: Duration) {
+async fn run_routine<R: Routine>(routine: R, cancel: CancellationToken, mut interval: Duration) {
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
             _ = tokio::time::sleep(interval) => {
-                match routine.run_task().await {
-                    Ok(()) => tracing::info!("Routine checks completed successfully"),
-                    Err(e) => tracing::error!("Routine checks failed: {e}"),
+                let now = chrono::Utc::now();
+                interval = match routine.run_task(now).await {
+                    Ok(None) => {tracing::info!("Routine checks completed successfully");
+                        interval},
+                        Ok(Some(next_interval)) => {
+                            tracing::info!("Routine checks completed successfully, next check in {next_interval:?}");
+                            next_interval
+                        },
+                    Err(e) => {tracing::error!("Routine checks failed: {e}");
+                        interval
+                    },
                 }
             }
         }

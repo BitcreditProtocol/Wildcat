@@ -34,8 +34,8 @@ pub enum Error {
         crate::quotes::StatusDiscriminants,
         crate::quotes::StatusDiscriminants,
     ),
-    #[error("unknown quote id {0}")]
-    QuoteIDNotFound(uuid::Uuid),
+    #[error("resource not found: resource id {0}")]
+    ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
     InvalidAmount(bitcoin::Amount),
     #[error("Invalid input: {0}")]
@@ -58,7 +58,7 @@ impl axum::response::IntoResponse for Error {
 
             Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, String::from("Invalid input")),
             Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
-            Error::QuoteIDNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::ResourceNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Error::InvalidQuoteStatus(_, _, _) => {
                 (StatusCode::CONFLICT, String::from("Quote invalid status"))
             }
