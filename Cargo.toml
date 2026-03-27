@@ -24,7 +24,7 @@ async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.6.0"}
-bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.5.5"}
+bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.5.6"}
 bcr-wdc-ebpp-client = {path = "./crates/bcr-wdc-ebpp-client"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
