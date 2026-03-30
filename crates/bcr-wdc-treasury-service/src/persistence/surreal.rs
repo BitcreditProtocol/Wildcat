@@ -97,6 +97,19 @@ impl debit::Repository for DebitRepository {
         result.ok_or_else(|| Error::RequestIDNotFound(qid))
     }
 
+    async fn list_onchain_pending_mintops(&self) -> Result<Vec<Uuid>> {
+        let entry: Vec<Uuid> = self
+            .db
+            .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
+            .bind(("table", Self::MINTS_TABLE))
+            .bind(("status", debit::MintStatusDiscriminants::Pending))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take("qid")
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entry)
+    }
+
     async fn update_onchain_mintop_status(
         &self,
         qid: Uuid,
@@ -710,7 +723,6 @@ mod tests {
     #[tokio::test]
     async fn test_mint_quote() {
         let db = init_debit_mem_db().await;
-
         let quote = debit::MintQuote {
             qid: Uuid::new_v4().to_string(),
             ebill_id: core_tests::random_bill_id(),
@@ -718,11 +730,9 @@ mod tests {
             mint_complete: false,
         };
         db.store_quote(quote.clone()).await.unwrap();
-
         let list = db.list_quotes().await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].qid, quote.qid);
-
         db.update_quote(quote).await.unwrap();
     }
 
@@ -738,19 +748,44 @@ mod tests {
             .collect();
         let op = debit::OnChainMintOperation {
             qid: Uuid::new_v4(),
-            target: cashu::Amount::ZERO,
+            kid,
+            target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
             expiry: chrono::Utc::now() + chrono::Duration::hours(1),
-            status: debit::MintStatus::Pending(blinds),
+            status: debit::MintStatus::Pending { blinds },
         };
         db.store_onchain_mintop(op.clone()).await.unwrap();
         let signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
-        let status = debit::MintStatus::Paid(signatures);
+        let status = debit::MintStatus::Paid { signatures };
         db.update_onchain_mintop_status(op.qid, status)
             .await
             .unwrap();
         let res = db.load_onchain_mintop(op.qid).await.unwrap();
-        assert!(matches!(res.status, debit::MintStatus::Paid(_)));
+        assert!(matches!(res.status, debit::MintStatus::Paid { .. }));
+    }
+
+    #[tokio::test]
+    async fn list_onchain_pending_mintops() {
+        let db = init_debit_mem_db().await;
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let amounts = vec![cashu::Amount::from(100u64)];
+        let blinds = signature_tests::generate_blinds(kid, &amounts)
+            .into_iter()
+            .map(|(blind, _, _)| blind)
+            .collect();
+        let op = debit::OnChainMintOperation {
+            qid: Uuid::new_v4(),
+            kid,
+            target: bitcoin::Amount::ZERO,
+            recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
+            expiry: chrono::Utc::now() + chrono::Duration::hours(1),
+            status: debit::MintStatus::Pending { blinds },
+        };
+        db.store_onchain_mintop(op.clone()).await.unwrap();
+        let pending = db.list_onchain_pending_mintops().await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0], op.qid);
     }
 
     async fn init_foreignoffline_mem_db() -> ForeignOfflineRepository {

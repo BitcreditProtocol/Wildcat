@@ -3,10 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::{
-    cashu,
-    cdk::wallet::{HttpClient, MintConnector},
-    client::core::Client as CoreClient,
-    core::signature::unblind_ecash_signature,
+    cashu, client::core::Client as CoreClient, core::signature::unblind_ecash_signature,
     wallet::Token,
 };
 // ----- local imports
@@ -16,7 +13,6 @@ use crate::error::Result;
 
 pub struct Service {
     pub crcore: Arc<CoreClient>,
-    pub dbmint: HttpClient,
 }
 
 #[derive(serde::Deserialize)]
@@ -38,41 +34,31 @@ pub async fn free_money(
 ) -> Result<Json<String>> {
     tracing::debug!("Free money request");
 
-    let cashu::KeysetResponse { keysets } = cntrl.dbmint.get_mint_keysets().await?;
     let kinfos = cntrl.crcore.list_keyset_info(Default::default()).await?;
-
     let token = match request.issue {
         IssueType::KeysetId(kid) => {
-            if let Some(kinfo) = keysets.iter().find(|ks| ks.id == kid && ks.active) {
-                let keys = cntrl.dbmint.get_mint_keyset(kinfo.id).await?;
-                mint_debit(&cntrl.dbmint, request.amount, keys, request.whoami).await?
-            } else if let Some(kinfo) = kinfos.iter().find(|ks| ks.id == kid && ks.active) {
-                let keys = cntrl.crcore.keys(kinfo.id).await?;
-                mint_credit(&cntrl.crcore, request.amount, keys, request.whoami).await?
-            } else {
+            let Some(kinfo) = kinfos.iter().find(|ks| ks.id == kid && ks.active) else {
                 return Err(crate::error::Error::InvalidInput(format!(
                     "Unknown/Invalid keyset: {kid}"
                 )));
-            }
+            };
+            let keys = cntrl.crcore.keys(kinfo.id).await?;
+            mint(&cntrl.crcore, request.amount, keys, request.whoami).await?
         }
         IssueType::Currency(unit) => {
-            if let Some(kinfo) = keysets.iter().find(|k| k.active && k.unit == unit) {
-                let keys = cntrl.dbmint.get_mint_keyset(kinfo.id).await?;
-                mint_debit(&cntrl.dbmint, request.amount, keys, request.whoami).await?
-            } else if let Some(kinfo) = kinfos.iter().find(|k| k.active && k.unit == unit) {
-                let keys = cntrl.crcore.keys(kinfo.id).await?;
-                mint_credit(&cntrl.crcore, request.amount, keys, request.whoami).await?
-            } else {
+            let Some(kinfo) = kinfos.iter().find(|k| k.active && k.unit == unit) else {
                 return Err(crate::error::Error::InvalidInput(format!(
                     "Unsupported currency unit: {unit}",
                 )));
-            }
+            };
+            let keys = cntrl.crcore.keys(kinfo.id).await?;
+            mint(&cntrl.crcore, request.amount, keys, request.whoami).await?
         }
     };
     Ok(Json(token.to_string()))
 }
 
-async fn mint_credit(
+async fn mint(
     client: &CoreClient,
     amount: cashu::Amount,
     keys: cashu::KeySet,
@@ -90,39 +76,4 @@ async fn mint_credit(
         proofs.push(proof);
     }
     Ok(Token::new_bitcr(mint_url, proofs, None, keys.unit.clone()))
-}
-
-async fn mint_debit(
-    client: &HttpClient,
-    amount: cashu::Amount,
-    keys: cashu::KeySet,
-    mint_url: cashu::MintUrl,
-) -> Result<Token> {
-    let kp = secp256k1::Keypair::new(secp256k1::global::SECP256K1, &mut rand::thread_rng());
-    let pubkey = cashu::PublicKey::from(kp.public_key());
-    let request = cashu::MintQuoteBolt11Request {
-        amount,
-        unit: keys.unit.clone(),
-        description: Some(String::from("it's me, Mario")),
-        pubkey: Some(pubkey),
-    };
-    let quote = client.post_mint_quote(request).await?;
-    let premints =
-        cashu::PreMintSecrets::random(keys.id, amount, &cashu::amount::SplitTarget::None)?;
-    let mut request = cashu::MintRequest {
-        quote: quote.quote,
-        outputs: premints.blinded_messages(),
-        signature: None,
-    };
-    let sk = cashu::SecretKey::from(kp.secret_key());
-    request.sign(sk)?;
-    let response = client.post_mint(request).await?;
-    let mut proofs = Vec::with_capacity(response.signatures.len());
-    // WARNING: due to a bug in `into_iter()` in cashu 0.13.1 we need to `iter()` and clone the secret
-    // fixed in 0.14.0
-    for (sig, pre) in response.signatures.into_iter().zip(premints.iter()) {
-        let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
-        proofs.push(proof);
-    }
-    Ok(Token::new_cashu(mint_url, proofs, None, keys.unit.clone()))
 }

@@ -966,6 +966,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
+ "strum",
  "surrealdb",
  "thiserror 2.0.18",
  "tokio",

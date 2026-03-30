@@ -23,7 +23,7 @@ pub trait KeysClient: proof::KeysClient {
 pub struct Service {
     pub online_repo: Arc<dyn OnlineRepository>,
     pub offline_repo: Arc<dyn OfflineRepository>,
-    pub keys: Box<dyn KeysClient>,
+    pub keys: Arc<dyn KeysClient>,
     pub clowder: Arc<dyn ClowderClient>,
     pub mint_factory: Arc<dyn MintClientFactory>,
     pub settler: Box<dyn OfflineSettleHandler>,
@@ -400,7 +400,7 @@ mod tests {
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
-            keys: Box::new(keys),
+            keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
@@ -484,7 +484,7 @@ mod tests {
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
-            keys: Box::new(keys),
+            keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
@@ -579,7 +579,7 @@ mod tests {
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
-            keys: Box::new(keys),
+            keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
@@ -651,7 +651,7 @@ mod tests {
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
-            keys: Box::new(keys),
+            keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
