@@ -24,6 +24,7 @@ reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
 serde_json = {workspace = true}
+strum = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}

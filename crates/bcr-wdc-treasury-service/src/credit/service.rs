@@ -4,6 +4,7 @@ use bcr_common::{
     cashu::{self, ProofsMethods},
     core::BillId,
 };
+use bcr_wdc_utils::routine::TStamp;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -170,6 +171,15 @@ impl Service {
             return Err(e);
         }
         Ok(new_melt)
+    }
+
+    pub async fn request_to_pay_ebill(
+        &self,
+        _bid: BillId,
+        _amount: bitcoin::Amount,
+        _deadline: TStamp,
+    ) -> Result<(Uuid, String)> {
+        todo!()
     }
 }
 

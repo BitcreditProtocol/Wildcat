@@ -3,12 +3,10 @@ use std::{ops::Deref, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu,
-    cdk::{self, wallet::MintConnector},
-    core::signature::serialize_n_schnorr_sign_borsh_msg,
-    wire::{clowder as wire_clowder, exchange as wire_exchange, keys as wire_keys},
+    cashu, cdk,
+    client::core::Client as CoreClient,
+    wire::{clowder as wire_clowder, keys as wire_keys},
 };
-use bitcoin::hex::prelude::*;
 use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
 use crate::{
@@ -19,12 +17,12 @@ use crate::{
 // ----- end imports
 
 ///--------------------------- CrsatCoreClient
-pub struct CrsatCoreClient {
-    pub core: Arc<bcr_common::client::core::Client>,
+pub struct CoreCl {
+    pub core: Arc<CoreClient>,
 }
 
 #[async_trait]
-impl proof::KeysClient for CrsatCoreClient {
+impl proof::KeysClient for CoreCl {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let signatures = self.core.sign(blinds).await?;
         Ok(signatures)
@@ -32,7 +30,7 @@ impl proof::KeysClient for CrsatCoreClient {
 }
 
 #[async_trait]
-impl crsat::KeysClient for CrsatCoreClient {
+impl crsat::KeysClient for CoreCl {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
@@ -41,6 +39,27 @@ impl crsat::KeysClient for CrsatCoreClient {
             .core
             .get_or_create_credit_keyset_with_expiration(expiration)
             .await?;
+        let keyset = self.core.keys(kinfo.id).await?;
+        Ok(keyset)
+    }
+}
+
+#[async_trait]
+impl sat::KeysClient for CoreCl {
+    async fn get_active_keyset(&self) -> Result<cashu::KeySet> {
+        let filters = wire_keys::KeysetInfoFilters {
+            unit: Some(CoreClient::debit_unit()),
+            ..Default::default()
+        };
+        let kinfos = self.core.list_keyset_info(filters).await?;
+        let Some(kinfo) = kinfos
+            .into_iter()
+            .find(|kinfo| kinfo.unit == CoreClient::debit_unit() && kinfo.active)
+        else {
+            return Err(Error::InvalidInput(String::from(
+                "No active keyset found for debit unit",
+            )));
+        };
         let keyset = self.core.keys(kinfo.id).await?;
         Ok(keyset)
     }
@@ -172,71 +191,6 @@ impl foreign::ClowderClient for ClowderCl {
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
         let response = self.clwdr.get_offline(pk).await?;
         Ok(response.offline)
-    }
-}
-
-pub struct SatKeysClient {
-    cl: cdk::wallet::HttpClient,
-    signing_keys: bitcoin::secp256k1::Keypair,
-}
-impl SatKeysClient {
-    pub fn new(mint_url: cashu::MintUrl, signing_keys: bitcoin::secp256k1::Keypair) -> Self {
-        let cl = cdk::wallet::HttpClient::new(mint_url);
-        Self { cl, signing_keys }
-    }
-}
-
-#[async_trait]
-impl proof::KeysClient for SatKeysClient {
-    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let total = blinds
-            .iter()
-            .fold(cashu::Amount::ZERO, |acc, b| acc + b.amount);
-        let nonce: [u8; 16] = rand::random();
-        let message = wire_exchange::RequestToMintFromForeignECashPayload {
-            foreign_amount_sat: total.into(),
-            nonce: nonce.as_hex().to_string(),
-        };
-        let kp = bitcoin::key::Keypair::new(secp256k1::global::SECP256K1, &mut rand::thread_rng());
-        let pk = cashu::PublicKey::from(kp.public_key());
-        let (payload, signature) =
-            serialize_n_schnorr_sign_borsh_msg(&message, &self.signing_keys)?;
-        let description = serde_json::to_string(&wire_exchange::RequestToMintFromForeignECash {
-            payload,
-            signature,
-        })?;
-        let request = cashu::MintQuoteBolt11Request {
-            amount: total,
-            unit: cashu::CurrencyUnit::Sat,
-            description: Some(description),
-            pubkey: Some(pk),
-        };
-        let quote = self.cl.post_mint_quote(request).await?;
-        tracing::debug!("minting sat foreign quote id: {}", quote.quote);
-        let mut request = cashu::MintRequest {
-            quote: quote.quote,
-            outputs: blinds.to_vec(),
-            signature: None,
-        };
-        request.sign(kp.secret_key().into())?;
-        let response = self.cl.post_mint(request).await?;
-        Ok(response.signatures)
-    }
-}
-
-#[async_trait]
-impl sat::KeysClient for SatKeysClient {
-    async fn get_active_keyset(&self) -> Result<cashu::KeySet> {
-        let keyset_infos = self.cl.get_mint_keysets().await?;
-        for info in keyset_infos.keysets {
-            if info.active {
-                let keyset = self.cl.get_mint_keyset(info.id).await?;
-                return Ok(keyset);
-            }
-        }
-        Err(Error::InvalidInput(String::from(
-            "No active keyset found on mint",
-        )))
     }
 }
 

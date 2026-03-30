@@ -8,21 +8,9 @@ use bcr_common::{
 };
 use bitcoin::base64::prelude::*;
 // ----- local imports
-use crate::{credit, debit, error::Result, foreign, AppController};
+use crate::{debit, error::Result, foreign, AppController};
 
 // ----- end imports
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn redeem(
-    State(ctrl): State<Arc<debit::Service>>,
-    Json(request): Json<cashu::SwapRequest>,
-) -> Result<Json<cashu::SwapResponse>> {
-    tracing::debug!("Received request to redeem");
-
-    let signatures = ctrl.redeem(request.inputs(), request.outputs()).await?;
-    let response = cashu::SwapResponse { signatures };
-    Ok(Json(response))
-}
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn crsat_online_exchange(
@@ -128,17 +116,6 @@ pub async fn mint_quote_onchain(
     tracing::debug!("Received mint_quote_onchain request");
 
     let now = chrono::Utc::now();
-    let response = ctrl.new_onchain_mintop(request, now).await?;
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn mint_ebill(
-    State(ctrl): State<Arc<credit::Service>>,
-    Json(req): Json<cashu::MintRequest<uuid::Uuid>>,
-) -> Result<Json<cashu::MintResponse>> {
-    tracing::debug!("Received mint request for {}", req.quote);
-
-    let response = ctrl.mint(req).await?;
+    let response = ctrl.create_onchain_mint_quote(request, now).await?;
     Ok(Json(response))
 }

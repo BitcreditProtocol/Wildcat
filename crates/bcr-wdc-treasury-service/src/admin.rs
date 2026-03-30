@@ -4,43 +4,27 @@ use std::sync::Arc;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     cashu,
-    core::BillId,
-    wire::{
-        exchange as wire_exchange, signatures as wire_signatures, treasury as wire_treasury,
-        wallet as wire_wallet,
-    },
+    wire::{exchange as wire_exchange, signatures as wire_signatures, treasury as wire_treasury},
 };
 // ----- local imports
-use crate::{credit, debit, error::Result, foreign};
+use crate::{credit, error::Result, foreign};
 // ----- end imports
 
 // ----- sat APIs
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_to_pay_ebill(
-    State(ctrl): State<Arc<debit::Service>>,
+    State(ctrl): State<Arc<credit::Service>>,
     Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
 ) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
     tracing::debug!("Received request to mint from ebill");
 
-    let quote = ctrl
-        .mint_from_ebill(request.ebill_id, request.amount, request.deadline)
+    let (id, request) = ctrl
+        .request_to_pay_ebill(request.ebill_id, request.amount, request.deadline)
         .await?;
+
     let response = wire_signatures::RequestToMintFromEBillResponse {
-        request_id: quote.id,
-        request: quote.request,
-    };
-    Ok(Json(response))
-}
-
-pub async fn sat_balance(
-    State(ctrl): State<Arc<debit::Service>>,
-) -> Result<Json<wire_wallet::ECashBalance>> {
-    tracing::debug!("Received request to sat_balance");
-
-    let amount = ctrl.balance().await?;
-    let response = wire_wallet::ECashBalance {
-        amount,
-        unit: cashu::CurrencyUnit::Sat,
+        request_id: id.to_string(),
+        request,
     };
     Ok(Json(response))
 }
@@ -65,19 +49,8 @@ pub async fn sat_try_htlc_swap(
     Ok(Json(amount))
 }
 
-pub async fn is_ebill_minting_completed(
-    State(ctrl): State<Arc<debit::Service>>,
-    Path(bill_id): Path<BillId>,
-) -> Result<Json<wire_wallet::EbillPaymentComplete>> {
-    tracing::debug!("Received request for ebill payment completed {bill_id}");
-
-    let complete = ctrl.is_ebill_payment_minted(bill_id).await?;
-    let response = wire_wallet::EbillPaymentComplete { complete };
-    Ok(Json(response))
-}
-
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn new_mintop(
+pub async fn new_cr_mintop(
     State(ctrl): State<Arc<credit::Service>>,
     Json(request): Json<wire_treasury::NewMintOperationRequest>,
 ) -> Result<Json<wire_treasury::NewMintOperationResponse>> {
@@ -95,7 +68,7 @@ pub async fn new_mintop(
     Ok(Json(response))
 }
 
-fn convert_mintop_status(status: credit::MintOperation) -> wire_treasury::MintOperationStatus {
+fn convert_cr_mintop_status(status: credit::MintOperation) -> wire_treasury::MintOperationStatus {
     wire_treasury::MintOperationStatus {
         kid: status.kid,
         quote_id: status.uid,
@@ -105,19 +78,19 @@ fn convert_mintop_status(status: credit::MintOperation) -> wire_treasury::MintOp
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn mintop_status(
+pub async fn cr_mintop_status(
     State(ctrl): State<Arc<credit::Service>>,
     Path(qid): Path<uuid::Uuid>,
 ) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request {qid}");
 
     let status = ctrl.mintop_status(qid).await?;
-    let status = convert_mintop_status(status);
+    let status = convert_cr_mintop_status(status);
     Ok(Json(status))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_mintops(
+pub async fn list_cr_mintops(
     State(ctrl): State<Arc<credit::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<Vec<uuid::Uuid>>> {

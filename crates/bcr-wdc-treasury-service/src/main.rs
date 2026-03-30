@@ -42,13 +42,12 @@ async fn main() {
     let seedcfg: SeedConfig = settings
         .try_deserialize()
         .expect("Failed to parse seed config");
-    let seed = seedcfg.mnemonic.to_seed("treasury-service");
     let signing_seed = seedcfg.mnemonic.to_seed("treasury-service-signing");
     let signing_slice = bitcoin::hashes::sha256::Hash::hash(&signing_seed);
     let secret = bitcoin::secp256k1::SecretKey::from_slice(signing_slice.as_byte_array())
         .expect("Failed to create secret key from seed");
 
-    let app = bcr_wdc_treasury_service::AppController::new(seed, secret, maincfg.appcfg).await;
+    let (app, routine_hndl) = bcr_wdc_treasury_service::init_app(secret, maincfg.appcfg).await;
     let router = bcr_wdc_treasury_service::routes(app.clone());
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
@@ -60,7 +59,9 @@ async fn main() {
         .await
         .expect("Failed to start server");
 
-    app.stop().await.expect("Failed to stop app");
+    for hndl in routine_hndl {
+        hndl.stop().await;
+    }
 }
 
 async fn shutdown_signal() {
