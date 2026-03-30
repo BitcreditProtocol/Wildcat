@@ -109,12 +109,12 @@ pub async fn restore(
 pub async fn swap_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
     State(sign_service): State<Arc<keys::service::Service>>,
-    Json(request): Json<cashu::SwapRequest>,
-) -> Result<Json<cashu::SwapResponse>> {
+    Json(request): Json<wire_swap::SwapRequest>,
+) -> Result<Json<wire_swap::SwapResponse>> {
     let signatures = ctrl
-        .swap(sign_service.as_ref(), request.inputs(), request.outputs())
+        .swap(sign_service.as_ref(), &request.inputs, &request.outputs)
         .await?;
-    let response = cashu::SwapResponse { signatures };
+    let response = wire_swap::SwapResponse { signatures };
     Ok(Json(response))
 }
 

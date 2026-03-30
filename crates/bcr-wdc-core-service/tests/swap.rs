@@ -13,6 +13,13 @@ use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as sig
 
 // ----- end imports
 
+fn random_commitment() -> bitcoin::secp256k1::schnorr::Signature {
+    use bitcoin::key::rand::Rng;
+    let mut sl = [0u8; bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE];
+    bitcoin::key::rand::thread_rng().fill(&mut sl[..]);
+    bitcoin::secp256k1::schnorr::Signature::from_slice(&sl).unwrap()
+}
+
 #[tokio::test]
 async fn swap() {
     let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
@@ -31,7 +38,10 @@ async fn swap() {
         .map(|bbb| bbb.0)
         .collect();
     let proofs = signatures_test::generate_proofs(&keys_entry.1, &amounts);
-    client.swap(proofs, blinds).await.expect("swap");
+    client
+        .swap(proofs, blinds, random_commitment())
+        .await
+        .expect("swap");
 }
 
 #[tokio::test]
@@ -106,16 +116,16 @@ async fn swap_p2pk() {
             .map(|bbb| bbb.0)
             .collect();
     let res = client
-        .swap(correct_proofs, blinds.clone())
+        .swap(correct_proofs, blinds.clone(), random_commitment())
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));
     client
-        .swap(incorrect_proofs, blinds.clone())
+        .swap(incorrect_proofs, blinds.clone(), random_commitment())
         .await
         .expect_err("Swap with incorrect P2PK signatures should fail");
     client
-        .swap(missing_p2pk_sig_proofs, blinds)
+        .swap(missing_p2pk_sig_proofs, blinds, random_commitment())
         .await
         .expect_err("Swap with missing P2PK signatures should fail");
 }

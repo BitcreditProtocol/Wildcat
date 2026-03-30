@@ -4,13 +4,25 @@ use std::sync::Arc;
 use axum::extract::{Json, State};
 use bcr_common::{
     cashu,
-    wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint},
+    wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint, swap as wire_swap},
 };
 use bitcoin::base64::prelude::*;
 // ----- local imports
 use crate::{debit, error::Result, foreign, AppController};
 
 // ----- end imports
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn redeem(
+    State(ctrl): State<Arc<debit::Service>>,
+    Json(request): Json<wire_swap::SwapRequest>,
+) -> Result<Json<wire_swap::SwapResponse>> {
+    tracing::debug!("Received request to redeem");
+
+    let signatures = ctrl.redeem(&request.inputs, &request.outputs).await?;
+    let response = wire_swap::SwapResponse { signatures };
+    Ok(Json(response))
+}
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn crsat_online_exchange(

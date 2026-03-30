@@ -233,7 +233,8 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     info!("Swapping proofs");
     let new_blinds = generate_blinds(keyset_info.id, &cashu_amounts);
     let bs = new_blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
-    let signatures = user_service.swap(proofs, bs).await;
+    let dummy_commitment = test_utils::random_schnorr_signature();
+    let signatures = user_service.swap(proofs, bs, dummy_commitment).await;
     let total_swap = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
     assert_eq!(
         total_swap, total_amount,

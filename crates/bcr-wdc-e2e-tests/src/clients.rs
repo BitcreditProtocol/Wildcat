@@ -173,8 +173,12 @@ impl Service<UserService> {
         &self,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
+        commitment: bitcoin::secp256k1::schnorr::Signature,
     ) -> Vec<cashu::BlindSignature> {
-        self.core_cl.swap(inputs, outputs).await.unwrap()
+        self.core_cl
+            .swap(inputs, outputs, commitment)
+            .await
+            .unwrap()
     }
 }
 

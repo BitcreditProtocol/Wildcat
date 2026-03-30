@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut07 as cdk07},
     client::core::Client as CoreClient,
-    core::signature::deserialize_borsh_msg,
+    core::signature::{deserialize_borsh_msg, schnorr_verify_b64},
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bitcoin::secp256k1::schnorr;
@@ -33,6 +33,7 @@ pub trait Repository: Send + Sync {
         inputs: Vec<cashu::PublicKey>,
         outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
+        wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
     ) -> Result<()>;
     async fn find(
@@ -43,82 +44,115 @@ pub trait Repository: Send + Sync {
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()>;
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait Signer: Send + Sync {
-    async fn sign(&self, content: &[u8]) -> Result<bitcoin::secp256k1::schnorr::Signature>;
-}
-
 pub struct Service {
     pub repo: Box<dyn Repository>,
-    pub signer: Box<dyn Signer>,
 }
 
 impl Service {
     pub const MIN_EXPIRATION: chrono::Duration = chrono::Duration::seconds(90);
+
     pub async fn commit(
         &self,
         now: TStamp,
-        request: wire_swap::CommitmentRequest,
+        request: &wire_swap::SwapCommitmentRequest,
         core_cl: &CoreClient,
-    ) -> Result<wire_swap::CommitmentResponse> {
-        let payload: wire_swap::CommitmentContent = deserialize_borsh_msg(&request.content)?;
-        // expiration check
-        if payload.expiration < now + Self::MIN_EXPIRATION {
-            return Err(Error::InvalidInput(String::from("expiration too soon")));
+        cdk_mint_cl: &cdk::wallet::HttpClient,
+    ) -> Result<()> {
+        // verify wallet signature
+        let xonly = request.wallet_key.x_only_public_key();
+        schnorr_verify_b64(&request.content, &request.wallet_signature, &xonly)
+            .map_err(|e| Error::InvalidSignature(e.to_string()))?;
+
+        let body: wire_swap::SwapCommitmentRequestBody =
+            deserialize_borsh_msg(&request.content)?;
+
+        // amount validation
+        let input_amount: u64 = body.inputs.iter().map(|fp| fp.amount).sum();
+        let output_amount: u64 = body
+            .outputs
+            .iter()
+            .map(|b| u64::from(b.amount))
+            .sum();
+        if input_amount != output_amount {
+            return Err(Error::InvalidInput(format!(
+                "amount mismatch: inputs={input_amount}, outputs={output_amount}"
+            )));
         }
-        validate_commitment_inputs(core_cl, &payload.inputs).await?;
-        let signatures = core_cl.restore(payload.outputs.clone()).await?;
+
+        // validate inputs (check unspent, verify fingerprints)
+        validate_commitment_inputs(core_cl, cdk_mint_cl, &body.inputs).await?;
+
+        // check outputs not seen (crsat)
+        let signatures = core_cl.restore(body.outputs.clone()).await?;
         if !signatures.is_empty() {
             return Err(Error::InvalidInput(String::from("crsat blinds seen")));
         }
-        // committed
-        let ys: Vec<cashu::PublicKey> = payload.inputs.iter().map(|p| p.y).collect();
+        // check outputs not seen (sat)
+        let restore_request = cashu::RestoreRequest {
+            outputs: body.outputs.clone(),
+        };
+        let restore_response = cdk_mint_cl.post_restore(restore_request).await?;
+        if !restore_response.signatures.is_empty() {
+            return Err(Error::InvalidInput(String::from("sat blinds seen")));
+        }
+
+        // check not already committed
+        let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
         self.repo.clean_expired(now).await?;
         let any_committed = self.repo.check_committed_inputs(&ys).await?;
         if any_committed {
             return Err(Error::InvalidInput(String::from("proofs committed")));
         }
-        let secrets: Vec<_> = payload.outputs.iter().map(|b| b.blinded_secret).collect();
+        let secrets: Vec<_> = body.outputs.iter().map(|b| b.blinded_secret).collect();
         let any_committed = self.repo.check_committed_outputs(&secrets).await?;
         if any_committed {
             return Err(Error::InvalidInput(String::from(
                 "blinded messages committed",
             )));
         }
-        // signing
-        let serialized = borsh::to_vec(&payload)?;
-        let signature = self.signer.sign(&serialized).await?;
-        self.repo
-            .store(ys, secrets, payload.expiration, signature)
-            .await?;
-        let response = wire_swap::CommitmentResponse {
-            commitment: signature,
-        };
-        Ok(response)
+
+        Ok(())
     }
 
-    // check if a swap request is ok to go ahead
-    // a request can be either made of unseen inputs and outputs
-    // or committed inputs and outputs
-    pub async fn check_swap(&self, now: TStamp, request: cashu::SwapRequest) -> Result<bool> {
+    pub async fn store_commitment(
+        &self,
+        request: &wire_swap::SwapCommitmentRequest,
+        commitment: schnorr::Signature,
+    ) -> Result<()> {
+        let body: wire_swap::SwapCommitmentRequestBody =
+            deserialize_borsh_msg(&request.content)?;
+        let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
+        let secrets: Vec<_> = body.outputs.iter().map(|b| b.blinded_secret).collect();
+        let expiration = chrono::Utc::now() + Self::MIN_EXPIRATION;
+        self.repo
+            .store(ys, secrets, expiration, request.wallet_key, commitment)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn check_swap(
+        &self,
+        now: TStamp,
+        inputs: &[cashu::Proof],
+        outputs: &[cashu::BlindedMessage],
+        commitment: &schnorr::Signature,
+    ) -> Result<()> {
         self.repo.clean_expired(now).await?;
-        let inputs = request
-            .inputs()
+        let ys = inputs
             .iter()
             .map(|p| p.y())
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let outputs: Vec<_> = request.outputs().iter().map(|b| b.blinded_secret).collect();
-        // committed swap
-        let commitment = self.repo.find(&inputs, &outputs).await?;
-        if let Some(commitment) = commitment {
-            self.repo.delete(commitment).await?;
-            return Ok(true);
-        }
+        let secrets: Vec<_> = outputs.iter().map(|b| b.blinded_secret).collect();
 
-        let any_committed_proofs = self.repo.check_committed_inputs(&inputs).await?;
-        let any_committed_blinds = self.repo.check_committed_outputs(&outputs).await?;
-        Ok(!any_committed_proofs && !any_committed_blinds)
+        let found = self.repo.find(&ys, &secrets).await?;
+        match found {
+            Some(stored) if stored == *commitment => {
+                self.repo.delete(stored).await?;
+                Ok(())
+            }
+            Some(_) => Err(Error::CommitmentMismatch),
+            None => Err(Error::CommitmentNotFound),
+        }
     }
 }
 
