@@ -28,9 +28,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg)
-        .await
-        .expect("AppController Initialization");
+    let app = bcr_wdc_wallet_aggregator::AppController::new(maincfg.appcfg).await;
     let router = bcr_wdc_wallet_aggregator::routes(app)
         .await
         .expect("routes initialization");

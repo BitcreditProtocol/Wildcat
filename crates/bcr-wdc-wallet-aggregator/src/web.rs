@@ -48,10 +48,10 @@ pub async fn health() -> Result<&'static str> {
 )]
 pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cashu::MintInfo>> {
     tracing::debug!("Requested /v1/info");
-    let network = ctrl.ebpp_client.network().await?;
+    let network = ctrl.clwdr_rest_client.get_info().await?.network;
     let info = ctrl.cdk_client.get_mint_info().await?;
     let mut long_description = format!(
-        r#"[ebpp]
+        r#"[clowder]
 network = {network}
 "#
     );
@@ -97,7 +97,8 @@ cdk-mintd = {cdk_mintd}"#,
 )]
 pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<WildcatInfo>> {
     tracing::debug!("Requested /v1/wildcat");
-    let network = ctrl.ebpp_client.network().await?;
+    let clowder_info = ctrl.clwdr_rest_client.get_info().await?;
+    let network = clowder_info.network;
     let info = ctrl.cdk_client.get_mint_info().await?;
 
     let build_time = bcr_wdc_utils::info::get_build_time();
@@ -110,8 +111,7 @@ pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<
         .as_ref()
         .map(|v| v.version.clone())
         .unwrap_or(String::from("0.0.0"));
-    let clowder = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    let clowder_info = clowder.get_info().await?;
+
     let versions = VersionInfo {
         wildcat: version,
         bcr_ebill_core: ebill_core,
@@ -297,20 +297,15 @@ pub async fn post_swap(
             .await
             .map(|resp| resp.signatures)?,
     };
-
-    if let Some(clwdr_client) = ctrl.clwdr_stream_client {
-        let req = messages::SwapRequest {
-            proofs,
-            blinds: blinded_messages.clone(),
-        };
-        let resp = messages::SwapResponse {
-            signatures: signatures.clone(),
-        };
-        clwdr_client.mint_swap(req, resp).await?;
-    }
-
+    let req = messages::SwapRequest {
+        proofs,
+        blinds: blinded_messages.clone(),
+    };
+    let resp = messages::SwapResponse {
+        signatures: signatures.clone(),
+    };
+    ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
     let response = cashu::SwapResponse { signatures };
-
     Ok(Json(response))
 }
 
@@ -413,9 +408,7 @@ pub async fn post_restore(
 pub async fn get_clowder_info(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_clowder::ClowderNodeInfo>> {
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-
-    Ok(Json(clowder_client.get_info().await?))
+    Ok(Json(ctrl.clwdr_rest_client.get_info().await?))
 }
 
 #[utoipa::path(
@@ -429,10 +422,10 @@ pub async fn post_clowder_path(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_clowder::PathRequest>,
 ) -> Result<Json<wire_clowder::ConnectedMintsResponse>> {
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-
     Ok(Json(
-        clowder_client.post_path(request.origin_mint_url).await?,
+        ctrl.clwdr_rest_client
+            .post_path(request.origin_mint_url)
+            .await?,
     ))
 }
 
@@ -446,9 +439,7 @@ pub async fn post_clowder_path(
 pub async fn get_clowder_betas(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_clowder::ConnectedMintsResponse>> {
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-
-    Ok(Json(clowder_client.get_betas().await?))
+    Ok(Json(ctrl.clwdr_rest_client.get_betas().await?))
 }
 
 #[utoipa::path(
@@ -466,8 +457,7 @@ pub async fn get_foreign_offline(
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
 ) -> Result<Json<wire_clowder::OfflineResponse>> {
     tracing::debug!("Requested /v1/foreign/offline/{alpha_id}");
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    Ok(Json(clowder_client.get_offline(alpha_id).await?))
+    Ok(Json(ctrl.clwdr_rest_client.get_offline(alpha_id).await?))
 }
 
 #[utoipa::path(
@@ -485,8 +475,7 @@ pub async fn get_foreign_status(
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
 ) -> Result<Json<wire_clowder::AlphaStateResponse>> {
     tracing::debug!("Requested /v1/foreign/status/{alpha_id}");
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    Ok(Json(clowder_client.get_status(alpha_id).await?))
+    Ok(Json(ctrl.clwdr_rest_client.get_status(alpha_id).await?))
 }
 
 #[utoipa::path(
@@ -504,8 +493,7 @@ pub async fn get_foreign_substitute(
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
 ) -> Result<Json<wire_clowder::ConnectedMintResponse>> {
     tracing::debug!("Requested /v1/foreign/substitute/{alpha_id}");
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    Ok(Json(clowder_client.get_substitute(alpha_id).await?))
+    Ok(Json(ctrl.clwdr_rest_client.get_substitute(alpha_id).await?))
 }
 
 #[utoipa::path(
@@ -523,8 +511,9 @@ pub async fn get_foreign_keysets(
     Path(alpha_id): Path<bitcoin::secp256k1::PublicKey>,
 ) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/foreign/keysets/{alpha_id}");
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    Ok(Json(clowder_client.get_active_keysets(&alpha_id).await?))
+    Ok(Json(
+        ctrl.clwdr_rest_client.get_active_keysets(&alpha_id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -544,11 +533,8 @@ pub async fn post_online_exchange(
             "minimum exchange path [alpha_pk, this_mint_pk, wallet_pk] not met",
         )));
     }
-    let Some(rest_clwdr) = ctrl.clwdr_rest_client.as_ref() else {
-        return Err(Error::ClowderClientNoInit);
-    };
     let clowder_keys = ForeignKeyClientWithClowder {
-        clwdr_cl: rest_clwdr.clone(),
+        clwdr_cl: ctrl.clwdr_rest_client.clone(),
         pk: request.exchange_path[0],
     };
     let input_type =
@@ -572,18 +558,21 @@ pub async fn post_online_exchange(
                 .await?
         }
     };
-    if let Some(write_clowder) = ctrl.clwdr_stream_client {
-        write_clowder
-            .mint_foreign_ecash(
-                messages::MintForeignEcashRequest {
-                    proofs: stream_proofs,
-                    exchange_path: stream_exchange_path,
-                },
-                messages::MintForeignEcashResponse {
-                    proofs: proofs.clone(),
-                },
-            )
-            .await?;
+    match ctrl
+        .clwdr_stream_client
+        .mint_foreign_ecash(
+            messages::MintForeignEcashRequest {
+                proofs: stream_proofs,
+                exchange_path: stream_exchange_path,
+            },
+            messages::MintForeignEcashResponse {
+                proofs: proofs.clone(),
+            },
+        )
+        .await
+    {
+        Err(e) => tracing::error!("Failed to post online exchange to clowder stream: {e}"),
+        Ok(_) => {}
     };
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
@@ -601,15 +590,12 @@ pub async fn post_offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    let Some(rest_clwdr) = ctrl.clwdr_rest_client.as_ref() else {
-        return Err(Error::ClowderClientNoInit);
-    };
-
-    let origin = rest_clwdr
+    let origin = ctrl
+        .clwdr_rest_client
         .post_fingerprints_origin(request.fingerprints.clone())
         .await?;
     let clowder_keys = ForeignKeyClientWithClowder {
-        clwdr_cl: rest_clwdr.clone(),
+        clwdr_cl: ctrl.clwdr_rest_client.clone(),
         pk: origin.node_id,
     };
     let input_type = determine_input_type(
@@ -643,19 +629,22 @@ pub async fn post_offline_exchange(
     let payload: bcr_common::wire::exchange::OfflineExchangePayload =
         borsh::from_slice(&serialized)?;
 
-    if let Some(write_clowder) = ctrl.clwdr_stream_client {
-        write_clowder
-            .mint_offline_foreign_ecash(
-                messages::MintForeignOfflineEcashRequest {
-                    fingerprints: stream_fingerprints,
-                    hashes: stream_hashes,
-                    wallet_pk,
-                },
-                messages::MintForeignOfflineEcashResponse {
-                    proofs: payload.proofs,
-                },
-            )
-            .await?;
+    match ctrl
+        .clwdr_stream_client
+        .mint_offline_foreign_ecash(
+            messages::MintForeignOfflineEcashRequest {
+                fingerprints: stream_fingerprints,
+                hashes: stream_hashes,
+                wallet_pk,
+            },
+            messages::MintForeignOfflineEcashResponse {
+                proofs: payload.proofs,
+            },
+        )
+        .await
+    {
+        Err(e) => tracing::error!("Failed to post offline exchange to clowder stream: {e}"),
+        Ok(_) => {}
     };
     Ok(Json(response))
 }
@@ -672,9 +661,8 @@ pub async fn get_coverage(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_clowder::Coverage>> {
     tracing::debug!("Requested /v1/local/coverage");
-    let clowder_client = ctrl.clwdr_rest_client.ok_or(Error::ClowderClientNoInit)?;
-    let supply = clowder_client.get_mint_circulating_supply().await?;
-    let collateral = clowder_client.get_mint_collateral().await?;
+    let supply = ctrl.clwdr_rest_client.get_mint_circulating_supply().await?;
+    let collateral = ctrl.clwdr_rest_client.get_mint_collateral().await?;
     Ok(Json(wire_clowder::Coverage {
         debit_circulating_supply: supply.debit,
         credit_circulating_supply: supply.credit,

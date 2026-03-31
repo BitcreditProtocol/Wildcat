@@ -51,7 +51,7 @@ impl commitment::Signer for LocalSigner {
 
 pub struct ClowderSigner(SignatoryNatsClient);
 impl ClowderSigner {
-    pub async fn new(url: reqwest::Url) -> Result<Self> {
+    pub async fn new(url: clwdr_client::Url) -> Result<Self> {
         let inner = SignatoryNatsClient::new(url, None).await?;
         Ok(Self(inner))
     }
