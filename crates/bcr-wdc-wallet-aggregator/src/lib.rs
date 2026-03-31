@@ -38,10 +38,9 @@ pub struct AppConfig {
     cdk_mint_url: MintUrl,
     core_client_url: bcr_common::client::Url,
     treasury_client_url: bcr_common::client::Url,
-    ebpp_client_url: bcr_wdc_ebpp_client::Url,
-    clwdr_nats_url: Option<reqwest::Url>,
-    clwdr_rest_url: Option<reqwest::Url>,
-    signer_url: reqwest::Url,
+    clwdr_nats_url: clwdr_client::Url,
+    clwdr_rest_url: clwdr_client::Url,
+    signer_url: clwdr_client::Url,
     commit_repo_cfg: surreal::DBConnConfig,
 }
 
@@ -50,20 +49,18 @@ pub struct AppController {
     cdk_client: cdk::wallet::HttpClient,
     core_client: bcr_common::client::core::Client,
     treasury_client: bcr_common::client::treasury::Client,
-    ebpp_client: bcr_wdc_ebpp_client::EBPPClient,
-    clwdr_stream_client: Option<Arc<clwdr_client::ClowderNatsClient>>,
-    clwdr_rest_client: Option<Arc<clwdr_client::ClowderRestClient>>,
+    clwdr_stream_client: Arc<clwdr_client::ClowderNatsClient>,
+    clwdr_rest_client: Arc<clwdr_client::ClowderRestClient>,
     commit_srv: Arc<commitment::Service>,
     time_started: chrono::DateTime<chrono::Utc>,
 }
 
 impl AppController {
-    pub async fn new(cfg: AppConfig) -> error::Result<Self> {
+    pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
             cdk_mint_url,
             core_client_url,
             treasury_client_url,
-            ebpp_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
             signer_url,
@@ -73,38 +70,33 @@ impl AppController {
         let cdk_client = HttpClient::new(cdk_mint_url);
         let core_client = bcr_common::client::core::Client::new(core_client_url);
         let treasury_client = bcr_common::client::treasury::Client::new(treasury_client_url);
-        let ebpp_client = bcr_wdc_ebpp_client::EBPPClient::new(ebpp_client_url);
-
-        let clwdr_stream_client = if let Some(url) = clwdr_nats_url {
-            Some(Arc::new(clwdr_client::ClowderNatsClient::new(url).await?))
-        } else {
-            None
-        };
-
-        let clwdr_rest_client =
-            clwdr_rest_url.map(|url| Arc::new(clwdr_client::ClowderRestClient::new(url)));
+        let clwdr_stream_client = Arc::new(
+            clwdr_client::ClowderNatsClient::new(clwdr_nats_url)
+                .await
+                .expect("failed to init clowder nats client"),
+        );
+        let clwdr_rest_client = Arc::new(clwdr_client::ClowderRestClient::new(clwdr_rest_url));
+        let signer_client = signer::ClowderSigner::new(signer_url)
+            .await
+            .expect("failed to init signer client");
 
         let commit_repo = persistence::surreal::DBCommitments::new(commit_repo_cfg)
             .await
             .expect("failed to init commitment repo");
-        let signer = signer::ClowderSigner::new(signer_url)
-            .await
-            .expect("failed to init signer");
         let commit_srv = Arc::new(commitment::Service {
             repo: Box::new(commit_repo),
-            signer: Box::new(signer),
+            signer: Box::new(signer_client),
         });
 
-        Ok(Self {
+        Self {
             cdk_client,
             core_client,
             treasury_client,
-            ebpp_client,
             clwdr_stream_client,
             clwdr_rest_client,
             commit_srv,
             time_started: chrono::Utc::now(),
-        })
+        }
     }
 }
 
@@ -123,25 +115,24 @@ pub async fn routes(app: AppController) -> Result<Router> {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
     // hopefully cdk-mint is up by now
-    if let Some(clwdr) = &app.clwdr_stream_client {
-        let keyset_lists = app.cdk_client.get_mint_keysets().await?;
-        for info in keyset_lists.keysets {
-            if info.active {
-                let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
-                tracing::debug!("posting active keyset to clowder {}", info.id);
-                let req = KeysetCreationRequest {
-                    id: info.id,
-                    expiry: info.final_expiry.unwrap_or(0),
-                    unit: info.unit.clone(),
-                };
-                let resp = KeysetCreationResponse {
-                    public_keys: keyset.keys.keys().clone(),
-                    id: info.id,
-                    expiry: info.final_expiry.unwrap_or(0),
-                    unit: info.unit,
-                };
-                clwdr.post_keyset(req, resp).await?;
-            }
+    let clwdr = &app.clwdr_stream_client;
+    let keyset_lists = app.cdk_client.get_mint_keysets().await?;
+    for info in keyset_lists.keysets {
+        if info.active {
+            let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
+            tracing::debug!("posting active keyset to clowder {}", info.id);
+            let req = KeysetCreationRequest {
+                id: info.id,
+                expiry: info.final_expiry.unwrap_or(0),
+                unit: info.unit.clone(),
+            };
+            let resp = KeysetCreationResponse {
+                public_keys: keyset.keys.keys().clone(),
+                id: info.id,
+                expiry: info.final_expiry.unwrap_or(0),
+                unit: info.unit,
+            };
+            clwdr.post_keyset(req, resp).await?;
         }
     }
 

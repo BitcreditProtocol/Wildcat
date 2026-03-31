@@ -2,7 +2,6 @@
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_common::{cashu, cdk::Error as CDKError, client::treasury::Error as TreasuryClientError};
-use bcr_wdc_ebpp_client::Error as EbppClientError;
 use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports
@@ -28,8 +27,6 @@ pub enum Error {
     Core(#[from] bcr_common::client::core::Error),
     #[error("Treasury Client error: {0}")]
     Treasury(#[from] TreasuryClientError),
-    #[error("EBPP Client error: {0}")]
-    Ebpp(#[from] EbppClientError),
     #[error("Clowder Client error: {0}")]
     ClowderClient(#[from] ClowderClientError),
     #[error("Clowder Client Not Initialized")]
@@ -54,7 +51,6 @@ impl axum::response::IntoResponse for Error {
             ),
             Error::Invalid(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
 
-            Error::Ebpp(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
