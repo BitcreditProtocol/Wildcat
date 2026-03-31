@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut07 as cdk07},
-    cdk::{self, wallet::MintConnector},
     client::core::Client as CoreClient,
     core::signature::deserialize_borsh_msg,
     wire::{keys as wire_keys, swap as wire_swap},
@@ -62,26 +61,16 @@ impl Service {
         now: TStamp,
         request: wire_swap::CommitmentRequest,
         core_cl: &CoreClient,
-        cdk_mint_cl: &cdk::wallet::HttpClient,
     ) -> Result<wire_swap::CommitmentResponse> {
         let payload: wire_swap::CommitmentContent = deserialize_borsh_msg(&request.content)?;
         // expiration check
         if payload.expiration < now + Self::MIN_EXPIRATION {
             return Err(Error::InvalidInput(String::from("expiration too soon")));
         }
-        validate_commitment_inputs(core_cl, cdk_mint_cl, &payload.inputs).await?;
-        // crsat
+        validate_commitment_inputs(core_cl, &payload.inputs).await?;
         let signatures = core_cl.restore(payload.outputs.clone()).await?;
         if !signatures.is_empty() {
             return Err(Error::InvalidInput(String::from("crsat blinds seen")));
-        }
-        // sat
-        let restore_request = cashu::RestoreRequest {
-            outputs: payload.outputs.clone(),
-        };
-        let restore_response = cdk_mint_cl.post_restore(restore_request).await?;
-        if !restore_response.signatures.is_empty() {
-            return Err(Error::InvalidInput(String::from("sat blinds seen")));
         }
         // committed
         let ys: Vec<cashu::PublicKey> = payload.inputs.iter().map(|p| p.y).collect();
@@ -135,7 +124,6 @@ impl Service {
 
 async fn validate_commitment_inputs(
     core_cl: &CoreClient,
-    cdk_mint_cl: &cdk::wallet::HttpClient,
     inputs: &[wire_keys::ProofFingerprint],
 ) -> Result<()> {
     //crsat hypothesis
@@ -157,16 +145,6 @@ async fn validate_commitment_inputs(
                 core_cl.verify_fingerprint(fp).await?;
             }
         }
-    }
-    // sat hypothesis
-    let state_request = cashu::CheckStateRequest { ys: ys.clone() };
-    let state_response = cdk_mint_cl.post_check_state(state_request).await?;
-    let any_spent = state_response
-        .states
-        .into_iter()
-        .any(|state| matches!(state.state, cdk07::State::Spent));
-    if any_spent {
-        return Err(Error::InvalidInput(String::from("sat proofs spent")));
     }
     Ok(())
 }

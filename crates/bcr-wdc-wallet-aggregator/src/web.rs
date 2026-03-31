@@ -5,10 +5,8 @@ use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     cashu::{self, MintVersion},
-    cdk::{self, wallet::MintConnector},
     client::{
-        clowder::Client as ClowderClient,
-        core::{Client as CoreClient, Error as CoreError},
+        clowder::Client as ClowderClient, core::Client as CoreClient,
         treasury::Client as TreasuryClient,
     },
     wire::{
@@ -49,14 +47,11 @@ pub async fn health() -> Result<&'static str> {
 pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cashu::MintInfo>> {
     tracing::debug!("Requested /v1/info");
     let network = ctrl.clwdr_rest_client.get_info().await?.network;
-    let info = ctrl.cdk_client.get_mint_info().await?;
     let mut long_description = format!(
         r#"[clowder]
 network = {network}
 "#
     );
-    let default = cashu::MintVersion::new(String::from("cdk-mint"), String::from("0.0.0"));
-    let cdk_mintd = info.version.clone().unwrap_or(default);
     let build_time = bcr_wdc_utils::info::get_build_time();
     let dep_versions = bcr_wdc_utils::info::get_deps_versions()
         .into_iter()
@@ -74,17 +69,19 @@ network = {network}
 build-time = {build_time}
 [versions]
 {dep_versions}
-cdk-mintd = {cdk_mintd}"#,
+"#,
     );
     let version = MintVersion {
         name: String::from("wildcat"),
         version: bcr_wdc_utils::info::get_version().to_string(),
     };
-    let info = info
-        .name("bcr-wdc")
-        .description("Wildcat One")
-        .long_description(long_description)
-        .version(version);
+    let info = cashu::MintInfo {
+        name: Some(String::from("bcr-wdc")),
+        version: Some(version),
+        description: Some(String::from("Wildcat One")),
+        description_long: Some(long_description),
+        ..Default::default()
+    };
     Ok(Json(info))
 }
 
@@ -97,10 +94,10 @@ cdk-mintd = {cdk_mintd}"#,
 )]
 pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<WildcatInfo>> {
     tracing::debug!("Requested /v1/wildcat");
+
     let clowder_info = ctrl.clwdr_rest_client.get_info().await?;
     let network = clowder_info.network;
-    let info = ctrl.cdk_client.get_mint_info().await?;
-
+    let info = cashu::MintInfo::default();
     let build_time = bcr_wdc_utils::info::get_build_time();
     let ebill_core = bcr_wdc_utils::info::get_ebill_version()
         .map(|v| v.to_string())
@@ -146,10 +143,8 @@ pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<
 pub async fn get_mint_keys(State(ctrl): State<AppController>) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/keys");
 
-    let mut keys = ctrl.cdk_client.get_mint_keys().await?;
-    let mut bcr_keys = ctrl.core_client.list_keys().await.unwrap_or_default();
-    keys.append(&mut bcr_keys);
-    let response = cashu::KeysResponse { keysets: keys };
+    let bcr_keys = ctrl.core_client.list_keys().await.unwrap_or_default();
+    let response = cashu::KeysResponse { keysets: bcr_keys };
     Ok(Json(response))
 }
 
@@ -165,14 +160,13 @@ pub async fn get_mint_keysets(
 ) -> Result<Json<cashu::KeysetResponse>> {
     tracing::debug!("Requested /v1/keysets");
 
-    let mut infos = ctrl.cdk_client.get_mint_keysets().await?;
-    let mut bcr_infos = ctrl
+    let bcr_infos = ctrl
         .core_client
         .list_keyset_info(Default::default())
         .await
         .unwrap_or_default();
-    infos.keysets.append(&mut bcr_infos);
-    Ok(Json(infos))
+    let response = cashu::KeysetResponse { keysets: bcr_infos };
+    Ok(Json(response))
 }
 
 #[utoipa::path(
@@ -192,14 +186,7 @@ pub async fn get_mint_keyset(
 ) -> Result<Json<cashu::KeysResponse>> {
     tracing::debug!("Requested /v1/keys/{}", kid);
 
-    let bcr_response = ctrl.core_client.keys(kid).await;
-    if let Ok(keys) = bcr_response {
-        let response = cashu::KeysResponse {
-            keysets: vec![keys],
-        };
-        return Ok(Json(response));
-    }
-    let keys = ctrl.cdk_client.get_mint_keyset(kid).await?;
+    let keys = ctrl.core_client.keys(kid).await?;
     let response = cashu::KeysResponse {
         keysets: vec![keys],
     };
@@ -223,28 +210,8 @@ pub async fn get_keyset_info(
 ) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Requested /v1/keysets/{}", kid);
 
-    if let Ok(info) = ctrl.core_client.keyset_info(kid).await {
-        Ok(Json(info))
-    } else {
-        let keysets = ctrl.cdk_client.get_mint_keysets().await?.keysets;
-
-        for active_keyset in keysets {
-            if active_keyset.id == kid {
-                return Ok(Json(active_keyset));
-            }
-        }
-        // if there are no keys, then it doesn't exist, otherwise its inactive
-        let keys = ctrl.cdk_client.get_mint_keyset(kid).await?;
-        Ok(Json(cashu::KeySetInfo {
-            id: kid,
-            active: false,
-            unit: keys.unit,
-            final_expiry: keys.final_expiry,
-            // Fee doesn't matter as we cannot swap into it
-            // we can only swap into a different active keyset
-            input_fee_ppk: 0,
-        }))
-    }
+    let info = ctrl.core_client.keyset_info(kid).await?;
+    Ok(Json(info))
 }
 
 #[utoipa::path(
@@ -267,44 +234,19 @@ pub async fn post_swap(
             "Swap request rejected due to commitment",
         )));
     }
-    let keyscl = KeysClients {
-        credit: ctrl.core_client.clone(),
-        debit: ctrl.cdk_client.clone(),
-    };
-    let input_type =
-        determine_input_type(&keyscl, request.inputs().iter().map(|p| p.keyset_id)).await?;
-    let output_type = determine_output_type(&keyscl, request.outputs()).await?;
-    let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs().clone();
-    let blinded_messages = request.outputs().clone();
+    let input_type = determine_input_type(
+        &ctrl.core_client,
+        request.inputs().iter().map(|p| p.keyset_id),
+    )
+    .await?;
     let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
-
-    let signatures = match swap_type {
-        SwapType::CrSat2CrSat => {
-            ctrl.core_client
-                .swap(proofs.clone(), blinded_messages.clone())
-                .await?
-        }
-        SwapType::CrSat2Sat => {
-            ctrl.treasury_client
-                .redeem(proofs.clone(), blinded_messages.clone())
-                .await?
-        }
-        SwapType::Sat2Sat => ctrl
-            .cdk_client
-            .post_swap(request)
-            .await
-            .map(|resp| resp.signatures)?,
-    };
-    let req = messages::SwapRequest {
-        proofs,
-        blinds: blinded_messages.clone(),
-    };
-    let resp = messages::SwapResponse {
-        signatures: signatures.clone(),
-    };
-    ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
+    let blinded_messages = request.outputs().clone();
+    let signatures = ctrl
+        .core_client
+        .swap(proofs.clone(), blinded_messages.clone())
+        .await?;
     let response = cashu::SwapResponse { signatures };
     Ok(Json(response))
 }
@@ -322,29 +264,10 @@ pub async fn post_check_state(
 ) -> Result<Json<cashu::CheckStateResponse>> {
     tracing::debug!("Requested /v1/checkstate");
 
-    let n = request.ys.len();
     let credit_states = ctrl.core_client.check_state(request.ys.clone()).await?;
-    let debit_states = ctrl.cdk_client.post_check_state(request).await?.states;
-    if debit_states.len() != n || credit_states.len() != n {
-        return Err(Error::NotYet(
-            "Unhandled credit and debit length mismatch".into(),
-        ));
-    }
-
-    let mut merged = Vec::new();
-    for (debit, credit) in debit_states.iter().zip(credit_states.iter()) {
-        if debit.state != cashu::nut07::State::Unspent
-            && credit.state != cashu::nut07::State::Unspent
-        {
-            return Err(Error::NotYet("Unhandled credit and debit are spent".into()));
-        }
-        if debit.state != cashu::nut07::State::Unspent {
-            merged.push(debit.clone());
-        } else {
-            merged.push(credit.clone());
-        }
-    }
-    Ok(Json(cashu::CheckStateResponse { states: merged }))
+    Ok(Json(cashu::CheckStateResponse {
+        states: credit_states,
+    }))
 }
 
 #[utoipa::path(
@@ -360,41 +283,14 @@ pub async fn post_restore(
 ) -> Result<Json<cashu::RestoreResponse>> {
     tracing::debug!("Requested /v1/restore");
 
-    let outputs = request.outputs.clone();
-    let crsat_signatures = ctrl.core_client.restore(outputs.clone()).await?;
-    let restore_resp = ctrl.cdk_client.post_restore(request).await?;
-    let sat_signatures = restore_resp
-        .outputs
-        .into_iter()
-        .zip(restore_resp.signatures.into_iter())
-        .collect::<Vec<_>>();
-
-    let mut response = cashu::RestoreResponse {
-        outputs: Default::default(),
-        signatures: Default::default(),
+    let cashu::RestoreRequest { outputs } = request;
+    let restore_pair = ctrl.core_client.restore(outputs).await?;
+    let (outputs, signatures) = restore_pair.into_iter().unzip();
+    let response = cashu::RestoreResponse {
+        outputs,
+        signatures,
         promises: Default::default(),
     };
-    // we assume that both sat_signatures and crsat_signatures are ordered
-    // according to the order of request.outputs
-    // as described in NUT09
-    let mut crsat_c = 0;
-    let mut sat_c = 0;
-    for blind in outputs {
-        if let Some(element) = crsat_signatures.get(crsat_c) {
-            if blind.blinded_secret == element.0.blinded_secret {
-                response.outputs.push(element.0.clone());
-                response.signatures.push(element.1.clone());
-                crsat_c += 1;
-            }
-        }
-        if let Some(element) = sat_signatures.get(sat_c) {
-            if blind.blinded_secret == element.0.blinded_secret {
-                response.outputs.push(element.0.clone());
-                response.signatures.push(element.1.clone());
-                sat_c += 1;
-            }
-        }
-    }
     Ok(Json(response))
 }
 
@@ -680,7 +576,7 @@ pub async fn post_commit(
     let now = chrono::Utc::now();
     let response = ctrl
         .commit_srv
-        .commit(now, request, &ctrl.core_client, &ctrl.cdk_client)
+        .commit(now, request, &ctrl.core_client)
         .await?;
     Ok(Json(response))
 }
@@ -690,28 +586,6 @@ enum InputType {
     CrSat,
     Sat,
 }
-enum OutputType {
-    CrSat,
-    Sat,
-}
-
-#[allow(clippy::enum_variant_names)]
-enum SwapType {
-    CrSat2CrSat,
-    Sat2Sat,
-    CrSat2Sat,
-}
-
-fn io_to_swap(input: InputType, output: OutputType) -> Result<SwapType> {
-    match (input, output) {
-        (InputType::CrSat, OutputType::CrSat) => Ok(SwapType::CrSat2CrSat),
-        (InputType::Sat, OutputType::Sat) => Ok(SwapType::Sat2Sat),
-        (InputType::CrSat, OutputType::Sat) => Ok(SwapType::CrSat2Sat),
-        (InputType::Sat, OutputType::CrSat) => {
-            Err(Error::Invalid(String::from("swap not allowed")))
-        }
-    }
-}
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -720,24 +594,11 @@ trait KeyClientT {
     async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit>;
 }
 
-struct KeysClients {
-    credit: CoreClient,
-    debit: cdk::wallet::HttpClient,
-}
 #[async_trait]
-impl KeyClientT for KeysClients {
+impl KeyClientT for CoreClient {
     async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit> {
-        let cr_response = self.credit.keyset_info(keyset_id).await;
-        match cr_response {
-            Ok(info) => return Ok(info.unit),
-            Err(CoreError::KeysetIdNotFound(_)) => {}
-            Err(e) => return Err(Error::Core(e)),
-        }
-        let db_response = self.debit.get_mint_keyset(keyset_id).await;
-        match db_response {
-            Ok(info) => return Ok(info.unit),
-            Err(e) => return Err(Error::Cdk(e)),
-        }
+        let cr_response = self.keyset_info(keyset_id).await?;
+        Ok(cr_response.unit)
     }
 }
 pub struct ForeignKeyClientWithClowder {
@@ -778,32 +639,6 @@ async fn determine_input_type(
     }
     Err(Error::InvalidInput(String::from(
         "mixed credit/debit inputs not allowed",
-    )))
-}
-
-async fn determine_output_type(
-    key_cl: &impl KeyClientT,
-    outputs: &[cashu::BlindedMessage],
-) -> Result<OutputType> {
-    let unique_kids = outputs.iter().map(|b| b.keyset_id).collect::<HashSet<_>>();
-    let requests: JoinAll<_> = unique_kids
-        .into_iter()
-        .map(|kid| key_cl.currency(kid))
-        .collect();
-    let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
-    let all_sats = responses
-        .iter()
-        .all(|unit| *unit == cashu::CurrencyUnit::Sat);
-    if all_sats {
-        return Ok(OutputType::Sat);
-    }
-    let crsat = cashu::CurrencyUnit::Custom(String::from("crsat"));
-    let all_crsat = responses.iter().all(|unit| *unit == crsat);
-    if all_crsat {
-        return Ok(OutputType::CrSat);
-    }
-    Err(Error::InvalidInput(String::from(
-        "mixed credit/debit outputs not allowed",
     )))
 }
 
@@ -852,27 +687,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn determine_output_type_sat() {
-        let (_, sat_keyset) = keys_test::generate_random_keyset();
-        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
-        let outputs: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(sat_keyset.id, &amounts)
-                .into_iter()
-                .map(|(b, _, _)| b)
-                .collect();
-        let mut client = MockKeyClientT::new();
-        let sat_kid = sat_keyset.id;
-        client
-            .expect_currency()
-            .times(1)
-            .with(eq(sat_kid))
-            .returning(|_| Ok(cashu::CurrencyUnit::Sat));
-
-        let outputtype = determine_output_type(&client, &outputs).await.unwrap();
-        assert!(matches!(outputtype, OutputType::Sat));
-    }
-
-    #[tokio::test]
     async fn determine_input_type_crsat() {
         let (_, keyset) = keys_test::generate_random_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
@@ -886,23 +700,5 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(inputtype, InputType::CrSat));
-    }
-
-    #[tokio::test]
-    async fn determine_swap_type_crsat2crsat() {
-        let (_, keyset) = keys_test::generate_random_keyset();
-        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
-        let outputs: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(keyset.id, &amounts)
-                .into_iter()
-                .map(|(b, _, _)| b)
-                .collect();
-        let mut client = MockKeyClientT::new();
-        client
-            .expect_currency()
-            .times(1)
-            .returning(move |_| Ok(cashu::CurrencyUnit::Custom(String::from("crsat"))));
-        let outputtype = determine_output_type(&client, &outputs).await.unwrap();
-        assert!(matches!(outputtype, OutputType::CrSat));
     }
 }

@@ -7,14 +7,10 @@ use axum::{
     Router,
 };
 use bcr_common::{
-    cashu::{self, mint_url::MintUrl},
-    cdk::{self, wallet::MintConnector, HttpClient},
+    cashu,
     client::clowder::Client as ClowderClient,
     wire::{
-        clowder::{
-            self as wire_clowder,
-            messages::{KeysetCreationRequest, KeysetCreationResponse},
-        },
+        clowder::{self as wire_clowder},
         exchange as wire_exchange,
     },
 };
@@ -35,7 +31,6 @@ pub type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    cdk_mint_url: MintUrl,
     core_client_url: bcr_common::client::Url,
     treasury_client_url: bcr_common::client::Url,
     clwdr_nats_url: clwdr_client::Url,
@@ -46,7 +41,6 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    cdk_client: cdk::wallet::HttpClient,
     core_client: bcr_common::client::core::Client,
     treasury_client: bcr_common::client::treasury::Client,
     clwdr_stream_client: Arc<clwdr_client::ClowderNatsClient>,
@@ -58,7 +52,6 @@ pub struct AppController {
 impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
-            cdk_mint_url,
             core_client_url,
             treasury_client_url,
             clwdr_nats_url,
@@ -67,7 +60,6 @@ impl AppController {
             commit_repo_cfg,
         } = cfg;
 
-        let cdk_client = HttpClient::new(cdk_mint_url);
         let core_client = bcr_common::client::core::Client::new(core_client_url);
         let treasury_client = bcr_common::client::treasury::Client::new(treasury_client_url);
         let clwdr_stream_client = Arc::new(
@@ -89,7 +81,6 @@ impl AppController {
         });
 
         Self {
-            cdk_client,
             core_client,
             treasury_client,
             clwdr_stream_client,
@@ -103,38 +94,6 @@ impl AppController {
 pub async fn routes(app: AppController) -> Result<Router> {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
-
-    // WARNING: big hack: send active keyset in cdk-mint to clowder
-    const ATTEMPTS: usize = 5;
-    for _ in 0..ATTEMPTS {
-        let res = app.cdk_client.get_mint_info().await;
-        if res.is_ok() {
-            tracing::debug!("cdk-mint is up");
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-    // hopefully cdk-mint is up by now
-    let clwdr = &app.clwdr_stream_client;
-    let keyset_lists = app.cdk_client.get_mint_keysets().await?;
-    for info in keyset_lists.keysets {
-        if info.active {
-            let keyset = app.cdk_client.get_mint_keyset(info.id).await?;
-            tracing::debug!("posting active keyset to clowder {}", info.id);
-            let req = KeysetCreationRequest {
-                id: info.id,
-                expiry: info.final_expiry.unwrap_or(0),
-                unit: info.unit.clone(),
-            };
-            let resp = KeysetCreationResponse {
-                public_keys: keyset.keys.keys().clone(),
-                id: info.id,
-                expiry: info.final_expiry.unwrap_or(0),
-                unit: info.unit,
-            };
-            clwdr.post_keyset(req, resp).await?;
-        }
-    }
 
     let router = Router::new()
         .route("/health", get(web::health))
