@@ -330,28 +330,15 @@ pub async fn get_ebill_endorsements(
 pub async fn get_ebill_attachment(
     State(ctrl): State<AppController>,
     Path((bid, fname_req)): Path<(BillId, String)>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     tracing::debug!("Received ebill info request for {bid}");
 
-    let (fname_raw, raw) = ctrl.ebill_cl.get_bill_attachment(&bid, &fname_req).await?;
-    let fname = std::path::PathBuf::from_str(&fname_raw).expect("PathBuf::from_str");
-    let mime_type = match fname
-        .extension()
-        .and_then(std::ffi::OsStr::to_str)
-        .map(|s| s.to_lowercase())
-        .as_deref()
-    {
-        None => return Err(crate::error::Error::ResourceNotFound(fname_req)),
-        Some("pdf") => mime::APPLICATION_PDF,
-        Some("jpg") | Some("jpeg") => mime::IMAGE_JPEG,
-        Some("png") => mime::IMAGE_PNG,
-        Some(_) => mime::APPLICATION_OCTET_STREAM,
-    };
+    let (content_type, raw) = ctrl.ebill_cl.get_bill_attachment(&bid, &fname_req).await?;
     let headers = AppendHeaders([
-        (header::CONTENT_TYPE, mime_type.to_string()),
+        (header::CONTENT_TYPE, content_type),
         (
             header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", fname_raw),
+            format!("attachment; filename=\"{}\"", fname_req),
         ),
     ]);
     let stream = futures::stream::once(async move { Ok::<_, std::io::Error>(raw) });
