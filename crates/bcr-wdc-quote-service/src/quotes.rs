@@ -8,9 +8,7 @@ use bcr_ebill_core::protocol::blockchain::bill::participant::{
 };
 use bcr_wdc_utils::convert;
 use bitcoin::Amount;
-use strum::Display;
 use uuid::Uuid;
-// ----- local modules
 // ----- local imports
 use crate::error::{Error, Result};
 use crate::TStamp;
@@ -95,7 +93,7 @@ impl BillInfo {
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, Display))]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
 #[serde(tag = "status")]
 pub enum Status {
     Pending {

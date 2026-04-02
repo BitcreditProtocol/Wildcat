@@ -34,9 +34,6 @@ build-docker-wallet-aggregator: build-docker-base-image
 build-docker-admin-aggregator: build-docker-base-image
     docker build -t wildcat/admin-aggregator -f docker/admin-aggregator/Dockerfile .
 
-build-docker-ebpp: build-docker-base-image
-    docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
-
 build-docker-eiou-service: build-docker-base-image
     docker build -t wildcat/eiou-service -f docker/eiou-service/Dockerfile .
 
@@ -46,7 +43,7 @@ build-docker-balance-collector: build-docker-base-image
 build-docker-e2e-tests: build-docker-base-image
     docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
 
-build-docker-images: build-docker-core-service build-docker-treasury-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator build-docker-ebpp
+build-docker-images: build-docker-core-service build-docker-treasury-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator
 
 openapi-generate-docs:
   @cargo run --package bcr-wdc-admin-aggregator --bin gen_api
