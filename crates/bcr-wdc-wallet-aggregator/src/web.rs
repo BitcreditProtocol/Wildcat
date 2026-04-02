@@ -607,15 +607,12 @@ pub async fn post_commit(
         .await?;
 
     // stream commitment to Clowder and get signed response
-    let clwdr_client = ctrl
-        .clwdr_stream_client
-        .ok_or(Error::ClowderClientNoInit)?;
     let clowder_req = messages::SwapCommitmentRequest {
         content: request.content.clone(),
         wallet_key: request.wallet_key,
         wallet_signature: request.wallet_signature,
     };
-    let clowder_resp = clwdr_client.swap_commitment(clowder_req).await?;
+    let clowder_resp = ctrl.clwdr_stream_client.swap_commitment(clowder_req).await?;
 
     // store commitment with the Clowder-signed signature
     ctrl.commit_srv

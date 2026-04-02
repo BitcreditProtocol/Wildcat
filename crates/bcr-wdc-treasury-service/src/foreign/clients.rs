@@ -194,11 +194,138 @@ impl foreign::ClowderClient for ClowderCl {
     }
 }
 
+pub struct CdkMintClient(cdk::wallet::HttpClient);
+
+impl std::fmt::Debug for CdkMintClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CdkMintClient").finish()
+    }
+}
+
+#[async_trait]
+impl cdk::wallet::MintConnector for CdkMintClient {
+    async fn get_mint_keys(&self) -> std::result::Result<Vec<cashu::KeySet>, cdk::Error> {
+        self.0.get_mint_keys().await
+    }
+    async fn get_mint_keyset(
+        &self,
+        keyset_id: cashu::Id,
+    ) -> std::result::Result<cashu::KeySet, cdk::Error> {
+        self.0.get_mint_keyset(keyset_id).await
+    }
+    async fn get_mint_keysets(
+        &self,
+    ) -> std::result::Result<cashu::KeysetResponse, cdk::Error> {
+        self.0.get_mint_keysets().await
+    }
+    async fn post_mint_quote(
+        &self,
+        request: cashu::MintQuoteBolt11Request,
+    ) -> std::result::Result<cashu::MintQuoteBolt11Response<String>, cdk::Error> {
+        self.0.post_mint_quote(request).await
+    }
+    async fn get_mint_quote_status(
+        &self,
+        quote_id: &str,
+    ) -> std::result::Result<cashu::MintQuoteBolt11Response<String>, cdk::Error> {
+        self.0.get_mint_quote_status(quote_id).await
+    }
+    async fn post_mint(
+        &self,
+        request: cashu::MintRequest<String>,
+    ) -> std::result::Result<cashu::MintResponse, cdk::Error> {
+        self.0.post_mint(request).await
+    }
+    async fn post_melt_quote(
+        &self,
+        request: cashu::MeltQuoteBolt11Request,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.post_melt_quote(request).await
+    }
+    async fn get_melt_quote_status(
+        &self,
+        quote_id: &str,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.get_melt_quote_status(quote_id).await
+    }
+    async fn post_melt(
+        &self,
+        request: cashu::MeltRequest<String>,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.post_melt(request).await
+    }
+    async fn post_swap(
+        &self,
+        request: cashu::SwapRequest,
+    ) -> std::result::Result<cashu::SwapResponse, cdk::Error> {
+        self.0.post_swap(request).await
+    }
+    async fn get_mint_info(&self) -> std::result::Result<cashu::MintInfo, cdk::Error> {
+        self.0.get_mint_info().await
+    }
+    async fn post_check_state(
+        &self,
+        request: cashu::CheckStateRequest,
+    ) -> std::result::Result<cashu::CheckStateResponse, cdk::Error> {
+        self.0.post_check_state(request).await
+    }
+    async fn post_restore(
+        &self,
+        request: cashu::RestoreRequest,
+    ) -> std::result::Result<cashu::RestoreResponse, cdk::Error> {
+        self.0.post_restore(request).await
+    }
+    async fn post_mint_bolt12_quote(
+        &self,
+        request: cashu::MintQuoteBolt12Request,
+    ) -> std::result::Result<cashu::MintQuoteBolt12Response<String>, cdk::Error> {
+        self.0.post_mint_bolt12_quote(request).await
+    }
+    async fn get_mint_quote_bolt12_status(
+        &self,
+        quote_id: &str,
+    ) -> std::result::Result<cashu::MintQuoteBolt12Response<String>, cdk::Error> {
+        self.0.get_mint_quote_bolt12_status(quote_id).await
+    }
+    async fn post_melt_bolt12_quote(
+        &self,
+        request: cashu::MeltQuoteBolt12Request,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.post_melt_bolt12_quote(request).await
+    }
+    async fn get_melt_bolt12_quote_status(
+        &self,
+        quote_id: &str,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.get_melt_bolt12_quote_status(quote_id).await
+    }
+    async fn post_melt_bolt12(
+        &self,
+        request: cashu::MeltRequest<String>,
+    ) -> std::result::Result<cashu::MeltQuoteBolt11Response<String>, cdk::Error> {
+        self.0.post_melt_bolt12(request).await
+    }
+}
+
+#[async_trait]
+impl MintConnectorExt for CdkMintClient {
+    async fn swap(
+        &self,
+        request: bcr_common::wire::swap::SwapRequest,
+    ) -> std::result::Result<bcr_common::wire::swap::SwapResponse, cdk::Error> {
+        let cashu_request = cashu::SwapRequest::new(request.inputs, request.outputs);
+        let cashu_response = <Self as cdk::wallet::MintConnector>::post_swap(self, cashu_request).await?;
+        Ok(bcr_common::wire::swap::SwapResponse {
+            signatures: cashu_response.signatures,
+        })
+    }
+}
+
 pub struct MintClientFactory {}
 #[async_trait]
 impl foreign::MintClientFactory for MintClientFactory {
     async fn make_client(&self, mint_url: cashu::MintUrl) -> Result<Box<dyn MintConnectorExt>> {
-        let client = cdk::wallet::HttpClient::new(mint_url);
+        let client = CdkMintClient(cdk::wallet::HttpClient::new(mint_url));
         Ok(Box::new(client))
     }
 }
