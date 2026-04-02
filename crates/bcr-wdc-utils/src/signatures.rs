@@ -63,6 +63,13 @@ pub mod test_utils {
     use crate::keys::test_utils::{generate_blind, publics};
     use cashu::{dhke, secret, Id};
 
+    pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
+        use rand::Rng;
+        let mut sl = [0u8; bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE];
+        rand::thread_rng().fill(&mut sl[..]);
+        bitcoin::secp256k1::schnorr::Signature::from_slice(&sl).unwrap()
+    }
+
     pub fn generate_proofs(
         keyset: &cashu::MintKeySet,
         amounts: &[cashu::Amount],

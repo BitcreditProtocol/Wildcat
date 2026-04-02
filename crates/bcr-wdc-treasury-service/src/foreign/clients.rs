@@ -307,19 +307,8 @@ impl cdk::wallet::MintConnector for CdkMintClient {
     }
 }
 
-#[async_trait]
-impl MintConnectorExt for CdkMintClient {
-    async fn swap(
-        &self,
-        request: bcr_common::wire::swap::SwapRequest,
-    ) -> std::result::Result<bcr_common::wire::swap::SwapResponse, cdk::Error> {
-        let cashu_request = cashu::SwapRequest::new(request.inputs, request.outputs);
-        let cashu_response = <Self as cdk::wallet::MintConnector>::post_swap(self, cashu_request).await?;
-        Ok(bcr_common::wire::swap::SwapResponse {
-            signatures: cashu_response.signatures,
-        })
-    }
-}
+// Uses the default swap implementation from MintConnectorExt
+impl MintConnectorExt for CdkMintClient {}
 
 pub struct MintClientFactory {}
 #[async_trait]

@@ -51,12 +51,13 @@ pub struct Service {
 impl Service {
     pub const MIN_EXPIRATION: chrono::Duration = chrono::Duration::seconds(90);
 
+    /// Validates the commitment request. Returns (input ys, output secrets) for storage.
     pub async fn commit(
         &self,
         now: TStamp,
         request: &wire_swap::SwapCommitmentRequest,
         core_cl: &CoreClient,
-    ) -> Result<()> {
+    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>)> {
         // verify wallet signature
         let xonly = request.wallet_key.x_only_public_key();
         schnorr_verify_b64(&request.content, &request.wallet_signature, &xonly)
@@ -102,21 +103,19 @@ impl Service {
             )));
         }
 
-        Ok(())
+        Ok((ys, secrets))
     }
 
     pub async fn store_commitment(
         &self,
-        request: &wire_swap::SwapCommitmentRequest,
+        ys: Vec<cashu::PublicKey>,
+        secrets: Vec<cashu::PublicKey>,
+        wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
     ) -> Result<()> {
-        let body: wire_swap::SwapCommitmentRequestBody =
-            deserialize_borsh_msg(&request.content)?;
-        let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
-        let secrets: Vec<_> = body.outputs.iter().map(|b| b.blinded_secret).collect();
         let expiration = chrono::Utc::now() + Self::MIN_EXPIRATION;
         self.repo
-            .store(ys, secrets, expiration, request.wallet_key, commitment)
+            .store(ys, secrets, expiration, wallet_key, commitment)
             .await?;
         Ok(())
     }

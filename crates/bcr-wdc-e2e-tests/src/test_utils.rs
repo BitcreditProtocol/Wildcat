@@ -22,12 +22,7 @@ pub fn random_ebill_request(
     }
 }
 
-pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
-    use bitcoin::key::rand::Rng;
-    let mut sl = [0u8; bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE];
-    bitcoin::key::rand::thread_rng().fill(&mut sl[..]);
-    bitcoin::secp256k1::schnorr::Signature::from_slice(&sl).unwrap()
-}
+pub use bcr_wdc_utils::signatures::test_utils::random_schnorr_signature;
 
 pub fn generate_blinds(
     keyset_id: cashu::Id,

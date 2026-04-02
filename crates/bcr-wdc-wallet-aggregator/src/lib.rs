@@ -34,7 +34,6 @@ pub struct AppConfig {
     treasury_client_url: bcr_common::client::Url,
     clwdr_nats_url: clwdr_client::Url,
     clwdr_rest_url: clwdr_client::Url,
-    signer_url: clwdr_client::Url,
     commit_repo_cfg: surreal::DBConnConfig,
 }
 
@@ -55,7 +54,6 @@ impl AppController {
             treasury_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
-            signer_url: _,
             commit_repo_cfg,
         } = cfg;
 

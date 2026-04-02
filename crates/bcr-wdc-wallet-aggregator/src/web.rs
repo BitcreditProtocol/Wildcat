@@ -232,25 +232,29 @@ pub async fn post_swap(
         .check_swap(now, &request.inputs, &request.outputs, &request.commitment)
         .await?;
 
-    let proofs = request.inputs.clone();
+    let wire_swap::SwapRequest {
+        inputs,
+        outputs,
+        commitment,
+    } = request;
+
     let input_type = determine_input_type(
         &ctrl.core_client,
-        request.inputs.iter().map(|p| p.keyset_id),
+        inputs.iter().map(|p| p.keyset_id),
     )
     .await?;
-    let blinded_messages = request.outputs.clone();
-    let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
+    let htlc_unlocked = test_for_htlc(&inputs, input_type, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
 
     let signatures = ctrl
         .core_client
-        .swap(proofs.clone(), blinded_messages.clone(), request.commitment)
+        .swap(inputs.clone(), outputs.clone(), commitment)
         .await?;
 
     let req = messages::SwapRequest {
-        proofs,
-        blinds: blinded_messages.clone(),
-        commitment: request.commitment,
+        proofs: inputs,
+        blinds: outputs,
+        commitment,
     };
     let resp = messages::SwapResponse {
         signatures: signatures.clone(),
@@ -584,7 +588,8 @@ pub async fn post_commit(
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    ctrl.commit_srv
+    let (ys, secrets) = ctrl
+        .commit_srv
         .commit(now, &request, &ctrl.core_client)
         .await?;
 
@@ -598,7 +603,7 @@ pub async fn post_commit(
 
     // store commitment with the Clowder-signed signature
     ctrl.commit_srv
-        .store_commitment(&request, clowder_resp.commitment)
+        .store_commitment(ys, secrets, request.wallet_key, clowder_resp.commitment)
         .await?;
 
     let serialized = borsh::to_vec(&request)?;
