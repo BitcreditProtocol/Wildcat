@@ -13,7 +13,7 @@ use bcr_common::{
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
-        signatures as wire_signatures, treasury as wire_treasury,
+        treasury as wire_treasury,
     },
 };
 use wire_clowder::ClowderNodeInfo;
@@ -331,7 +331,7 @@ pub async fn get_ebill_attachment(
     State(ctrl): State<AppController>,
     Path((bid, fname_req)): Path<(BillId, String)>,
 ) -> Result<impl IntoResponse> {
-    tracing::debug!("Received ebill info request for {bid}");
+    tracing::debug!("Received ebill attachment request for {bid}");
 
     let (content_type, raw) = ctrl.ebill_cl.get_bill_attachment(&bid, &fname_req).await?;
     let headers = AppendHeaders([
@@ -339,6 +339,41 @@ pub async fn get_ebill_attachment(
         (
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{}\"", fname_req),
+        ),
+    ]);
+    let stream = futures::stream::once(async move { Ok::<_, std::io::Error>(raw) });
+    let body = axum::body::Body::from_stream(stream);
+    Ok((headers, body))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_EBILL_FILE_FROM_REQUEST_TO_MINT,
+    params(wire_quotes::RequestEncryptedFileUrlPayload),
+    responses (
+        (status = 200, description = "Successful response"),
+        (status = 404, description = "file url not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_ebill_file_from_request_to_mint(
+    State(ctrl): State<AppController>,
+    Query(file_url_payload): Query<wire_quotes::RequestEncryptedFileUrlPayload>,
+) -> Result<impl IntoResponse> {
+    tracing::debug!(
+        "Received ebill file from request to mint request for {}",
+        file_url_payload.file_url
+    );
+
+    let (extension, content_type, raw) = ctrl
+        .ebill_cl
+        .get_file_from_request_to_mint(&file_url_payload.file_url)
+        .await?;
+    let headers = AppendHeaders([
+        (header::CONTENT_TYPE, content_type),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", format!("file.{}", extension)),
         ),
     ]);
     let stream = futures::stream::once(async move { Ok::<_, std::io::Error>(raw) });
@@ -532,17 +567,17 @@ pub async fn get_clowder_status(
 #[utoipa::path(
     post,
     path = endpoints::POST_EBILL_REQTOPAY,
-    request_body(content = wire_signatures::RequestToMintFromEBillRequest, content_type = "application/json"),
+    request_body(content = wire_treasury::RequestToPayFromEBillRequest, content_type = "application/json"),
     responses (
-        (status = 200, description = "Successful response", body = wire_signatures::RequestToMintFromEBillResponse, content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_treasury::RequestToPayFromEBillResponse, content_type = "application/json"),
         (status = 404, description = "bill id not found"),
     )
 )]
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn post_ebill_reqtopay(
     State(ctrl): State<AppController>,
-    Json(req): Json<wire_signatures::RequestToMintFromEBillRequest>,
-) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
+    Json(req): Json<wire_treasury::RequestToPayFromEBillRequest>,
+) -> Result<Json<wire_treasury::RequestToPayFromEBillResponse>> {
     tracing::debug!("Received ebill request to pay for {}", req.ebill_id);
 
     let response = ctrl

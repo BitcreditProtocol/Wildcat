@@ -175,11 +175,24 @@ impl Service {
 
     pub async fn request_to_pay_ebill(
         &self,
-        _bid: BillId,
-        _amount: bitcoin::Amount,
-        _deadline: TStamp,
-    ) -> Result<(Uuid, String)> {
-        todo!()
+        bid: BillId,
+        amount: bitcoin::Amount,
+        deadline: TStamp,
+    ) -> Result<()> {
+        let (block_id, previous_block_hash) =
+            self.wildcatcl.prepare_request_to_pay(bid.clone()).await?;
+        let payment_address = self
+            .clowdercl
+            .request_onchain_ebill_address(bid.clone(), block_id, previous_block_hash)
+            .await?;
+        let _bill_private_key = self
+            .wildcatcl
+            .request_to_pay(bid.clone(), deadline, payment_address.clone())
+            .await?;
+        self.clowdercl
+            .request_to_pay_ebill(bid, payment_address, block_id, previous_block_hash, amount)
+            .await?;
+        Ok(())
     }
 }
 

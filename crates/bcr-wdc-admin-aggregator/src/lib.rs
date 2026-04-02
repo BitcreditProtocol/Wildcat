@@ -15,7 +15,7 @@ use bcr_common::{
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
-        signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
+        treasury as wire_treasury, wallet as wire_wallet,
     },
 };
 use utoipa::OpenApi;
@@ -112,6 +112,8 @@ pub mod endpoints {
     pub const LIST_EBILLS: &str = "/v1/admin/ebill/bills";
     pub const GET_EBILL_ENDORSEMENTS: &str = "/v1/admin/ebill/endorsements/{bid}";
     pub const GET_EBILL_ATTACHMENT: &str = "/v1/admin/ebill/attachments/{bid}/{fname}";
+    pub const GET_EBILL_FILE_FROM_REQUEST_TO_MINT: &str =
+        "/v1/admin/ebill/get_file_from_request_to_mint";
     pub const GET_EBILL_PAYMENTSTATUS: &str = "/v1/admin/ebill/payment_status/{bid}";
     // Clowder-Client
     pub const GET_CLOWDER_INFO: &str = "/v1/admin/clowder/info";
@@ -156,6 +158,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::GET_EBILL_ATTACHMENT,
             get(admin::get_ebill_attachment),
+        )
+        .route(
+            endpoints::GET_EBILL_FILE_FROM_REQUEST_TO_MINT,
+            get(admin::get_ebill_file_from_request_to_mint),
         )
         .route(
             endpoints::GET_EBILL_PAYMENTSTATUS,
@@ -226,8 +232,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_clowder::AlphaStateResponse,
         wire_clowder::Coverage,
         // treasury service
-        wire_signatures::RequestToMintFromEBillRequest,
-        wire_signatures::RequestToMintFromEBillResponse,
+        wire_treasury::RequestToPayFromEBillRequest,
+        wire_treasury::RequestToPayFromEBillResponse,
         wire_treasury::MintOperationStatus,
         wire_wallet::ECashBalance,
         wire_wallet::EbillPaymentComplete,
@@ -253,6 +259,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_ebill_endorsements,
         admin::get_ebill_attachment,
         admin::get_ebill_paymentstatus,
+        admin::get_ebill_file_from_request_to_mint,
         // clowder service
         admin::get_clowder_info,
         admin::get_clowder_alphas,
