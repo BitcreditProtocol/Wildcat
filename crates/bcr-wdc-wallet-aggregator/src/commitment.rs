@@ -56,7 +56,6 @@ impl Service {
         now: TStamp,
         request: &wire_swap::SwapCommitmentRequest,
         core_cl: &CoreClient,
-        cdk_mint_cl: &cdk::wallet::HttpClient,
     ) -> Result<()> {
         // verify wallet signature
         let xonly = request.wallet_key.x_only_public_key();
@@ -80,20 +79,12 @@ impl Service {
         }
 
         // validate inputs (check unspent, verify fingerprints)
-        validate_commitment_inputs(core_cl, cdk_mint_cl, &body.inputs).await?;
+        validate_commitment_inputs(core_cl, &body.inputs).await?;
 
         // check outputs not seen (crsat)
         let signatures = core_cl.restore(body.outputs.clone()).await?;
         if !signatures.is_empty() {
             return Err(Error::InvalidInput(String::from("crsat blinds seen")));
-        }
-        // check outputs not seen (sat)
-        let restore_request = cashu::RestoreRequest {
-            outputs: body.outputs.clone(),
-        };
-        let restore_response = cdk_mint_cl.post_restore(restore_request).await?;
-        if !restore_response.signatures.is_empty() {
-            return Err(Error::InvalidInput(String::from("sat blinds seen")));
         }
 
         // check not already committed

@@ -20,7 +20,6 @@ use utoipa::OpenApi;
 mod commitment;
 mod error;
 mod persistence;
-mod signer;
 mod web;
 // ----- local imports
 use error::Result;

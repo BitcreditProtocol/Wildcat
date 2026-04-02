@@ -80,6 +80,20 @@ impl Service {
         };
 
         let (content, commitment) = self.clowder_cl.sign_onchain_mint_response(&body).await?;
+<<<<<<< Updated upstream
+=======
+        let hndlr = tokio::spawn(monitor_onchain_mintop(
+            qid,
+            kid,
+            self.monitor_interval,
+            self.quote_expiry,
+            self.wdc.clone(),
+            self.clowder_cl.clone(),
+            self.repo.clone(),
+            self.cancel.clone(),
+        ));
+        self.hndls.lock().unwrap().push(hndlr);
+>>>>>>> Stashed changes
         let response = wire_mint::OnchainMintQuoteResponse {
             commitment,
             content,

@@ -110,7 +110,11 @@ pub async fn melt_onchain(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_quote_onchain(
+<<<<<<< Updated upstream
     State(ctrl): State<Arc<debit::Service>>,
+=======
+    State(ctrl): State<debit::Service>,
+>>>>>>> Stashed changes
     Json(request): Json<wire_mint::OnchainMintQuoteRequest>,
 ) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
     tracing::debug!("Received mint_quote_onchain request");

@@ -37,7 +37,11 @@ bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
 chrono = {version = "0.4"}
+<<<<<<< Updated upstream
 clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", branch = "stefan/swap_commitment"}
+=======
+clwdr-client = {git = "https://github.com/BitcreditProtocol/Clowder.git", branch = "stefan/commitment_borsch"}
+>>>>>>> Stashed changes
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}

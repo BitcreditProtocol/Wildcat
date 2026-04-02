@@ -122,6 +122,7 @@ impl credit::WildcatClient for WildcatCl {
             bill_id,
             deadline,
             currency: CoreClient::debit_unit().to_string(),
+            payment_address: todo!("payment_address not yet plumbed through"),
         };
         self.ebill.request_to_pay_bill(&request).await?;
         Ok(())

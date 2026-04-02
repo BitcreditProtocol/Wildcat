@@ -232,39 +232,21 @@ pub async fn post_swap(
         .check_swap(now, &request.inputs, &request.outputs, &request.commitment)
         .await?;
 
-    let keyscl = KeysClients {
-        credit: ctrl.core_client.clone(),
-        debit: ctrl.cdk_client.clone(),
-    };
-    let input_type =
-        determine_input_type(&keyscl, request.inputs.iter().map(|p| p.keyset_id)).await?;
-    let output_type = determine_output_type(&keyscl, &request.outputs).await?;
-    let swap_type = io_to_swap(input_type, output_type)?;
     let proofs = request.inputs.clone();
+    let input_type = determine_input_type(
+        &ctrl.core_client,
+        request.inputs.iter().map(|p| p.keyset_id),
+    )
+    .await?;
     let blinded_messages = request.outputs.clone();
     let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
 
-    let signatures = match swap_type {
-        SwapType::CrSat2CrSat => {
-            ctrl.core_client
-                .swap(proofs.clone(), blinded_messages.clone(), request.commitment)
-                .await?
-        }
-        SwapType::CrSat2Sat => {
-            ctrl.treasury_client
-                .redeem(proofs.clone(), blinded_messages.clone(), request.commitment)
-                .await?
-        }
-        SwapType::Sat2Sat => {
-            let cdk_request =
-                cashu::SwapRequest::new(request.inputs.clone(), request.outputs.clone());
-            ctrl.cdk_client
-                .post_swap(cdk_request)
-                .await
-                .map(|resp| resp.signatures)?
-        }
-    };
+    let signatures = ctrl
+        .core_client
+        .swap(proofs.clone(), blinded_messages.clone(), request.commitment)
+        .await?;
+
     let req = messages::SwapRequest {
         proofs,
         blinds: blinded_messages.clone(),
@@ -603,7 +585,7 @@ pub async fn post_commit(
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
     ctrl.commit_srv
-        .commit(now, &request, &ctrl.core_client, &ctrl.cdk_client)
+        .commit(now, &request, &ctrl.core_client)
         .await?;
 
     // stream commitment to Clowder and get signed response
