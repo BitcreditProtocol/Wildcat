@@ -63,32 +63,24 @@ impl Service {
         schnorr_verify_b64(&request.content, &request.wallet_signature, &xonly)
             .map_err(|e| Error::InvalidSignature(e.to_string()))?;
 
-        let body: wire_swap::SwapCommitmentRequestBody =
-            deserialize_borsh_msg(&request.content)?;
+        let body: wire_swap::SwapCommitmentRequestBody = deserialize_borsh_msg(&request.content)?;
 
         // amount validation
         let input_amount: u64 = body.inputs.iter().map(|fp| fp.amount).sum();
-        let output_amount: u64 = body
-            .outputs
-            .iter()
-            .map(|b| u64::from(b.amount))
-            .sum();
+        let output_amount: u64 = body.outputs.iter().map(|b| u64::from(b.amount)).sum();
         if input_amount != output_amount {
             return Err(Error::InvalidInput(format!(
                 "amount mismatch: inputs={input_amount}, outputs={output_amount}"
             )));
         }
 
-        // validate inputs (check unspent, verify fingerprints)
         validate_commitment_inputs(core_cl, &body.inputs).await?;
 
-        // check outputs not seen (crsat)
         let signatures = core_cl.restore(body.outputs.clone()).await?;
         if !signatures.is_empty() {
             return Err(Error::InvalidInput(String::from("crsat blinds seen")));
         }
 
-        // check not already committed
         let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
         self.repo.clean_expired(now).await?;
         let any_committed = self.repo.check_committed_inputs(&ys).await?;

@@ -796,6 +796,7 @@ dependencies = [
  "bcr-wdc-webapi",
  "bdk_wallet",
  "bitcoin",
+ "borsh",
  "chrono",
  "config",
  "rand 0.8.5",

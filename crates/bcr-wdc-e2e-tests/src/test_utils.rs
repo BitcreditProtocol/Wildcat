@@ -22,8 +22,6 @@ pub fn random_ebill_request(
     }
 }
 
-pub use bcr_wdc_utils::signatures::test_utils::random_schnorr_signature;
-
 pub fn generate_blinds(
     keyset_id: cashu::Id,
     amounts: &[cashu::Amount],
