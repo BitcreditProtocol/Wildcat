@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, client::cdk::MintConnectorExt, wire::keys as wire_keys};
+use bcr_common::{cashu, cdk, wire::keys as wire_keys, wire::swap as wire_swap};
 pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
@@ -14,7 +14,15 @@ pub mod settle;
 use crate::error::Result;
 
 // ----- end imports
-//
+
+#[async_trait]
+pub trait MintConnectorExt: cdk::wallet::MintConnector + Send + Sync {
+    async fn swap(
+        &self,
+        request: wire_swap::SwapRequest,
+    ) -> std::result::Result<wire_swap::SwapResponse, cdk::Error>;
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {

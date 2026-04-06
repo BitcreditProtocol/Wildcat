@@ -258,8 +258,7 @@ pub async fn post_swap(
     };
     ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
 
-    let response = wire_swap::SwapResponse { signatures };
-    Ok(Json(response))
+    Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 
 #[utoipa::path(
@@ -476,7 +475,10 @@ pub async fn post_online_exchange(
                 proofs: proofs.clone(),
             },
         )
-        .await { tracing::error!("Failed to post online exchange to clowder stream: {e}") };
+        .await
+    {
+        tracing::error!("Failed to post online exchange to clowder stream: {e}");
+    }
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
 }
@@ -544,7 +546,10 @@ pub async fn post_offline_exchange(
                 proofs: payload.proofs,
             },
         )
-        .await { tracing::error!("Failed to post offline exchange to clowder stream: {e}") };
+        .await
+    {
+        tracing::error!("Failed to post offline exchange to clowder stream: {e}");
+    }
     Ok(Json(response))
 }
 
@@ -577,10 +582,7 @@ pub async fn post_commit(
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    let (ys, secrets, expiry) = ctrl
-        .commit_srv
-        .commit(now, &request)
-        .await?;
+    let (ys, secrets, expiry) = ctrl.commit_srv.commit(now, &request).await?;
 
     // stream commitment to Clowder and get signed response
     let clowder_req = messages::SwapCommitmentRequest {
@@ -595,7 +597,13 @@ pub async fn post_commit(
 
     // store commitment with the Clowder-signed signature
     ctrl.commit_srv
-        .store_commitment(ys, secrets, request.wallet_key, clowder_resp.commitment, expiry)
+        .store_commitment(
+            ys,
+            secrets,
+            request.wallet_key,
+            clowder_resp.commitment,
+            expiry,
+        )
         .await?;
 
     let serialized = borsh::to_vec(&request)?;

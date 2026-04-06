@@ -43,11 +43,8 @@ impl Factory {
         let expire = expiration.map(|e| e.timestamp().max(0) as u64);
         let expire_tstamp = expire.unwrap_or_default();
         // concatenate now and expiration_tstamp as vec<u8> of length 16 (8 bytes for each)
-        let time_vec: Vec<u8> = std::iter::chain(
-            now.timestamp().to_be_bytes(),
-            expire_tstamp.to_be_bytes(),
-        )
-        .collect();
+        let time_vec: Vec<u8> =
+            std::iter::chain(now.timestamp().to_be_bytes(), expire_tstamp.to_be_bytes()).collect();
         // sha of the concatenated vec
         let time_hash = Sha256::hash(&time_vec);
         // we take least significant 31 bits of the hash as u32

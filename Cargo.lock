@@ -1671,7 +1671,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clwdr-client"
 version = "0.3.0"
-source = "git+https://github.com/BitcreditProtocol/Clowder.git?branch=stefan%2Fswap_commitment#dbda95caebd091c83a803f557a0f4fc6647a8c58"
+source = "git+https://github.com/BitcreditProtocol/Clowder.git?branch=stefan%2Fswap_commitment#cb725cbc71b1df4fefb056360eccccbec263c8f7"
 dependencies = [
  "async-nats",
  "bcr-common",
