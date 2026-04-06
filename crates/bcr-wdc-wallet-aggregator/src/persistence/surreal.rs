@@ -196,9 +196,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, random_wallet_key(), signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let mut tester = random_cdk_pks(2);
         let result = db.check_committed_inputs(&tester).await;
@@ -219,9 +225,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, random_wallet_key(), signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let mut tester = random_cdk_pks(2);
         let result = db.check_committed_outputs(&tester).await;
@@ -242,9 +254,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, random_wallet_key(), signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let tester = random_cdk_pks(2);
         let result = db.find(&tester, &outputs).await.unwrap();

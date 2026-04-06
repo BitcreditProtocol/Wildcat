@@ -44,8 +44,8 @@ impl Factory {
         let expire_tstamp = expire.unwrap_or_default();
         // concatenate now and expiration_tstamp as vec<u8> of length 16 (8 bytes for each)
         let time_vec: Vec<u8> = std::iter::chain(
-            now.timestamp().to_be_bytes().into_iter(),
-            expire_tstamp.to_be_bytes().into_iter(),
+            now.timestamp().to_be_bytes(),
+            expire_tstamp.to_be_bytes(),
         )
         .collect();
         // sha of the concatenated vec

@@ -213,9 +213,7 @@ impl cdk::wallet::MintConnector for CdkMintClient {
     ) -> std::result::Result<cashu::KeySet, cdk::Error> {
         self.0.get_mint_keyset(keyset_id).await
     }
-    async fn get_mint_keysets(
-        &self,
-    ) -> std::result::Result<cashu::KeysetResponse, cdk::Error> {
+    async fn get_mint_keysets(&self) -> std::result::Result<cashu::KeysetResponse, cdk::Error> {
         self.0.get_mint_keysets().await
     }
     async fn post_mint_quote(

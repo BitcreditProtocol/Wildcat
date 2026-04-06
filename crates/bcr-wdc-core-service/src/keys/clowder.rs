@@ -77,7 +77,7 @@ impl ClowderClient for ClowderCl {
             unit: keyset.unit,
         };
         self.0
-            .post_keyset(req, resp)
+            .new_keyset(req, resp)
             .await
             .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
         Ok(())

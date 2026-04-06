@@ -34,7 +34,9 @@ impl Service {
     ) -> Result<MintKeySetInfo> {
         let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
         let kinfo = entry.0.clone();
+        let keyset = cashu::KeySet::from(entry.1.clone());
         self.keys.store(entry).await?;
+        self.clowder.new_keyset(keyset).await?;
         Ok(kinfo)
     }
 

@@ -1,12 +1,10 @@
 // ----- standard library imports
-use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu::{self, nut07 as cdk07},
-    client::core::Client as CoreClient,
+    cashu,
     core::signature::{deserialize_borsh_msg, schnorr_verify_b64},
-    wire::{keys as wire_keys, swap as wire_swap},
+    wire::swap as wire_swap,
 };
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
@@ -46,24 +44,30 @@ pub trait Repository: Send + Sync {
 
 pub struct Service {
     pub repo: Box<dyn Repository>,
+    pub max_expiry: chrono::Duration,
 }
 
 impl Service {
-    pub const MIN_EXPIRATION: chrono::Duration = chrono::Duration::seconds(90);
-
-    /// Validates the commitment request. Returns (input ys, output secrets) for storage.
     pub async fn commit(
         &self,
         now: TStamp,
         request: &wire_swap::SwapCommitmentRequest,
-        core_cl: &CoreClient,
-    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>)> {
+    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
         // verify wallet signature
         let xonly = request.wallet_key.x_only_public_key();
         schnorr_verify_b64(&request.content, &request.wallet_signature, &xonly)
             .map_err(|e| Error::InvalidSignature(e.to_string()))?;
 
         let body: wire_swap::SwapCommitmentRequestBody = deserialize_borsh_msg(&request.content)?;
+
+        // expiry validation
+        let expiry = chrono::DateTime::from_timestamp(body.expiry as i64, 0)
+            .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
+        if expiry <= now {
+            return Err(Error::InvalidInput("commitment already expired".into()));
+        }
+        let max_allowed = now + self.max_expiry;
+        let expiry = expiry.min(max_allowed);
 
         // amount validation
         let input_amount: u64 = body.inputs.iter().map(|fp| fp.amount).sum();
@@ -74,13 +78,7 @@ impl Service {
             )));
         }
 
-        validate_commitment_inputs(core_cl, &body.inputs).await?;
-
-        let signatures = core_cl.restore(body.outputs.clone()).await?;
-        if !signatures.is_empty() {
-            return Err(Error::InvalidInput(String::from("crsat blinds seen")));
-        }
-
+        // check not already committed
         let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
         self.repo.clean_expired(now).await?;
         let any_committed = self.repo.check_committed_inputs(&ys).await?;
@@ -95,7 +93,7 @@ impl Service {
             )));
         }
 
-        Ok((ys, secrets))
+        Ok((ys, secrets, expiry))
     }
 
     pub async fn store_commitment(
@@ -104,10 +102,10 @@ impl Service {
         secrets: Vec<cashu::PublicKey>,
         wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
+        expiry: TStamp,
     ) -> Result<()> {
-        let expiration = chrono::Utc::now() + Self::MIN_EXPIRATION;
         self.repo
-            .store(ys, secrets, expiration, wallet_key, commitment)
+            .store(ys, secrets, expiry, wallet_key, commitment)
             .await?;
         Ok(())
     }
@@ -136,31 +134,4 @@ impl Service {
             None => Err(Error::CommitmentNotFound),
         }
     }
-}
-
-async fn validate_commitment_inputs(
-    core_cl: &CoreClient,
-    inputs: &[wire_keys::ProofFingerprint],
-) -> Result<()> {
-    //crsat hypothesis
-    let ys: Vec<cashu::PublicKey> = inputs.iter().map(|p| p.y).collect();
-    let state = core_cl.check_state(ys.clone()).await?;
-    let any_spent = state
-        .into_iter()
-        .any(|state| matches!(state.state, cdk07::State::Spent));
-    if any_spent {
-        return Err(Error::InvalidInput(String::from("crsat proofs spent")));
-    }
-    let mut by_kids: HashMap<cashu::Id, Vec<&wire_keys::ProofFingerprint>> = HashMap::new();
-    for fp in inputs {
-        by_kids.entry(fp.keyset_id).or_default().push(fp);
-    }
-    for (kid, fps) in by_kids {
-        if core_cl.keyset_info(kid).await.is_ok() {
-            for fp in fps {
-                core_cl.verify_fingerprint(fp).await?;
-            }
-        }
-    }
-    Ok(())
 }

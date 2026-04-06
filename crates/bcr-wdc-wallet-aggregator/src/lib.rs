@@ -35,6 +35,12 @@ pub struct AppConfig {
     clwdr_nats_url: clwdr_client::Url,
     clwdr_rest_url: clwdr_client::Url,
     commit_repo_cfg: surreal::DBConnConfig,
+    #[serde(default = "default_commitment_expiry_secs")]
+    commitment_expiry_secs: u64,
+}
+
+fn default_commitment_expiry_secs() -> u64 {
+    1200
 }
 
 #[derive(Clone, FromRef)]
@@ -55,6 +61,7 @@ impl AppController {
             clwdr_nats_url,
             clwdr_rest_url,
             commit_repo_cfg,
+            commitment_expiry_secs,
         } = cfg;
 
         let core_client = bcr_common::client::core::Client::new(core_client_url);
@@ -70,6 +77,7 @@ impl AppController {
             .expect("failed to init commitment repo");
         let commit_srv = Arc::new(commitment::Service {
             repo: Box::new(commit_repo),
+            max_expiry: chrono::Duration::seconds(commitment_expiry_secs as i64),
         });
 
         Self {

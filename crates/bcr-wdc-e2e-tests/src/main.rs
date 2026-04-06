@@ -251,7 +251,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let commitment_body = wire_swap::SwapCommitmentRequestBody {
         inputs: fingerprints,
         outputs: bs.clone(),
-        expiry_height: 0,
+        expiry: (chrono::Utc::now().timestamp() + 1200) as u64,
     };
     let (content, wallet_signature) =
         serialize_n_schnorr_sign_borsh_msg(&commitment_body, &wallet_kp)
