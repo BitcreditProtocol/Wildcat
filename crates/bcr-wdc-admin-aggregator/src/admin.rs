@@ -612,6 +612,7 @@ pub async fn get_mint_info(
         uptime_timestamp,
         change_address: clowder_change_address,
         version,
+        multisig_agg_xonly: _,
     } = clwd_info;
     let build_time = bcr_wdc_utils::info::get_build_time();
     let uptime_timestamp = chrono::DateTime::from_timestamp(uptime_timestamp as i64, 0)
