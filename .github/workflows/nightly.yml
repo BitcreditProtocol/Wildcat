@@ -157,8 +157,6 @@ jobs:
             dockerfile: docker/wallet-aggregator/Dockerfile
           - name: bcr-wdc-admin-aggregator
             dockerfile: docker/admin-aggregator/Dockerfile
-          - name: bcr-wdc-ebpp
-            dockerfile: docker/ebpp/Dockerfile
 
     steps:
     - name: Checkout code
