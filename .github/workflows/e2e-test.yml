@@ -62,8 +62,6 @@ jobs:
       run: docker build -t wildcat/wallet-aggregator -f docker/wallet-aggregator/Dockerfile .
     - name: Build Docker Admin Aggregator
       run: docker build -t wildcat/admin-aggregator -f docker/admin-aggregator/Dockerfile .
-    - name: Build Docker EBPP
-      run: docker build -t wildcat/ebpp -f docker/ebpp/Dockerfile .
     - name: Build Docker E2E Tests
       run: docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
     - name: Run E2E Tests
