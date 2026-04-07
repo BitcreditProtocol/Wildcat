@@ -29,7 +29,7 @@ impl SigningService for KeysService {
         &self,
         blinds: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.sign_blinds(blinds.into_iter()).await?;
+        let signatures = self.sign_blinds(blinds.iter()).await?;
         Ok(signatures)
     }
 

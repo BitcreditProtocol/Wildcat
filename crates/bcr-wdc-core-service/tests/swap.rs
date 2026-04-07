@@ -31,7 +31,10 @@ async fn swap() {
         .map(|bbb| bbb.0)
         .collect();
     let proofs = signatures_test::generate_proofs(&keys_entry.1, &amounts);
-    client.swap(proofs, blinds).await.expect("swap");
+    client
+        .swap(proofs, blinds, signatures_test::random_schnorr_signature())
+        .await
+        .expect("swap");
 }
 
 #[tokio::test]
@@ -106,16 +109,28 @@ async fn swap_p2pk() {
             .map(|bbb| bbb.0)
             .collect();
     let res = client
-        .swap(correct_proofs, blinds.clone())
+        .swap(
+            correct_proofs,
+            blinds.clone(),
+            signatures_test::random_schnorr_signature(),
+        )
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));
     client
-        .swap(incorrect_proofs, blinds.clone())
+        .swap(
+            incorrect_proofs,
+            blinds.clone(),
+            signatures_test::random_schnorr_signature(),
+        )
         .await
         .expect_err("Swap with incorrect P2PK signatures should fail");
     client
-        .swap(missing_p2pk_sig_proofs, blinds)
+        .swap(
+            missing_p2pk_sig_proofs,
+            blinds,
+            signatures_test::random_schnorr_signature(),
+        )
         .await
         .expect_err("Swap with missing P2PK signatures should fail");
 }

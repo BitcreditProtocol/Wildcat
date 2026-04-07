@@ -17,7 +17,7 @@ system-info:
   @echo "os family: {{os_family()}}"
 
 build-docker-base-image:
-    docker build --ssh default -t wildcat/base-image -f docker/base-image/Dockerfile .
+    docker build --ssh default=$HOME/.ssh/id_ed25519_bitcr -t wildcat/base-image -f docker/base-image/Dockerfile .
 
 build-docker-core-service: build-docker-base-image
     docker build -t wildcat/core-service -f docker/core-service/Dockerfile .

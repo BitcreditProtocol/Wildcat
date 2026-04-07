@@ -12,7 +12,12 @@ use crate::{commitment, error::Result, TStamp};
 
 // ----- end imports
 
-type Value = (Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp);
+type Value = (
+    Vec<cashu::PublicKey>,
+    Vec<cashu::PublicKey>,
+    TStamp,
+    cashu::PublicKey,
+);
 #[allow(dead_code)]
 #[derive(Clone, Default)]
 pub struct InMemoryCommitmentMap {
@@ -23,13 +28,13 @@ pub struct InMemoryCommitmentMap {
 impl commitment::Repository for InMemoryCommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
-        commitments.retain(|_, (_, _, expiration)| *expiration > now);
+        commitments.retain(|_, (_, _, expiration, _)| *expiration > now);
         Ok(())
     }
 
     async fn check_committed_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (inputs, _, _)) in commitments.iter() {
+        for (_, (inputs, _, _, _)) in commitments.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -41,7 +46,7 @@ impl commitment::Repository for InMemoryCommitmentMap {
 
     async fn check_committed_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (_, outputs, _)) in commitments.iter() {
+        for (_, (_, outputs, _, _)) in commitments.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -56,12 +61,13 @@ impl commitment::Repository for InMemoryCommitmentMap {
         mut inputs: Vec<cashu::PublicKey>,
         mut outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
+        wallet_key: cashu::PublicKey,
         signature: Signature,
     ) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
         inputs.sort();
         outputs.sort();
-        commitments.insert(signature, (inputs, outputs, expiration));
+        commitments.insert(signature, (inputs, outputs, expiration, wallet_key));
         Ok(())
     }
 
@@ -75,7 +81,7 @@ impl commitment::Repository for InMemoryCommitmentMap {
         let mut outputs = outputs.to_vec();
         outputs.sort();
         let commitments = self.commitments.read().unwrap();
-        for (signature, (committed_inputs, committed_outputs, _)) in commitments.iter() {
+        for (signature, (committed_inputs, committed_outputs, _, _)) in commitments.iter() {
             if *committed_inputs == inputs && *committed_outputs == outputs {
                 return Ok(Some(*signature));
             }

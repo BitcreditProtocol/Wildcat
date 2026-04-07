@@ -22,6 +22,7 @@ struct CommitmentDBEntry {
     inputs: Vec<cashu::PublicKey>,
     outputs: Vec<cashu::PublicKey>,
     expiration: TStamp,
+    wallet_key: cashu::PublicKey,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +84,7 @@ impl commitment::Repository for DBCommitments {
         inputs: Vec<cashu::PublicKey>,
         outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
+        wallet_key: cashu::PublicKey,
         signature: Signature,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
@@ -91,6 +93,7 @@ impl commitment::Repository for DBCommitments {
             inputs,
             outputs,
             expiration,
+            wallet_key,
         };
         let _: Option<CommitmentDBEntry> =
             self.db.insert(rid).content(entry).await.map_err(|e| {
@@ -169,6 +172,11 @@ mod tests {
         Signature::from_slice(&sl).unwrap()
     }
 
+    fn random_wallet_key() -> cashu::PublicKey {
+        let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
+        cashu::PublicKey::from(pk)
+    }
+
     #[tokio::test]
     async fn store() {
         let db = init_mem_db().await;
@@ -176,7 +184,9 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs, outputs, tstamp, signature).await.unwrap();
+        db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -186,9 +196,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let mut tester = random_cdk_pks(2);
         let result = db.check_committed_inputs(&tester).await;
@@ -209,9 +225,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let mut tester = random_cdk_pks(2);
         let result = db.check_committed_outputs(&tester).await;
@@ -232,9 +254,15 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = random_signature();
-        db.store(inputs.clone(), outputs.clone(), tstamp, signature)
-            .await
-            .unwrap();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
 
         let tester = random_cdk_pks(2);
         let result = db.find(&tester, &outputs).await.unwrap();

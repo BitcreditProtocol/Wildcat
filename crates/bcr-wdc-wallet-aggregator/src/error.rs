@@ -38,6 +38,12 @@ pub enum Error {
     NotYet(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("invalid signature: {0}")]
+    InvalidSignature(String),
+    #[error("commitment not found")]
+    CommitmentNotFound,
+    #[error("commitment mismatch")]
+    CommitmentMismatch,
 }
 
 impl axum::response::IntoResponse for Error {
@@ -65,6 +71,9 @@ impl axum::response::IntoResponse for Error {
 
             Error::Cdk(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrCommonBorsh(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::InvalidSignature(msg) => (StatusCode::BAD_REQUEST, msg),
+            Error::CommitmentNotFound => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::CommitmentMismatch => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Cdk00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

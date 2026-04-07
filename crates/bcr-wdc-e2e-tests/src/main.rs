@@ -3,7 +3,12 @@ use std::str::FromStr;
 // ----- extra library imports
 use bcr_common::{
     cashu,
-    wire::quotes::{StatusReply, UpdateQuoteResponse},
+    core::signature::serialize_n_schnorr_sign_borsh_msg,
+    wire::{
+        keys as wire_keys,
+        quotes::{StatusReply, UpdateQuoteResponse},
+        swap as wire_swap,
+    },
 };
 use reqwest::Url;
 use tracing::info;
@@ -233,7 +238,35 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     info!("Swapping proofs");
     let new_blinds = generate_blinds(keyset_info.id, &cashu_amounts);
     let bs = new_blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
-    let signatures = user_service.swap(proofs, bs).await;
+
+    // Create a real commitment before swapping
+    let wallet_kp = bitcoin::secp256k1::Keypair::new(
+        bitcoin::secp256k1::global::SECP256K1,
+        &mut bitcoin::key::rand::thread_rng(),
+    );
+    let fingerprints: Vec<wire_keys::ProofFingerprint> = proofs
+        .iter()
+        .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+        .collect();
+    let commitment_body = wire_swap::SwapCommitmentRequestBody {
+        inputs: fingerprints,
+        outputs: bs.clone(),
+        expiry: (chrono::Utc::now().timestamp() + 1200) as u64,
+    };
+    let (content, wallet_signature) =
+        serialize_n_schnorr_sign_borsh_msg(&commitment_body, &wallet_kp)
+            .expect("sign commitment body");
+    let commit_request = wire_swap::SwapCommitmentRequest {
+        content,
+        wallet_key: cashu::PublicKey::from(wallet_kp.public_key()),
+        wallet_signature,
+    };
+    let commit_response = user_service.commit_swap(commit_request).await;
+    info!("Commitment created");
+
+    let signatures = user_service
+        .swap(proofs, bs, commit_response.commitment)
+        .await;
     let total_swap = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
     assert_eq!(
         total_swap, total_amount,

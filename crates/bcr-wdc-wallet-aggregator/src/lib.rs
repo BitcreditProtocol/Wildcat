@@ -20,7 +20,6 @@ use utoipa::OpenApi;
 mod commitment;
 mod error;
 mod persistence;
-mod signer;
 mod web;
 // ----- local imports
 use error::Result;
@@ -35,8 +34,13 @@ pub struct AppConfig {
     treasury_client_url: bcr_common::client::Url,
     clwdr_nats_url: clwdr_client::Url,
     clwdr_rest_url: clwdr_client::Url,
-    signer_url: clwdr_client::Url,
     commit_repo_cfg: surreal::DBConnConfig,
+    #[serde(default = "default_commitment_expiry_secs")]
+    commitment_expiry_secs: u64,
+}
+
+fn default_commitment_expiry_secs() -> u64 {
+    1200
 }
 
 #[derive(Clone, FromRef)]
@@ -56,8 +60,8 @@ impl AppController {
             treasury_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
-            signer_url,
             commit_repo_cfg,
+            commitment_expiry_secs,
         } = cfg;
 
         let core_client = bcr_common::client::core::Client::new(core_client_url);
@@ -68,16 +72,12 @@ impl AppController {
                 .expect("failed to init clowder nats client"),
         );
         let clwdr_rest_client = Arc::new(clwdr_client::ClowderRestClient::new(clwdr_rest_url));
-        let signer_client = signer::ClowderSigner::new(signer_url)
-            .await
-            .expect("failed to init signer client");
-
         let commit_repo = persistence::surreal::DBCommitments::new(commit_repo_cfg)
             .await
             .expect("failed to init commitment repo");
         let commit_srv = Arc::new(commitment::Service {
             repo: Box::new(commit_repo),
-            signer: Box::new(signer_client),
+            max_expiry: chrono::Duration::seconds(commitment_expiry_secs as i64),
         });
 
         Self {
@@ -107,7 +107,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route("/v1/swap", post(web::post_swap))
         .route("/v1/checkstate", post(web::post_check_state))
         .route("/v1/restore", post(web::post_restore))
-        .route("/v1/commitment", post(web::post_commit))
+        .route("/v1/swap/commitment", post(web::post_commit))
         // Clowder Endpoints
         .route(ClowderClient::LOCAL_INFO_EP_V1, get(web::get_clowder_info))
         .route(

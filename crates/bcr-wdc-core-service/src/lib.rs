@@ -62,7 +62,7 @@ impl AppController {
         let keys_service = keys::service::Service {
             keys: Box::new(keys_repo),
             signatures: Box::new(signatures_repo),
-            clowder: Box::from(clowder_cl),
+            clowder: clowder_cl,
             keygen,
         };
         let swap_service = swap::service::Service {

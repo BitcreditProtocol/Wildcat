@@ -1,9 +1,9 @@
 // ----- standard library imports
 // ----- extra library imports
+use super::MintConnectorExt;
 use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
-    client::cdk::MintConnectorExt,
     core::signature::unblind_ecash_signature,
 };
 use bitcoin::hashes::sha256::Hash as Sha256Hash;

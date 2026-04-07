@@ -223,32 +223,42 @@ pub async fn get_keyset_info(
 )]
 pub async fn post_swap(
     State(ctrl): State<AppController>,
-    Json(request): Json<cashu::SwapRequest>,
-) -> Result<Json<cashu::SwapResponse>> {
+    Json(request): Json<wire_swap::SwapRequest>,
+) -> Result<Json<wire_swap::SwapResponse>> {
     tracing::debug!("Requested /v1/swap");
 
     let now = chrono::Utc::now();
-    let is_ok = ctrl.commit_srv.check_swap(now, request.clone()).await?;
-    if !is_ok {
-        return Err(Error::InvalidInput(String::from(
-            "Swap request rejected due to commitment",
-        )));
-    }
-    let proofs = request.inputs().clone();
-    let input_type = determine_input_type(
-        &ctrl.core_client,
-        request.inputs().iter().map(|p| p.keyset_id),
-    )
-    .await?;
-    let htlc_unlocked = test_for_htlc(&proofs, input_type, &ctrl.treasury_client).await?;
+    ctrl.commit_srv
+        .check_swap(now, &request.inputs, &request.outputs, &request.commitment)
+        .await?;
+
+    let wire_swap::SwapRequest {
+        inputs,
+        outputs,
+        commitment,
+    } = request;
+
+    let input_type =
+        determine_input_type(&ctrl.core_client, inputs.iter().map(|p| p.keyset_id)).await?;
+    let htlc_unlocked = test_for_htlc(&inputs, input_type, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
-    let blinded_messages = request.outputs().clone();
+
     let signatures = ctrl
         .core_client
-        .swap(proofs.clone(), blinded_messages.clone())
+        .swap(inputs.clone(), outputs.clone(), commitment)
         .await?;
-    let response = cashu::SwapResponse { signatures };
-    Ok(Json(response))
+
+    let req = messages::SwapRequest {
+        proofs: inputs,
+        blinds: outputs,
+        commitment,
+    };
+    let resp = messages::SwapResponse {
+        signatures: signatures.clone(),
+    };
+    ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
+
+    Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 
 #[utoipa::path(
@@ -454,7 +464,7 @@ pub async fn post_online_exchange(
                 .await?
         }
     };
-    match ctrl
+    if let Err(e) = ctrl
         .clwdr_stream_client
         .mint_foreign_ecash(
             messages::MintForeignEcashRequest {
@@ -467,9 +477,8 @@ pub async fn post_online_exchange(
         )
         .await
     {
-        Err(e) => tracing::error!("Failed to post online exchange to clowder stream: {e}"),
-        Ok(_) => {}
-    };
+        tracing::error!("Failed to post online exchange to clowder stream: {e}");
+    }
     let response = wire_exchange::OnlineExchangeResponse { proofs };
     Ok(Json(response))
 }
@@ -525,7 +534,7 @@ pub async fn post_offline_exchange(
     let payload: bcr_common::wire::exchange::OfflineExchangePayload =
         borsh::from_slice(&serialized)?;
 
-    match ctrl
+    if let Err(e) = ctrl
         .clwdr_stream_client
         .mint_offline_foreign_ecash(
             messages::MintForeignOfflineEcashRequest {
@@ -539,9 +548,8 @@ pub async fn post_offline_exchange(
         )
         .await
     {
-        Err(e) => tracing::error!("Failed to post offline exchange to clowder stream: {e}"),
-        Ok(_) => {}
-    };
+        tracing::error!("Failed to post offline exchange to clowder stream: {e}");
+    }
     Ok(Json(response))
 }
 
@@ -571,13 +579,40 @@ pub async fn get_coverage(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 pub async fn post_commit(
     State(ctrl): State<AppController>,
-    Json(request): Json<wire_swap::CommitmentRequest>,
-) -> Result<Json<wire_swap::CommitmentResponse>> {
+    Json(request): Json<wire_swap::SwapCommitmentRequest>,
+) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    let response = ctrl
-        .commit_srv
-        .commit(now, request, &ctrl.core_client)
+    let (ys, secrets, expiry) = ctrl.commit_srv.commit(now, &request).await?;
+
+    // stream commitment to Clowder and get signed response
+    let clowder_req = messages::SwapCommitmentRequest {
+        content: request.content.clone(),
+        wallet_key: request.wallet_key,
+        wallet_signature: request.wallet_signature,
+    };
+    let clowder_resp = ctrl
+        .clwdr_stream_client
+        .swap_commitment(clowder_req)
         .await?;
+
+    // store commitment with the Clowder-signed signature
+    ctrl.commit_srv
+        .store_commitment(
+            ys,
+            secrets,
+            request.wallet_key,
+            clowder_resp.commitment,
+            expiry,
+        )
+        .await?;
+
+    let serialized = borsh::to_vec(&request)?;
+    let content = STANDARD.encode(&serialized);
+
+    let response = wire_swap::SwapCommitmentResponse {
+        content,
+        commitment: clowder_resp.commitment,
+    };
     Ok(Json(response))
 }
 

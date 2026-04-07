@@ -8,7 +8,7 @@ use bcr_common::{
         core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
         treasury::Client as TreasuryClient,
     },
-    wire::{identity as wire_identity, quotes as wire_quotes},
+    wire::{identity as wire_identity, quotes as wire_quotes, swap as wire_swap},
 };
 use reqwest::Client as HttpClient;
 use reqwest::Url;
@@ -169,12 +169,34 @@ impl Service<UserService> {
         self.client.get(url).await.unwrap()
     }
 
+    pub async fn commit_swap(
+        &self,
+        request: wire_swap::SwapCommitmentRequest,
+    ) -> wire_swap::SwapCommitmentResponse {
+        let url = self.url("v1/swap/commitment");
+        let resp = self
+            .client
+            .http
+            .post(url)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        resp.json().await.unwrap()
+    }
+
     pub async fn swap(
         &self,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
+        commitment: bitcoin::secp256k1::schnorr::Signature,
     ) -> Vec<cashu::BlindSignature> {
-        self.core_cl.swap(inputs, outputs).await.unwrap()
+        self.core_cl
+            .swap(inputs, outputs, commitment)
+            .await
+            .unwrap()
     }
 }
 
