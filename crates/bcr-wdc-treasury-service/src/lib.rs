@@ -50,7 +50,6 @@ pub struct AppConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct DebitConfig {
     db: surreal::DBConnConfig,
-    wildcat: debit::WildcatClientConfig,
     monitor_interval_sec: u32,
     quote_expiry_seconds: u32,
     min_confirmations: u32,
@@ -99,7 +98,6 @@ pub async fn init_app(
     } = cfg;
     let DebitConfig {
         db: debit_repo,
-        wildcat,
         monitor_interval_sec,
         quote_expiry_seconds,
         min_confirmations,
@@ -133,7 +131,9 @@ pub async fn init_app(
             .expect("Failed to create signer"),
     );
 
-    let wdc = debit::WildcatCl::new(wildcat);
+    let wdc = debit::WildcatCl {
+        core_cl: core_client.clone(),
+    };
     let repo = persistence::surreal::DebitRepository::new(debit_repo)
         .await
         .expect("Failed to create repository");
