@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{cashu, client::core::Client as CoreClient, wire::keys as wire_keys};
@@ -10,21 +11,9 @@ use crate::{
 
 // ----- end imports
 
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct WildcatClientConfig {
-    pub core_service_url: reqwest::Url,
-}
-
 #[derive(Clone, Debug)]
 pub struct WildcatCl {
-    core_cl: CoreClient,
-}
-
-impl WildcatCl {
-    pub fn new(cfg: WildcatClientConfig) -> Self {
-        let core_cl = CoreClient::new(cfg.core_service_url);
-        Self { core_cl }
-    }
+    pub core_cl: Arc<CoreClient>,
 }
 
 #[async_trait]

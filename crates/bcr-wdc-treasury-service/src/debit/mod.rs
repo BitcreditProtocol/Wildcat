@@ -17,7 +17,7 @@ use crate::{error::Result, TStamp};
 
 pub use clowder::ClowderCl;
 pub use service::{MintQuote, Service};
-pub use wildcat::{WildcatCl, WildcatClientConfig};
+pub use wildcat::WildcatCl;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
