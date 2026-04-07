@@ -385,8 +385,7 @@ mod tests {
             .with(eq(foreign_url.clone()))
             .times(1)
             .returning(move |_| {
-                let mut foreign_client =
-                    bcr_common::client::cdk::test_utils::MockMintConnector::new();
+                let mut foreign_client = crate::foreign::test_utils::MockMintConnector::new();
                 foreign_client
                     .expect_post_check_state()
                     .times(1)
@@ -599,8 +598,7 @@ mod tests {
             .times(1)
             .returning(move |_| {
                 let cloned_keyset = cloned_keyset.clone();
-                let mut foreign_client =
-                    bcr_common::client::cdk::test_utils::MockMintConnector::new();
+                let mut foreign_client = crate::foreign::test_utils::MockMintConnector::new();
                 let keyset = cashu::KeySet::from(cloned_keyset.clone());
                 foreign_client
                     .expect_get_mint_keyset()
