@@ -700,14 +700,15 @@ async fn test_for_htlc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+    use bcr_common::core_tests;
     use mockall::predicate::*;
 
     #[tokio::test]
     async fn determine_input_type_sat() {
-        let (_, sat_keyset) = keys_test::generate_random_keyset();
+        let (_, sat_keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
-        let inputs = [signatures_test::generate_proofs(&sat_keyset, &amounts[..1])[0].clone()];
+        let inputs =
+            [core_tests::generate_random_ecash_proofs(&sat_keyset, &amounts[..1])[0].clone()];
         let mut client = MockKeyClientT::new();
         let sat_kid = sat_keyset.id;
         client
@@ -723,9 +724,9 @@ mod tests {
 
     #[tokio::test]
     async fn determine_input_type_crsat() {
-        let (_, keyset) = keys_test::generate_random_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
-        let inputs = signatures_test::generate_proofs(&keyset, &amounts);
+        let inputs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let mut client = MockKeyClientT::new();
         client
             .expect_currency()

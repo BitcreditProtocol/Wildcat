@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::core::Client as CoreClient};
-use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+use bcr_common::{cashu, client::core::Client as CoreClient, core_tests};
+use bcr_wdc_utils::keys::test_utils as keys_test;
 // ----- local imports
 
 // ----- end imports
@@ -22,12 +22,12 @@ async fn checkstate() {
         .expect("store");
 
     let amounts = vec![cashu::Amount::from(8_u64), cashu::Amount::from(16_u64)];
-    let spent = signatures_test::generate_proofs(&keys_entry.1, &amounts);
+    let spent = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
 
     client.burn(spent.clone()).await.expect("burn");
 
     let amounts = vec![cashu::Amount::from(32_u64), cashu::Amount::from(64_u64)];
-    let unspent = signatures_test::generate_proofs(&keys_entry.1, &amounts);
+    let unspent = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
 
     let ys = vec![
         cashu::dhke::hash_to_curve(&spent[0].secret.to_bytes()).expect("hash_to_curve"),

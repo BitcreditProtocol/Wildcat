@@ -428,6 +428,7 @@ fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bcr_common::core_tests;
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use persistence::{KeysRepository, ProofRepository, SignaturesRepository};
 
@@ -442,7 +443,7 @@ mod tests {
     #[tokio::test]
     async fn info() {
         let db = init_keys_mem_db().await;
-        let (info, keyset) = keys_test::generate_random_keyset();
+        let (info, keyset) = core_tests::generate_random_ecash_keyset();
         let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
         let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
@@ -455,13 +456,13 @@ mod tests {
     async fn list_info() {
         let db = init_keys_mem_db().await;
         {
-            let (info, keyset) = keys_test::generate_random_keyset();
+            let (info, keyset) = core_tests::generate_random_ecash_keyset();
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
-            let (info, keyset) = keys_test::generate_random_keyset();
+            let (info, keyset) = core_tests::generate_random_ecash_keyset();
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
@@ -475,7 +476,7 @@ mod tests {
     async fn list_info_with_unit() {
         let db = init_keys_mem_db().await;
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.unit = cashu::CurrencyUnit::Sat;
             info.final_expiry = Some(10);
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
@@ -483,7 +484,7 @@ mod tests {
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.unit = cashu::CurrencyUnit::Usd;
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
@@ -502,14 +503,14 @@ mod tests {
     async fn list_info_with_min_expiration() {
         let db = init_keys_mem_db().await;
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.final_expiry = Some(10);
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.final_expiry = Some(20);
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
@@ -527,14 +528,14 @@ mod tests {
     async fn list_info_with_max_expiration() {
         let db = init_keys_mem_db().await;
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.final_expiry = Some(10);
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
-            let (mut info, keyset) = keys_test::generate_random_keyset();
+            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
             info.final_expiry = Some(20);
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
@@ -551,7 +552,7 @@ mod tests {
     #[tokio::test]
     async fn keyset() {
         let db = init_keys_mem_db().await;
-        let (info, keyset) = keys_test::generate_random_keyset();
+        let (info, keyset) = core_tests::generate_random_ecash_keyset();
         let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
         let dbkeys = convert_to_keysdbentry((info.clone(), keyset.clone()), DBKeys::TABLE);
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
@@ -564,13 +565,13 @@ mod tests {
     async fn list_keyset() {
         let db = init_keys_mem_db().await;
         {
-            let (info, keyset) = keys_test::generate_random_keyset();
+            let (info, keyset) = core_tests::generate_random_ecash_keyset();
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
         }
         {
-            let (info, keyset) = keys_test::generate_random_keyset();
+            let (info, keyset) = core_tests::generate_random_ecash_keyset();
             let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
             let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
             let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
@@ -582,7 +583,7 @@ mod tests {
     #[tokio::test]
     async fn update_info() {
         let db = init_keys_mem_db().await;
-        let (mut info, keyset) = keys_test::generate_random_keyset();
+        let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
         let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
         let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
         let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
@@ -595,7 +596,7 @@ mod tests {
     #[tokio::test]
     async fn update_info_kid_not_present() {
         let db = init_keys_mem_db().await;
-        let (info, _) = keys_test::generate_random_keyset();
+        let (info, _) = core_tests::generate_random_ecash_keyset();
         let res = db.update_info(info).await;
         assert!(res.is_err());
     }
@@ -604,11 +605,11 @@ mod tests {
     #[ignore = "SurrealDB issue #6405"]
     async fn infos_for_expiration_date() {
         let db = init_keys_mem_db().await;
-        let mut keys0 = keys_test::generate_random_keyset();
+        let mut keys0 = core_tests::generate_random_ecash_keyset();
         keys0.0.final_expiry = Some(30);
         keys0.1.final_expiry = keys0.0.final_expiry;
         db.store(keys0).await.unwrap();
-        let mut keys1 = keys_test::generate_random_keyset();
+        let mut keys1 = core_tests::generate_random_ecash_keyset();
         keys1.0.final_expiry = Some(10);
         keys1.1.final_expiry = keys1.0.final_expiry;
         db.store(keys1).await.unwrap();
@@ -632,7 +633,7 @@ mod tests {
     #[tokio::test]
     async fn dbsignatures_store() {
         let db = init_mem_dbsignatures().await;
-        let (_, keyset) = keys_test::generate_random_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
 
         let y = keys_test::publics()[0];
@@ -644,7 +645,7 @@ mod tests {
     #[tokio::test]
     async fn dbsignatures_store_same_signature_twice() {
         let db = init_mem_dbsignatures().await;
-        let (_, keyset) = keys_test::generate_random_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
 
         let y = keys_test::publics()[0];
@@ -666,8 +667,8 @@ mod tests {
     #[tokio::test]
     async fn test_insert() {
         let db = init_proofs_mem_db().await;
-        let (_, keyset) = keys_test::generate_keyset();
-        let proofs = signatures_test::generate_proofs(
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
@@ -687,8 +688,8 @@ mod tests {
     #[tokio::test]
     async fn test_insert_double_spent_all() {
         let db = init_proofs_mem_db().await;
-        let (_, keyset) = keys_test::generate_keyset();
-        let proofs = signatures_test::generate_proofs(
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
@@ -702,8 +703,8 @@ mod tests {
     #[tokio::test]
     async fn test_insert_double_spent_partial() {
         let db = init_proofs_mem_db().await;
-        let (_, keyset) = keys_test::generate_keyset();
-        let proofs = signatures_test::generate_proofs(
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
             &[
                 cashu::Amount::from(16_u64),
@@ -721,8 +722,8 @@ mod tests {
     #[tokio::test]
     async fn test_insert_double_spent_partial_still_valid() {
         let db = init_proofs_mem_db().await;
-        let (_, keyset) = keys_test::generate_keyset();
-        let proofs = signatures_test::generate_proofs(
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
             &[
                 cashu::Amount::from(16_u64),
