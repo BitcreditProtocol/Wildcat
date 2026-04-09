@@ -34,7 +34,7 @@ impl WdcClient for WildcatCl {
     ) -> Result<cashu::Id> {
         let kinfo = self
             .core
-            .get_or_create_credit_keyset_with_expiration(redemption_date)
+            .get_or_create_keyset_with_expiration(redemption_date)
             .await?;
         Ok(kinfo.id)
     }
@@ -53,7 +53,7 @@ impl WdcClient for WildcatCl {
         bill_id: BillId,
     ) -> Result<()> {
         self.treasury
-            .new_mint_operation(qid, kid, pk, target, bill_id)
+            .new_ebill_mint_operation(qid, kid, pk, target, bill_id)
             .await?;
         Ok(())
     }
@@ -64,7 +64,7 @@ impl WdcClient for WildcatCl {
     }
 
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {
-        let response = self.treasury.mint_operation_status(qid).await;
+        let response = self.treasury.ebill_mint_operation_status(qid).await;
         match response {
             Ok(status) => Ok(MintingStatus::Enabled(status.current)),
             Err(TreasuryError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
