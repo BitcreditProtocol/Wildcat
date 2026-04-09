@@ -258,21 +258,13 @@ pub async fn init_app(
 pub fn routes(app: AppController) -> Router {
     let web = Router::new()
         .route(
-            TreasuryClient::CRSATEXCHANGEONLINE_EP_V1,
-            post(web::crsat_online_exchange),
-        )
-        .route(
-            TreasuryClient::SATEXCHANGEONLINE_EP_V1,
-            post(web::sat_online_exchange),
-        )
-        .route(
-            TreasuryClient::CRSATEXCHANGEOFFLINE_EP_V1,
-            post(web::crsat_offline_exchange),
+            TreasuryClient::EXCHANGEONLINE_EP_V1,
+            post(web::online_exchange),
         )
         .route("/v1/free_money", post(devmode::free_money))
         .route(
-            TreasuryClient::SATEXCHANGEOFFLINE_EP_V1,
-            post(web::sat_offline_exchange),
+            TreasuryClient::EXCHANGEOFFLINE_EP_V1,
+            post(web::offline_exchange),
         )
         .route(
             TreasuryClient::MELTQUOTE_ONCHAIN_EP_V1,
@@ -288,22 +280,18 @@ pub fn routes(app: AppController) -> Router {
             TreasuryClient::REQTOPAY_EP_V1,
             post(admin::request_to_pay_ebill),
         )
+        .route(TreasuryClient::TRYHTLC_EP_V1, post(admin::try_htlc_swap))
         .route(
-            TreasuryClient::TRYCRSATHTLC_EP_V1,
-            post(admin::crsat_try_htlc_swap),
+            TreasuryClient::NEWEBILLMINTOP_EP_V1,
+            post(admin::new_ebill_mintop),
         )
         .route(
-            TreasuryClient::TRYSATHTLC_EP_V1,
-            post(admin::sat_try_htlc_swap),
-        )
-        .route(TreasuryClient::NEWMINTOP_EP_V1, post(admin::new_cr_mintop))
-        .route(
-            TreasuryClient::LISTMINTOPS_EP_V1,
-            get(admin::list_cr_mintops),
+            TreasuryClient::LISTEBILLMINTOPS_EP_V1,
+            get(admin::list_ebill_mintops),
         )
         .route(
-            TreasuryClient::MINTOPSTATUS_EP_V1,
-            get(admin::cr_mintop_status),
+            TreasuryClient::EBILLMINTOPSTATUS_EP_V1,
+            get(admin::ebill_mintop_status),
         );
     admin.merge(web).with_state(app)
 }
