@@ -13,20 +13,6 @@ pub mod test_utils {
     use super::*;
     use bcr_common::cashu::{self, nut02::KeySetVersion, secret as cdk_secret};
     use bitcoin::bip32::DerivationPath;
-    use rand::RngCore;
-
-    pub fn generate_random_keypair() -> bitcoin::secp256k1::Keypair {
-        let mut rng = rand::thread_rng();
-        bitcoin::secp256k1::Keypair::new(bitcoin::secp256k1::global::SECP256K1, &mut rng)
-    }
-
-    pub fn generate_random_keysetid() -> cashu::Id {
-        const ID_BYTE_LEN: usize = 7;
-        let mut id_bytes = [0u8; ID_BYTE_LEN + 1];
-        id_bytes[0] = KeySetVersion::Version00 as u8;
-        rand::thread_rng().fill_bytes(&mut id_bytes[1..]);
-        cashu::Id::from_bytes(&id_bytes).expect("Keyset ID is valid")
-    }
 
     pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cashu::MintKeySet) {
         let path = DerivationPath::master();
@@ -44,34 +30,6 @@ pub mod test_utils {
             id: set.id,
             amounts: denominations,
             active: true,
-            unit: cashu::CurrencyUnit::Sat,
-            valid_from: 0,
-            final_expiry: None,
-            derivation_path_index: None,
-            derivation_path: path,
-            input_fee_ppk: 0,
-            max_order: 10,
-        };
-        (info, set)
-    }
-    pub fn generate_random_keyset() -> (cdk_mint::MintKeySetInfo, cashu::MintKeySet) {
-        let path = DerivationPath::master();
-        let mut random_seed = [0u8; 32];
-        let denominations: Vec<u64> = (0..10).map(|i| 2u64.pow(i)).collect();
-        rand::thread_rng().fill_bytes(&mut random_seed);
-        let set = cashu::MintKeySet::generate_from_seed(
-            secp256k1::global::SECP256K1,
-            &random_seed,
-            &denominations,
-            cashu::CurrencyUnit::Sat,
-            path.clone(),
-            None,
-            KeySetVersion::Version00,
-        );
-        let info = cdk_mint::MintKeySetInfo {
-            id: set.id,
-            active: true,
-            amounts: denominations,
             unit: cashu::CurrencyUnit::Sat,
             valid_from: 0,
             final_expiry: None,

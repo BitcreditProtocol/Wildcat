@@ -61,30 +61,13 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
-    use cashu::{dhke, secret, Id};
+    use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
         use rand::Rng;
         let mut sl = [0u8; bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE];
         rand::thread_rng().fill(&mut sl[..]);
         bitcoin::secp256k1::schnorr::Signature::from_slice(&sl).unwrap()
-    }
-
-    pub fn generate_proofs(
-        keyset: &cashu::MintKeySet,
-        amounts: &[cashu::Amount],
-    ) -> Vec<cashu::Proof> {
-        let mut proofs: Vec<cashu::Proof> = Vec::new();
-        for amount in amounts {
-            let keypair = keyset.keys.get(amount).expect("keys for amount");
-            let secret = secret::Secret::new(rand::random::<u64>().to_string());
-            let (b_, r) =
-                dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
-            let c_ = dhke::sign_message(&keypair.secret_key, &b_).expect("cdk_dhke::sign_message");
-            let c = dhke::unblind_message(&c_, &r, &keypair.public_key).expect("unblind_message");
-            proofs.push(cashu::Proof::new(*amount, keyset.id, secret, c));
-        }
-        proofs
     }
 
     pub fn generate_blinds(
@@ -140,6 +123,7 @@ mod tests {
     use super::test_utils::*;
     use super::*;
     use crate::keys::test_utils::generate_keyset;
+    use bcr_common::core_tests;
 
     #[test]
     fn basic_checks_empty_slice() {
@@ -168,7 +152,7 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::ZeroAmount)
         ));
-        let mut proofs = generate_proofs(&keyset, &amounts);
+        let mut proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         proofs[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_proofs_checks(&proofs),
@@ -189,7 +173,7 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::NonUnique)
         ));
-        let mut proofs = generate_proofs(&keyset, &amounts);
+        let mut proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         proofs.push(proofs[0].clone());
         assert!(matches!(
             basic_proofs_checks(&proofs),
