@@ -1,14 +1,9 @@
 // ----- standard library imports
-use std::{collections::HashSet, sync::Arc};
 // ----- extra library imports
-use async_trait::async_trait;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     cashu::{self, MintVersion},
-    client::{
-        clowder::Client as ClowderClient, core::Client as CoreClient,
-        treasury::Client as TreasuryClient,
-    },
+    client::{clowder::Client as ClowderClient, treasury::Client as TreasuryClient},
     wire::{
         clowder::{self as wire_clowder, messages},
         exchange as wire_exchange,
@@ -17,7 +12,6 @@ use bcr_common::{
     },
 };
 use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
-use futures::future::JoinAll;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -231,23 +225,17 @@ pub async fn post_swap(
     ctrl.commit_srv
         .check_swap(now, &request.inputs, &request.outputs, &request.commitment)
         .await?;
-
     let wire_swap::SwapRequest {
         inputs,
         outputs,
         commitment,
     } = request;
-
-    let input_type =
-        determine_input_type(&ctrl.core_client, inputs.iter().map(|p| p.keyset_id)).await?;
-    let htlc_unlocked = test_for_htlc(&inputs, input_type, &ctrl.treasury_client).await?;
+    let htlc_unlocked = test_for_htlc(&inputs, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
-
     let signatures = ctrl
         .core_client
         .swap(inputs.clone(), outputs.clone(), commitment)
         .await?;
-
     let req = messages::SwapRequest {
         proofs: inputs,
         blinds: outputs,
@@ -257,7 +245,6 @@ pub async fn post_swap(
         signatures: signatures.clone(),
     };
     ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
-
     Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 
@@ -439,12 +426,6 @@ pub async fn post_online_exchange(
             "minimum exchange path [alpha_pk, this_mint_pk, wallet_pk] not met",
         )));
     }
-    let clowder_keys = ForeignKeyClientWithClowder {
-        clwdr_cl: ctrl.clwdr_rest_client.clone(),
-        pk: request.exchange_path[0],
-    };
-    let input_type =
-        determine_input_type(&clowder_keys, request.proofs.iter().map(|p| p.keyset_id)).await?;
     // Clone what we need for the stream before consuming request
     let stream_proofs = request.proofs.clone();
     let stream_exchange_path = request.exchange_path.clone();
@@ -452,18 +433,10 @@ pub async fn post_online_exchange(
         proofs,
         exchange_path,
     } = request;
-    let proofs = match input_type {
-        InputType::Sat => {
-            ctrl.treasury_client
-                .sat_exchange_online(proofs, exchange_path)
-                .await?
-        }
-        InputType::CrSat => {
-            ctrl.treasury_client
-                .crsat_exchange_online(proofs, exchange_path)
-                .await?
-        }
-    };
+    let proofs = ctrl
+        .treasury_client
+        .exchange_online(proofs, exchange_path)
+        .await?;
     if let Err(e) = ctrl
         .clwdr_stream_client
         .mint_foreign_ecash(
@@ -495,19 +468,10 @@ pub async fn post_offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    let origin = ctrl
+    let _origin = ctrl
         .clwdr_rest_client
         .post_fingerprints_origin(request.fingerprints.clone())
         .await?;
-    let clowder_keys = ForeignKeyClientWithClowder {
-        clwdr_cl: ctrl.clwdr_rest_client.clone(),
-        pk: origin.node_id,
-    };
-    let input_type = determine_input_type(
-        &clowder_keys,
-        request.fingerprints.iter().map(|fp| fp.keyset_id),
-    )
-    .await?;
     // Clone what we need for the stream before consuming request
     let stream_fingerprints = request.fingerprints.clone();
     let stream_hashes = request.hashes.clone();
@@ -516,18 +480,10 @@ pub async fn post_offline_exchange(
         hashes,
         wallet_pk,
     } = request;
-    let response = match input_type {
-        InputType::Sat => {
-            ctrl.treasury_client
-                .sat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
-                .await?
-        }
-        InputType::CrSat => {
-            ctrl.treasury_client
-                .crsat_exchange_offline_raw(fingerprints, hashes, wallet_pk)
-                .await?
-        }
-    };
+    let response = ctrl
+        .treasury_client
+        .exchange_offline_raw(fingerprints, hashes, wallet_pk)
+        .await?;
     let serialized = STANDARD
         .decode(&response.content)
         .map_err(|e| Error::InvalidInput(e.to_string()))?;
@@ -616,125 +572,15 @@ pub async fn post_commit(
     Ok(Json(response))
 }
 
-#[derive(Debug, Clone, Copy)]
-enum InputType {
-    CrSat,
-    Sat,
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-trait KeyClientT {
-    // returns the currency unit for the given keyset id
-    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit>;
-}
-
-#[async_trait]
-impl KeyClientT for CoreClient {
-    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit> {
-        let cr_response = self.keyset_info(keyset_id).await?;
-        Ok(cr_response.unit)
-    }
-}
-pub struct ForeignKeyClientWithClowder {
-    clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
-    pk: bitcoin::secp256k1::PublicKey,
-}
-#[async_trait]
-impl KeyClientT for ForeignKeyClientWithClowder {
-    async fn currency(&self, keyset_id: cashu::Id) -> Result<cashu::CurrencyUnit> {
-        let keys = self.clwdr_cl.get_keyset(&self.pk, &keyset_id).await?;
-        let Some(keyset) = keys.keysets.first() else {
-            return Err(Error::Invalid(format!("keyset {keyset_id} not found")));
-        };
-        Ok(keyset.unit.clone())
-    }
-}
-
-async fn determine_input_type(
-    key_cl: &impl KeyClientT,
-    inputs: impl std::iter::Iterator<Item = cashu::Id>,
-) -> Result<InputType> {
-    let unique_kids = inputs.collect::<HashSet<_>>();
-    let requests: JoinAll<_> = unique_kids
-        .into_iter()
-        .map(|kid| key_cl.currency(kid))
-        .collect();
-    let responses: Vec<_> = requests.await.into_iter().collect::<Result<_>>()?;
-    let all_sats = responses
-        .iter()
-        .all(|unit| *unit == cashu::CurrencyUnit::Sat);
-    if all_sats {
-        return Ok(InputType::Sat);
-    }
-    let crsat = cashu::CurrencyUnit::Custom(String::from("crsat"));
-    let all_crsat = responses.iter().all(|unit| *unit == crsat);
-    if all_crsat {
-        return Ok(InputType::CrSat);
-    }
-    Err(Error::InvalidInput(String::from(
-        "mixed credit/debit inputs not allowed",
-    )))
-}
-
-async fn test_for_htlc(
-    proofs: &[cashu::Proof],
-    input_type: InputType,
-    tcl: &TreasuryClient,
-) -> Result<cashu::Amount> {
+async fn test_for_htlc(proofs: &[cashu::Proof], tcl: &TreasuryClient) -> Result<cashu::Amount> {
     let mut total = cashu::Amount::ZERO;
     for proof in proofs {
         if let Some(cashu::Witness::HTLCWitness(cashu::HTLCWitness { preimage, .. })) =
             &proof.witness
         {
-            let amount = match input_type {
-                InputType::CrSat => tcl.try_crsat_htlc(preimage.to_string()).await?,
-                InputType::Sat => tcl.try_sat_htlc(preimage.to_string()).await?,
-            };
+            let amount = tcl.try_htlc(preimage.to_string()).await?;
             total += amount;
         }
     }
     Ok(total)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bcr_common::core_tests;
-    use mockall::predicate::*;
-
-    #[tokio::test]
-    async fn determine_input_type_sat() {
-        let (_, sat_keyset) = core_tests::generate_random_ecash_keyset();
-        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(4u64)];
-        let inputs =
-            [core_tests::generate_random_ecash_proofs(&sat_keyset, &amounts[..1])[0].clone()];
-        let mut client = MockKeyClientT::new();
-        let sat_kid = sat_keyset.id;
-        client
-            .expect_currency()
-            .times(1)
-            .with(eq(sat_kid))
-            .returning(|_| Ok(cashu::CurrencyUnit::Sat));
-        let inputtype = determine_input_type(&client, inputs.iter().map(|p| p.keyset_id))
-            .await
-            .unwrap();
-        assert!(matches!(inputtype, InputType::Sat));
-    }
-
-    #[tokio::test]
-    async fn determine_input_type_crsat() {
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let amounts = [cashu::Amount::from(4u64), cashu::Amount::from(8u64)];
-        let inputs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        let mut client = MockKeyClientT::new();
-        client
-            .expect_currency()
-            .times(1)
-            .returning(move |_| Ok(cashu::CurrencyUnit::Custom(String::from("crsat"))));
-        let inputtype = determine_input_type(&client, inputs.iter().map(|p| p.keyset_id))
-            .await
-            .unwrap();
-        assert!(matches!(inputtype, InputType::CrSat));
-    }
 }
