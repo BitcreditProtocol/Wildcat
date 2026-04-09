@@ -508,7 +508,7 @@ mod tests {
     async fn test_new_quote_request_quote_offered() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let keyset_id = keys_utils::generate_random_keysetid();
+        let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let now = TStamp::from_timestamp(10000, 0).unwrap();
         let cloned = rnd_bill.clone();
@@ -548,7 +548,7 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
-        let keyset_id = keys_utils::generate_random_keysetid();
+        let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();
@@ -591,7 +591,7 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
-        let keyset_id = keys_utils::generate_random_keysetid();
+        let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
         let now = TStamp::from_timestamp(10000, 0).unwrap();

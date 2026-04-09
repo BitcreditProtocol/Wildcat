@@ -10,7 +10,7 @@ use bdk_wallet::serde_json;
 // ----- end imports
 
 fn main() -> std::io::Result<()> {
-    let owner_key = bcr_wdc_utils::keys::test_utils::generate_random_keypair();
+    let owner_key = bcr_common::core_tests::generate_random_keypair();
     let owner_pk = bitcoin::PublicKey::new(owner_key.public_key());
     let (request, signing_key) = generate_random_bill_enquire_request(owner_pk, None, None);
     let (content, signature) = serialize_n_schnorr_sign_borsh_msg(&request, &signing_key).unwrap();

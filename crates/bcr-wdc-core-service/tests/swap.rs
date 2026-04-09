@@ -7,6 +7,7 @@ use bcr_common::{
         Amount,
     },
     client::core::Client as CoreClient,
+    core_tests,
 };
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 // ----- local imports
@@ -30,7 +31,7 @@ async fn swap() {
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
-    let proofs = signatures_test::generate_proofs(&keys_entry.1, &amounts);
+    let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
     client
         .swap(proofs, blinds, signatures_test::random_schnorr_signature())
         .await

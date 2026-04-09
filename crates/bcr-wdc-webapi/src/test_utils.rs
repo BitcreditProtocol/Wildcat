@@ -13,7 +13,7 @@ use bcr_ebill_core::protocol::{
     Address, City, Country, Date, EmailIdentityProofData, PostalAddress, SignedIdentityProof, Sum,
     Timestamp,
 };
-use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
+use bcr_wdc_utils::convert;
 use bitcoin::{self as btc, secp256k1 as secp, Amount};
 use chrono::NaiveTime;
 use rand::Rng;
@@ -27,7 +27,7 @@ pub fn generate_random_bill_enquire_request(
     payee_kp: Option<secp::Keypair>,
     amount: Option<btc::Amount>,
 ) -> (wire_quotes::EnquireRequest, secp::Keypair) {
-    let bill_keys = BcrKeys::from_private_key(&keys_test::generate_random_keypair().secret_key());
+    let bill_keys = BcrKeys::from_private_key(&core_tests::generate_random_keypair().secret_key());
     let bill_id = BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
     let (_, drawee) = wire_tests::random_identity_public_data();
     let (drawer_key_pair, drawer) = wire_tests::random_identity_public_data();

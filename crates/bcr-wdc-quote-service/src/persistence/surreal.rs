@@ -345,7 +345,7 @@ impl Repository for DBQuotes {
 mod tests {
     use super::*;
     use crate::{quotes, service};
-    use bcr_common::wire_tests::random_identity_public_data;
+    use bcr_common::{core_tests, wire_tests::random_identity_public_data};
     use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
     use surrealdb::RecordId;
@@ -375,7 +375,7 @@ mod tests {
         let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
         quote.status = quotes::Status::Offered {
-            keyset_id: keys_test::generate_random_keysetid(),
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
             wallet_pubkey: keys_test::publics()[0],
@@ -408,7 +408,7 @@ mod tests {
             .unwrap();
 
         quote.status = quotes::Status::Offered {
-            keyset_id: keys_test::generate_random_keysetid(),
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
             wallet_pubkey: keys_test::publics()[0],
@@ -431,7 +431,7 @@ mod tests {
             id: Uuid::new_v4(),
             submitted: TStamp::default(),
             status: quotes::Status::Offered {
-                keyset_id: keys_test::generate_random_keysetid(),
+                keyset_id: core_tests::generate_random_ecash_keyset().0.id,
                 ttl: TStamp::default(),
                 discounted: bitcoin::Amount::default(),
                 wallet_pubkey: keys_test::publics()[0],
@@ -442,7 +442,7 @@ mod tests {
         let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
 
         quote.status = quotes::Status::Accepted {
-            keyset_id: keys_test::generate_random_keysetid(),
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             discounted: bitcoin::Amount::default(),
             wallet_pubkey: keys_test::publics()[0],
         };
@@ -472,7 +472,7 @@ mod tests {
             .unwrap();
 
         quote.status = quotes::Status::Offered {
-            keyset_id: keys_test::generate_random_keysetid(),
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             ttl: TStamp::default(),
             discounted: quote.bill.sum,
             wallet_pubkey: keys_test::publics()[0],
