@@ -37,7 +37,7 @@ impl crsat::KeysClient for CoreCl {
     ) -> Result<cashu::KeySet> {
         let kinfo = self
             .core
-            .get_or_create_credit_keyset_with_expiration(expiration)
+            .get_or_create_keyset_with_expiration(expiration)
             .await?;
         let keyset = self.core.keys(kinfo.id).await?;
         Ok(keyset)
@@ -48,13 +48,13 @@ impl crsat::KeysClient for CoreCl {
 impl sat::KeysClient for CoreCl {
     async fn get_active_keyset(&self) -> Result<cashu::KeySet> {
         let filters = wire_keys::KeysetInfoFilters {
-            unit: Some(CoreClient::debit_unit()),
+            unit: Some(CoreClient::currency_unit()),
             ..Default::default()
         };
         let kinfos = self.core.list_keyset_info(filters).await?;
         let Some(kinfo) = kinfos
             .into_iter()
-            .find(|kinfo| kinfo.unit == CoreClient::debit_unit() && kinfo.active)
+            .find(|kinfo| kinfo.unit == CoreClient::currency_unit() && kinfo.active)
         else {
             return Err(Error::InvalidInput(String::from(
                 "No active keyset found for debit unit",

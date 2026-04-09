@@ -13,24 +13,7 @@ use crate::{debit, error::Result, foreign, AppController};
 // ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn crsat_online_exchange(
-    State(ctrl): State<Arc<foreign::crsat::Service>>,
-    Json(request): Json<wire_exchange::OnlineExchangeRequest>,
-) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
-    tracing::debug!("Received request to online exchange");
-
-    let exchange_path: Vec<cashu::PublicKey> = request
-        .exchange_path
-        .iter()
-        .map(|p| cashu::PublicKey::from(*p))
-        .collect();
-    let signatures = ctrl.online_exchange(request.proofs, &exchange_path).await?;
-    let response = wire_exchange::OnlineExchangeResponse { proofs: signatures };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn sat_online_exchange(
+pub async fn online_exchange(
     State(ctrl): State<Arc<foreign::sat::Service>>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
@@ -47,26 +30,7 @@ pub async fn sat_online_exchange(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn crsat_offline_exchange(
-    State(ctrl): State<AppController>,
-    Json(request): Json<wire_exchange::OfflineExchangeRequest>,
-) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    tracing::debug!("Received request to offline exchange");
-
-    let proofs = ctrl
-        .crsat
-        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
-        .await?;
-    let payload = wire_exchange::OfflineExchangePayload { proofs };
-    let serialized = borsh::to_vec(&payload)?;
-    let signature = ctrl.signer.sign_schnorr_preimage(&serialized).await?;
-    let content = BASE64_STANDARD.encode(&serialized);
-    let response = wire_exchange::OfflineExchangeResponse { content, signature };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn sat_offline_exchange(
+pub async fn offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {

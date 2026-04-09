@@ -29,17 +29,7 @@ pub async fn request_to_pay_ebill(
     Ok(Json(response))
 }
 
-pub async fn crsat_try_htlc_swap(
-    State(ctrl): State<Arc<foreign::crsat::Service>>,
-    Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
-) -> Result<Json<cashu::Amount>> {
-    tracing::debug!("Received request to try_htlc_swap");
-
-    let amount = ctrl.try_swap_htlc(&request.preimage).await?;
-    Ok(Json(amount))
-}
-
-pub async fn sat_try_htlc_swap(
+pub async fn try_htlc_swap(
     State(ctrl): State<Arc<foreign::sat::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
@@ -50,7 +40,7 @@ pub async fn sat_try_htlc_swap(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn new_cr_mintop(
+pub async fn new_ebill_mintop(
     State(ctrl): State<Arc<credit::Service>>,
     Json(request): Json<wire_treasury::NewMintOperationRequest>,
 ) -> Result<Json<wire_treasury::NewMintOperationResponse>> {
@@ -68,7 +58,9 @@ pub async fn new_cr_mintop(
     Ok(Json(response))
 }
 
-fn convert_cr_mintop_status(status: credit::MintOperation) -> wire_treasury::MintOperationStatus {
+fn convert_ebill_mintop_status(
+    status: credit::MintOperation,
+) -> wire_treasury::MintOperationStatus {
     wire_treasury::MintOperationStatus {
         kid: status.kid,
         quote_id: status.uid,
@@ -78,19 +70,19 @@ fn convert_cr_mintop_status(status: credit::MintOperation) -> wire_treasury::Min
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn cr_mintop_status(
+pub async fn ebill_mintop_status(
     State(ctrl): State<Arc<credit::Service>>,
     Path(qid): Path<uuid::Uuid>,
 ) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request {qid}");
 
     let status = ctrl.mintop_status(qid).await?;
-    let status = convert_cr_mintop_status(status);
+    let status = convert_ebill_mintop_status(status);
     Ok(Json(status))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_cr_mintops(
+pub async fn list_ebill_mintops(
     State(ctrl): State<Arc<credit::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<Vec<uuid::Uuid>>> {
