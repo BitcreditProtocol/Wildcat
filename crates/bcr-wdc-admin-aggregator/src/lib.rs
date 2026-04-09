@@ -45,6 +45,8 @@ pub struct AppController {
 }
 
 impl AppController {
+    const MINIMUM_KEYSET_FEE_RATE_PPK: u64 = 0;
+
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
             core_url,
@@ -60,18 +62,25 @@ impl AppController {
         let treasury_cl = TreasuryClient::new(treasury_url);
 
         // pre-flight checklist
-        let filters = wire_keys::KeysetInfoFilters {
-            unit: Some(CoreClient::debit_unit()),
+        let filter = wire_keys::KeysetInfoFilters {
+            unit: Some(CoreClient::currency_unit()),
             ..Default::default()
         };
         let kinfos = core_cl
-            .list_keyset_info(filters)
+            .list_keyset_info(filter)
             .await
             .expect("pre-flight check failed: core service is not responding");
-        if kinfos.is_empty() {
-            tracing::warn!("pre-flight check warning: core service has no keysets configured");
+        let perpetual_kinfo = kinfos.iter().find(|k| k.final_expiry.is_none() && k.active);
+        if perpetual_kinfo.is_none() {
+            tracing::warn!(
+                "pre-flight check warning: core service has no perpetual keysets configured"
+            );
             core_cl
-                .new_keyset(CoreClient::debit_unit(), None, 0)
+                .new_keyset(
+                    CoreClient::currency_unit(),
+                    None,
+                    Self::MINIMUM_KEYSET_FEE_RATE_PPK,
+                )
                 .await
                 .expect("pre-flight check failed: core service is not responding to new_keyset");
         }
@@ -116,8 +125,6 @@ pub mod endpoints {
     pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/credit/mint_op_status/{qid}";
     pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/credit/mint_ops/{kid}";
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
-    pub const GET_SAT_BALANCE: &str = "/v1/admin/treasury/balance/sat";
-    pub const EBILL_PAY_COMPLETE: &str = "/v1/admin/treasury/ebill/payment_complete/{bid}";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -183,11 +190,6 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::POST_EBILL_REQTOPAY,
             post(admin::post_ebill_reqtopay),
-        )
-        .route(endpoints::GET_SAT_BALANCE, get(admin::get_sat_balance))
-        .route(
-            endpoints::EBILL_PAY_COMPLETE,
-            get(admin::get_ebill_mint_complete),
         );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
@@ -261,8 +263,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_status,
         // treasury service
         admin::post_ebill_reqtopay,
-        admin::get_sat_balance,
-        admin::get_ebill_mint_complete,
     )
 )]
 pub struct ApiDoc;

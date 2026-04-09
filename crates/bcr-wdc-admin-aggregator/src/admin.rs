@@ -8,12 +8,12 @@ use axum::{
 };
 use bcr_common::{
     cashu::{self, ProofsMethods},
-    client::treasury::Error as TreasuryClientError,
+    client::ebill::Error as EbillClientError,
     core::BillId,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
-        signatures as wire_signatures, treasury as wire_treasury, wallet as wire_wallet,
+        signatures as wire_signatures, treasury as wire_treasury,
     },
 };
 use wire_clowder::ClowderNodeInfo;
@@ -107,7 +107,7 @@ pub async fn get_mintop_status(
 ) -> Result<Json<wire_treasury::MintOperationStatus>> {
     tracing::debug!("Received mint operation status request");
 
-    let status = ctrl.treasury_cl.mint_operation_status(qid).await?;
+    let status = ctrl.treasury_cl.ebill_mint_operation_status(qid).await?;
     Ok(Json(status))
 }
 
@@ -129,7 +129,7 @@ pub async fn list_mintops(
 ) -> Result<Json<Vec<uuid::Uuid>>> {
     tracing::debug!("Received list mint operation request");
 
-    let ids = ctrl.treasury_cl.list_mint_operations(kid).await?;
+    let ids = ctrl.treasury_cl.list_ebill_mint_operations(kid).await?;
     Ok(Json(ids))
 }
 
@@ -364,8 +364,12 @@ pub async fn get_ebill_paymentstatus(
 ) -> Result<Json<wire_bill::SimplifiedBillPaymentStatus>> {
     tracing::debug!("Received ebill payment status request for {bid}");
 
-    let status = ctrl.ebill_cl.get_payment_status(bid).await?;
-    Ok(Json(status))
+    let response = ctrl.ebill_cl.get_payment_status(bid).await;
+    match response {
+        Ok(status) => Ok(Json(status)),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
 }
 
 #[utoipa::path(
@@ -546,50 +550,6 @@ pub async fn post_ebill_reqtopay(
         .request_to_pay_ebill(req.ebill_id, req.amount, req.deadline)
         .await?;
     Ok(Json(response))
-}
-
-#[utoipa::path(
-    get,
-    path = endpoints::GET_SAT_BALANCE,
-    responses (
-        (status = 200, description = "Successful response", body = wire_wallet::ECashBalance, content_type = "application/json"),
-    )
-)]
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_sat_balance(
-    State(ctrl): State<AppController>,
-) -> Result<Json<wire_wallet::ECashBalance>> {
-    tracing::debug!("Received request for treasury sat balance");
-
-    let response = ctrl.treasury_cl.sat_balance().await?;
-    Ok(Json(response))
-}
-
-#[utoipa::path(
-    get,
-    path = endpoints::EBILL_PAY_COMPLETE,
-    responses (
-        (status = 200, description = "Successful response", body = wire_wallet::EbillPaymentComplete, content_type = "application/json"),
-        (status = 404, description = "bill id not found"),
-    )
-)]
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_ebill_mint_complete(
-    State(ctrl): State<AppController>,
-    Path(bid): Path<BillId>,
-) -> Result<Json<wire_wallet::EbillPaymentComplete>> {
-    tracing::debug!("Received request for ebill payment complete {bid}");
-
-    let response = ctrl.treasury_cl.is_ebill_mint_complete(bid).await;
-    match response {
-        Err(TreasuryClientError::ResourceNotFound(resource)) => {
-            Err(Error::ResourceNotFound(resource))
-        }
-        Err(err) => Err(Error::TreasuryClient(err)),
-        Ok(response) => Ok(Json(wire_wallet::EbillPaymentComplete {
-            complete: response,
-        })),
-    }
 }
 
 #[utoipa::path(
