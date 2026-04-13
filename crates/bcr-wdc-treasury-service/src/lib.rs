@@ -43,7 +43,7 @@ pub struct AppConfig {
     core_url: ClientUrl,
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
-    clowder_nats_url: Option<reqwest::Url>,
+    clowder_nats_url: reqwest::Url,
     signer_url: reqwest::Url,
 }
 
@@ -77,7 +77,7 @@ pub struct AppController {
     crsat: Arc<foreign::crsat::Service>,
     sat: Arc<ProdSatService>,
     signer: Arc<SignatoryNatsClient>,
-    clwdr_nats: Option<Arc<ClowderNatsClient>>,
+    clwdr_nats: Arc<ClowderNatsClient>,
     clwdr_rest: Arc<ClowderRestClient>,
     dev: Arc<devmode::Service>,
 }
@@ -116,15 +116,10 @@ pub async fn init_app(
     let core_client = Arc::new(CoreClient::new(core_url));
     let ebill_client = EbClient::new(ebill_url);
     let clowder_rest_client = Arc::new(ClowderRestClient::new(clowder_rest_url));
-    let clowder_nats_client = if let Some(url) = clowder_nats_url {
-        Some(Arc::new(
-            ClowderNatsClient::new(url)
-                .await
-                .expect("Failed to create clowder nats client"),
-        ))
-    } else {
-        None
-    };
+    let nats_cl = ClowderNatsClient::new(clowder_nats_url)
+        .await
+        .expect("Failed to create clowder nats client");
+    let clowder_nats_client = Arc::new(nats_cl);
     let signer_client = Arc::new(
         SignatoryNatsClient::new(signer_url, None)
             .await

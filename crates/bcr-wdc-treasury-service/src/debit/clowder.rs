@@ -19,7 +19,7 @@ use crate::{
 
 pub struct ClowderCl {
     pub rest: Arc<ClowderRestClient>,
-    pub nats: Option<Arc<ClowderNatsClient>>,
+    pub nats: Arc<ClowderNatsClient>,
     pub signatory: Arc<SignatoryNatsClient>,
     pub min_confirmations: u32,
 }
@@ -42,10 +42,8 @@ impl ClowderClient for ClowderCl {
         req: clowder_messages::RequestToPayEbillRequest,
         resp: clowder_messages::RequestToPayEbillResponse,
     ) -> Result<()> {
-        let Some(nats) = &self.nats else {
-            return Ok(());
-        };
-        nats.request_to_pay_bill(req, resp)
+        self.nats
+            .request_to_pay_bill(req, resp)
             .await
             .map(|_| ())
             .map_err(Error::ClowderClient)
@@ -85,9 +83,6 @@ impl ClowderClient for ClowderCl {
         kid: cashu::Id,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
-        let Some(nats) = &self.nats else {
-            return Ok(signatures);
-        };
         let output_amount = signatures
             .iter()
             .fold(cashu::Amount::ZERO, |acc, sig| acc + sig.amount);
@@ -97,7 +92,7 @@ impl ClowderClient for ClowderCl {
             amount: output_amount,
         };
         let response = clowder_messages::MintOnchainResponse { signatures };
-        let response = nats.mint_onchain(request, response).await?;
+        let response = self.nats.mint_onchain(request, response).await?;
         Ok(response.signatures)
     }
 
@@ -131,16 +126,13 @@ impl ClowderClient for ClowderCl {
         address: bitcoin::Address,
         proofs: Vec<cashu::Proof>,
     ) -> Result<wire_melt::MeltTx> {
-        let Some(nats) = &self.nats else {
-            return Err(Error::ClowderUnavailable);
-        };
         let request = clowder_messages::MeltOnchainRequest {
             quote: qid,
             address: address.into_unchecked(),
             amount,
             proofs,
         };
-        let response = nats.melt_onchain(request).await?;
+        let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
     }
 }
