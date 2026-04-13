@@ -24,6 +24,7 @@ use crate::{
 
 // ----- end imports
 
+#[allow(dead_code)]
 pub struct DummyClwdr {}
 #[async_trait]
 impl credit::ClowderClient for DummyClwdr {
@@ -132,16 +133,13 @@ impl credit::ClowderClient for ClwdrCl {
     }
 }
 pub fn new_clowder_client(
-    nats_cl: Option<Arc<ClowderNatsClient>>,
+    nats_cl: Arc<ClowderNatsClient>,
     rest_cl: Arc<ClowderRestClient>,
 ) -> Box<dyn credit::ClowderClient> {
-    let cl: Box<dyn credit::ClowderClient> = match nats_cl {
-        None => Box::new(DummyClwdr {}),
-        Some(nats_cl) => Box::new(ClwdrCl {
-            nats: nats_cl,
-            rest: rest_cl,
-        }),
-    };
+    let cl: Box<dyn credit::ClowderClient> = Box::new(ClwdrCl {
+        nats: nats_cl,
+        rest: rest_cl,
+    });
     cl
 }
 
