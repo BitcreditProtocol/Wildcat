@@ -532,6 +532,30 @@ pub async fn get_coverage(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = ClowderClient::LOCAL_DERIVE_EBILL_PAYMENT_ADDRESS_EP_V1,
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn post_derive_ebill_payment_address(
+    State(ctrl): State<AppController>,
+    Json(request): Json<wire_clowder::DeriveEbillPaymentAddressRequest>,
+) -> Result<Json<wire_clowder::DeriveEbillPaymentAddressResponse>> {
+    tracing::debug!("Requested /v1/local/derive_ebill_payment_address");
+    let resp = ctrl
+        .clwdr_rest_client
+        .derive_ebill_payment_address(
+            request.bill_id,
+            request.block_id,
+            request.previous_block_hash,
+        )
+        .await?;
+    Ok(Json(resp))
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 pub async fn post_commit(
     State(ctrl): State<AppController>,

@@ -684,6 +684,7 @@ dependencies = [
  "cdk-common",
  "chrono",
  "ciborium",
+ "infer",
  "mockall",
  "nostr",
  "rand 0.8.5",
@@ -1541,6 +1542,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,7 +1683,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clwdr-client"
 version = "0.3.0"
-source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=f0627e7c2b291b565f07cad12e45499d45af76bc#f0627e7c2b291b565f07cad12e45499d45af76bc"
+source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=196086d7d7fdd348652772ab436a81dc6b329d0e#196086d7d7fdd348652772ab436a81dc6b329d0e"
 dependencies = [
  "async-nats",
  "bcr-common",
@@ -3332,6 +3344,15 @@ dependencies = [
  "hashbrown 0.16.1",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "infer"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
+dependencies = [
+ "cfb",
 ]
 
 [[package]]

@@ -228,7 +228,8 @@ pub async fn init_app(
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
     };
-    let clowdercl = credit::new_clowder_client(clowder_nats_client.clone());
+    let clowdercl =
+        credit::new_clowder_client(clowder_nats_client.clone(), clowder_rest_client.clone());
     let credit = credit::Service {
         repo: Box::new(credit_repo),
         wildcatcl: Box::new(wdccl),

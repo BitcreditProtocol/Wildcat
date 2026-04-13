@@ -143,6 +143,10 @@ pub async fn routes(app: AppController) -> Result<Router> {
             get(web::get_foreign_keysets),
         )
         .route(ClowderClient::LOCAL_COVERAGE_EP_V1, get(web::get_coverage))
+        .route(
+            ClowderClient::LOCAL_DERIVE_EBILL_PAYMENT_ADDRESS_EP_V1,
+            get(web::post_derive_ebill_payment_address),
+        )
         .with_state(app)
         .merge(swagger);
     Ok(router)
@@ -188,6 +192,7 @@ pub async fn routes(app: AppController) -> Result<Router> {
         crate::web::post_online_exchange,
         crate::web::post_offline_exchange,
         crate::web::get_coverage,
+        crate::web::post_derive_ebill_payment_address,
     )
 )]
 struct ApiDoc;

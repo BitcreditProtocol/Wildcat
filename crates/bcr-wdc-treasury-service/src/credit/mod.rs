@@ -61,7 +61,18 @@ pub trait WildcatClient: Send + Sync {
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 
-    async fn request_to_pay(&self, bid: BillId, expire: TStamp) -> Result<()>;
+    /// Fetches metadata for deriving the request to pay address from E-Bill, returns block id and previous block hash
+    async fn prepare_request_to_pay(
+        &self,
+        bid: BillId,
+    ) -> Result<(u64, bitcoin::hashes::sha256::Hash)>;
+    /// Calls request to pay on E-Bill and returns the bill private key
+    async fn request_to_pay(
+        &self,
+        bid: BillId,
+        expire: TStamp,
+        payment_address: bitcoin::Address,
+    ) -> Result<secp256k1::SecretKey>;
     async fn is_bill_paid(&self, bid: BillId) -> Result<bool>;
 }
 
@@ -77,5 +88,19 @@ pub trait ClowderClient: Send + Sync {
         signs: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
 
-    async fn request_to_pay_ebill(&self, rqid: Uuid, bid: BillId) -> Result<()>;
+    async fn request_to_pay_ebill(
+        &self,
+        bid: BillId,
+        payment_address: bitcoin::Address,
+        block_id: u64,
+        previous_block_hash: bitcoin::hashes::sha256::Hash,
+        amount: bitcoin::Amount,
+    ) -> Result<()>;
+
+    async fn request_onchain_ebill_address(
+        &self,
+        bid: BillId,
+        block_id: u64,
+        previous_block_hash: bitcoin::hashes::sha256::Hash,
+    ) -> Result<bitcoin::Address>;
 }

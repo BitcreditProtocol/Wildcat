@@ -33,10 +33,10 @@ pub trait WildcatClient: Send + Sync {
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
     async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address>;
-    async fn pay_bill(
+    async fn request_to_pay_bill(
         &self,
-        req: wire_clowder::BillPaymentRequest,
-        resp: wire_clowder::BillPaymentResponse,
+        req: wire_clowder::RequestToPayEbillRequest,
+        resp: wire_clowder::RequestToPayEbillResponse,
     ) -> Result<()>;
     async fn request_onchain_mint_address(
         &self,

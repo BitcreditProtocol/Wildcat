@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     cashu,
-    wire::{exchange as wire_exchange, signatures as wire_signatures, treasury as wire_treasury},
+    wire::{exchange as wire_exchange, treasury as wire_treasury},
 };
 // ----- local imports
 use crate::{credit, error::Result, foreign};
@@ -14,18 +14,14 @@ use crate::{credit, error::Result, foreign};
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn request_to_pay_ebill(
     State(ctrl): State<Arc<credit::Service>>,
-    Json(request): Json<wire_signatures::RequestToMintFromEBillRequest>,
-) -> Result<Json<wire_signatures::RequestToMintFromEBillResponse>> {
-    tracing::debug!("Received request to mint from ebill");
+    Json(request): Json<wire_treasury::RequestToPayFromEBillRequest>,
+) -> Result<Json<wire_treasury::RequestToPayFromEBillResponse>> {
+    tracing::debug!("Received request to pay from ebill");
 
-    let (id, request) = ctrl
-        .request_to_pay_ebill(request.ebill_id, request.amount, request.deadline)
+    ctrl.request_to_pay_ebill(request.ebill_id, request.amount, request.deadline)
         .await?;
 
-    let response = wire_signatures::RequestToMintFromEBillResponse {
-        request_id: id.to_string(),
-        request,
-    };
+    let response = wire_treasury::RequestToPayFromEBillResponse {};
     Ok(Json(response))
 }
 

@@ -37,15 +37,15 @@ impl ClowderClient for ClowderCl {
         Ok(response.address.assume_checked())
     }
 
-    async fn pay_bill(
+    async fn request_to_pay_bill(
         &self,
-        req: clowder_messages::BillPaymentRequest,
-        resp: clowder_messages::BillPaymentResponse,
+        req: clowder_messages::RequestToPayEbillRequest,
+        resp: clowder_messages::RequestToPayEbillResponse,
     ) -> Result<()> {
         let Some(nats) = &self.nats else {
             return Ok(());
         };
-        nats.pay_bill(req, resp)
+        nats.request_to_pay_bill(req, resp)
             .await
             .map(|_| ())
             .map_err(Error::ClowderClient)

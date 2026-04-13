@@ -8,10 +8,12 @@ use bcr_common::{
         core::{Client as CoreClient, Error as CoreError},
         ebill::Client as EbillClient,
     },
-    core,
+    clowder::taproot,
+    core::{self, BillId},
     wire::{bill as wire_bill, clowder as wire_clowder},
 };
-use clwdr_client::ClowderNatsClient;
+use bitcoin::hashes::Hash;
+use clwdr_client::{ClowderNatsClient, ClowderRestClient};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -35,13 +37,32 @@ impl credit::ClowderClient for DummyClwdr {
     ) -> Result<Vec<cashu::BlindSignature>> {
         Ok(signatures)
     }
-    async fn request_to_pay_ebill(&self, rqid: Uuid, bid: core::BillId) -> Result<()> {
-        tracing::debug!("DummyClwdr: request_to_pay_ebill called with rqid={rqid} and bid={bid}");
+    async fn request_to_pay_ebill(
+        &self,
+        bid: BillId,
+        _payment_address: bitcoin::Address,
+        _block_id: u64,
+        _previous_block_hash: bitcoin::hashes::sha256::Hash,
+        _amount: bitcoin::Amount,
+    ) -> Result<()> {
+        tracing::debug!("DummyClwdr: request_to_pay_ebill called for bid={bid}");
         Ok(())
+    }
+    async fn request_onchain_ebill_address(
+        &self,
+        _bid: BillId,
+        _block_id: u64,
+        _previous_block_hash: bitcoin::hashes::sha256::Hash,
+    ) -> Result<bitcoin::Address> {
+        return Err(Error::ClowderUnavailable);
     }
 }
 
-pub struct ClwdrCl(Arc<ClowderNatsClient>);
+pub struct ClwdrCl {
+    pub rest: Arc<ClowderRestClient>,
+    pub nats: Arc<ClowderNatsClient>,
+}
+
 #[async_trait]
 impl credit::ClowderClient for ClwdrCl {
     async fn minting_ebill(
@@ -60,27 +81,66 @@ impl credit::ClowderClient for ClwdrCl {
         };
         let response = wire_clowder::messages::MintEbillResponse { signatures };
         let res = self
-            .0
+            .nats
             .mint_bill(request, response)
             .await
             .map_err(Error::ClowderClient)?;
         Ok(res.signatures)
     }
 
-    async fn request_to_pay_ebill(&self, rqid: Uuid, bid: core::BillId) -> Result<()> {
-        let req = wire_clowder::messages::BillPaymentRequest {
+    async fn request_to_pay_ebill(
+        &self,
+        bid: BillId,
+        payment_address: bitcoin::Address,
+        block_id: u64,
+        previous_block_hash: bitcoin::hashes::sha256::Hash,
+        amount: bitcoin::Amount,
+    ) -> Result<()> {
+        let req = wire_clowder::messages::RequestToPayEbillRequest {
             bill_id: bid,
-            payment_clowder_quote: rqid,
+            payment_address: payment_address.into_unchecked(),
+            block_id,
+            previous_block_hash,
+            amount,
         };
-        let resp = wire_clowder::messages::BillPaymentResponse {};
-        let _resp = self.0.pay_bill(req, resp).await?;
+        let resp = wire_clowder::messages::RequestToPayEbillResponse {};
+        let _resp = self.nats.request_to_pay_bill(req, resp).await?;
         Ok(())
     }
+
+    async fn request_onchain_ebill_address(
+        &self,
+        bid: BillId,
+        block_id: u64,
+        previous_block_hash: bitcoin::hashes::sha256::Hash,
+    ) -> Result<bitcoin::Address> {
+        let info = self.rest.get_info().await?;
+        let network = info.network;
+        let alpha_key = info.node_id.x_only_public_key();
+        let frost_agg_key = info.multisig_agg_xonly;
+        let derived_address = taproot::derive_ebill_mint_req_to_pay_address(
+            &frost_agg_key,
+            &alpha_key,
+            144, // will be removed in the future
+            &bid,
+            block_id,
+            &previous_block_hash.as_byte_array(),
+            network,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?;
+        Ok(derived_address)
+    }
 }
-pub fn new_clowder_client(cl: Option<Arc<ClowderNatsClient>>) -> Box<dyn credit::ClowderClient> {
-    let cl: Box<dyn credit::ClowderClient> = match cl {
+pub fn new_clowder_client(
+    nats_cl: Option<Arc<ClowderNatsClient>>,
+    rest_cl: Arc<ClowderRestClient>,
+) -> Box<dyn credit::ClowderClient> {
+    let cl: Box<dyn credit::ClowderClient> = match nats_cl {
         None => Box::new(DummyClwdr {}),
-        Some(cl) => Box::new(ClwdrCl(cl)),
+        Some(nats_cl) => Box::new(ClwdrCl {
+            nats: nats_cl,
+            rest: rest_cl,
+        }),
     };
     cl
 }
@@ -117,15 +177,32 @@ impl credit::WildcatClient for WildcatCl {
         Ok(())
     }
 
-    async fn request_to_pay(&self, bill_id: core::BillId, deadline: TStamp) -> Result<()> {
+    async fn prepare_request_to_pay(
+        &self,
+        bid: core::BillId,
+    ) -> Result<(u64, bitcoin::hashes::sha256::Hash)> {
+        let request = wire_bill::PrepareRequestToPayBitcreditBillPayload { bill_id: bid };
+        let resp: wire_bill::PrepareRequestToPayBitcreditBillResponse =
+            self.ebill.prepare_request_to_pay_bill(&request).await?;
+
+        Ok((resp.block_id, resp.previous_block_hash))
+    }
+
+    async fn request_to_pay(
+        &self,
+        bill_id: core::BillId,
+        deadline: TStamp,
+        payment_address: bitcoin::Address,
+    ) -> Result<secp256k1::SecretKey> {
         let request = wire_bill::RequestToPayBitcreditBillPayload {
             bill_id,
             deadline,
             currency: CoreClient::currency_unit().to_string(),
-            payment_address: todo!("payment_address not yet plumbed through"),
+            payment_address: payment_address.into_unchecked(),
         };
-        self.ebill.request_to_pay_bill(&request).await?;
-        Ok(())
+        let resp: wire_bill::RequestToPayBitcreditBillResponse =
+            self.ebill.request_to_pay_bill(&request).await?;
+        Ok(resp.bill_private_key)
     }
 
     async fn is_bill_paid(&self, bill_id: core::BillId) -> Result<bool> {
