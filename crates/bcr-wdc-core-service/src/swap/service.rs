@@ -18,19 +18,6 @@ pub struct Service {
 }
 
 impl Service {
-    async fn verify_proofs_signatures(
-        &self,
-        sign_service: &dyn SigningService,
-        proofs: &[cashu::Proof],
-    ) -> Result<()> {
-        let joined: JoinAll<_> = proofs
-            .iter()
-            .map(|p| sign_service.verify_proof(p))
-            .collect();
-        joined.await.into_iter().collect::<Result<()>>()?;
-        Ok(())
-    }
-
     async fn are_keysets_active(
         &self,
         sign_service: &dyn SigningService,
@@ -100,7 +87,7 @@ impl Service {
             }
         }
         // 2. verify proofs signatures
-        self.verify_proofs_signatures(sign_service, inputs).await?;
+        sign_service.verify_proofs(inputs).await?;
         // generate signatures
         let signatures = sign_service.sign_blinds(outputs).await?;
         self.proofs.insert(inputs).await?;
@@ -126,7 +113,7 @@ impl Service {
             }
         }
         // 2. verify proofs signatures
-        self.verify_proofs_signatures(sign_service, proofs).await?;
+        sign_service.verify_proofs(proofs).await?;
         let mut ys = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;

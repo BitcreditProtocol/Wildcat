@@ -105,26 +105,28 @@ pub async fn restore(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, sign_service))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
 pub async fn swap_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
-    State(sign_service): State<Arc<keys::service::Service>>,
+    State(keys_srvc): State<Arc<keys::service::Service>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
+    let signsrvc = swap::KeysSignService { keys: keys_srvc };
     let signatures = ctrl
-        .swap(sign_service.as_ref(), &request.inputs, &request.outputs)
+        .swap(&signsrvc, &request.inputs, &request.outputs)
         .await?;
     let response = wire_swap::SwapResponse { signatures };
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, sign_service))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
 pub async fn burn_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
-    State(sign_service): State<Arc<keys::service::Service>>,
+    State(keys_srvc): State<Arc<keys::service::Service>>,
     Json(request): Json<wire_swap::BurnRequest>,
 ) -> Result<Json<wire_swap::BurnResponse>> {
-    let ys = ctrl.burn(sign_service.as_ref(), &request.proofs).await?;
+    let signsrvc = swap::KeysSignService { keys: keys_srvc };
+    let ys = ctrl.burn(&signsrvc, &request.proofs).await?;
     Ok(Json(wire_swap::BurnResponse { ys }))
 }
 
