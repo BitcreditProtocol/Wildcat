@@ -2,7 +2,13 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, core::signature};
+use bcr_common::{
+    cashu,
+    core::signature,
+    wire::{clowder::messages as wire_clowder, swap as wire_swap},
+};
+use bitcoin::secp256k1::schnorr;
+use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{error::Result, keys::service::Service as KeysService};
 // ----- local modules
@@ -46,5 +52,51 @@ impl SigningService for KeysSignService {
     async fn verify_fingerprints(&self, fps: &[signature::ProofFingerprint]) -> Result<()> {
         self.keys.verify_fingerprints(fps).await?;
         Ok(())
+    }
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait ClowderClient: Send + Sync {
+    async fn commit_to_swap(
+        &self,
+        request: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, schnorr::Signature)>;
+}
+
+pub struct ClowderCl {
+    pub nats: Arc<ClowderNatsClient>,
+}
+
+#[async_trait]
+impl ClowderClient for ClowderCl {
+    async fn commit_to_swap(
+        &self,
+        request: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, schnorr::Signature)> {
+        let content = request.content.clone();
+        let request = wire_clowder::SwapCommitmentRequest {
+            content: request.content,
+            wallet_key: request.wallet_key,
+            wallet_signature: request.wallet_signature,
+        };
+        let response = self.nats.swap_commitment(request).await?;
+        Ok((content, response.commitment))
+    }
+}
+
+pub struct DummyClowderClient;
+
+#[async_trait]
+impl ClowderClient for DummyClowderClient {
+    async fn commit_to_swap(
+        &self,
+        request: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, schnorr::Signature)> {
+        Ok((
+            request.content,
+            schnorr::Signature::from_slice(&[0; secp256k1::constants::SCHNORR_SIGNATURE_SIZE])
+                .unwrap(),
+        ))
     }
 }

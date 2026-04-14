@@ -8,13 +8,14 @@ use futures::future::JoinAll;
 use crate::{
     error::{Error, Result},
     persistence::ProofRepository,
-    swap::SigningService,
+    swap::{ClowderClient, SigningService},
 };
 
 // ----- end imports
 
 pub struct Service {
     pub proofs: Box<dyn ProofRepository>,
+    pub clowder: Box<dyn ClowderClient>,
 }
 
 impl Service {
