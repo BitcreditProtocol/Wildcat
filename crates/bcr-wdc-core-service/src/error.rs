@@ -21,6 +21,8 @@ pub enum Error {
     SignaturesRepository(anyhow::Error),
     #[error("Proof Repository error: {0}")]
     ProofRepository(anyhow::Error),
+    #[error("Commitment Repository error: {0}")]
+    CommitmentRepository(anyhow::Error),
     // external errors
     #[error("eCash sign/verify: {0}")]
     SignVerifyEcash(#[from] bcr_common::core::signature::ECashSignatureError),
@@ -58,6 +60,7 @@ impl axum::response::IntoResponse for Error {
             Error::KeysRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SignaturesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ProofRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CommitmentRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::SignVerifyEcash(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::BorshVerify(_) => (StatusCode::BAD_REQUEST, String::new()),

@@ -7,7 +7,7 @@ use futures::future::JoinAll;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::ProofRepository,
+    persistence::{CommitmentRepository, ProofRepository},
     swap::{ClowderClient, SigningService},
 };
 
@@ -15,6 +15,7 @@ use crate::{
 
 pub struct Service {
     pub proofs: Box<dyn ProofRepository>,
+    pub commitments: Box<dyn CommitmentRepository>,
     pub clowder: Box<dyn ClowderClient>,
 }
 

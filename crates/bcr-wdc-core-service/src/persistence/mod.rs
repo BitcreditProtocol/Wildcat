@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
 use bcr_wdc_utils::keys as keys_utils;
+use bitcoin::secp256k1::schnorr;
 // ----- local imports
-use crate::error::Result;
+use crate::{error::Result, TStamp};
 // ----- local modules
 pub mod inmemory;
 pub mod surreal;
@@ -44,4 +45,26 @@ pub trait ProofRepository: Send + Sync {
     async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()>;
     async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()>;
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait CommitmentRepository: Send + Sync {
+    async fn store(
+        &self,
+        inputs: Vec<cashu::PublicKey>,
+        outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        commitment: schnorr::Signature,
+    ) -> Result<()>;
+    async fn load(
+        &self,
+        inputs: &[cashu::PublicKey],
+        outputs: &[cashu::PublicKey],
+    ) -> Result<schnorr::Signature>;
+    async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn delete(&self, commitment: schnorr::Signature) -> Result<()>;
+    async fn clean_expired(&self, now: TStamp) -> Result<()>;
 }
