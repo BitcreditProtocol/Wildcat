@@ -235,7 +235,7 @@ impl persistence::KeysRepository for DBKeys {
         if entry.is_some() {
             Ok(())
         } else {
-            Err(Error::KeysetNotFound(kid))
+            Err(Error::ResourceNotFound(format!("keyset {}", kid)))
         }
     }
 
@@ -310,7 +310,7 @@ impl persistence::SignaturesRepository for DBSignatures {
         let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
         match r {
             Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
-                Err(Error::SignatureAlreadyExists(y))
+                Err(Error::Conflict(format!("signature already exists: {y}")))
             }
             Err(e) => Err(Error::SignaturesRepository(anyhow!(e))),
             Ok(..) => Ok(()),
@@ -379,7 +379,7 @@ impl persistence::ProofRepository for DBProofs {
             .await
             .map_err(|e| match e {
                 surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
-                    Error::ProofsAlreadySpent
+                    Error::InvalidInput(String::from("proofs already spent"))
                 }
                 _ => Error::ProofRepository(anyhow!(e)),
             })?;
@@ -418,7 +418,7 @@ impl persistence::ProofRepository for DBProofs {
 }
 
 fn proof_to_record_id(main_table: &str, proof: &cashu::Proof) -> Result<RecordId> {
-    let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes()).map_err(Error::CdkDhke)?;
+    let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
     Ok(y_to_record_id(main_table, y))
 }
 fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
@@ -653,7 +653,7 @@ mod tests {
 
         db.store(y, signature.clone()).await.unwrap();
         let res = db.store(y, signature).await;
-        assert!(matches!(res, Err(Error::SignatureAlreadyExists(..))));
+        assert!(matches!(res, Err(Error::Conflict(_))));
     }
 
     async fn init_proofs_mem_db() -> DBProofs {
@@ -697,7 +697,7 @@ mod tests {
 
         let res = db.insert(&proofs).await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::ProofsAlreadySpent));
+        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
 
     #[tokio::test]
@@ -716,7 +716,7 @@ mod tests {
 
         let res = db.insert(&proofs[1..]).await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::ProofsAlreadySpent));
+        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
 
     #[tokio::test]

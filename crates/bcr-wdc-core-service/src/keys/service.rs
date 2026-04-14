@@ -41,14 +41,17 @@ impl Service {
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
-        self.keys.info(kid).await?.ok_or(Error::KeysetNotFound(kid))
+        self.keys
+            .info(kid)
+            .await?
+            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))
     }
 
     pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
             .keyset(kid)
             .await?
-            .ok_or(Error::KeysetNotFound(kid))
+            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))
     }
 
     pub async fn verify_proof(&self, proof: cashu::Proof) -> Result<()> {
@@ -84,7 +87,7 @@ impl Service {
             .keys
             .info(kid)
             .await?
-            .ok_or(Error::KeysetNotFound(kid))?;
+            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))?;
         info.active = false;
         self.keys.update_info(info.clone()).await?;
         self.clowder.keyset_deactivated(kid).await?;
@@ -201,7 +204,7 @@ mod tests {
             clowder: Box::new(clowder_cl),
         };
         let err = service.deactivate(kid).await.unwrap_err();
-        assert!(matches!(err, Error::KeysetNotFound(id) if id == kid));
+        assert!(matches!(err, Error::ResourceNotFound(_)));
     }
 
     #[tokio::test]
