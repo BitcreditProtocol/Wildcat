@@ -45,7 +45,7 @@ pub async fn verify_proof(
 ) -> Result<()> {
     tracing::debug!("Received verify proof request");
 
-    ctrl.verify_proof(proof).await
+    ctrl.verify_proofs(&[proof]).await
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -55,7 +55,7 @@ pub async fn verify_fingerprint(
 ) -> Result<()> {
     tracing::debug!("Received verify fingerprint request");
 
-    ctrl.verify_fingerprint(fp.into()).await
+    ctrl.verify_fingerprints(&[fp.into()]).await
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]

@@ -34,6 +34,6 @@ impl SigningService for KeysService {
     }
 
     async fn verify_proof(&self, proof: &cashu::Proof) -> Result<()> {
-        self.verify_proof(proof.clone()).await
+        self.verify_proofs(&[proof.clone()]).await
     }
 }
