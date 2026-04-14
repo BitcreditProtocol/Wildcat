@@ -24,9 +24,9 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     keys: surreal::DBConnConfig,
-    proofs: surreal::DBConnConfig,
     signatures: surreal::DBConnConfig,
-    clowder: keys::clowder::ClowderClientConfig,
+    proofs: surreal::DBConnConfig,
+    clowder_url: clwdr_client::Url,
     starting_derivation_path: btc32::DerivationPath,
 }
 
@@ -42,7 +42,7 @@ impl AppController {
             keys,
             signatures,
             proofs,
-            clowder,
+            clowder_url,
             starting_derivation_path,
         } = cfg;
 
@@ -56,13 +56,17 @@ impl AppController {
             .await
             .expect("Failed to create proofs repository");
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
-        let clowder_cl = keys::clowder::build_clowder_client(clowder)
+        let clowder_cl = clwdr_client::ClowderNatsClient::new(clowder_url)
             .await
-            .expect("clowder client");
+            .expect("Failed to create clowder client");
+        let clowder_cl = Arc::new(clowder_cl);
+        let clowder_for_keys = keys::ClowderCl {
+            nats: clowder_cl.clone(),
+        };
         let keys_service = keys::service::Service {
             keys: Box::new(keys_repo),
             signatures: Box::new(signatures_repo),
-            clowder: clowder_cl,
+            clowder: Box::new(clowder_for_keys),
             keygen,
         };
         let swap_service = swap::service::Service {
@@ -126,7 +130,7 @@ pub mod test_utils {
             keys: Box::new(keys_repo),
             signatures: Box::new(signatures_repo),
             keygen,
-            clowder: Box::new(keys::clowder::DummyClowderClient),
+            clowder: Box::new(keys::DummyClowderClient),
         };
         let proofs_repo = persistence::inmemory::ProofMap::default();
         let swprv = swap::service::Service {
