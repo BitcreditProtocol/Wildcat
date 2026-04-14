@@ -69,8 +69,10 @@ impl AppController {
             clowder: Box::new(clowder_for_keys),
             keygen,
         };
+        let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
+            clowder: Box::new(clowder_for_swap),
         };
 
         Self {
@@ -135,6 +137,7 @@ pub mod test_utils {
         let proofs_repo = persistence::inmemory::ProofMap::default();
         let swprv = swap::service::Service {
             proofs: Box::new(proofs_repo),
+            clowder: Box::new(swap::DummyClowderClient),
         };
         AppController {
             keys: Arc::new(keysrv),
