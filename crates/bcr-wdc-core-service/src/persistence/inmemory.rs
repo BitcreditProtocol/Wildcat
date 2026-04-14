@@ -82,7 +82,7 @@ impl persistence::KeysRepository for KeyMap {
         let mut wlocked = self.keys.write().unwrap();
         let (info, _) = wlocked
             .get_mut(&new.id)
-            .ok_or(Error::KeysetNotFound(new.id))?;
+            .ok_or(Error::ResourceNotFound(format!("keyset {}", new.id)))?;
         *info = new;
         Ok(())
     }
@@ -113,7 +113,10 @@ impl persistence::SignaturesRepository for SignatureMap {
     async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
         let mut locked = self.signs.write().unwrap();
         if locked.contains_key(&y) {
-            return Err(Error::SignatureAlreadyExists(y));
+            return Err(Error::InvalidInput(format!(
+                "signature already exists: {}",
+                y
+            )));
         }
         locked.insert(y, signature);
         Ok(())
@@ -139,13 +142,13 @@ impl persistence::ProofRepository for ProofMap {
     async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()> {
         let mut items = Vec::with_capacity(tokens.len());
         for token in tokens {
-            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes()).map_err(Error::CdkDhke)?;
+            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
             items.push((y, token.clone()));
         }
         let mut locked = self.proofs.lock().unwrap();
         for (y, _) in &items {
             if locked.contains_key(y) {
-                return Err(Error::ProofsAlreadySpent);
+                return Err(Error::InvalidInput(String::from("proofs already spent")));
             }
         }
         for (y, token) in items.into_iter() {
@@ -156,7 +159,7 @@ impl persistence::ProofRepository for ProofMap {
     async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
         for token in tokens {
-            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes()).map_err(Error::CdkDhke)?;
+            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
             locked.remove(&y);
         }
         Ok(())

@@ -70,9 +70,8 @@ impl Service {
         outputs: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(inputs)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        signatures_utils::basic_blinds_checks(outputs).map_err(Error::InvalidOutput)?;
+        signatures_utils::basic_proofs_checks(inputs)?;
+        signatures_utils::basic_blinds_checks(outputs)?;
         // 3. inputs and outputs grouped by keyset ID have equal amounts
         let unique_ids: HashSet<_> = inputs.iter().map(|p| p.keyset_id).collect();
         for id in &unique_ids {
@@ -85,7 +84,9 @@ impl Service {
                 .filter(|p| p.keyset_id == *id)
                 .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
             if total_input != total_output {
-                return Err(Error::UnmatchingAmount(total_input, total_output));
+                return Err(Error::InvalidInput(format!(
+                    "input/output mismatch {total_input}/{total_output}",
+                )));
             }
         }
         // expensive verifications
@@ -112,8 +113,7 @@ impl Service {
         proofs: &[cashu::Proof],
     ) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(proofs)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        signatures_utils::basic_proofs_checks(proofs)?;
         // expensive verifications
         let unique_ids: HashSet<_> = proofs.iter().map(|p| p.keyset_id).collect();
         // 1. verify keysets are inactive
@@ -129,7 +129,7 @@ impl Service {
         self.verify_proofs_signatures(sign_service, proofs).await?;
         let mut ys = Vec::with_capacity(proofs.len());
         for proof in proofs {
-            let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes()).map_err(Error::CdkDhke)?;
+            let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
             ys.push(y);
         }
         self.proofs.insert(proofs).await?;

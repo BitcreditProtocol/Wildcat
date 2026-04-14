@@ -4,10 +4,7 @@ use async_trait::async_trait;
 use bcr_common::{cashu, core::BillId, wire::clowder::messages};
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
-use crate::{
-    error::{Error, Result},
-    keys::ClowderClient,
-};
+use crate::{error::Result, keys::ClowderClient};
 
 // ----- end imports
 
@@ -25,9 +22,7 @@ pub async fn build_clowder_client(cfg: ClowderClientConfig) -> Result<Box<dyn Cl
     let retv: Box<dyn ClowderClient> = match cfg {
         ClowderClientConfig::Dummy => Box::new(DummyClowderClient),
         ClowderClientConfig::ClowderNats { url } => {
-            let client = ClowderNatsClient::new(url)
-                .await
-                .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
+            let client = ClowderNatsClient::new(url).await?;
             Box::new(ClowderCl(client))
         }
     };
@@ -76,18 +71,14 @@ impl ClowderClient for ClowderCl {
             expiry: keyset.final_expiry.unwrap_or(0_u64),
             unit: keyset.unit,
         };
-        self.0
-            .new_keyset(req, resp)
-            .await
-            .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
+        self.0.new_keyset(req, resp).await?;
         Ok(())
     }
 
     async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()> {
         self.0
             .deactivate_keyset(messages::KeysetDeactivationRequest { id: kid })
-            .await
-            .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
+            .await?;
         Ok(())
     }
 
@@ -110,8 +101,7 @@ impl ClowderClient for ClowderCl {
                 },
                 messages::MintEbillResponse { signatures },
             )
-            .await
-            .map_err(|e| Error::ClowderClient(anyhow::anyhow!(e.to_string())))?;
+            .await?;
         Ok(resp.signatures)
     }
 }
