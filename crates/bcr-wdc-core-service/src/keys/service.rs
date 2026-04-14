@@ -1,6 +1,11 @@
 // ----- standard library imports
+use std::collections::HashMap;
 // ----- extra library imports
-use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo, core};
+use bcr_common::{
+    cashu,
+    cdk_common::mint::MintKeySetInfo,
+    core::signature::{sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint},
+};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -54,15 +59,33 @@ impl Service {
             .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))
     }
 
-    pub async fn verify_proof(&self, proof: cashu::Proof) -> Result<()> {
-        let keyset = self.keys(proof.keyset_id).await?;
-        core::signature::verify_ecash_proof(&keyset, &proof)?;
+    pub async fn verify_proofs(&self, proofs: &[cashu::Proof]) -> Result<()> {
+        let by_kid: HashMap<cashu::Id, Vec<&cashu::Proof>> =
+            proofs.iter().fold(HashMap::new(), |mut kmap, p| {
+                kmap.entry(p.keyset_id).or_default().push(p);
+                kmap
+            });
+        for (kid, proofs) in by_kid {
+            let keyset = self.keys(kid).await?;
+            for proof in proofs {
+                verify_ecash_proof(&keyset, proof)?;
+            }
+        }
         Ok(())
     }
 
-    pub async fn verify_fingerprint(&self, fp: core::signature::ProofFingerprint) -> Result<()> {
-        let keyset = self.keys(fp.keyset_id).await?;
-        core::signature::verify_ecash_fingerprint(&keyset, &fp)?;
+    pub async fn verify_fingerprints(&self, fps: &[ProofFingerprint]) -> Result<()> {
+        let by_kid: HashMap<cashu::Id, Vec<&ProofFingerprint>> =
+            fps.iter().fold(HashMap::new(), |mut kmap, fp| {
+                kmap.entry(fp.keyset_id).or_default().push(fp);
+                kmap
+            });
+        for (kid, fps) in by_kid {
+            let keyset = self.keys(kid).await?;
+            for fp in fps {
+                verify_ecash_fingerprint(&keyset, fp)?;
+            }
+        }
         Ok(())
     }
 
@@ -109,7 +132,7 @@ impl Service {
             return Ok(Vec::new());
         };
         let mut keyset = self.keys(first_b.keyset_id).await?;
-        let first_s = core::signature::sign_ecash(&keyset, first_b)?;
+        let first_s = sign_ecash(&keyset, first_b)?;
         self.signatures
             .store(first_b.blinded_secret, first_s.clone())
             .await?;
@@ -121,7 +144,7 @@ impl Service {
                 keyset = self.keys(blind.keyset_id).await?;
                 &keyset
             };
-            let signature = core::signature::sign_ecash(cur_keyset, blind)?;
+            let signature = sign_ecash(cur_keyset, blind)?;
             self.signatures
                 .store(blind.blinded_secret, signature.clone())
                 .await?;
