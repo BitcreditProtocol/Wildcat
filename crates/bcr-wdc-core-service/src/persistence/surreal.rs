@@ -1,5 +1,8 @@
 // ----- standard library imports
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -11,7 +14,7 @@ use bcr_common::{
     cdk_common::mint::MintKeySetInfo,
 };
 use bcr_wdc_utils::{keys::KeysetEntry, surreal};
-use bitcoin::bip32::DerivationPath;
+use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
 use surrealdb::{
     engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
     Result as SurrealResult, Surreal,
@@ -19,7 +22,7 @@ use surrealdb::{
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence,
+    persistence, TStamp,
 };
 
 // ----- end imports
@@ -425,12 +428,151 @@ fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
     RecordId::from_table_key(main_table, y.to_string())
 }
 
+////////////////////////////////////////////////////////////////////// Commitments DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CommitmentDBEntry {
+    id: RecordId,
+    inputs: Vec<cashu::PublicKey>,
+    outputs: Vec<cashu::PublicKey>,
+    expiration: TStamp,
+    wallet_key: cashu::PublicKey,
+}
+
+#[derive(Debug, Clone)]
+pub struct DBCommitments {
+    db: Surreal<Any>,
+}
+
+impl DBCommitments {
+    const TABLE: &'static str = "commitments";
+
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
+        Ok(Self { db: db_connection })
+    }
+}
+
+#[async_trait]
+impl persistence::CommitmentRepository for DBCommitments {
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        self.db
+            .query("DELETE FROM type::table($table) WHERE expiration < $now")
+            .bind(("table", Self::TABLE))
+            .bind(("now", now))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?;
+        Ok(())
+    }
+
+    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
+        let commitment: Option<CommitmentDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(inputs, $ys)) = false LIMIT 1")
+            .bind(("table", Self::TABLE))
+            .bind(("ys", ys.to_vec()))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?
+            .take(0)
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?;
+        Ok(commitment.is_some())
+    }
+
+    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
+        let commitment: Option<CommitmentDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(outputs, $secrets)) = false LIMIT 1")
+            .bind(("table", Self::TABLE))
+            .bind(("secrets", secrets.to_vec()))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?
+            .take(0)
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?;
+        Ok(commitment.is_some())
+    }
+
+    async fn store(
+        &self,
+        inputs: Vec<cashu::PublicKey>,
+        outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        signature: schnorr::Signature,
+    ) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
+        let entry = CommitmentDBEntry {
+            id: rid.clone(),
+            inputs,
+            outputs,
+            expiration,
+            wallet_key,
+        };
+        let _: Option<CommitmentDBEntry> =
+            self.db.insert(rid).content(entry).await.map_err(|e| {
+                Error::CommitmentRepository(anyhow!(
+                    "SurrealDB error while storing commitment: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
+    async fn load(
+        &self,
+        inputs: &[cashu::PublicKey],
+        outputs: &[cashu::PublicKey],
+    ) -> Result<schnorr::Signature> {
+        let commitment: Option<CommitmentDBEntry> = self
+            .db
+            .query(
+                "SELECT * FROM type::table($table)
+    WHERE
+        array::is_empty(array::difference(inputs, $inputs))
+    AND
+        array::is_empty(array::difference(outputs, $outputs))
+    LIMIT 1",
+            )
+            .bind(("table", Self::TABLE))
+            .bind(("inputs", inputs.to_vec()))
+            .bind(("outputs", outputs.to_vec()))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?
+            .take(0)
+            .map_err(|e| Error::CommitmentRepository(anyhow!("SurrealDB error: {}", e)))?;
+        let Some(entry) = commitment else {
+            return Err(Error::ResourceNotFound(format!(
+                "commitment not found {inputs:?} ; {outputs:?}"
+            )));
+        };
+        let key = entry.id.key().to_string();
+        let commitment = schnorr::Signature::from_str(&key).expect("signature from recordId");
+        Ok(commitment)
+    }
+
+    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::TABLE, commitment.to_string());
+        let _: Option<CommitmentDBEntry> = self.db.delete(rid).await.map_err(|e| {
+            Error::CommitmentRepository(anyhow!("SurrealDB error while deleting commitment: {}", e))
+        })?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use bcr_common::core_tests;
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-    use persistence::{KeysRepository, ProofRepository, SignaturesRepository};
+    use bitcoin::{
+        key::rand,
+        secp256k1::{self as secp, schnorr},
+    };
+    use persistence::{
+        CommitmentRepository, KeysRepository, ProofRepository, SignaturesRepository,
+    };
+    use rand::Rng;
 
     async fn init_keys_mem_db() -> DBKeys {
         let sdb = Surreal::<Any>::init();
@@ -732,9 +874,149 @@ mod tests {
             ],
         );
         db.insert(&proofs[0..2]).await.unwrap();
-
         let res = db.insert(&proofs[1..]).await;
         assert!(res.is_err());
         db.insert(&proofs[2..]).await.unwrap();
+    }
+
+    async fn init_commitments_mem_db() -> DBCommitments {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBCommitments { db: sdb }
+    }
+
+    fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
+        std::iter::repeat_with(|| {
+            cashu::PublicKey::from(bcr_common::core_tests::generate_random_keypair().public_key())
+        })
+        .take(sz)
+        .collect()
+    }
+
+    fn random_signature() -> schnorr::Signature {
+        let mut sl = [0; secp::constants::SCHNORR_SIGNATURE_SIZE];
+        rand::thread_rng().fill(&mut sl[..]);
+        schnorr::Signature::from_slice(&sl).unwrap()
+    }
+
+    fn random_wallet_key() -> cashu::PublicKey {
+        let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
+        cashu::PublicKey::from(pk)
+    }
+
+    #[tokio::test]
+    async fn store() {
+        let db = init_commitments_mem_db().await;
+        let inputs = random_cdk_pks(5);
+        let outputs = random_cdk_pks(3);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = random_signature();
+        db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn contains_inputs() {
+        let db = init_commitments_mem_db().await;
+        let inputs = random_cdk_pks(5);
+        let outputs = random_cdk_pks(3);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = random_signature();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
+        let mut tester = random_cdk_pks(2);
+        let result = db.contains_inputs(&tester).await;
+        assert!(!result.unwrap());
+        tester.push(inputs[0]);
+        let result = db.contains_inputs(&tester).await;
+        assert!(result.unwrap());
+        let result = db.contains_inputs(&inputs).await;
+        assert!(result.unwrap());
+        let result = db.contains_inputs(&outputs).await;
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn contains_outputs() {
+        let db = init_commitments_mem_db().await;
+        let inputs = random_cdk_pks(5);
+        let outputs = random_cdk_pks(3);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = random_signature();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
+        let mut tester = random_cdk_pks(2);
+        let result = db.contains_outputs(&tester).await;
+        assert!(!result.unwrap());
+        tester.push(outputs[0]);
+        let result = db.contains_outputs(&tester).await;
+        assert!(result.unwrap());
+        let result = db.contains_outputs(&outputs).await;
+        assert!(result.unwrap());
+        let result = db.contains_outputs(&inputs).await;
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn load() {
+        let db = init_commitments_mem_db().await;
+        let inputs = random_cdk_pks(5);
+        let outputs = random_cdk_pks(3);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = random_signature();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
+        // wrong inputs
+        let tester = random_cdk_pks(2);
+        let result = db.load(&tester, &outputs).await;
+        assert!(result.is_err());
+        // wrong outputs
+        let result = db.load(&inputs, &tester).await;
+        assert!(result.is_err());
+        let mut tester = random_cdk_pks(4);
+        tester.push(inputs[0]);
+        // subset of inputs
+        let result = db.load(&tester, &outputs).await;
+        assert!(result.is_err());
+        let mut tester = random_cdk_pks(2);
+        tester.push(outputs[0]);
+        // subset of outputs
+        let result = db.load(&inputs, &tester).await;
+        assert!(result.is_err());
+        // correct inputs and outputs
+        let result = db.load(&inputs, &outputs).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), signature);
+        let mut tester_in = inputs.clone();
+        tester_in.extend(random_cdk_pks(2));
+        let mut tester_out = outputs.clone();
+        tester_out.extend(random_cdk_pks(2));
+        // extra inputs and outputs
+        let result = db.load(&tester_in, &tester_out).await;
+        assert!(result.is_err());
     }
 }

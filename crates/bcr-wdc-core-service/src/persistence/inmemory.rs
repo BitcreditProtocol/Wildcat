@@ -7,10 +7,11 @@ use std::{
 use async_trait::async_trait;
 use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
 use bcr_wdc_utils::keys::KeysetEntry;
+use bitcoin::secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence,
+    persistence, TStamp,
 };
 
 // ----- end imports
@@ -176,5 +177,92 @@ impl persistence::ProofRepository for ProofMap {
             return Ok(Some(ret_v));
         }
         Ok(None)
+    }
+}
+
+type Commitment = (
+    Vec<cashu::PublicKey>,
+    Vec<cashu::PublicKey>,
+    TStamp,
+    cashu::PublicKey,
+);
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub struct CommitmentMap {
+    commitments: Arc<RwLock<HashMap<schnorr::Signature, Commitment>>>,
+}
+
+#[async_trait]
+impl persistence::CommitmentRepository for CommitmentMap {
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        let mut commitments = self.commitments.write().unwrap();
+        commitments.retain(|_, (_, _, expiration, _)| *expiration > now);
+        Ok(())
+    }
+
+    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
+        let commitments = self.commitments.read().unwrap();
+        for (_, (inputs, _, _, _)) in commitments.iter() {
+            for y in ys {
+                if inputs.contains(y) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
+        let commitments = self.commitments.read().unwrap();
+        for (_, (_, outputs, _, _)) in commitments.iter() {
+            for secret in secrets {
+                if outputs.contains(secret) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    async fn store(
+        &self,
+        mut inputs: Vec<cashu::PublicKey>,
+        mut outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        signature: schnorr::Signature,
+    ) -> Result<()> {
+        let mut commitments = self.commitments.write().unwrap();
+        inputs.sort();
+        outputs.sort();
+        commitments.insert(signature, (inputs, outputs, expiration, wallet_key));
+        Ok(())
+    }
+
+    async fn load(
+        &self,
+        inputs: &[cashu::PublicKey],
+        outputs: &[cashu::PublicKey],
+    ) -> Result<schnorr::Signature> {
+        let mut inputs = inputs.to_vec();
+        inputs.sort();
+        let mut outputs = outputs.to_vec();
+        outputs.sort();
+        let commitments = self.commitments.read().unwrap();
+        for (signature, (committed_inputs, committed_outputs, _, _)) in commitments.iter() {
+            if *committed_inputs == inputs && *committed_outputs == outputs {
+                return Ok(*signature);
+            }
+        }
+        Err(Error::ResourceNotFound(format!(
+            "{:?} ; {:?}",
+            inputs, outputs
+        )))
+    }
+
+    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        let mut commitments = self.commitments.write().unwrap();
+        commitments.remove(&commitment);
+        Ok(())
     }
 }

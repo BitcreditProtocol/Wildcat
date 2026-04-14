@@ -26,6 +26,7 @@ pub struct AppConfig {
     keys: surreal::DBConnConfig,
     signatures: surreal::DBConnConfig,
     proofs: surreal::DBConnConfig,
+    commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
     starting_derivation_path: btc32::DerivationPath,
 }
@@ -42,6 +43,7 @@ impl AppController {
             keys,
             signatures,
             proofs,
+            commitments,
             clowder_url,
             starting_derivation_path,
         } = cfg;
@@ -55,6 +57,9 @@ impl AppController {
         let proofs_repo = persistence::surreal::DBProofs::new(proofs)
             .await
             .expect("Failed to create proofs repository");
+        let commitments_repo = persistence::surreal::DBCommitments::new(commitments)
+            .await
+            .expect("Failed to create commitments repository");
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl = clwdr_client::ClowderNatsClient::new(clowder_url)
             .await
@@ -72,6 +77,7 @@ impl AppController {
         let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments_repo),
             clowder: Box::new(clowder_for_swap),
         };
 
@@ -135,8 +141,10 @@ pub mod test_utils {
             clowder: Box::new(keys::DummyClowderClient),
         };
         let proofs_repo = persistence::inmemory::ProofMap::default();
+        let commitments_repo = persistence::inmemory::CommitmentMap::default();
         let swprv = swap::service::Service {
             proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments_repo),
             clowder: Box::new(swap::DummyClowderClient),
         };
         AppController {
