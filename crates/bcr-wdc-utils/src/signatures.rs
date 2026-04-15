@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::cashu;
+use bcr_common::{cashu, core::signature as core_signature};
 use itertools::Itertools;
 use thiserror::Error;
 // ----- local imports
@@ -37,6 +37,7 @@ pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()>
     }
     Ok(())
 }
+
 pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     // 1. no empty proofs
     if proofs.is_empty() {
@@ -52,6 +53,26 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     // 3. unique proofs
     let unique_proofs: Vec<_> = proofs.iter().map(|p| p.secret.clone()).unique().collect();
     if unique_proofs.len() != proofs.len() {
+        return Err(ChecksError::NonUnique);
+    }
+    Ok(())
+}
+
+pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> ChecksResult<()> {
+    // 1. no empty fingerprint
+    if fps.is_empty() {
+        return Err(ChecksError::Empty);
+    }
+    // 2. no zero amounts
+    let zero_inputs = fps
+        .iter()
+        .any(|output| output.amount == cashu::Amount::ZERO);
+    if zero_inputs {
+        return Err(ChecksError::ZeroAmount);
+    }
+    // 3. unique fingerprints
+    let unique_fps: Vec<_> = fps.iter().map(|p| p.y.clone()).unique().collect();
+    if unique_fps.len() != fps.len() {
         return Err(ChecksError::NonUnique);
     }
     Ok(())
