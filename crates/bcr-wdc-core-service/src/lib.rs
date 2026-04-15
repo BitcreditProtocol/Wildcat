@@ -29,6 +29,7 @@ pub struct AppConfig {
     commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
     starting_derivation_path: btc32::DerivationPath,
+    max_expiry_sec: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -46,6 +47,7 @@ impl AppController {
             commitments,
             clowder_url,
             starting_derivation_path,
+            max_expiry_sec,
         } = cfg;
 
         let keys_repo = persistence::surreal::DBKeys::new(keys)
@@ -75,10 +77,12 @@ impl AppController {
             keygen,
         };
         let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
+        let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
             clowder: Box::new(clowder_for_swap),
+            max_expiry,
         };
 
         Self {
@@ -102,7 +106,7 @@ where
         .route(CoreClient::LISTKEYS_EP_V1, get(web::list_keys))
         .route(CoreClient::RESTORE_EP_V1, post(web::restore))
         .route(CoreClient::SWAP_EP_V1, post(web::swap_tokens))
-        .route(CoreClient::BURN_EP_V1, post(web::burn_tokens))
+        .route("/v1/swap/commit", post(web::commit_to_swap))
         .route(CoreClient::CHECKSTATE_EP_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
@@ -114,6 +118,7 @@ where
             post(admin::verify_fingerprint),
         )
         .route(CoreClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate))
+        .route(CoreClient::BURN_EP_V1, post(admin::burn_tokens))
         .route(CoreClient::RECOVER_EP_V1, post(admin::recover_tokens));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
@@ -146,6 +151,7 @@ pub mod test_utils {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
             clowder: Box::new(swap::DummyClowderClient),
+            max_expiry: chrono::Duration::seconds(3600),
         };
         AppController {
             keys: Arc::new(keysrv),

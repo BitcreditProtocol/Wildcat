@@ -1,14 +1,16 @@
 // ----- standard library imports
 use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::cashu;
+use bcr_common::{cashu, core::signature, wire::swap as wire_swap};
 use bcr_wdc_utils::signatures as signatures_utils;
 use futures::future::JoinAll;
+use secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
     persistence::{CommitmentRepository, ProofRepository},
     swap::{ClowderClient, SigningService},
+    TStamp,
 };
 
 // ----- end imports
@@ -17,6 +19,7 @@ pub struct Service {
     pub proofs: Box<dyn ProofRepository>,
     pub commitments: Box<dyn CommitmentRepository>,
     pub clowder: Box<dyn ClowderClient>,
+    pub max_expiry: chrono::Duration,
 }
 
 impl Service {
@@ -52,6 +55,81 @@ impl Service {
         Ok(proof_states)
     }
 
+    pub async fn commit_to_swap(
+        &self,
+        sign_service: &dyn SigningService,
+        request: wire_swap::SwapCommitmentRequest,
+        now: TStamp,
+    ) -> Result<(String, schnorr::Signature)> {
+        // check wallet signature
+        signature::schnorr_verify_b64(
+            &request.content,
+            &request.wallet_signature,
+            &request.wallet_key.x_only_public_key(),
+        )?;
+        let content: wire_swap::SwapCommitmentRequestBody =
+            signature::deserialize_borsh_msg(&request.content)?;
+        // check expiry
+        let expiry = chrono::DateTime::from_timestamp(content.expiry as i64, 0)
+            .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
+        if expiry <= now {
+            return Err(Error::InvalidInput("commitment already expired".into()));
+        }
+        let max_allowed = now + self.max_expiry;
+        let expiry = expiry.min(max_allowed);
+        // basic checks
+        let core_fps = content
+            .inputs
+            .iter()
+            .map(|fp| signature::ProofFingerprint::from(fp.clone()))
+            .collect::<Vec<_>>();
+        signatures_utils::basic_fingerprints_checks(&core_fps)?;
+        signatures_utils::basic_blinds_checks(&content.outputs)?;
+        // check amounts
+        // TODO: fees are not considered
+        let input_amount: u64 = content.inputs.iter().map(|fp| fp.amount).sum();
+        let output_amount: u64 = content.outputs.iter().map(|b| u64::from(b.amount)).sum();
+        if input_amount != output_amount {
+            return Err(Error::InvalidInput(format!(
+                "amount mismatch: inputs={input_amount}, outputs={output_amount}"
+            )));
+        }
+        // check inputs are unspent
+        let ys: Vec<cashu::PublicKey> = content.inputs.iter().map(|fp| fp.y).collect();
+        let states = self.check_spendable(&ys).await?;
+        let all_unspent = states
+            .iter()
+            .all(|s| matches!(s.state, cashu::State::Unspent));
+        if !all_unspent {
+            return Err(Error::InvalidInput(
+                "One or more proofs are not unspent".to_string(),
+            ));
+        }
+        // check inputs signatures
+        sign_service.verify_fingerprints(&core_fps).await?;
+        // check inputs not already committed
+        self.commitments.clean_expired(now).await?;
+        let contained = self.commitments.contains_inputs(&ys).await?;
+        if contained {
+            return Err(Error::InvalidInput(String::from("proofs committed")));
+        }
+        // check outputs not already committed
+        let bs: Vec<cashu::PublicKey> = content.outputs.iter().map(|b| b.blinded_secret).collect();
+        let contained = self.commitments.contains_outputs(&bs).await?;
+        if contained {
+            return Err(Error::InvalidInput(String::from(
+                "blinded messages committed",
+            )));
+        }
+        // store commitment
+        self.commitments
+            .store(ys, bs, expiry, request.wallet_key, request.wallet_signature)
+            .await?;
+        // broadcast request to clowder
+        let (content, commitment) = self.clowder.commit_to_swap(request).await?;
+        Ok((content, commitment))
+    }
+
     pub async fn swap(
         &self,
         sign_service: &dyn SigningService,
@@ -72,6 +150,7 @@ impl Service {
                 .iter()
                 .filter(|p| p.keyset_id == *id)
                 .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
+            // TODO: fees are not considered
             if total_input != total_output {
                 return Err(Error::InvalidInput(format!(
                     "input/output mismatch {total_input}/{total_output}",

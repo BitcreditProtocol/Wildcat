@@ -78,3 +78,14 @@ pub async fn recover_tokens(
     ctrl.recover(&request.proofs).await?;
     Ok(Json(wire_swap::RecoverResponse {}))
 }
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
+pub async fn burn_tokens(
+    State(ctrl): State<Arc<swap::service::Service>>,
+    State(keys_srvc): State<Arc<keys::service::Service>>,
+    Json(request): Json<wire_swap::BurnRequest>,
+) -> Result<Json<wire_swap::BurnResponse>> {
+    let signsrvc = swap::KeysSignService { keys: keys_srvc };
+    let ys = ctrl.burn(&signsrvc, &request.proofs).await?;
+    Ok(Json(wire_swap::BurnResponse { ys }))
+}
