@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::core::Client as CoreClient;
+use bcr_common::client::{core::Client as CoreClient, mint::Client as MintClient};
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
@@ -100,14 +100,13 @@ where
 {
     let web = Router::new()
         .route("/health", get(get_health))
-        .route(CoreClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
-        .route(CoreClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
-        .route(CoreClient::KEYS_EP_V1, get(web::lookup_keys))
-        .route(CoreClient::LISTKEYS_EP_V1, get(web::list_keys))
-        .route(CoreClient::RESTORE_EP_V1, post(web::restore))
-        .route(CoreClient::SWAP_EP_V1, post(web::swap_tokens))
+        .route(MintClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
+        .route(MintClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
+        .route(MintClient::KEYS_EP_V1, get(web::lookup_keys))
+        .route(MintClient::RESTORE_EP_V1, post(web::restore))
+        .route(MintClient::SWAP_EP_V1, post(web::swap_tokens))
         .route("/v1/swap/commit", post(web::commit_to_swap))
-        .route(CoreClient::CHECKSTATE_EP_V1, post(web::check_state));
+        .route(MintClient::CHECKSTATE_EP_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route(CoreClient::NEW_KEYSET_EP_V1, post(admin::new_keyset))
