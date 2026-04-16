@@ -5,8 +5,8 @@ use anyhow::Result;
 use bcr_common::{
     cashu,
     client::{
-        core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
-        treasury::Client as TreasuryClient,
+        core::Client as CoreClient, ebill::Client as EbillClient, mint::Client as MintClient,
+        quote::Client as QuoteClient,
     },
     wire::{identity as wire_identity, quotes as wire_quotes, swap as wire_swap},
 };
@@ -97,7 +97,7 @@ pub struct Service<T> {
     ebill_cl: EbillClient,
     core_cl: CoreClient,
     quote_cl: QuoteClient,
-    treasury_cl: TreasuryClient,
+    mint_cl: MintClient,
     client: RestClient,
     _marker: PhantomData<T>,
 }
@@ -109,7 +109,7 @@ impl<T> Service<T> {
             ebill_cl: EbillClient::new(url.clone()),
             core_cl: CoreClient::new(url.clone()),
             quote_cl: QuoteClient::new(url.clone()),
-            treasury_cl: TreasuryClient::new(url),
+            mint_cl: MintClient::new(url),
             client: RestClient::new(),
             _marker: PhantomData,
             base_url,
@@ -130,14 +130,14 @@ impl Service<UserService> {
         minting_pubkey: cashu::PublicKey,
         signing_key: &bitcoin::key::Keypair,
     ) -> Uuid {
-        self.quote_cl
+        self.mint_cl
             .enquire(bill, minting_pubkey, signing_key)
             .await
             .unwrap()
     }
 
     pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> wire_quotes::StatusReply {
-        self.quote_cl.lookup(quote_id).await.unwrap()
+        self.mint_cl.lookup(quote_id).await.unwrap()
     }
 
     pub async fn list_keysets(&self) -> Vec<cashu::KeySetInfo> {
@@ -152,7 +152,7 @@ impl Service<UserService> {
     }
 
     pub async fn accept_quote(&self, qid: Uuid) {
-        self.quote_cl.accept_offer(qid).await.unwrap();
+        self.mint_cl.accept_offer(qid).await.unwrap();
     }
 
     pub async fn mint_ebill(
@@ -161,7 +161,7 @@ impl Service<UserService> {
         outputs: Vec<cashu::BlindedMessage>,
         sk: cashu::SecretKey,
     ) -> Vec<cashu::BlindSignature> {
-        self.treasury_cl.ebill_mint(qid, outputs, sk).await.unwrap()
+        self.mint_cl.ebill_mint(qid, outputs, sk).await.unwrap()
     }
     /// GET v1/info
     pub async fn mint_info(&self) -> cashu::nut06::MintInfo {
@@ -193,7 +193,7 @@ impl Service<UserService> {
         outputs: Vec<cashu::BlindedMessage>,
         commitment: bitcoin::secp256k1::schnorr::Signature,
     ) -> Vec<cashu::BlindSignature> {
-        self.core_cl
+        self.mint_cl
             .swap(inputs, outputs, commitment)
             .await
             .unwrap()
