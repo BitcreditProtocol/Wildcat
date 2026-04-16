@@ -76,11 +76,7 @@ impl AppController {
                 "pre-flight check warning: core service has no perpetual keysets configured"
             );
             core_cl
-                .new_keyset(
-                    CoreClient::currency_unit(),
-                    None,
-                    Self::MINIMUM_KEYSET_FEE_RATE_PPK,
-                )
+                .new_keyset(None, Self::MINIMUM_KEYSET_FEE_RATE_PPK)
                 .await
                 .expect("pre-flight check failed: core service is not responding to new_keyset");
         }
