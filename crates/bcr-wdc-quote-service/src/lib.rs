@@ -7,8 +7,8 @@ use axum::{
     Router,
 };
 use bcr_common::client::{
-    core::Client as CoreClient, ebill::Client as EBillClient, quote::Client as QuoteClient,
-    treasury::Client as TreasuryClient, Url as ClientUrl,
+    core::Client as CoreClient, ebill::Client as EBillClient, mint::Client as MintClient,
+    quote::Client as QuoteClient, treasury::Client as TreasuryClient, Url as ClientUrl,
 };
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules
@@ -98,22 +98,19 @@ where
     Arc<service::Service>: FromRef<Cntrlr> + Send + Sync + 'static,
     Cntrlr: Send + Sync + Clone + 'static,
 {
-    let user_routes = Router::new()
+    let web = Router::new()
         .route("/health", get(get_health))
-        .route(QuoteClient::ENQUIRE_EP_V1, post(web::enquire_quote))
-        .route(QuoteClient::LOOKUP_EP_V1, get(web::lookup_quote))
-        .route(QuoteClient::RESOLVE_EP_V1, delete(web::cancel))
-        .route(QuoteClient::RESOLVE_EP_V1, patch(web::resolve_offer));
+        .route(MintClient::ENQUIRE_EP_V1, post(web::enquire_quote))
+        .route(MintClient::LOOKUP_EP_V1, get(web::lookup_quote))
+        .route(MintClient::RESOLVE_EP_V1, delete(web::cancel))
+        .route(MintClient::RESOLVE_EP_V1, patch(web::resolve_offer));
 
-    let admin_routes = Router::new()
+    let admin = Router::new()
         .route(QuoteClient::LIST_EP_V1, get(admin::list_quotes))
-        .route("/v1/admin/credit/quote/{qid}", get(admin::lookup_quote))
+        .route(QuoteClient::ADMIN_LOOKUP_EP_V1, get(admin::lookup_quote))
         .route(QuoteClient::UPDATE_EP_V1, patch(admin::update_quote));
 
-    Router::new()
-        .merge(user_routes)
-        .merge(admin_routes)
-        .with_state(ctrl)
+    Router::new().merge(web).merge(admin).with_state(ctrl)
 }
 
 async fn get_health() -> &'static str {
