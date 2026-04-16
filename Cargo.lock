@@ -934,8 +934,6 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
- "utoipa",
- "utoipa-swagger-ui",
  "uuid",
 ]
 
@@ -1683,7 +1681,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clwdr-client"
 version = "0.3.0"
-source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=196086d7d7fdd348652772ab436a81dc6b329d0e#196086d7d7fdd348652772ab436a81dc6b329d0e"
+source = "git+https://github.com/BitcreditProtocol/Clowder.git?rev=f18cf65ab3491abd5f2c5aad019eeea77dc061c6#f18cf65ab3491abd5f2c5aad019eeea77dc061c6"
 dependencies = [
  "async-nats",
  "bcr-common",
