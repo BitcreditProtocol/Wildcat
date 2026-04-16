@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::{clowder::Client as ClowderClient, core::Client as CoreClient};
+use bcr_common::client::mint::Client as MintClient;
 use bcr_wdc_utils::surreal;
 // ----- local modules
 mod commitment;
@@ -89,17 +89,17 @@ pub async fn routes(app: AppController) -> Result<Router> {
         // Cashu Endpoints
         .route("/v1/info", get(web::get_mint_info))
         .route("/v1/wildcat", get(web::get_wildcat_info))
-        .route(CoreClient::SWAP_EP_V1, post(web::post_swap))
+        .route(MintClient::SWAP_EP_V1, post(web::post_swap))
         // Clowder Endpoints
         .route(
-            ClowderClient::ONLINE_EXCHANGE_EP_V1,
+            MintClient::ONLINE_EXCHANGE_EP_V1,
             post(web::post_online_exchange),
         )
         .route(
-            ClowderClient::OFFLINE_EXCHANGE_EP_V1,
+            MintClient::OFFLINE_EXCHANGE_EP_V1,
             post(web::post_offline_exchange),
         )
-        .route(ClowderClient::LOCAL_COVERAGE_EP_V1, get(web::get_coverage))
+        .route(MintClient::LOCAL_COVERAGE_EP_V1, get(web::get_coverage))
         .with_state(app);
     Ok(router)
 }

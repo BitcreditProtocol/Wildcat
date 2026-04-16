@@ -61,8 +61,8 @@ impl axum::response::IntoResponse for Error {
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
-            Error::Core(bcr_common::client::core::Error::InvalidRequest) => {
-                (StatusCode::BAD_REQUEST, String::new())
+            Error::Core(bcr_common::client::core::Error::InvalidRequest(msg)) => {
+                (StatusCode::BAD_REQUEST, msg)
             }
             Error::Core(bcr_common::client::core::Error::KeysetIdNotFound(_)) => {
                 (StatusCode::NOT_FOUND, self.to_string())
