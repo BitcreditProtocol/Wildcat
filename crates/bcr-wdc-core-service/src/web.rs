@@ -65,23 +65,6 @@ pub async fn lookup_keys(
     Ok(Json(response))
 }
 
-/// --------------------------- List keys
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn list_keys(
-    State(ctrl): State<Arc<keys::service::Service>>,
-) -> Result<Json<cashu::KeysResponse>> {
-    tracing::debug!("Received keys list request");
-
-    let keysets = ctrl
-        .list_keyset()
-        .await?
-        .into_iter()
-        .map(cashu::KeySet::from)
-        .collect();
-    let response = cashu::KeysResponse { keysets };
-    Ok(Json(response))
-}
-
 /// --------------------------- Restore signatures
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn restore(

@@ -509,13 +509,12 @@ impl persistence::CommitmentRepository for DBCommitments {
             expiration,
             wallet_key,
         };
-        let _: Option<CommitmentDBEntry> =
-            self.db.insert(rid).content(entry).await.map_err(|e| {
-                Error::CommitmentRepository(anyhow!(
-                    "SurrealDB error while storing commitment: {}",
-                    e
-                ))
-            })?;
+        let _: Option<CommitmentDBEntry> = self
+            .db
+            .insert(rid)
+            .content(entry)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         Ok(())
     }
 
@@ -909,9 +908,20 @@ mod tests {
     #[tokio::test]
     async fn store() {
         let db = init_commitments_mem_db().await;
-        let inputs = random_cdk_pks(5);
+        let mut inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = random_signature();
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+        )
+        .await
+        .unwrap();
+        inputs.swap(0, 1);
         let signature = random_signature();
         db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
             .await
