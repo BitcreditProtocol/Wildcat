@@ -7,8 +7,8 @@ use axum::{
     Router,
 };
 use bcr_common::client::{
-    core::Client as CoreClient, ebill::Client as EbClient, treasury::Client as TreasuryClient,
-    Url as ClientUrl,
+    core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
+    treasury::Client as TreasuryClient, Url as ClientUrl,
 };
 use bcr_wdc_utils::{routine, surreal};
 use bitcoin::secp256k1;
@@ -253,22 +253,19 @@ pub async fn init_app(
 
 pub fn routes(app: AppController) -> Router {
     let web = Router::new()
-        .route(
-            TreasuryClient::EXCHANGEONLINE_EP_V1,
-            post(web::online_exchange),
-        )
+        .route(MintClient::EXCHANGEONLINE_EP_V1, post(web::online_exchange))
         .route("/v1/free_money", post(devmode::free_money))
         .route(
-            TreasuryClient::EXCHANGEOFFLINE_EP_V1,
+            MintClient::EXCHANGEOFFLINE_EP_V1,
             post(web::offline_exchange),
         )
         .route(
-            TreasuryClient::MELTQUOTE_ONCHAIN_EP_V1,
+            MintClient::MELTQUOTE_ONCHAIN_EP_V1,
             post(web::melt_quote_onchain),
         )
-        .route(TreasuryClient::MELT_ONCHAIN_EP_V1, post(web::melt_onchain))
+        .route(MintClient::MELT_ONCHAIN_EP_V1, post(web::melt_onchain))
         .route(
-            TreasuryClient::MINTQUOTE_ONCHAIN_EP_V1,
+            MintClient::MINTQUOTE_ONCHAIN_EP_V1,
             post(web::mint_quote_onchain),
         );
     let admin = Router::new()
