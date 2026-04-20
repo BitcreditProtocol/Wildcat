@@ -16,6 +16,10 @@ pub enum ChecksError {
     ZeroAmount,
     #[error("non-unique elements")]
     NonUnique,
+    #[error("verify_p2pk: {0}")]
+    P2PK(#[from] cashu::nut11::Error),
+    #[error("verify_htlc: {0}")]
+    HTLC(#[from] cashu::nut14::Error),
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
@@ -54,6 +58,14 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     let unique_proofs: Vec<_> = proofs.iter().map(|p| p.secret.clone()).unique().collect();
     if unique_proofs.len() != proofs.len() {
         return Err(ChecksError::NonUnique);
+    }
+    // 4. p2pk / htlc
+    for proof in proofs {
+        match &proof.witness {
+            Some(cashu::Witness::P2PKWitness(_)) => proof.verify_p2pk()?,
+            Some(cashu::Witness::HTLCWitness(_)) => proof.verify_htlc()?,
+            None => (),
+        }
     }
     Ok(())
 }
