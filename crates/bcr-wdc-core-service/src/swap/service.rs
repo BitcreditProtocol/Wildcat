@@ -121,13 +121,22 @@ impl Service {
                 "blinded messages committed",
             )));
         }
-        // store commitment
-        self.commitments
-            .store(ys, bs, expiry, request.wallet_key, request.wallet_signature)
-            .await?;
+        let wallet_pk = request.wallet_key;
+        let wallet_sig = request.wallet_signature;
         // broadcast request to clowder
         let (content, commitment) = self.clowder.commit_to_swap(request).await?;
-        Ok((content, commitment))
+        // store commitment
+        let store_res = self
+            .commitments
+            .store(ys, bs, expiry, wallet_pk, wallet_sig, commitment.clone())
+            .await;
+        match store_res {
+            Ok(_) => Ok((content, commitment)),
+            Err(e) => {
+                tracing::error!("failed to store commitment: {e}");
+                Err(e)
+            }
+        }
     }
 
     pub async fn swap(

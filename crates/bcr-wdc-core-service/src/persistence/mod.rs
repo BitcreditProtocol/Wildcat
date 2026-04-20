@@ -56,13 +56,13 @@ pub trait CommitmentRepository: Send + Sync {
         outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
+        wallet_signature: schnorr::Signature,
         commitment: schnorr::Signature,
     ) -> Result<()>;
     async fn load(
         &self,
-        inputs: &[cashu::PublicKey],
-        outputs: &[cashu::PublicKey],
-    ) -> Result<schnorr::Signature>;
+        signature: &schnorr::Signature,
+    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)>;
     async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()>;
