@@ -105,7 +105,7 @@ where
         .route(MintClient::KEYS_EP_V1, get(web::lookup_keys))
         .route(MintClient::RESTORE_EP_V1, post(web::restore))
         .route(MintClient::SWAP_EP_V1, post(web::swap_tokens))
-        .route("/v1/swap/commit", post(web::commit_to_swap))
+        .route(MintClient::SWAPCOMMIT_EP_V1, post(web::commit_to_swap))
         .route(MintClient::CHECKSTATE_EP_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
@@ -131,6 +131,7 @@ async fn get_health() -> &'static str {
 pub mod test_utils {
     use super::*;
     use bcr_wdc_utils::KeysetEntry;
+    use std::str::FromStr;
 
     fn test_controller() -> AppController {
         let seed = [0u8; 32];
@@ -149,13 +150,21 @@ pub mod test_utils {
         let swprv = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
-            clowder: Box::new(swap::DummyClowderClient),
+            clowder: Box::new(swap::test_utils::DummyClowderClient),
             max_expiry: chrono::Duration::seconds(3600),
         };
         AppController {
             keys: Arc::new(keysrv),
             swap: Arc::new(swprv),
         }
+    }
+
+    pub fn mint_kp() -> secp256k1::Keypair {
+        let sk = secp256k1::SecretKey::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &sk)
     }
 
     pub async fn build_test_server(

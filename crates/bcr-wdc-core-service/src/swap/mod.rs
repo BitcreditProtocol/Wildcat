@@ -10,7 +10,10 @@ use bcr_common::{
 use bitcoin::secp256k1::schnorr;
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
-use crate::{error::Result, keys::service::Service as KeysService};
+use crate::{
+    error::{Error, Result},
+    keys::service::Service as KeysService,
+};
 // ----- local modules
 pub mod service;
 
@@ -85,18 +88,31 @@ impl ClowderClient for ClowderCl {
     }
 }
 
-pub struct DummyClowderClient;
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+    use bitcoin::{
+        base64::prelude::*,
+        hashes::{sha256::Hash as Sha256, Hash},
+        secp256k1 as secp,
+    };
 
-#[async_trait]
-impl ClowderClient for DummyClowderClient {
-    async fn commit_to_swap(
-        &self,
-        request: wire_swap::SwapCommitmentRequest,
-    ) -> Result<(String, schnorr::Signature)> {
-        Ok((
-            request.content,
-            schnorr::Signature::from_slice(&[0; secp256k1::constants::SCHNORR_SIGNATURE_SIZE])
-                .unwrap(),
-        ))
+    pub struct DummyClowderClient;
+
+    #[async_trait]
+    impl ClowderClient for DummyClowderClient {
+        async fn commit_to_swap(
+            &self,
+            request: wire_swap::SwapCommitmentRequest,
+        ) -> Result<(String, schnorr::Signature)> {
+            let mint_kp = crate::test_utils::mint_kp();
+            let unbased = BASE64_STANDARD
+                .decode(&request.content)
+                .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            let sha = Sha256::hash(&unbased);
+            let secp_msg = secp::Message::from_digest(*sha.as_ref());
+            let signature = secp::global::SECP256K1.sign_schnorr(&secp_msg, &mint_kp);
+            Ok((request.content, signature))
+        }
     }
 }
