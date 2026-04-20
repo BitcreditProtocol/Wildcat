@@ -46,6 +46,8 @@ impl persistence::KeysRepository for KeyMap {
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
+        let max_exp = max_expiration_tstamp.unwrap_or(u64::MAX);
+        let min_exp = min_expiration_tstamp.unwrap_or(u64::MIN);
         let a = rlocked
             .iter()
             .filter_map(|(_, (info, _))| {
@@ -54,14 +56,11 @@ impl persistence::KeysRepository for KeyMap {
                         return None;
                     }
                 }
-                if info.final_expiry.unwrap_or_default()
-                    <= min_expiration_tstamp.unwrap_or_default()
-                {
+                let exp = info.final_expiry.unwrap_or_default();
+                if exp < min_exp {
                     return None;
                 }
-                if info.final_expiry.unwrap_or_default()
-                    >= max_expiration_tstamp.unwrap_or_default()
-                {
+                if exp > max_exp {
                     return None;
                 }
                 Some(info)
@@ -185,6 +184,7 @@ type Commitment = (
     Vec<cashu::PublicKey>,
     TStamp,
     cashu::PublicKey,
+    schnorr::Signature,
 );
 #[allow(dead_code)]
 #[derive(Clone, Default)]
@@ -196,13 +196,13 @@ pub struct CommitmentMap {
 impl persistence::CommitmentRepository for CommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
-        commitments.retain(|_, (_, _, expiration, _)| *expiration > now);
+        commitments.retain(|_, (_, _, expiration, _, _)| *expiration > now);
         Ok(())
     }
 
     async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (inputs, _, _, _)) in commitments.iter() {
+        for (_, (inputs, _, _, _, _)) in commitments.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -214,7 +214,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
 
     async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (_, outputs, _, _)) in commitments.iter() {
+        for (_, (_, outputs, _, _, _)) in commitments.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -230,34 +230,29 @@ impl persistence::CommitmentRepository for CommitmentMap {
         mut outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
+        wallet_sig: schnorr::Signature,
         signature: schnorr::Signature,
     ) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
         inputs.sort();
         outputs.sort();
-        commitments.insert(signature, (inputs, outputs, expiration, wallet_key));
+        commitments.insert(
+            signature,
+            (inputs, outputs, expiration, wallet_key, wallet_sig),
+        );
         Ok(())
     }
 
     async fn load(
         &self,
-        inputs: &[cashu::PublicKey],
-        outputs: &[cashu::PublicKey],
-    ) -> Result<schnorr::Signature> {
-        let mut inputs = inputs.to_vec();
-        inputs.sort();
-        let mut outputs = outputs.to_vec();
-        outputs.sort();
-        let commitments = self.commitments.read().unwrap();
-        for (signature, (committed_inputs, committed_outputs, _, _)) in commitments.iter() {
-            if *committed_inputs == inputs && *committed_outputs == outputs {
-                return Ok(*signature);
-            }
-        }
-        Err(Error::ResourceNotFound(format!(
-            "{:?} ; {:?}",
-            inputs, outputs
-        )))
+        signature: &schnorr::Signature,
+    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
+        let comms = self.commitments.read().unwrap();
+        let comm = comms
+            .get(signature)
+            .ok_or(Error::ResourceNotFound(signature.to_string()))?
+            .clone();
+        Ok((comm.0, comm.1, comm.2))
     }
 
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
