@@ -16,6 +16,7 @@ use crate::{
 
 // ----- end imports
 
+#[derive(Default)]
 pub struct ListFilters {
     pub unit: Option<cashu::CurrencyUnit>,
     pub min_expiration: Option<chrono::NaiveDate>,
