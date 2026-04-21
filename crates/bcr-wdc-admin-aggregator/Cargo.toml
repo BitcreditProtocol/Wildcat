@@ -7,12 +7,11 @@ license.workspace = true
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-common = {workspace = true}
+bcr-common = {workspace = true, features = ["clwdr-client"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
 chrono = {workspace = true}
-clwdr-client = {workspace = true}
 config = {workspace = true}
 futures = {workspace = true}
 mime = {workspace = true}

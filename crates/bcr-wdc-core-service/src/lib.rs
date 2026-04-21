@@ -6,7 +6,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::{core::Client as CoreClient, mint::Client as MintClient};
+use bcr_common::{
+    client::{core::Client as CoreClient, mint::Client as MintClient},
+    clwdr_client,
+};
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules

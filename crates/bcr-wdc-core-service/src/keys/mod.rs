@@ -2,8 +2,9 @@
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, core::BillId, wire::clowder::messages as wire_clowder};
-use clwdr_client::ClowderNatsClient;
+use bcr_common::{
+    cashu, clwdr_client::ClowderNatsClient, core::BillId, wire::clowder::messages as wire_clowder,
+};
 // ----- local imports
 use crate::error::Result;
 // ----- local modules

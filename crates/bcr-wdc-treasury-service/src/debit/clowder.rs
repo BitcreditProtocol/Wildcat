@@ -4,10 +4,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient},
     wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::{base64::prelude::*, hashes::Hash};
-use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 use uuid::Uuid;
 // ----- local imports
 use crate::{

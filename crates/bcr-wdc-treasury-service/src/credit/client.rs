@@ -9,11 +9,11 @@ use bcr_common::{
         ebill::Client as EbillClient,
     },
     clowder::taproot,
+    clwdr_client::{ClowderNatsClient, ClowderRestClient},
     core::{self, BillId},
     wire::{bill as wire_bill, clowder as wire_clowder},
 };
 use bitcoin::hashes::Hash;
-use clwdr_client::{ClowderNatsClient, ClowderRestClient};
 use uuid::Uuid;
 // ----- local imports
 use crate::{

@@ -6,13 +6,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::{
-    core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
-    treasury::Client as TreasuryClient, Url as ClientUrl,
+use bcr_common::{
+    client::{
+        core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
+        treasury::Client as TreasuryClient, Url as ClientUrl,
+    },
+    clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient},
 };
 use bcr_wdc_utils::{routine, surreal};
 use bitcoin::secp256k1;
-use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
 mod credit;

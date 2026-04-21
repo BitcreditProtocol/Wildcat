@@ -7,8 +7,8 @@ use bcr_common::{
         core::Error as CoreClientError, ebill::Error as EbillClientError,
         quote::Error as QuotesClientError, treasury::Error as TreasuryClientError,
     },
+    clwdr_client::ClowderClientError,
 };
-use clwdr_client::ClowderClientError;
 use thiserror::Error;
 // ----- local imports
 

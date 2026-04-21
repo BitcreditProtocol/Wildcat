@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::mint::Client as MintClient;
+use bcr_common::{client::mint::Client as MintClient, clwdr_client};
 use bcr_wdc_utils::surreal;
 // ----- local modules
 mod commitment;

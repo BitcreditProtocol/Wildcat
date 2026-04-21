@@ -12,6 +12,7 @@ use bcr_common::{
         core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
         treasury::Client as TreasuryClient, Url as ClientUrl,
     },
+    clwdr_client,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,

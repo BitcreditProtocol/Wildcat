@@ -12,13 +12,12 @@ anyhow = {workspace = true}
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 axum-test = {workspace = true, optional = true}
-bcr-common = {workspace = true}
+bcr-common = {workspace = true, features = ["clwdr-client"]}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = {workspace = true}
 bitcoin = {workspace = true}
 borsh = {workspace = true}
 chrono = {workspace = true, features = ["serde"]}
-clwdr-client = {workspace = true}
 config = {workspace = true}
 futures = {workspace = true}
 serde.workspace = true
