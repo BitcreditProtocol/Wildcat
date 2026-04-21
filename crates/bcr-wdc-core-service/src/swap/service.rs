@@ -61,16 +61,8 @@ impl Service {
         request: wire_swap::SwapCommitmentRequest,
         now: TStamp,
     ) -> Result<(String, schnorr::Signature)> {
-        // check wallet signature
-        signature::schnorr_verify_b64(
-            &request.content,
-            &request.wallet_signature,
-            &request.wallet_key.x_only_public_key(),
-        )?;
-        let content: wire_swap::SwapCommitmentRequestBody =
-            signature::deserialize_borsh_msg(&request.content)?;
         // check expiry
-        let expiry = chrono::DateTime::from_timestamp(content.expiry as i64, 0)
+        let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
             .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
         if expiry <= now {
             return Err(Error::InvalidInput("commitment already expired".into()));
@@ -78,24 +70,24 @@ impl Service {
         let max_allowed = now + self.max_expiry;
         let expiry = expiry.min(max_allowed);
         // basic checks
-        let core_fps = content
+        let core_fps = request
             .inputs
             .iter()
             .map(|fp| signature::ProofFingerprint::from(fp.clone()))
             .collect::<Vec<_>>();
         signatures_utils::basic_fingerprints_checks(&core_fps)?;
-        signatures_utils::basic_blinds_checks(&content.outputs)?;
+        signatures_utils::basic_blinds_checks(&request.outputs)?;
         // check amounts
         // TODO: fees are not considered
-        let input_amount: u64 = content.inputs.iter().map(|fp| fp.amount).sum();
-        let output_amount: u64 = content.outputs.iter().map(|b| u64::from(b.amount)).sum();
+        let input_amount: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
+        let output_amount: u64 = request.outputs.iter().map(|b| u64::from(b.amount)).sum();
         if input_amount != output_amount {
             return Err(Error::InvalidInput(format!(
                 "amount mismatch: inputs={input_amount}, outputs={output_amount}"
             )));
         }
         // check inputs are unspent
-        let ys: Vec<cashu::PublicKey> = content.inputs.iter().map(|fp| fp.y).collect();
+        let ys: Vec<cashu::PublicKey> = request.inputs.iter().map(|fp| fp.y).collect();
         let states = self.check_spendable(&ys).await?;
         let all_unspent = states
             .iter()
@@ -114,21 +106,20 @@ impl Service {
             return Err(Error::InvalidInput(String::from("proofs committed")));
         }
         // check outputs not already committed
-        let bs: Vec<cashu::PublicKey> = content.outputs.iter().map(|b| b.blinded_secret).collect();
+        let bs: Vec<cashu::PublicKey> = request.outputs.iter().map(|b| b.blinded_secret).collect();
         let contained = self.commitments.contains_outputs(&bs).await?;
         if contained {
             return Err(Error::InvalidInput(String::from(
                 "blinded messages committed",
             )));
         }
-        let wallet_pk = request.wallet_key;
-        let wallet_sig = request.wallet_signature;
-        // broadcast request to clowder
+        // broadcast request to clowder, get back mint commitment
+        let wallet_key = request.wallet_key;
         let (content, commitment) = self.clowder.commit_to_swap(request).await?;
         // store commitment
         let store_res = self
             .commitments
-            .store(ys, bs, expiry, wallet_pk, wallet_sig, commitment.clone())
+            .store(ys, bs, expiry, wallet_key.into(), commitment)
             .await;
         match store_res {
             Ok(_) => Ok((content, commitment)),

@@ -63,7 +63,7 @@ pub async fn melt_quote_onchain(
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_onchain(
     State(ctrl): State<Arc<debit::Service>>,
-    Json(request): Json<cashu::MeltRequest<uuid::Uuid>>,
+    Json(request): Json<wire_melt::MeltOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltOnchainResponse>> {
     tracing::debug!("Received melt_onchain request");
 

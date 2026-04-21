@@ -184,7 +184,6 @@ type Commitment = (
     Vec<cashu::PublicKey>,
     TStamp,
     cashu::PublicKey,
-    schnorr::Signature,
 );
 #[allow(dead_code)]
 #[derive(Clone, Default)]
@@ -196,13 +195,13 @@ pub struct CommitmentMap {
 impl persistence::CommitmentRepository for CommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
-        commitments.retain(|_, (_, _, expiration, _, _)| *expiration > now);
+        commitments.retain(|_, (_, _, expiration, _)| *expiration > now);
         Ok(())
     }
 
     async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (inputs, _, _, _, _)) in commitments.iter() {
+        for (_, (inputs, _, _, _)) in commitments.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -214,7 +213,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
 
     async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
         let commitments = self.commitments.read().unwrap();
-        for (_, (_, outputs, _, _, _)) in commitments.iter() {
+        for (_, (_, outputs, _, _)) in commitments.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -230,16 +229,12 @@ impl persistence::CommitmentRepository for CommitmentMap {
         mut outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
-        wallet_sig: schnorr::Signature,
         signature: schnorr::Signature,
     ) -> Result<()> {
         let mut commitments = self.commitments.write().unwrap();
         inputs.sort();
         outputs.sort();
-        commitments.insert(
-            signature,
-            (inputs, outputs, expiration, wallet_key, wallet_sig),
-        );
+        commitments.insert(signature, (inputs, outputs, expiration, wallet_key));
         Ok(())
     }
 

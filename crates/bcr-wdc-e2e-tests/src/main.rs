@@ -3,7 +3,6 @@ use std::str::FromStr;
 // ----- extra library imports
 use bcr_common::{
     cashu,
-    core::signature::serialize_n_schnorr_sign_borsh_msg,
     wire::{
         keys as wire_keys,
         quotes::{StatusReply, UpdateQuoteResponse},
@@ -248,18 +247,11 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .iter()
         .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
         .collect();
-    let commitment_body = wire_swap::SwapCommitmentRequestBody {
+    let commit_request = wire_swap::SwapCommitmentRequest {
         inputs: fingerprints,
         outputs: bs.clone(),
         expiry: (chrono::Utc::now().timestamp() + 1200) as u64,
-    };
-    let (content, wallet_signature) =
-        serialize_n_schnorr_sign_borsh_msg(&commitment_body, &wallet_kp)
-            .expect("sign commitment body");
-    let commit_request = wire_swap::SwapCommitmentRequest {
-        content,
-        wallet_key: cashu::PublicKey::from(wallet_kp.public_key()),
-        wallet_signature,
+        wallet_key: wallet_kp.public_key(),
     };
     let commit_response = user_service.commit_swap(commit_request).await;
     info!("Commitment created");

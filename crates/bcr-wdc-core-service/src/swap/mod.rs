@@ -77,11 +77,13 @@ impl ClowderClient for ClowderCl {
         &self,
         request: wire_swap::SwapCommitmentRequest,
     ) -> Result<(String, schnorr::Signature)> {
-        let content = request.content.clone();
+        let content = signature::serialize_borsh_msg_b64(&request)
+            .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
         let request = wire_clowder::SwapCommitmentRequest {
-            content: request.content,
-            wallet_key: request.wallet_key,
-            wallet_signature: request.wallet_signature,
+            inputs: request.inputs,
+            outputs: request.outputs,
+            expiry: request.expiry,
+            wallet_key: request.wallet_key.into(),
         };
         let response = self.nats.swap_commitment(request).await?;
         Ok((content, response.commitment))
@@ -91,11 +93,6 @@ impl ClowderClient for ClowderCl {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
-    use bitcoin::{
-        base64::prelude::*,
-        hashes::{sha256::Hash as Sha256, Hash},
-        secp256k1 as secp,
-    };
 
     pub struct DummyClowderClient;
 
@@ -106,13 +103,8 @@ pub mod test_utils {
             request: wire_swap::SwapCommitmentRequest,
         ) -> Result<(String, schnorr::Signature)> {
             let mint_kp = crate::test_utils::mint_kp();
-            let unbased = BASE64_STANDARD
-                .decode(&request.content)
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
-            let sha = Sha256::hash(&unbased);
-            let secp_msg = secp::Message::from_digest(*sha.as_ref());
-            let signature = secp::global::SECP256K1.sign_schnorr(&secp_msg, &mint_kp);
-            Ok((request.content, signature))
+            signature::serialize_n_schnorr_sign_borsh_msg(&request, &mint_kp)
+                .map_err(|e| Error::Internal(format!("failed to sign commitment: {e}")))
         }
     }
 }

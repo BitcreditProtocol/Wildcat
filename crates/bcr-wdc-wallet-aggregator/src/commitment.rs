@@ -1,11 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{
-    cashu,
-    core::signature::{deserialize_borsh_msg, schnorr_verify_b64},
-    wire::swap as wire_swap,
-};
+use bcr_common::{cashu, wire::swap as wire_swap};
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
 use crate::{
@@ -53,15 +49,8 @@ impl Service {
         now: TStamp,
         request: &wire_swap::SwapCommitmentRequest,
     ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
-        // verify wallet signature
-        let xonly = request.wallet_key.x_only_public_key();
-        schnorr_verify_b64(&request.content, &request.wallet_signature, &xonly)
-            .map_err(|e| Error::InvalidSignature(e.to_string()))?;
-
-        let body: wire_swap::SwapCommitmentRequestBody = deserialize_borsh_msg(&request.content)?;
-
         // expiry validation
-        let expiry = chrono::DateTime::from_timestamp(body.expiry as i64, 0)
+        let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
             .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
         if expiry <= now {
             return Err(Error::InvalidInput("commitment already expired".into()));
@@ -70,8 +59,8 @@ impl Service {
         let expiry = expiry.min(max_allowed);
 
         // amount validation
-        let input_amount: u64 = body.inputs.iter().map(|fp| fp.amount).sum();
-        let output_amount: u64 = body.outputs.iter().map(|b| u64::from(b.amount)).sum();
+        let input_amount: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
+        let output_amount: u64 = request.outputs.iter().map(|b| u64::from(b.amount)).sum();
         if input_amount != output_amount {
             return Err(Error::InvalidInput(format!(
                 "amount mismatch: inputs={input_amount}, outputs={output_amount}"
@@ -79,13 +68,13 @@ impl Service {
         }
 
         // check not already committed
-        let ys: Vec<cashu::PublicKey> = body.inputs.iter().map(|fp| fp.y).collect();
+        let ys: Vec<cashu::PublicKey> = request.inputs.iter().map(|fp| fp.y).collect();
         self.repo.clean_expired(now).await?;
         let any_committed = self.repo.check_committed_inputs(&ys).await?;
         if any_committed {
             return Err(Error::InvalidInput(String::from("proofs committed")));
         }
-        let secrets: Vec<_> = body.outputs.iter().map(|b| b.blinded_secret).collect();
+        let secrets: Vec<_> = request.outputs.iter().map(|b| b.blinded_secret).collect();
         let any_committed = self.repo.check_committed_outputs(&secrets).await?;
         if any_committed {
             return Err(Error::InvalidInput(String::from(
