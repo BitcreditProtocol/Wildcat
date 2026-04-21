@@ -58,6 +58,10 @@ pub trait ClowderClient: Send + Sync {
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    async fn sign_onchain_melt_response(
+        &self,
+        msg: &wire_melt::MeltQuoteOnchainResponseBody,
+    ) -> Result<(String, secp256k1::schnorr::Signature)>;
     async fn verify_onchain_address(
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
@@ -67,7 +71,8 @@ pub trait ClowderClient: Send + Sync {
         qid: Uuid,
         amount: bitcoin::Amount,
         address: bitcoin::Address,
-        proofs: Vec<cashu::Proof>,
+        inputs: Vec<cashu::Proof>,
+        commitment: secp256k1::schnorr::Signature,
     ) -> Result<wire_melt::MeltTx>;
 }
 
@@ -95,13 +100,8 @@ pub struct OnChainMintOperation {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum MeltStatus {
-    Pending {
-        change: Vec<cashu::BlindedMessage>,
-    },
-    Paid {
-        tx: wire_melt::MeltTx,
-        change: Vec<cashu::BlindSignature>,
-    },
+    Pending,
+    Paid { tx: wire_melt::MeltTx },
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OnchainMeltOperation {
@@ -110,6 +110,8 @@ pub struct OnchainMeltOperation {
     pub amount: bitcoin::Amount,
     pub expiry: TStamp,
     pub fees: bitcoin::Amount,
+    pub wallet_key: cashu::PublicKey,
+    pub commitment: secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }
 

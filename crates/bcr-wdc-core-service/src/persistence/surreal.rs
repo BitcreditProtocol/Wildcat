@@ -433,7 +433,6 @@ struct CommitmentDBEntry {
     outputs: Vec<cashu::PublicKey>,
     expiration: TStamp,
     wallet_key: cashu::PublicKey,
-    wallet_sig: schnorr::Signature,
 }
 
 #[derive(Debug, Clone)]
@@ -497,7 +496,6 @@ impl persistence::CommitmentRepository for DBCommitments {
         outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
-        wallet_sig: schnorr::Signature,
         signature: schnorr::Signature,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
@@ -507,7 +505,6 @@ impl persistence::CommitmentRepository for DBCommitments {
             outputs,
             expiration,
             wallet_key,
-            wallet_sig,
         };
         let _: Option<CommitmentDBEntry> = self
             .db
@@ -906,22 +903,14 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
-            signature,
         )
         .await
         .unwrap();
         inputs.swap(0, 1);
         let signature = random_signature();
-        db.store(
-            inputs,
-            outputs,
-            tstamp,
-            random_wallet_key(),
-            signature,
-            signature,
-        )
-        .await
-        .unwrap();
+        db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -936,7 +925,6 @@ mod tests {
             outputs.clone(),
             tstamp,
             random_wallet_key(),
-            signature,
             signature,
         )
         .await
@@ -966,7 +954,6 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
-            signature,
         )
         .await
         .unwrap();
@@ -994,7 +981,6 @@ mod tests {
             outputs.clone(),
             tstamp,
             random_wallet_key(),
-            signature,
             signature,
         )
         .await

@@ -110,6 +110,20 @@ impl ClowderClient for ClowderCl {
         Ok((b64, signature))
     }
 
+    async fn sign_onchain_melt_response(
+        &self,
+        msg: &wire_melt::MeltQuoteOnchainResponseBody,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        let serialized = borsh::to_vec(msg)?;
+        let hash = bitcoin::hashes::sha256::Hash::hash(&serialized);
+        let signature = self
+            .signatory
+            .sign_schnorr_hash(&hash.to_byte_array())
+            .await?;
+        let b64 = BASE64_STANDARD.encode(serialized);
+        Ok((b64, signature))
+    }
+
     async fn verify_onchain_address(
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
@@ -124,13 +138,15 @@ impl ClowderClient for ClowderCl {
         qid: Uuid,
         amount: bitcoin::Amount,
         address: bitcoin::Address,
-        proofs: Vec<cashu::Proof>,
+        inputs: Vec<cashu::Proof>,
+        commitment: secp256k1::schnorr::Signature,
     ) -> Result<wire_melt::MeltTx> {
         let request = clowder_messages::MeltOnchainRequest {
             quote: qid,
             address: address.into_unchecked(),
             amount,
-            proofs,
+            inputs,
+            commitment,
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)

@@ -77,6 +77,7 @@ impl Service {
             payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
             blinded_messages: request.blinded_messages,
             expiry: expiry.timestamp().max(0) as u64,
+            wallet_key: request.wallet_key,
         };
 
         let (content, commitment) = self.clowder_cl.sign_onchain_mint_response(&body).await?;
@@ -92,50 +93,55 @@ impl Service {
         request: wire_melt::MeltQuoteOnchainRequest,
         now: TStamp,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        if request.unit != cashu::CurrencyUnit::Sat {
-            return Err(Error::InvalidInput(String::from("invalid currency unit")));
-        }
-        if request.request.amount < self.min_melt_threshold {
+        if request.amount < self.min_melt_threshold {
             return Err(Error::InvalidInput(String::from("melt amount too low")));
         }
         let address = self
             .clowder_cl
-            .verify_onchain_address(request.request.address)
+            .verify_onchain_address(request.address.clone())
             .await?;
+        let input_sats: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
+        let total = cashu::Amount::from(input_sats);
         let expiry = now + self.quote_expiry;
         let qid = Uuid::new_v4();
+        let body = wire_melt::MeltQuoteOnchainResponseBody {
+            quote: qid,
+            inputs: request.inputs.clone(),
+            address: request.address.clone(),
+            amount: request.amount,
+            total,
+            expiry: expiry.timestamp().max(0) as u64,
+            wallet_key: request.wallet_key,
+        };
+        let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
         let op = debit::OnchainMeltOperation {
             qid,
             address: address.to_string(),
-            amount: request.request.amount,
+            amount: request.amount,
             expiry,
             fees: bitcoin::Amount::ZERO,
-            status: debit::MeltStatus::Pending {
-                change: request.change,
-            },
+            wallet_key: request.wallet_key,
+            commitment,
+            status: debit::MeltStatus::Pending,
         };
         self.repo.store_onchain_meltop(op).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
-            quote: qid,
-            fee_reserve: bitcoin::Amount::ZERO,
-            amount: request.request.amount,
-            unit: Some(request.unit),
-            state: cashu::nuts::MeltQuoteState::Unpaid,
-            expiry: expiry.timestamp().max(0) as u64,
+            content,
+            commitment,
         })
     }
 
     pub async fn melt_onchain(
         &self,
-        request: cashu::MeltRequest<Uuid>,
+        request: wire_melt::MeltOnchainRequest,
         now: TStamp,
     ) -> Result<wire_melt::MeltOnchainResponse> {
-        let qid = request.quote_id().clone();
+        let qid = request.quote;
         let op = self.repo.load_onchain_meltop(qid).await?;
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        let proofs = request.inputs().clone();
+        let proofs = request.inputs.clone();
         let inputs_amount = proofs.total_amount()?;
         let req_camount = cashu::Amount::from((op.amount + op.fees).to_sat());
         if inputs_amount < req_camount {
@@ -148,24 +154,21 @@ impl Service {
         self.wdc.burn(proofs.clone()).await?;
         let txs = match self
             .clowder_cl
-            .melt_onchain(qid, op.amount, recipient, proofs)
+            .melt_onchain(qid, op.amount, recipient, proofs, op.commitment)
             .await
         {
             Ok(txs) => txs,
             Err(e) => {
-                let ys = request.inputs().ys()?;
+                let ys = request.inputs.ys()?;
                 tracing::warn!(
                     "Failed to melt onchain for quote {qid}: {e}, recovering proofs {:?}",
                     ys
                 );
-                self.wdc.recover(request.inputs().clone()).await?;
+                self.wdc.recover(request.inputs.clone()).await?;
                 return Err(Error::Internal(format!("Failed to melt onchain: {e}")));
             }
         };
-        let new = debit::MeltStatus::Paid {
-            tx: txs.clone(),
-            change: Vec::new(),
-        };
+        let new = debit::MeltStatus::Paid { tx: txs.clone() };
         match self.repo.update_onchain_meltop_status(qid, new).await {
             Ok(_) => {}
             Err(e) => {
@@ -173,12 +176,7 @@ impl Service {
                 return Err(e);
             }
         }
-        let response = wire_melt::MeltOnchainResponse {
-            quote: qid,
-            txid: Some(txs),
-            change: Vec::new(),
-            state: cashu::MeltQuoteState::Paid,
-        };
+        let response = wire_melt::MeltOnchainResponse { txid: txs };
         Ok(response)
     }
 }
@@ -236,6 +234,7 @@ mod tests {
             .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
+            wallet_key: core_tests::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())
@@ -263,6 +262,7 @@ mod tests {
             .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
+            wallet_key: core_tests::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())
@@ -299,7 +299,10 @@ mod tests {
         let mut blinded_messages = Vec::new();
         blinded_messages.extend(blinds1);
         blinded_messages.extend(blinds2);
-        let request = wire_mint::OnchainMintQuoteRequest { blinded_messages };
+        let request = wire_mint::OnchainMintQuoteRequest {
+            blinded_messages,
+            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+        };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())
             .await

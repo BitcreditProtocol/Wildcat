@@ -56,7 +56,6 @@ pub trait CommitmentRepository: Send + Sync {
         outputs: Vec<cashu::PublicKey>,
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
-        wallet_signature: schnorr::Signature,
         commitment: schnorr::Signature,
     ) -> Result<()>;
     async fn load(
