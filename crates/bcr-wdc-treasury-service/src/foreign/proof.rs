@@ -121,7 +121,7 @@ pub async fn generate_htlc_proofs(
     let signatures = keycl.sign(&blinds).await?;
     let mut proofs = Vec::with_capacity(signatures.len());
     for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
-        let proof = unblind_ecash_signature(&keyset, pre.clone(), sig)?;
+        let proof = unblind_ecash_signature(keyset, pre.clone(), sig)?;
         proofs.push(proof);
     }
     Ok(proofs)

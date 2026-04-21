@@ -125,7 +125,7 @@ impl credit::ClowderClient for ClwdrCl {
             144, // will be removed in the future
             &bid,
             block_id,
-            &previous_block_hash.as_byte_array(),
+            previous_block_hash.as_byte_array(),
             network,
         )
         .map_err(|e| Error::Internal(e.to_string()))?;

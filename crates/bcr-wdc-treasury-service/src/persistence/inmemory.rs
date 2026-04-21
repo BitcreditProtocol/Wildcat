@@ -89,7 +89,7 @@ impl foreign::OfflineRepository for OfflineRepository {
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
         let mut locked = self.fingerprints.lock().unwrap();
-        for (h, fp) in hash.into_iter().zip(fps.into_iter()) {
+        for (h, fp) in hash.into_iter().zip(fps) {
             locked.insert(h, (alpha.clone(), fp));
         }
         Ok(())

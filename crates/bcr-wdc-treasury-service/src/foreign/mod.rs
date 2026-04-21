@@ -212,7 +212,7 @@ fn fingerprints_vec_to_map(
 ) -> HashMap<cashu::Id, Vec<(wire_keys::ProofFingerprint, Sha256Hash)>> {
     let mut map: HashMap<cashu::Id, Vec<(wire_keys::ProofFingerprint, Sha256Hash)>> =
         HashMap::new();
-    for (fp, hash) in input.into_iter().zip(hashes.into_iter()) {
+    for (fp, hash) in input.into_iter().zip(hashes) {
         map.entry(fp.keyset_id).or_default().push((fp, hash));
     }
     map
