@@ -1,7 +1,11 @@
 // ----- standard library imports
 use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::{cashu, core::signature, wire::swap as wire_swap};
+use bcr_common::{
+    cashu,
+    core::{signature, swap},
+    wire::swap as wire_swap,
+};
 use bcr_wdc_utils::signatures as signatures_utils;
 use futures::future::JoinAll;
 use secp256k1::schnorr;
@@ -9,7 +13,7 @@ use secp256k1::schnorr;
 use crate::{
     error::{Error, Result},
     persistence::{CommitmentRepository, ProofRepository},
-    swap::{ClowderClient, SigningService},
+    swap::{ClowderClient, KeysService},
     TStamp,
 };
 
@@ -25,7 +29,7 @@ pub struct Service {
 impl Service {
     async fn are_keysets_active(
         &self,
-        sign_service: &dyn SigningService,
+        sign_service: &dyn KeysService,
         kids: impl Iterator<Item = &cashu::Id>,
     ) -> Result<Vec<(cashu::Id, bool)>> {
         let joined: JoinAll<_> = kids.map(|kid| sign_service.info(kid)).collect();
@@ -57,14 +61,14 @@ impl Service {
 
     pub async fn commit_to_swap(
         &self,
-        sign_service: &dyn SigningService,
+        sign_service: &dyn KeysService,
         request: wire_swap::SwapCommitmentRequest,
         now: TStamp,
     ) -> Result<(String, schnorr::Signature)> {
         // check expiry
         let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
             .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
-        if expiry <= now {
+        if expiry < now {
             return Err(Error::InvalidInput("commitment already expired".into()));
         }
         let max_allowed = now + self.max_expiry;
@@ -77,15 +81,8 @@ impl Service {
             .collect::<Vec<_>>();
         signatures_utils::basic_fingerprints_checks(&core_fps)?;
         signatures_utils::basic_blinds_checks(&request.outputs)?;
-        // check amounts
-        // TODO: fees are not considered
-        let input_amount: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
-        let output_amount: u64 = request.outputs.iter().map(|b| u64::from(b.amount)).sum();
-        if input_amount != output_amount {
-            return Err(Error::InvalidInput(format!(
-                "amount mismatch: inputs={input_amount}, outputs={output_amount}"
-            )));
-        }
+        let kinfos = sign_service.list_kinfos().await?;
+        swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
         // check inputs are unspent
         let ys: Vec<cashu::PublicKey> = request.inputs.iter().map(|fp| fp.y).collect();
         let states = self.check_spendable(&ys).await?;
@@ -132,52 +129,77 @@ impl Service {
 
     pub async fn swap(
         &self,
-        sign_service: &dyn SigningService,
-        inputs: &[cashu::Proof],
-        outputs: &[cashu::BlindedMessage],
+        sign_service: &dyn KeysService,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+        signature: schnorr::Signature,
+        now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(inputs)?;
-        signatures_utils::basic_blinds_checks(outputs)?;
-        // 3. inputs and outputs grouped by keyset ID have equal amounts
-        let unique_ids: HashSet<_> = inputs.iter().map(|p| p.keyset_id).collect();
-        for id in &unique_ids {
-            let total_input = inputs
-                .iter()
-                .filter(|p| p.keyset_id == *id)
-                .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
-            let total_output = outputs
-                .iter()
-                .filter(|p| p.keyset_id == *id)
-                .fold(cashu::Amount::ZERO, |total, proof| total + proof.amount);
-            // TODO: fees are not considered
-            if total_input != total_output {
-                return Err(Error::InvalidInput(format!(
-                    "input/output mismatch {total_input}/{total_output}",
-                )));
-            }
+        signatures_utils::basic_proofs_checks(&inputs)?;
+        signatures_utils::basic_blinds_checks(&outputs)?;
+        let (committed_inputs, committed_outputs, expiration) =
+            self.commitments.load(&signature).await?;
+        // check expiration
+        if expiration < now {
+            return Err(Error::InvalidInput(String::from("commitment has expired")));
         }
-        // expensive verifications
-        // 1. verify keysets are active
-        let statuses = self
-            .are_keysets_active(sign_service, unique_ids.iter())
-            .await?;
-        for (id, status) in statuses.iter() {
-            if !status {
-                return Err(Error::InactiveKeyset(*id));
-            }
+        // committed and swap inputs must be equal
+        if committed_inputs.len() != inputs.len() {
+            return Err(Error::InvalidInput(String::from(
+                "inputs/committed_inputs mismatch",
+            )));
         }
-        // 2. verify proofs signatures
-        sign_service.verify_proofs(inputs).await?;
+        for input in inputs.iter() {
+            let y = input.y()?;
+            committed_inputs
+                .iter()
+                .find(|committed| **committed == y)
+                .ok_or_else(|| {
+                    Error::InvalidInput(format!(
+                        "input/committed_input mismatch {y}/{:?}",
+                        committed_inputs,
+                    ))
+                })?;
+        }
+        // committed and swap outputs must be equal
+        if committed_outputs.len() != outputs.len() {
+            return Err(Error::InvalidInput(String::from(
+                "outputs/committed_outputs mismatch",
+            )));
+        }
+        for output in outputs.iter() {
+            let b = output.blinded_secret;
+            committed_outputs
+                .iter()
+                .find(|commited| **commited == b)
+                .ok_or_else(|| {
+                    Error::InvalidInput(format!(
+                        "output/committed_output mismatch {b}/{:?}",
+                        committed_outputs,
+                    ))
+                })?;
+        }
+        // verify inputs
+        let kinfos = sign_service.list_kinfos().await?;
+        swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
+        sign_service.verify_proofs(&inputs).await?;
         // generate signatures
-        let signatures = sign_service.sign_blinds(outputs).await?;
-        self.proofs.insert(inputs).await?;
+        let signatures = sign_service.sign_blinds(&outputs).await?;
+        self.proofs.insert(&inputs).await?;
+        self.clowder
+            .post_swap(inputs, outputs, signature, signatures.clone())
+            .await?;
+        let res = self.commitments.delete(signature).await;
+        if let Err(e) = res {
+            tracing::error!("failed to delete commitment: {e}");
+        }
         Ok(signatures)
     }
 
     pub async fn burn(
         &self,
-        sign_service: &dyn SigningService,
+        sign_service: &dyn KeysService,
         proofs: &[cashu::Proof],
     ) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications

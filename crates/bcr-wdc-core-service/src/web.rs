@@ -110,9 +110,16 @@ pub async fn swap_tokens(
     State(keys_srvc): State<Arc<keys::service::Service>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
+    let now = chrono::Utc::now();
     let signsrvc = swap::KeysSignService { keys: keys_srvc };
     let signatures = ctrl
-        .swap(&signsrvc, &request.inputs, &request.outputs)
+        .swap(
+            &signsrvc,
+            request.inputs,
+            request.outputs,
+            request.commitment,
+            now,
+        )
         .await?;
     let response = wire_swap::SwapResponse { signatures };
     Ok(Json(response))

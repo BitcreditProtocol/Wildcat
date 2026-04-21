@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -12,7 +12,7 @@ use bitcoin::secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    keys::service::Service as KeysService,
+    keys,
 };
 // ----- local modules
 pub mod service;
@@ -20,7 +20,7 @@ pub mod service;
 // ----- end imports
 
 #[async_trait]
-pub trait SigningService: Send + Sync {
+pub trait KeysService: Send + Sync {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn sign_blinds(
         &self,
@@ -28,14 +28,15 @@ pub trait SigningService: Send + Sync {
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn verify_proofs(&self, proof: &[cashu::Proof]) -> Result<()>;
     async fn verify_fingerprints(&self, fp: &[signature::ProofFingerprint]) -> Result<()>;
+    async fn list_kinfos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>>;
 }
 
 pub struct KeysSignService {
-    pub keys: Arc<KeysService>,
+    pub keys: Arc<keys::service::Service>,
 }
 
 #[async_trait]
-impl SigningService for KeysSignService {
+impl KeysService for KeysSignService {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo> {
         self.keys.info(*id).await.map(cashu::KeySetInfo::from)
     }
@@ -56,6 +57,19 @@ impl SigningService for KeysSignService {
         self.keys.verify_fingerprints(fps).await?;
         Ok(())
     }
+
+    async fn list_kinfos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
+        let kinfos = self
+            .keys
+            .list_info(keys::service::ListFilters::default())
+            .await?;
+        let kmap: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::from_iter(
+            kinfos
+                .into_iter()
+                .map(|kinfo| (kinfo.id, cashu::KeySetInfo::from(kinfo))),
+        );
+        Ok(kmap)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -65,6 +79,14 @@ pub trait ClowderClient: Send + Sync {
         &self,
         request: wire_swap::SwapCommitmentRequest,
     ) -> Result<(String, schnorr::Signature)>;
+
+    async fn post_swap(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+        commitment: schnorr::Signature,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()>;
 }
 
 pub struct ClowderCl {
@@ -88,6 +110,23 @@ impl ClowderClient for ClowderCl {
         let response = self.nats.swap_commitment(request).await?;
         Ok((content, response.commitment))
     }
+
+    async fn post_swap(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        blinds: Vec<cashu::BlindedMessage>,
+        commitment: schnorr::Signature,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()> {
+        let request = wire_clowder::SwapRequest {
+            proofs,
+            blinds,
+            commitment,
+        };
+        let response = wire_clowder::SwapResponse { signatures };
+        self.nats.mint_swap(request, response).await?;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "test-utils")]
@@ -105,6 +144,16 @@ pub mod test_utils {
             let mint_kp = crate::test_utils::mint_kp();
             signature::serialize_n_schnorr_sign_borsh_msg(&request, &mint_kp)
                 .map_err(|e| Error::Internal(format!("failed to sign commitment: {e}")))
+        }
+
+        async fn post_swap(
+            &self,
+            _inputs: Vec<cashu::Proof>,
+            _outputs: Vec<cashu::BlindedMessage>,
+            _commitment: schnorr::Signature,
+            _signatures: Vec<cashu::BlindSignature>,
+        ) -> Result<()> {
+            Ok(())
         }
     }
 }
