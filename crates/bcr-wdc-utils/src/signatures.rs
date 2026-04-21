@@ -83,7 +83,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
         return Err(ChecksError::ZeroAmount);
     }
     // 3. unique fingerprints
-    let unique_fps: Vec<_> = fps.iter().map(|p| p.y.clone()).unique().collect();
+    let unique_fps: Vec<_> = fps.iter().map(|p| p.y).unique().collect();
     if unique_fps.len() != fps.len() {
         return Err(ChecksError::NonUnique);
     }

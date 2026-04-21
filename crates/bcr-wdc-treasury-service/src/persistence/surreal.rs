@@ -576,7 +576,7 @@ impl foreign::OfflineRepository for ForeignOfflineRepository {
         fps: Vec<wire_keys::ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
-        for (hash, fp) in hash.into_iter().zip(fps.into_iter()) {
+        for (hash, fp) in hash.into_iter().zip(fps) {
             let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
             let entry = ForeignFingerprintEntry {
                 id: rid.clone(),

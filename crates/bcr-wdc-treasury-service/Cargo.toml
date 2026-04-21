@@ -8,7 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
-bcr-common = {workspace = true, features = ["mint"]}
+bcr-common = {workspace = true, features = ["mint", "clwdr-client"]}
 bcr-ebill-core = {workspace = true}
 bcr-wdc-utils = {workspace = true}
 bcr-wdc-webapi = { workspace = true}
@@ -16,7 +16,6 @@ bip39 = {workspace = true}
 bitcoin.workspace = true
 borsh = { workspace = true }
 chrono.workspace = true
-clwdr-client = {workspace = true}
 config.workspace = true
 futures = {workspace = true}
 rand = {workspace = true}

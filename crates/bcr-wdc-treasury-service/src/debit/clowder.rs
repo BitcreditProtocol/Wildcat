@@ -4,10 +4,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    clwdr_client::{ClowderNatsClient, ClowderRestClient},
+    core::signature,
     wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
 };
-use bitcoin::{base64::prelude::*, hashes::Hash};
-use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -20,7 +20,6 @@ use crate::{
 pub struct ClowderCl {
     pub rest: Arc<ClowderRestClient>,
     pub nats: Arc<ClowderNatsClient>,
-    pub signatory: Arc<SignatoryNatsClient>,
     pub min_confirmations: u32,
 }
 
@@ -100,28 +99,35 @@ impl ClowderClient for ClowderCl {
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
-        let serialized = borsh::to_vec(msg)?;
-        let hash = bitcoin::hashes::sha256::Hash::hash(&serialized);
-        let signature = self
-            .signatory
-            .sign_schnorr_hash(&hash.to_byte_array())
-            .await?;
-        let b64 = BASE64_STANDARD.encode(serialized);
-        Ok((b64, signature))
+        let request = clowder_messages::MintQuoteOnchainRequest {
+            quote_id: msg.quote,
+            address: msg.address.clone(),
+            payment_amount: msg.payment_amount,
+            expiry: msg.expiry,
+            blinded_messages: msg.blinded_messages.clone(),
+            wallet_key: msg.wallet_key,
+        };
+        let response = self.nats.mint_quote_onchain(request).await?;
+        let content = signature::serialize_borsh_msg_b64(msg)?;
+        Ok((content, response.commitment))
     }
 
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
-        let serialized = borsh::to_vec(msg)?;
-        let hash = bitcoin::hashes::sha256::Hash::hash(&serialized);
-        let signature = self
-            .signatory
-            .sign_schnorr_hash(&hash.to_byte_array())
-            .await?;
-        let b64 = BASE64_STANDARD.encode(serialized);
-        Ok((b64, signature))
+        let request = clowder_messages::MeltQuoteOnchainRequest {
+            quote_id: msg.quote,
+            inputs: msg.inputs.clone(),
+            address: msg.address.clone(),
+            amount: msg.amount,
+            total: msg.total,
+            expiry: msg.expiry,
+            wallet_key: msg.wallet_key,
+        };
+        let response = self.nats.melt_quote_onchain(request).await?;
+        let content = signature::serialize_borsh_msg_b64(msg)?;
+        Ok((content, response.commitment))
     }
 
     async fn verify_onchain_address(

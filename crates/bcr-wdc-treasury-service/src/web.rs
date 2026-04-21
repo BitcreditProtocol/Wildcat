@@ -4,7 +4,10 @@ use std::sync::Arc;
 use axum::extract::{Json, State};
 use bcr_common::{
     cashu,
-    wire::{exchange as wire_exchange, melt as wire_melt, mint as wire_mint},
+    wire::{
+        clowder::messages as clowder_messages, exchange as wire_exchange, melt as wire_melt,
+        mint as wire_mint,
+    },
 };
 use bitcoin::base64::prelude::*;
 // ----- local imports
@@ -42,7 +45,14 @@ pub async fn offline_exchange(
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;
-    let signature = ctrl.signer.sign_schnorr_preimage(&serialized).await?;
+    let request = clowder_messages::OfflineExchangeSignRequest {
+        payload: serialized.clone(),
+    };
+    let signature = ctrl
+        .clwdr_nats
+        .sign_offline_exchange(request)
+        .await?
+        .signature;
     let content = BASE64_STANDARD.encode(&serialized);
     let response = wire_exchange::OfflineExchangeResponse { content, signature };
     Ok(Json(response))

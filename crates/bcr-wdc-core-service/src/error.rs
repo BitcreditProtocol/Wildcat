@@ -29,7 +29,7 @@ pub enum Error {
     #[error("borsh signed verification: {0}")]
     BorshVerify(#[from] signature::BorshMsgSignatureError),
     #[error("clowder client {0}")]
-    ClowderClient(#[from] clwdr_client::ClowderClientError),
+    ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut12 error: {0}")]

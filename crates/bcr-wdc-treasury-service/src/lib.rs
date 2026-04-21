@@ -6,13 +6,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::client::{
-    core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
-    treasury::Client as TreasuryClient, Url as ClientUrl,
+use bcr_common::{
+    client::{
+        core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
+        treasury::Client as TreasuryClient, Url as ClientUrl,
+    },
+    clwdr_client::{ClowderNatsClient, ClowderRestClient},
 };
 use bcr_wdc_utils::{routine, surreal};
 use bitcoin::secp256k1;
-use clwdr_client::{ClowderNatsClient, ClowderRestClient, SignatoryNatsClient};
 // ----- local modules
 mod admin;
 mod credit;
@@ -44,7 +46,6 @@ pub struct AppConfig {
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
     clowder_nats_url: reqwest::Url,
-    signer_url: reqwest::Url,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -76,7 +77,6 @@ pub struct AppController {
     debit: Arc<debit::Service>,
     crsat: Arc<foreign::crsat::Service>,
     sat: Arc<ProdSatService>,
-    signer: Arc<SignatoryNatsClient>,
     clwdr_nats: Arc<ClowderNatsClient>,
     clwdr_rest: Arc<ClowderRestClient>,
     dev: Arc<devmode::Service>,
@@ -94,7 +94,6 @@ pub async fn init_app(
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
-        signer_url,
     } = cfg;
     let DebitConfig {
         db: debit_repo,
@@ -120,11 +119,6 @@ pub async fn init_app(
         .await
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
-    let signer_client = Arc::new(
-        SignatoryNatsClient::new(signer_url, None)
-            .await
-            .expect("Failed to create signer"),
-    );
 
     let wdc = debit::WildcatCl {
         core_cl: core_client.clone(),
@@ -137,7 +131,6 @@ pub async fn init_app(
     let clowder_cl = debit::ClowderCl {
         rest: clowder_rest_client.clone(),
         nats: clowder_nats_client.clone(),
-        signatory: signer_client.clone(),
         min_confirmations,
     };
     let debit = debit::Service {
@@ -235,7 +228,6 @@ pub async fn init_app(
         debit: Arc::new(debit),
         crsat,
         sat,
-        signer: signer_client.clone(),
         clwdr_rest: clowder_rest_client.clone(),
         clwdr_nats: clowder_nats_client.clone(),
         dev: Arc::new(dev),

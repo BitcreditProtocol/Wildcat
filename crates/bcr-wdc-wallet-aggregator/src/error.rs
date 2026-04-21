@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
 use axum::http::StatusCode;
-use bcr_common::{cashu, cdk::Error as CDKError, client::treasury::Error as TreasuryClientError};
-use clwdr_client::ClowderClientError;
+use bcr_common::{
+    cashu, cdk::Error as CDKError, client::treasury::Error as TreasuryClientError,
+    clwdr_client::ClowderClientError,
+};
 use thiserror::Error;
 // ----- local imports
 

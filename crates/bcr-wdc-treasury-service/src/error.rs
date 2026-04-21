@@ -54,7 +54,7 @@ pub enum Error {
     #[error("core client {0}")]
     CoreClient(#[from] bcr_common::client::core::Error),
     #[error("clowder client {0}")]
-    ClowderClient(#[from] clwdr_client::ClowderClientError),
+    ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
     #[error("quote client {0}")]
     QuoteClient(#[from] bcr_common::client::quote::Error),
     #[error("ebill client {0}")]

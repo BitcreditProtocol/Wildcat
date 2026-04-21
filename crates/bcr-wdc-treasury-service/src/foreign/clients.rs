@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu, cdk,
     client::core::Client as CoreClient,
+    clwdr_client::{model as clwdr_model, ClowderRestClient},
     wire::{clowder as wire_clowder, keys as wire_keys},
 };
-use clwdr_client::{model as clwdr_model, ClowderRestClient};
 // ----- local imports
 use crate::{
     error::{Error, Result},

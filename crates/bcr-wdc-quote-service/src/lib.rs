@@ -6,9 +6,12 @@ use axum::{
     routing::{delete, get, patch, post},
     Router,
 };
-use bcr_common::client::{
-    core::Client as CoreClient, ebill::Client as EBillClient, mint::Client as MintClient,
-    quote::Client as QuoteClient, treasury::Client as TreasuryClient, Url as ClientUrl,
+use bcr_common::{
+    client::{
+        core::Client as CoreClient, ebill::Client as EBillClient, mint::Client as MintClient,
+        quote::Client as QuoteClient, treasury::Client as TreasuryClient, Url as ClientUrl,
+    },
+    clwdr_client,
 };
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules

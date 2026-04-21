@@ -20,7 +20,6 @@ bitcoin = { workspace = true}
 borsh = {workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}
 chrono.workspace = true
-clwdr-client.workspace = true
 itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
 reqwest = {workspace = true}

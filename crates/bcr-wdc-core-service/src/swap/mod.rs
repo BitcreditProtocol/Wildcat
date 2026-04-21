@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    clwdr_client::ClowderNatsClient,
     core::signature,
     wire::{clowder::messages as wire_clowder, swap as wire_swap},
 };
 use bitcoin::secp256k1::schnorr;
-use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
     error::{Error, Result},
