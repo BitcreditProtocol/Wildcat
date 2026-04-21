@@ -271,6 +271,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_onchain_meltop_ok() {
+        let wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_verify_onchain_address()
+            .times(1)
+            .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_sign_onchain_melt_response()
+            .times(1)
+            .returning(|_| {
+                let signature =
+                    bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+                Ok((String::new(), signature))
+            });
+        repo.expect_store_onchain_meltop()
+            .times(1)
+            .returning(|_| Ok(()));
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+        };
+        let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
+        let request = wire_melt::MeltQuoteOnchainRequest {
+            inputs: Vec::new(),
+            address,
+            amount: bitcoin::Amount::from_sat(1000),
+            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+        };
+        service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn melt_onchain_ok() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let qid = Uuid::new_v4();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let op = debit::OnchainMeltOperation {
+            qid,
+            address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
+            amount: bitcoin::Amount::from_sat(8),
+            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            fees: bitcoin::Amount::ZERO,
+            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            commitment: signature,
+            status: debit::MeltStatus::Pending,
+        };
+        repo.expect_load_onchain_meltop()
+            .times(1)
+            .returning(move |_| Ok(op.clone()));
+        clowder
+            .expect_verify_onchain_address()
+            .times(1)
+            .returning(|addr| Ok(addr.assume_checked()));
+        wdc.expect_burn().times(1).returning(|_| Ok(()));
+        clowder
+            .expect_melt_onchain()
+            .times(1)
+            .returning(|_, _, _, _, _| {
+                Ok(wire_melt::MeltTx {
+                    alpha_txid: None,
+                    beta_txid: None,
+                })
+            });
+        repo.expect_update_onchain_meltop_status()
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+        };
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        service
+            .melt_onchain(request, chrono::Utc::now())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn new_onchain_mintop_blinds_different_kids() {
         let mut wdc = MockWildcatClient::new();
         let repo = MockRepository::new();

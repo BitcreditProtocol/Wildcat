@@ -11,7 +11,7 @@ use bitcoin::secp256k1::schnorr;
 use clwdr_client::ClowderNatsClient;
 // ----- local imports
 use crate::{
-    error::Result,
+    error::{Error, Result},
     keys::service::Service as KeysService,
 };
 // ----- local modules
@@ -77,7 +77,8 @@ impl ClowderClient for ClowderCl {
         &self,
         request: wire_swap::SwapCommitmentRequest,
     ) -> Result<(String, schnorr::Signature)> {
-        let content = encode_commitment_content(&request)?;
+        let content = signature::serialize_borsh_msg_b64(&request)
+            .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
         let request = wire_clowder::SwapCommitmentRequest {
             inputs: request.inputs,
             outputs: request.outputs,
@@ -92,12 +93,6 @@ impl ClowderClient for ClowderCl {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
-    use crate::error::Error;
-    use bitcoin::{
-        base64::prelude::*,
-        hashes::{sha256::Hash as Sha256, Hash},
-        secp256k1 as secp,
-    };
 
     pub struct DummyClowderClient;
 
@@ -107,23 +102,9 @@ pub mod test_utils {
             &self,
             request: wire_swap::SwapCommitmentRequest,
         ) -> Result<(String, schnorr::Signature)> {
-            let content = encode_commitment_content(&request)?;
             let mint_kp = crate::test_utils::mint_kp();
-            let unbased = BASE64_STANDARD
-                .decode(&content)
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
-            let sha = Sha256::hash(&unbased);
-            let secp_msg = secp::Message::from_digest(*sha.as_ref());
-            let signature = secp::global::SECP256K1.sign_schnorr(&secp_msg, &mint_kp);
-            Ok((content, signature))
+            signature::serialize_n_schnorr_sign_borsh_msg(&request, &mint_kp)
+                .map_err(|e| Error::Internal(format!("failed to sign commitment: {e}")))
         }
     }
-}
-
-fn encode_commitment_content(request: &wire_swap::SwapCommitmentRequest) -> Result<String> {
-    use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
-    let serialized = borsh::to_vec(request).map_err(|e| {
-        crate::error::Error::Internal(format!("failed to serialize commitment: {e}"))
-    })?;
-    Ok(STANDARD.encode(serialized))
 }
