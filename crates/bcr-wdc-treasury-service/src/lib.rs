@@ -17,12 +17,12 @@ use bcr_wdc_utils::{routine, surreal};
 use bitcoin::secp256k1;
 // ----- local modules
 mod admin;
-mod credit;
-mod debit;
 mod devmode;
+mod ebill;
 mod error;
 mod foreign;
 mod monitor;
+mod onchain;
 mod persistence;
 mod web;
 // ----- local imports
@@ -31,17 +31,11 @@ mod web;
 
 type TStamp = chrono::DateTime<chrono::Utc>;
 
-type ProdCrsatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
-type ProdCrsatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
-type ProdSatService = foreign::sat::Service;
-type ProdSatOnlineRepository = persistence::surreal::ForeignOnlineRepository;
-type ProdSatOfflineRepository = persistence::surreal::ForeignOfflineRepository;
-
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    debit: DebitConfig,
+    onchain: OnchainConfig,
     foreign: ForeignConfig,
-    credit: CreditConfig,
+    ebill: EbillConfig,
     core_url: ClientUrl,
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
@@ -49,7 +43,7 @@ pub struct AppConfig {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct DebitConfig {
+pub struct OnchainConfig {
     db: surreal::DBConnConfig,
     monitor_interval_sec: u32,
     quote_expiry_seconds: u32,
@@ -67,16 +61,16 @@ pub struct ForeignConfig {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct CreditConfig {
+pub struct EbillConfig {
     db: surreal::DBConnConfig,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    credit: Arc<credit::Service>,
-    debit: Arc<debit::Service>,
+    ebill: Arc<ebill::Service>,
+    onchain: Arc<onchain::Service>,
     crsat: Arc<foreign::crsat::Service>,
-    sat: Arc<ProdSatService>,
+    sat: Arc<foreign::sat::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
     clwdr_rest: Arc<ClowderRestClient>,
     dev: Arc<devmode::Service>,
@@ -87,29 +81,29 @@ pub async fn init_app(
     cfg: AppConfig,
 ) -> (AppController, Vec<routine::RoutineHandle>) {
     let AppConfig {
-        debit,
+        onchain,
         foreign,
-        credit,
+        ebill,
         core_url,
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
     } = cfg;
-    let DebitConfig {
-        db: debit_repo,
+    let OnchainConfig {
+        db: onchain_repo,
         monitor_interval_sec,
         quote_expiry_seconds,
         min_confirmations,
         min_melt_threshold,
         min_mint_threshold,
-    } = debit;
+    } = onchain;
     let ForeignConfig {
         crsatonline_repo,
         crsatoffline_repo,
         satonline_repo,
         satoffline_repo,
     } = foreign;
-    let CreditConfig { db: mintops } = credit;
+    let EbillConfig { db: mintops } = ebill;
 
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
@@ -120,20 +114,21 @@ pub async fn init_app(
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
 
-    let wdc = debit::WildcatCl {
+    let wdc = onchain::WildcatCl {
         core_cl: core_client.clone(),
     };
-    let repo = persistence::surreal::DebitRepository::new(debit_repo)
+    // repositories
+    let repo = persistence::surreal::DBOnChain::new(onchain_repo)
         .await
         .expect("Failed to create repository");
     let signing_keys = secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
     tracing::info!("signing public key: {}", signing_keys.public_key());
-    let clowder_cl = debit::ClowderCl {
+    let clowder_cl = onchain::ClowderCl {
         rest: clowder_rest_client.clone(),
         nats: clowder_nats_client.clone(),
         min_confirmations,
     };
-    let debit = debit::Service {
+    let onchain = onchain::Service {
         quote_expiry: chrono::Duration::seconds(quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
         repo: Arc::new(repo),
@@ -143,12 +138,12 @@ pub async fn init_app(
     };
 
     let crsatonlinerepo = Arc::new(
-        ProdCrsatOnlineRepository::new(crsatonline_repo)
+        persistence::surreal::DBForeignOnline::new(crsatonline_repo)
             .await
             .expect("Failed to create crsat online repository"),
     );
     let crsatofflinerepo = Arc::new(
-        ProdCrsatOfflineRepository::new(crsatoffline_repo)
+        persistence::surreal::DBForeignOffline::new(crsatoffline_repo)
             .await
             .expect("Failed to create crsat offline repository"),
     );
@@ -179,12 +174,12 @@ pub async fn init_app(
     });
 
     let satonlinerepo = Arc::new(
-        ProdSatOnlineRepository::new(satonline_repo)
+        persistence::surreal::DBForeignOnline::new(satonline_repo)
             .await
             .expect("Failed to create sat repository"),
     );
     let satofflinerepo = Arc::new(
-        ProdSatOfflineRepository::new(satoffline_repo)
+        persistence::surreal::DBForeignOffline::new(satoffline_repo)
             .await
             .expect("Failed to create sat offline repository"),
     );
@@ -209,23 +204,23 @@ pub async fn init_app(
     let dev = devmode::Service {
         crcore: core_client.clone(),
     };
-    let credit_repo = persistence::surreal::DBCredit::new(mintops)
+    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
         .await
         .expect("Failed to create mintops repository");
-    let wdccl = credit::WildcatCl {
+    let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
     };
     let clowdercl =
-        credit::new_clowder_client(clowder_nats_client.clone(), clowder_rest_client.clone());
-    let credit = credit::Service {
-        repo: Box::new(credit_repo),
+        ebill::new_clowder_client(clowder_nats_client.clone(), clowder_rest_client.clone());
+    let ebill = ebill::Service {
+        repo: Box::new(ebill_repo),
         wildcatcl: Box::new(wdccl),
         clowdercl,
     };
     let app_ctrl = AppController {
-        credit: Arc::new(credit),
-        debit: Arc::new(debit),
+        ebill: Arc::new(ebill),
+        onchain: Arc::new(onchain),
         crsat,
         sat,
         clwdr_rest: clowder_rest_client.clone(),
@@ -236,7 +231,7 @@ pub async fn init_app(
     let monitor_interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
     let monitors = vec![routine::RoutineHandle::new(
         monitor::OnChainMintOpMonitor {
-            srvc: app_ctrl.debit.clone(),
+            srvc: app_ctrl.onchain.clone(),
         },
         monitor_interval,
     )];

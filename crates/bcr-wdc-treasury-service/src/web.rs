@@ -12,7 +12,7 @@ use bcr_common::{
 use bitcoin::base64::prelude::*;
 use uuid::Uuid;
 // ----- local imports
-use crate::{credit, debit, error::Result, foreign, AppController};
+use crate::{ebill, error::Result, foreign, onchain, AppController};
 
 // ----- end imports
 
@@ -61,7 +61,7 @@ pub async fn offline_exchange(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_quote_onchain(
-    State(ctrl): State<Arc<debit::Service>>,
+    State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
     tracing::debug!("Received melt_quote_onchain request");
@@ -73,7 +73,7 @@ pub async fn melt_quote_onchain(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_onchain(
-    State(ctrl): State<Arc<debit::Service>>,
+    State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_melt::MeltOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltOnchainResponse>> {
     tracing::debug!("Received melt_onchain request");
@@ -85,7 +85,7 @@ pub async fn melt_onchain(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_quote_onchain(
-    State(ctrl): State<Arc<debit::Service>>,
+    State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_mint::OnchainMintQuoteRequest>,
 ) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
     let now = chrono::Utc::now();
@@ -95,7 +95,7 @@ pub async fn mint_quote_onchain(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_ebill(
-    State(ctrl): State<Arc<credit::Service>>,
+    State(ctrl): State<Arc<ebill::Service>>,
     Json(request): Json<cashu::MintRequest<Uuid>>,
 ) -> Result<Json<cashu::MintResponse>> {
     let response = ctrl.mint(request).await?;

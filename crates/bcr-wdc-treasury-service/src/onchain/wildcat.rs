@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bcr_common::{cashu, client::core::Client as CoreClient, wire::keys as wire_keys};
 // ----- local imports
 use crate::{
-    debit::WildcatClient,
     error::{Error, Result},
+    onchain::WildcatClient,
 };
 
 // ----- end imports

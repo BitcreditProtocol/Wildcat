@@ -17,7 +17,7 @@ use bitcoin::hashes::Hash;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    credit,
+    ebill,
     error::{Error, Result},
     TStamp,
 };
@@ -27,7 +27,7 @@ use crate::{
 #[allow(dead_code)]
 pub struct DummyClwdr {}
 #[async_trait]
-impl credit::ClowderClient for DummyClwdr {
+impl ebill::ClowderClient for DummyClwdr {
     async fn minting_ebill(
         &self,
         _keyset_id: cashu::Id,
@@ -65,7 +65,7 @@ pub struct ClwdrCl {
 }
 
 #[async_trait]
-impl credit::ClowderClient for ClwdrCl {
+impl ebill::ClowderClient for ClwdrCl {
     async fn minting_ebill(
         &self,
         keyset_id: cashu::Id,
@@ -135,8 +135,8 @@ impl credit::ClowderClient for ClwdrCl {
 pub fn new_clowder_client(
     nats_cl: Arc<ClowderNatsClient>,
     rest_cl: Arc<ClowderRestClient>,
-) -> Box<dyn credit::ClowderClient> {
-    let cl: Box<dyn credit::ClowderClient> = Box::new(ClwdrCl {
+) -> Box<dyn ebill::ClowderClient> {
+    let cl: Box<dyn ebill::ClowderClient> = Box::new(ClwdrCl {
         nats: nats_cl,
         rest: rest_cl,
     });
@@ -149,7 +149,7 @@ pub struct WildcatCl {
 }
 
 #[async_trait]
-impl credit::WildcatClient for WildcatCl {
+impl ebill::WildcatClient for WildcatCl {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo> {
         match self.core.keyset_info(kid).await {
             Ok(info) => Ok(info),

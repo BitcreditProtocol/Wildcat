@@ -9,8 +9,8 @@ use bcr_common::{
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    debit::{self, ClowderClient, MintStatus, OnChainMintOperation, Repository, WildcatClient},
     error::{Error, Result},
+    onchain::{self, ClowderClient, MintStatus, OnChainMintOperation, Repository, WildcatClient},
     TStamp,
 };
 
@@ -114,7 +114,7 @@ impl Service {
             wallet_key: request.wallet_key,
         };
         let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
-        let op = debit::OnchainMeltOperation {
+        let op = onchain::OnchainMeltOperation {
             qid,
             address: address.to_string(),
             amount: request.amount,
@@ -122,7 +122,7 @@ impl Service {
             fees: bitcoin::Amount::ZERO,
             wallet_key: request.wallet_key,
             commitment,
-            status: debit::MeltStatus::Pending,
+            status: onchain::MeltStatus::Pending,
         };
         self.repo.store_onchain_meltop(op).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
@@ -168,7 +168,7 @@ impl Service {
                 return Err(Error::Internal(format!("Failed to melt onchain: {e}")));
             }
         };
-        let new = debit::MeltStatus::Paid { tx: txs.clone() };
+        let new = onchain::MeltStatus::Paid { tx: txs.clone() };
         match self.repo.update_onchain_meltop_status(qid, new).await {
             Ok(_) => {}
             Err(e) => {
@@ -184,7 +184,7 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::debit::{MockClowderClient, MockRepository, MockWildcatClient};
+    use crate::onchain::{MockClowderClient, MockRepository, MockWildcatClient};
     use bcr_common::core_tests;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::Amount;
@@ -320,7 +320,7 @@ mod tests {
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        let op = debit::OnchainMeltOperation {
+        let op = onchain::OnchainMeltOperation {
             qid,
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             amount: bitcoin::Amount::from_sat(8),
@@ -328,7 +328,7 @@ mod tests {
             fees: bitcoin::Amount::ZERO,
             wallet_key: core_tests::generate_random_keypair().public_key().into(),
             commitment: signature,
-            status: debit::MeltStatus::Pending,
+            status: onchain::MeltStatus::Pending,
         };
         repo.expect_load_onchain_meltop()
             .times(1)

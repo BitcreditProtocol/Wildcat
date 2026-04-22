@@ -24,12 +24,6 @@ pub struct MintOperation {
     pub bill_id: BillId,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct MeltOperation {
-    pub kid: cashu::Id,
-    pub melted: cashu::Amount,
-}
-
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
@@ -41,15 +35,6 @@ pub trait Repository: Send + Sync {
         uid: Uuid,
         old_minted: cashu::Amount,
         new_minted: cashu::Amount,
-    ) -> Result<()>;
-
-    async fn melt_store(&self, melt_operation: MeltOperation) -> Result<()>;
-    async fn melt_load(&self, kid: cashu::Id) -> Result<MeltOperation>;
-    async fn melt_update_field(
-        &self,
-        kid: cashu::Id,
-        old_melted: cashu::Amount,
-        new_melted: cashu::Amount,
     ) -> Result<()>;
 }
 
