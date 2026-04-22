@@ -259,7 +259,8 @@ pub fn routes(app: AppController) -> Router {
         .route(
             MintClient::MINTQUOTE_ONCHAIN_EP_V1,
             post(web::mint_quote_onchain),
-        );
+        )
+        .route(MintClient::EBILLMINT_EP_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
             TreasuryClient::REQTOPAY_EP_V1,

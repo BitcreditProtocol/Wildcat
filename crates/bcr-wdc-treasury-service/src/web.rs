@@ -10,8 +10,9 @@ use bcr_common::{
     },
 };
 use bitcoin::base64::prelude::*;
+use uuid::Uuid;
 // ----- local imports
-use crate::{debit, error::Result, foreign, AppController};
+use crate::{credit, debit, error::Result, foreign, AppController};
 
 // ----- end imports
 
@@ -87,9 +88,16 @@ pub async fn mint_quote_onchain(
     State(ctrl): State<Arc<debit::Service>>,
     Json(request): Json<wire_mint::OnchainMintQuoteRequest>,
 ) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
-    tracing::debug!("Received mint_quote_onchain request");
-
     let now = chrono::Utc::now();
     let response = ctrl.create_onchain_mint_quote(request, now).await?;
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn mint_ebill(
+    State(ctrl): State<Arc<credit::Service>>,
+    Json(request): Json<cashu::MintRequest<Uuid>>,
+) -> Result<Json<cashu::MintResponse>> {
+    let response = ctrl.mint(request).await?;
     Ok(Json(response))
 }
