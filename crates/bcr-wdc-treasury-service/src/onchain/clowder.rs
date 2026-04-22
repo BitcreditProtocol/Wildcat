@@ -11,8 +11,8 @@ use bcr_common::{
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    debit::ClowderClient,
     error::{Error, Result},
+    onchain::ClowderClient,
 };
 
 // ----- end imports

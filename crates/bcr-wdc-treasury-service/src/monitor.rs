@@ -5,12 +5,12 @@ use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_wdc_utils::routine::{Routine, TStamp};
 // ----- local imports
-use crate::{debit::MintStatus, error::Result};
+use crate::{error::Result, onchain::MintStatus};
 
 // ----- end imports
 
 pub struct OnChainMintOpMonitor {
-    pub srvc: Arc<crate::debit::Service>,
+    pub srvc: Arc<crate::onchain::Service>,
 }
 
 impl OnChainMintOpMonitor {
