@@ -67,7 +67,7 @@ impl WdcClient for WildcatCl {
         let response = self.treasury.ebill_mint_operation_status(qid).await;
         match response {
             Ok(status) => Ok(MintingStatus::Enabled(status.current)),
-            Err(TreasuryError::MintOpNotFound(_)) => Ok(MintingStatus::Disabled),
+            Err(TreasuryError::ResourceNotFound(_)) => Ok(MintingStatus::Disabled),
             Err(e) => Err(Error::TreasuryClient(e)),
         }
     }

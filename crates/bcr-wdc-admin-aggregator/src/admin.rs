@@ -171,7 +171,7 @@ pub async fn get_quote(
 ) -> Result<Json<wire_quotes::InfoReply>> {
     tracing::debug!("Received credit quote request for {qid}");
 
-    let status = ctrl.quotes_cl.admin_lookup(qid).await?;
+    let status = ctrl.quotes_cl.lookup(qid).await?;
     Ok(Json(status))
 }
 
@@ -509,10 +509,10 @@ pub async fn get_clowder_foreign_coverage(
 ) -> Result<Json<wire_clowder::Coverage>> {
     tracing::debug!("Received clowder coverage request");
 
-    let supply = ctrl.clwdr_cl.get_circulating_supply(pk).await?;
-    let btc_amt = ctrl.clwdr_cl.get_collateral_onchain(pk).await?.amount;
+    let supply = ctrl.clwdr_cl.get_circulating_supply(&pk).await?;
+    let btc_amt = ctrl.clwdr_cl.get_collateral_onchain(&pk).await?.amount;
     let ebill_amt = ctrl.clwdr_cl.get_collateral_ebill(pk).await?.amount;
-    let eiou_amt = ctrl.clwdr_cl.get_collateral_eiou(pk).await?.amount;
+    let eiou_amt = ctrl.clwdr_cl.get_collateral_eiou(&pk).await?.amount;
 
     Ok(Json(wire_clowder::Coverage {
         debit_circulating_supply: supply.debit,
@@ -560,7 +560,7 @@ pub async fn get_clowder_status(
 ) -> Result<Json<wire_clowder::AlphaStateResponse>> {
     tracing::debug!("Received clowder status request for {pk}");
 
-    let state = ctrl.clwdr_cl.get_status(pk).await?;
+    let state = ctrl.clwdr_cl.get_status(&pk).await?;
     Ok(Json(state))
 }
 

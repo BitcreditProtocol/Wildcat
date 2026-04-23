@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{
-        core::{Client as CoreClient, Error as CoreError},
+        admin::clowder::Client as ClowderRestClient, core::Client as CoreClient,
         ebill::Client as EbillClient,
     },
     clowder::taproot,
-    clwdr_client::{ClowderNatsClient, ClowderRestClient},
+    clwdr_client::ClowderNatsClient,
     core::{self, BillId},
     wire::{bill as wire_bill, clowder as wire_clowder},
 };
@@ -81,11 +81,7 @@ impl ebill::ClowderClient for ClwdrCl {
             quote_id,
         };
         let response = wire_clowder::messages::MintEbillResponse { signatures };
-        let res = self
-            .nats
-            .mint_bill(request, response)
-            .await
-            .map_err(Error::ClowderClient)?;
+        let res = self.nats.mint_bill(request, response).await?;
         Ok(res.signatures)
     }
 
@@ -151,13 +147,8 @@ pub struct WildcatCl {
 #[async_trait]
 impl ebill::WildcatClient for WildcatCl {
     async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo> {
-        match self.core.keyset_info(kid).await {
-            Ok(info) => Ok(info),
-            Err(CoreError::KeysetIdNotFound(kid)) => {
-                Err(Error::InvalidInput(format!("Unknown keyset: {kid}")))
-            }
-            Err(e) => Err(e.into()),
-        }
+        let kinfo = self.core.keyset_info(kid).await?;
+        Ok(kinfo)
     }
 
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {

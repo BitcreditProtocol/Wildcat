@@ -6,10 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{
-    client::{core::Client as CoreClient, mint::Client as MintClient},
-    clwdr_client,
-};
+use bcr_common::{client::admin::core, clwdr_client};
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
@@ -103,25 +100,28 @@ where
 {
     let web = Router::new()
         .route("/health", get(get_health))
-        .route(MintClient::KEYSETINFO_EP_V1, get(web::lookup_keyset))
-        .route(MintClient::LISTKEYSETINFO_EP_V1, get(web::list_keysets))
-        .route(MintClient::KEYS_EP_V1, get(web::lookup_keys))
-        .route(MintClient::RESTORE_EP_V1, post(web::restore))
-        .route(MintClient::SWAP_EP_V1, post(web::swap_tokens))
-        .route(MintClient::SWAPCOMMIT_EP_V1, post(web::commit_to_swap))
-        .route(MintClient::CHECKSTATE_EP_V1, post(web::check_state));
+        .route(core::web_ep::KEYSET_INFO_V1, get(web::lookup_keyset))
+        .route(core::web_ep::LIST_KEYSET_INFO_V1, get(web::list_keysets))
+        .route(core::web_ep::KEYS_V1, get(web::lookup_keys))
+        .route(core::web_ep::RESTORE_V1, post(web::restore))
+        .route(core::web_ep::SWAP_V1, post(web::swap_tokens))
+        .route(core::web_ep::SWAP_COMMIT_V1, post(web::commit_to_swap))
+        .route(core::web_ep::CHECK_STATE_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
-        .route(CoreClient::NEW_KEYSET_EP_V1, post(admin::new_keyset))
-        .route(CoreClient::SIGN_EP_V1, post(admin::sign_blind))
-        .route(CoreClient::VERIFY_PROOF_EP_V1, post(admin::verify_proof))
+        .route(core::admin_ep::NEW_KEYSET_V1, post(admin::new_keyset))
+        .route(core::admin_ep::SIGN_V1, post(admin::sign_blind))
+        .route(core::admin_ep::VERIFY_PROOF_V1, post(admin::verify_proof))
         .route(
-            CoreClient::VERIFY_FINGERPRINT_EP_V1,
+            core::admin_ep::VERIFY_FINGERPRINT_V1,
             post(admin::verify_fingerprint),
         )
-        .route(CoreClient::DEACTIVATEKEYSET_EP_V1, post(admin::deactivate))
-        .route(CoreClient::BURN_EP_V1, post(admin::burn_tokens))
-        .route(CoreClient::RECOVER_EP_V1, post(admin::recover_tokens));
+        .route(
+            core::admin_ep::DEACTIVATE_KEYSET_V1,
+            post(admin::deactivate),
+        )
+        .route(core::admin_ep::BURN_V1, post(admin::burn_tokens))
+        .route(core::admin_ep::RECOVER_V1, post(admin::recover_tokens));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }

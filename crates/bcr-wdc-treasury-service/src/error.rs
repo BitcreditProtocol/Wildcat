@@ -53,8 +53,10 @@ pub enum Error {
     SerdeJson(#[from] serde_json::Error),
     #[error("core client {0}")]
     CoreClient(#[from] bcr_common::client::core::Error),
-    #[error("clowder client {0}")]
-    ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
+    #[error("clowder rest client {0}")]
+    ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
+    #[error("clowder nats client {0}")]
+    ClowderNatsClient(#[from] bcr_common::clwdr_client::ClowderClientError),
     #[error("quote client {0}")]
     QuoteClient(#[from] bcr_common::client::quote::Error),
     #[error("ebill client {0}")]
@@ -129,7 +131,8 @@ impl axum::response::IntoResponse for Error {
             Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderNatsClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

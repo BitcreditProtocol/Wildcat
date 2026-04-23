@@ -76,15 +76,15 @@ impl foreign::OnlineRepository for OnlineRepository {
 #[derive(Clone, Default, Debug)]
 pub struct OfflineRepository {
     fingerprints:
-        Arc<Mutex<HashMap<Sha256Hash, ((secp256k1::PublicKey, cashu::MintUrl), ProofFingerprint)>>>,
-    proofs: Arc<Mutex<HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>>>>,
+        Arc<Mutex<HashMap<Sha256Hash, ((secp256k1::PublicKey, reqwest::Url), ProofFingerprint)>>>,
+    proofs: Arc<Mutex<HashMap<(secp256k1::PublicKey, reqwest::Url), Vec<cashu::Proof>>>>,
 }
 
 #[async_trait]
 impl foreign::OfflineRepository for OfflineRepository {
     async fn store_fps(
         &self,
-        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        alpha: (secp256k1::PublicKey, reqwest::Url),
         fps: Vec<ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
@@ -98,7 +98,7 @@ impl foreign::OfflineRepository for OfflineRepository {
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
-    ) -> Result<Option<((secp256k1::PublicKey, cashu::MintUrl), ProofFingerprint)>> {
+    ) -> Result<Option<((secp256k1::PublicKey, reqwest::Url), ProofFingerprint)>> {
         let locked = self.fingerprints.lock().unwrap();
         let val = locked.get(hash).cloned();
         Ok(val)
@@ -111,7 +111,7 @@ impl foreign::OfflineRepository for OfflineRepository {
     }
     async fn store_proofs(
         &self,
-        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        alpha: (secp256k1::PublicKey, reqwest::Url),
         proof: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
@@ -120,7 +120,7 @@ impl foreign::OfflineRepository for OfflineRepository {
     }
     async fn load_proofs(
         &self,
-        alpha: &(secp256k1::PublicKey, cashu::MintUrl),
+        alpha: &(secp256k1::PublicKey, reqwest::Url),
     ) -> Result<Vec<cashu::Proof>> {
         let locked = self.proofs.lock().unwrap();
         Ok(locked.get(alpha).cloned().unwrap_or_default())

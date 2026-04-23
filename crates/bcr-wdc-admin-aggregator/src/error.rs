@@ -1,13 +1,14 @@
 // ----- standard library imports
+//
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_common::{
     cashu,
     client::{
-        core::Error as CoreClientError, ebill::Error as EbillClientError,
-        quote::Error as QuotesClientError, treasury::Error as TreasuryClientError,
+        admin::clowder::Error as ClowderClientError, core::Error as CoreClientError,
+        ebill::Error as EbillClientError, quote::Error as QuotesClientError,
+        treasury::Error as TreasuryClientError,
     },
-    clwdr_client::ClowderClientError,
 };
 use thiserror::Error;
 // ----- local imports
@@ -40,10 +41,10 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
-            Error::CoreClient(CoreClientError::KeysetIdNotFound(e)) => {
+            Error::CoreClient(CoreClientError::ResourceNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
-            Error::TreasuryClient(TreasuryClientError::MintOpNotFound(e)) => {
+            Error::TreasuryClient(TreasuryClientError::ResourceNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
             Error::QuotesClient(QuotesClientError::ResourceNotFound(e)) => {

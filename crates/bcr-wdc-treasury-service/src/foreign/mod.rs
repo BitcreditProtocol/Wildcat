@@ -131,7 +131,7 @@ pub trait OnlineRepository: Send + Sync {
 pub trait OfflineRepository: Send + Sync {
     async fn store_fps(
         &self,
-        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        alpha: (secp256k1::PublicKey, reqwest::Url),
         fps: Vec<wire_keys::ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()>;
@@ -140,20 +140,20 @@ pub trait OfflineRepository: Send + Sync {
         hash: &Sha256Hash,
     ) -> Result<
         Option<(
-            (secp256k1::PublicKey, cashu::MintUrl),
+            (secp256k1::PublicKey, reqwest::Url),
             wire_keys::ProofFingerprint,
         )>,
     >;
     async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn store_proofs(
         &self,
-        alpha: (secp256k1::PublicKey, cashu::MintUrl),
+        alpha: (secp256k1::PublicKey, reqwest::Url),
         proof: Vec<cashu::Proof>,
     ) -> Result<()>;
     #[allow(dead_code)]
     async fn load_proofs(
         &self,
-        alpha: &(secp256k1::PublicKey, cashu::MintUrl),
+        alpha: &(secp256k1::PublicKey, reqwest::Url),
     ) -> Result<Vec<cashu::Proof>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
@@ -168,7 +168,7 @@ pub trait ClowderClient: proof::ClowderClient {
     async fn can_accept_offline_exchange(
         &self,
         fps: Vec<wire_keys::ProofFingerprint>,
-    ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)>;
+    ) -> Result<(reqwest::Url, secp256k1::PublicKey)>;
     async fn get_keyset_info(
         &self,
         alpha_pk: &secp256k1::PublicKey,
@@ -191,7 +191,7 @@ pub trait MintClientFactory: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OfflineSettleHandler: Send + Sync {
-    fn monitor(&self, mint: (secp256k1::PublicKey, cashu::MintUrl)) -> Result<()>;
+    fn monitor(&self, mint: (secp256k1::PublicKey, reqwest::Url)) -> Result<()>;
     async fn stop(&self) -> Result<()>;
 }
 
@@ -245,7 +245,7 @@ mod tests {
             async fn can_accept_offline_exchange(
                 &self,
                 fps: Vec<wire_keys::ProofFingerprint>,
-            ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)>;
+            ) -> Result<(reqwest::Url, secp256k1::PublicKey)>;
             async fn get_keyset_info(
                 &self,
                 alpha_pk: &secp256k1::PublicKey,

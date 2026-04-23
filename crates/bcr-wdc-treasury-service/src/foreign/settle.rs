@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 // ----- extra library imports
 use async_trait::async_trait;
@@ -50,7 +51,7 @@ impl Handler {
 
 #[async_trait]
 impl OfflineSettleHandler for Handler {
-    fn monitor(&self, mint: (secp256k1::PublicKey, cashu::MintUrl)) -> Result<()> {
+    fn monitor(&self, mint: (secp256k1::PublicKey, reqwest::Url)) -> Result<()> {
         {
             let mut monitored = self.monitored.lock().unwrap();
             if monitored.contains(&mint.0) {
@@ -85,7 +86,7 @@ impl OfflineSettleHandler for Handler {
 }
 
 async fn monitor(
-    mint: (secp256k1::PublicKey, cashu::MintUrl),
+    mint: (secp256k1::PublicKey, reqwest::Url),
     clowder: Weak<dyn ClowderClient>,
     online: Weak<dyn OnlineRepository>,
     offline: Weak<dyn OfflineRepository>,
@@ -129,7 +130,13 @@ async fn monitor(
             warn!("MintClientFactory upgrade failed, abandoning {}", mint.1);
             break;
         };
-        let Ok(client) = factory.make_client(mint.1.clone()).await else {
+        let mint_url = cashu::MintUrl::from_str(mint.1.as_ref())
+            .map_err(|e| Error::InvalidInput(e.to_string()));
+        let Ok(mint_url) = mint_url else {
+            warn!("make_client failed {}, retry later", mint.1);
+            continue;
+        };
+        let Ok(client) = factory.make_client(mint_url.clone()).await else {
             warn!("make_client failed {}, retry later", mint.1);
             continue;
         };
@@ -182,7 +189,8 @@ async fn monitor(
                 };
                 news.push(proof);
             }
-            if online_repo.store(mint.clone(), news).await.is_err() {
+            let online_mint = (mint.0, mint_url.clone());
+            if online_repo.store(online_mint, news).await.is_err() {
                 error!("store new proofs failed {}, {total} lost", mint.1);
             };
             if offline_repo.remove_proofs(&ys).await.is_err() {

@@ -9,10 +9,10 @@ use axum::{
 use bcr_common::{
     cashu,
     client::{
-        core::Client as CoreClient, ebill::Client as EbillClient, quote::Client as QuoteClient,
+        admin::clowder::Client as ClowderClient, core::Client as CoreClient,
+        ebill::Client as EbillClient, quote::Client as QuoteClient,
         treasury::Client as TreasuryClient, Url as ClientUrl,
     },
-    clwdr_client,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
@@ -38,11 +38,11 @@ pub struct AppConfig {
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    pub core_cl: bcr_common::client::core::Client,
-    pub quotes_cl: bcr_common::client::quote::Client,
-    pub ebill_cl: bcr_common::client::ebill::Client,
-    pub clwdr_cl: Arc<clwdr_client::ClowderRestClient>,
-    pub treasury_cl: bcr_common::client::treasury::Client,
+    pub core_cl: CoreClient,
+    pub quotes_cl: QuoteClient,
+    pub ebill_cl: EbillClient,
+    pub clwdr_cl: Arc<ClowderClient>,
+    pub treasury_cl: TreasuryClient,
 }
 
 impl AppController {
@@ -59,7 +59,7 @@ impl AppController {
         let core_cl = CoreClient::new(core_url);
         let quotes_cl = QuoteClient::new(quotes_url);
         let ebill_cl = EbillClient::new(ebill_url);
-        let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_url);
+        let clwdr_cl = ClowderClient::new(clowder_url);
         let treasury_cl = TreasuryClient::new(treasury_url);
 
         // pre-flight checklist

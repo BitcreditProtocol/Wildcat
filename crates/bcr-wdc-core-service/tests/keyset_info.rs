@@ -17,6 +17,6 @@ async fn keyset_info_not_found() {
     assert!(response.is_err());
     assert!(matches!(
         response.unwrap_err(),
-        MintError::KeysetIdNotFound(_)
+        MintError::ResourceNotFound(_)
     ));
 }

@@ -8,10 +8,10 @@ use axum::{
 };
 use bcr_common::{
     client::{
-        core::Client as CoreClient, ebill::Client as EbClient, mint::Client as MintClient,
-        treasury::Client as TreasuryClient, Url as ClientUrl,
+        admin::clowder::Client as ClowderClient, core::Client as CoreClient,
+        ebill::Client as EbClient, treasury as cl_treasury, Url as ClientUrl,
     },
-    clwdr_client::{ClowderNatsClient, ClowderRestClient},
+    clwdr_client::ClowderNatsClient,
 };
 use bcr_wdc_utils::{routine, surreal};
 use bitcoin::secp256k1;
@@ -72,7 +72,7 @@ pub struct AppController {
     crsat: Arc<foreign::crsat::Service>,
     sat: Arc<foreign::sat::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
-    clwdr_rest: Arc<ClowderRestClient>,
+    clwdr_rest: Arc<ClowderClient>,
     dev: Arc<devmode::Service>,
 }
 
@@ -108,7 +108,7 @@ pub async fn init_app(
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
     let ebill_client = EbClient::new(ebill_url);
-    let clowder_rest_client = Arc::new(ClowderRestClient::new(clowder_rest_url));
+    let clowder_client = Arc::new(ClowderClient::new(clowder_rest_url));
     let nats_cl = ClowderNatsClient::new(clowder_nats_url)
         .await
         .expect("Failed to create clowder nats client");
@@ -124,7 +124,7 @@ pub async fn init_app(
     let signing_keys = secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
     tracing::info!("signing public key: {}", signing_keys.public_key());
     let clowder_cl = onchain::ClowderCl {
-        rest: clowder_rest_client.clone(),
+        rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
         min_confirmations,
     };
@@ -151,7 +151,7 @@ pub async fn init_app(
         core: core_client.clone(),
     });
     let clowder = Arc::new(foreign::clients::ClowderCl {
-        clwdr: clowder_rest_client.clone(),
+        clwdr: clowder_client.clone(),
     });
     let factory = Arc::new(foreign::clients::MintClientFactory {});
     let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
@@ -211,8 +211,7 @@ pub async fn init_app(
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
     };
-    let clowdercl =
-        ebill::new_clowder_client(clowder_nats_client.clone(), clowder_rest_client.clone());
+    let clowdercl = ebill::new_clowder_client(clowder_nats_client.clone(), clowder_client.clone());
     let ebill = ebill::Service {
         repo: Box::new(ebill_repo),
         wildcatcl: Box::new(wdccl),
@@ -223,7 +222,7 @@ pub async fn init_app(
         onchain: Arc::new(onchain),
         crsat,
         sat,
-        clwdr_rest: clowder_rest_client.clone(),
+        clwdr_rest: clowder_client.clone(),
         clwdr_nats: clowder_nats_client.clone(),
         dev: Arc::new(dev),
     };
@@ -240,38 +239,47 @@ pub async fn init_app(
 
 pub fn routes(app: AppController) -> Router {
     let web = Router::new()
-        .route(MintClient::EXCHANGEONLINE_EP_V1, post(web::online_exchange))
+        .route(
+            cl_treasury::web_ep::EXCHANGE_ONLINE_V1,
+            post(web::online_exchange),
+        )
         .route("/v1/free_money", post(devmode::free_money))
         .route(
-            MintClient::EXCHANGEOFFLINE_EP_V1,
+            cl_treasury::web_ep::EXCHANGE_OFFLINE_V1,
             post(web::offline_exchange),
         )
         .route(
-            MintClient::MELTQUOTE_ONCHAIN_EP_V1,
+            cl_treasury::web_ep::MELTQUOTE_ONCHAIN_V1,
             post(web::melt_quote_onchain),
         )
-        .route(MintClient::MELT_ONCHAIN_EP_V1, post(web::melt_onchain))
         .route(
-            MintClient::MINTQUOTE_ONCHAIN_EP_V1,
+            cl_treasury::web_ep::MELT_ONCHAIN_V1,
+            post(web::melt_onchain),
+        )
+        .route(
+            cl_treasury::web_ep::MINTQUOTE_ONCHAIN_V1,
             post(web::mint_quote_onchain),
         )
-        .route(MintClient::EBILLMINT_EP_V1, post(web::mint_ebill));
+        .route(cl_treasury::web_ep::EBILLMINT_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
-            TreasuryClient::REQTOPAY_EP_V1,
+            cl_treasury::admin_ep::REQUEST_TO_PAY_EBILL_V1,
             post(admin::request_to_pay_ebill),
         )
-        .route(TreasuryClient::TRYHTLC_EP_V1, post(admin::try_htlc_swap))
         .route(
-            TreasuryClient::NEWEBILLMINTOP_EP_V1,
+            cl_treasury::admin_ep::TRY_HTLC_SWAP_V1,
+            post(admin::try_htlc_swap),
+        )
+        .route(
+            cl_treasury::admin_ep::NEW_EBILL_MINTOP_V1,
             post(admin::new_ebill_mintop),
         )
         .route(
-            TreasuryClient::LISTEBILLMINTOPS_EP_V1,
+            cl_treasury::admin_ep::LIST_EBILL_MINTOPS_V1,
             get(admin::list_ebill_mintops),
         )
         .route(
-            TreasuryClient::EBILLMINTOPSTATUS_EP_V1,
+            cl_treasury::admin_ep::EBILL_MINTOP_STATUS_V1,
             get(admin::ebill_mintop_status),
         );
     admin.merge(web).with_state(app)

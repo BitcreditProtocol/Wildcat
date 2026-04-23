@@ -4,9 +4,11 @@ use std::{ops::Deref, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu, cdk,
-    client::core::Client as CoreClient,
-    clwdr_client::{model as clwdr_model, ClowderRestClient},
-    wire::{clowder as wire_clowder, keys as wire_keys},
+    client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
+    wire::{
+        clowder::{self as wire_clowder, messages as clwdr_msgs},
+        keys as wire_keys,
+    },
 };
 // ----- local imports
 use crate::{
@@ -67,7 +69,7 @@ impl sat::KeysClient for CoreCl {
 
 ///--------------------------- ClowderCl
 pub struct ClowderCl {
-    pub clwdr: Arc<ClowderRestClient>,
+    pub clwdr: Arc<ClowderClient>,
 }
 
 #[async_trait]
@@ -127,30 +129,30 @@ impl foreign::ClowderClient for ClowderCl {
     async fn can_accept_offline_exchange(
         &self,
         fps: Vec<wire_keys::ProofFingerprint>,
-    ) -> Result<(cashu::MintUrl, secp256k1::PublicKey)> {
+    ) -> Result<(reqwest::Url, secp256k1::PublicKey)> {
         let input_amount = fps.iter().fold(cashu::Amount::ZERO, |acc, fp| {
             acc + cashu::Amount::from(fp.amount)
         });
         let fps_len = fps.len();
         let fps: Vec<wire_keys::ProofFingerprint> = fps.into_iter().collect();
-        let clwdr_model::IntermintOriginResponse {
+        let clwdr_msgs::IntermintOriginResponse {
             node_id: origin_id,
             mint_url: origin_url,
         } = self.clwdr.post_fingerprints_origin(fps.clone()).await?;
         let wire_clowder::ConnectedMintResponse {
             node_id: substitute_id,
             ..
-        } = self.clwdr.get_substitute(origin_id).await?;
+        } = self.clwdr.get_substitute(&origin_id).await?;
         let myself = self.clwdr.get_info().await?.node_id;
         if substitute_id != *myself {
             return Err(Error::InvalidInput(String::from(
                 "currently not a substitute",
             )));
         }
-        let clwdr_model::ValidFingerprints {
+        let clwdr_msgs::ValidFingerprints {
             valid_proofs,
             amount,
-        } = self.clwdr.post_verify_fingerprints(origin_id, fps).await?;
+        } = self.clwdr.post_verify_fingerprints(&origin_id, fps).await?;
         if valid_proofs.len() != fps_len || amount != input_amount {
             return Err(Error::InvalidInput(String::from(
                 "One or more fingerprints are invalid",
@@ -189,7 +191,7 @@ impl foreign::ClowderClient for ClowderCl {
     }
 
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
-        let response = self.clwdr.get_offline(pk).await?;
+        let response = self.clwdr.get_offline(&pk).await?;
         Ok(response.offline)
     }
 }
