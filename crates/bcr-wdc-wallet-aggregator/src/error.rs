@@ -1,8 +1,11 @@
 // ----- standard library imports
+//
 // ----- extra library imports
 use axum::http::StatusCode;
 use bcr_common::{
-    cashu, cdk::Error as CDKError, client::treasury::Error as TreasuryClientError,
+    cashu,
+    cdk::Error as CDKError,
+    client::{admin::clowder::Error as ClowderRestError, treasury::Error as TreasuryClientError},
     clwdr_client::ClowderClientError,
 };
 use thiserror::Error;
@@ -31,6 +34,8 @@ pub enum Error {
     Treasury(#[from] TreasuryClientError),
     #[error("Clowder Client error: {0}")]
     ClowderClient(#[from] ClowderClientError),
+    #[error("Clowder rest error: {0}")]
+    ClowderRestClient(#[from] ClowderRestError),
     #[error("Clowder Client Not Initialized")]
     ClowderClientNoInit,
 
@@ -61,12 +66,13 @@ impl axum::response::IntoResponse for Error {
 
             Error::Treasury(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::ClowderRestClient(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Core(bcr_common::client::core::Error::InvalidRequest(msg)) => {
                 (StatusCode::BAD_REQUEST, msg)
             }
-            Error::Core(bcr_common::client::core::Error::KeysetIdNotFound(_)) => {
+            Error::Core(bcr_common::client::core::Error::ResourceNotFound(_)) => {
                 (StatusCode::NOT_FOUND, self.to_string())
             }
             Error::Core(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

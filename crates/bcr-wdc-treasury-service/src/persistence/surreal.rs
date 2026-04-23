@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -486,14 +487,14 @@ struct ForeignFingerprintEntry {
     witness: Option<cashu::Witness>,
     dleq: Option<cashu::ProofDleq>,
     mint_pk: secp256k1::PublicKey,
-    mint_url: cashu::MintUrl,
+    mint_url: reqwest::Url,
 }
 
 #[async_trait]
 impl foreign::OfflineRepository for DBForeignOffline {
     async fn store_fps(
         &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, cashu::MintUrl),
+        (mint_pk, mint_url): (secp256k1::PublicKey, reqwest::Url),
         fps: Vec<wire_keys::ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
@@ -525,7 +526,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         hash: &Sha256Hash,
     ) -> Result<
         Option<(
-            (secp256k1::PublicKey, cashu::MintUrl),
+            (secp256k1::PublicKey, reqwest::Url),
             wire_keys::ProofFingerprint,
         )>,
     > {
@@ -563,9 +564,11 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
     async fn store_proofs(
         &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, cashu::MintUrl),
+        (mint_pk, mint_url): (secp256k1::PublicKey, reqwest::Url),
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
+        let mint_url = cashu::MintUrl::from_str(mint_url.as_ref())
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
             let rid = RecordId::from_table_key(Self::PROOFS_TABLE, proof.y()?.to_string());
@@ -588,13 +591,15 @@ impl foreign::OfflineRepository for DBForeignOffline {
 
     async fn load_proofs(
         &self,
-        (mint_pk, mint_url): &(secp256k1::PublicKey, cashu::MintUrl),
+        (mint_pk, mint_url): &(secp256k1::PublicKey, reqwest::Url),
     ) -> Result<Vec<cashu::Proof>> {
+        let mint_url = cashu::MintUrl::from_str(mint_url.as_ref())
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let entries: Vec<ForeignProofEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE mint_url = $mint_url AND mint_pk = $mint_pk")
             .bind(("table", Self::PROOFS_TABLE))
-            .bind(("mint_url", mint_url.clone()))
+            .bind(("mint_url", mint_url))
             .bind(("mint_pk", *mint_pk))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -722,10 +727,7 @@ mod tests {
         let db = init_foreignoffline_mem_db().await;
 
         let alpha_pk = core_tests::generate_random_keypair().public_key();
-        let alpha = (
-            alpha_pk,
-            cashu::MintUrl::from_str("http://example.com").unwrap(),
-        );
+        let alpha = (alpha_pk, reqwest::Url::parse("http://example.com").unwrap());
         let y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
         let c = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
         let fps = vec![

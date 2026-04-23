@@ -4,7 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    clwdr_client::{ClowderNatsClient, ClowderRestClient},
+    client::admin::clowder::Client as ClowderRestClient,
+    clwdr_client::ClowderNatsClient,
     core::signature,
     wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
 };
@@ -28,11 +29,7 @@ impl ClowderClient for ClowderCl {
     async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address> {
         let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
             .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
-        let response = self
-            .rest
-            .request_mint_address(qid, dummy_kid)
-            .await
-            .map_err(Error::ClowderClient)?;
+        let response = self.rest.request_mint_address(qid, dummy_kid).await?;
         Ok(response.address.assume_checked())
     }
 
@@ -41,11 +38,8 @@ impl ClowderClient for ClowderCl {
         req: clowder_messages::RequestToPayEbillRequest,
         resp: clowder_messages::RequestToPayEbillResponse,
     ) -> Result<()> {
-        self.nats
-            .request_to_pay_bill(req, resp)
-            .await
-            .map(|_| ())
-            .map_err(Error::ClowderClient)
+        self.nats.request_to_pay_bill(req, resp).await?;
+        Ok(())
     }
 
     async fn request_onchain_mint_address(

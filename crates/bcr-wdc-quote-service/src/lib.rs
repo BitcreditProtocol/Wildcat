@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
@@ -7,11 +7,12 @@ use axum::{
     Router,
 };
 use bcr_common::{
+    cashu,
     client::{
-        core::Client as CoreClient, ebill::Client as EBillClient, mint::Client as MintClient,
-        quote::Client as QuoteClient, treasury::Client as TreasuryClient, Url as ClientUrl,
+        admin::clowder::Client as ClowderClient, core::Client as CoreClient,
+        ebill::Client as EBillClient, quote, treasury::Client as TreasuryClient, Url as ClientUrl,
     },
-    clwdr_client,
+    wire::clowder::messages as clwdr_msgs,
 };
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules
@@ -30,8 +31,6 @@ mod web;
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
-pub type ProdQuoteRepository = persistence::surreal::DBQuotes;
-pub type ProdQuotingService = service::Service;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -39,13 +38,13 @@ pub struct AppConfig {
     core_url: ClientUrl,
     treasury_url: ClientUrl,
     ebill_url: ClientUrl,
-    clowder_rest_url: reqwest::Url,
+    clowder_url: reqwest::Url,
     monitor_interval_seconds: u64,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    quote: Arc<ProdQuotingService>,
+    quote: Arc<service::Service>,
 }
 
 pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
@@ -54,21 +53,21 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         core_url,
         treasury_url,
         ebill_url,
-        clowder_rest_url,
+        clowder_url,
         monitor_interval_seconds,
     } = cfg;
-    let quotes_repository = ProdQuoteRepository::new(quotes)
+    let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
         .await
         .expect("DB connection to quotes failed");
 
-    let clwdr_cl = clwdr_client::ClowderRestClient::new(clowder_rest_url);
+    let clwdr_cl = ClowderClient::new(clowder_url);
     let public_key = clwdr_cl
         .get_info()
         .await
         .expect("Failed to get Clowder ID")
         .node_id;
-    let clwdr_client::model::MintUrlResponse { mint_url, .. } = clwdr_cl
-        .get_mint_url(*public_key)
+    let clwdr_msgs::MintUrlResponse { mint_url, .. } = clwdr_cl
+        .get_mint_url(&public_key)
         .await
         .expect("Failed to get mint URL");
     let core = CoreClient::new(core_url);
@@ -79,10 +78,12 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         treasury: treasury_cl,
         ebill,
     };
-    let quoting_service = ProdQuotingService {
+    let cashu_mint_url =
+        cashu::MintUrl::from_str(mint_url.as_ref()).expect("cashu::MintUrl == reqwest::Url");
+    let quoting_service = service::Service {
         wdc_client: Box::new(wdc_cl),
         quotes: Box::new(quotes_repository),
-        mint_url,
+        mint_url: cashu_mint_url,
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
@@ -103,15 +104,15 @@ where
 {
     let web = Router::new()
         .route("/health", get(get_health))
-        .route(MintClient::ENQUIRE_EP_V1, post(web::enquire_quote))
-        .route(MintClient::LOOKUP_EP_V1, get(web::lookup_quote))
-        .route(MintClient::RESOLVE_EP_V1, delete(web::cancel))
-        .route(MintClient::RESOLVE_EP_V1, patch(web::resolve_offer));
+        .route(quote::web_ep::ENQUIRE_V1, post(web::enquire_quote))
+        .route(quote::web_ep::LOOKUP_V1, get(web::lookup_quote))
+        .route(quote::web_ep::RESOLVE_V1, delete(web::cancel))
+        .route(quote::web_ep::RESOLVE_V1, patch(web::resolve_offer));
 
     let admin = Router::new()
-        .route(QuoteClient::LIST_EP_V1, get(admin::list_quotes))
-        .route(QuoteClient::ADMIN_LOOKUP_EP_V1, get(admin::lookup_quote))
-        .route(QuoteClient::UPDATE_EP_V1, patch(admin::update_quote));
+        .route(quote::admin_ep::LIST_V1, get(admin::list_quotes))
+        .route(quote::admin_ep::LOOKUP_V1, get(admin::lookup_quote))
+        .route(quote::admin_ep::UPDATE_V1, patch(admin::update_quote));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }

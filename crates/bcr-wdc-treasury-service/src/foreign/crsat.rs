@@ -463,7 +463,7 @@ mod tests {
         let foreign_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
-        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
@@ -647,7 +647,7 @@ mod tests {
         let keys = MockKeysClient::new();
         let mut clowder = crate::foreign::tests::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
-        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let foreign_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
