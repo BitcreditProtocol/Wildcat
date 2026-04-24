@@ -46,7 +46,7 @@ pub struct AppController {
 }
 
 impl AppController {
-    const MINIMUM_KEYSET_FEE_RATE_PPK: u64 = 0;
+    const MINIMUM_KEYSET_FEE_RATE_PPK: u64 = 1;
 
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {

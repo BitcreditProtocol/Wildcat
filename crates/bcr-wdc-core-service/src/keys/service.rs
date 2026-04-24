@@ -1,5 +1,8 @@
 // ----- standard library imports
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicU64, Ordering},
+};
 // ----- extra library imports
 use bcr_common::{
     cashu,
@@ -28,9 +31,15 @@ pub struct Service {
     pub signatures: Box<dyn SignaturesRepository>,
     pub clowder: Box<dyn ClowderClient>,
     pub keygen: Factory,
+    pub min_keyset_fees_ppk: AtomicU64,
 }
 
 impl Service {
+    pub fn set_minimum_fees_ppk(&self, fees_ppk: u64) -> Result<()> {
+        self.min_keyset_fees_ppk.store(fees_ppk, Ordering::Relaxed);
+        Ok(())
+    }
+
     pub async fn create(
         &self,
         unit: cashu::CurrencyUnit,
@@ -38,6 +47,7 @@ impl Service {
         expiration: Option<TStamp>,
         fees_ppk: u64,
     ) -> Result<MintKeySetInfo> {
+        let fees_ppk = std::cmp::max(fees_ppk, self.min_keyset_fees_ppk.load(Ordering::Relaxed));
         let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
         let kinfo = entry.0.clone();
         let keyset = cashu::KeySet::from(entry.1.clone());
@@ -204,6 +214,7 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
+            min_keyset_fees_ppk: Default::default(),
         };
         let deactivated = service.deactivate(kid).await.unwrap();
         assert_eq!(deactivated, kid);
@@ -226,6 +237,7 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
+            min_keyset_fees_ppk: Default::default(),
         };
         let err = service.deactivate(kid).await.unwrap_err();
         assert!(matches!(err, Error::ResourceNotFound(_)));
@@ -257,6 +269,7 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
+            min_keyset_fees_ppk: Default::default(),
         };
         let blinds = signature_tests::generate_blinds(kinfo.id, &amounts)
             .into_iter()
@@ -296,6 +309,7 @@ mod tests {
             signatures: Box::new(signatures_repo),
             keygen: factory,
             clowder: Box::new(clowder_cl),
+            min_keyset_fees_ppk: Default::default(),
         };
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(32)];
         let blinds1 = signature_tests::generate_blinds(kinfo1.id, &amounts)
