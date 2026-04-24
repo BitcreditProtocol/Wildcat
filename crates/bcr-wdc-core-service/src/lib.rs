@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
@@ -30,6 +30,7 @@ pub struct AppConfig {
     clowder_url: clwdr_client::Url,
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
+    minimum_keyset_fees_ppk: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -48,6 +49,7 @@ impl AppController {
             clowder_url,
             starting_derivation_path,
             max_expiry_sec,
+            minimum_keyset_fees_ppk,
         } = cfg;
 
         let keys_repo = persistence::surreal::DBKeys::new(keys)
@@ -75,6 +77,7 @@ impl AppController {
             signatures: Box::new(signatures_repo),
             clowder: Box::new(clowder_for_keys),
             keygen,
+            min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
         let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
@@ -147,6 +150,7 @@ pub mod test_utils {
             signatures: Box::new(signatures_repo),
             keygen,
             clowder: Box::new(keys::DummyClowderClient),
+            min_keyset_fees_ppk: Default::default(),
         };
         let proofs_repo = persistence::inmemory::ProofMap::default();
         let commitments_repo = persistence::inmemory::CommitmentMap::default();
