@@ -1,4 +1,3 @@
-use bitcoin::hashes::Hash;
 use std::str::FromStr;
 use tokio::signal;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
@@ -8,11 +7,6 @@ struct MainConfig {
     bind_address: std::net::SocketAddr,
     appcfg: bcr_wdc_treasury_service::AppConfig,
     log_level: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct SeedConfig {
-    mnemonic: bip39::Mnemonic,
 }
 
 #[tokio::main]
@@ -34,20 +28,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
-    // seed is acquired from environment variables
-    let settings = config::Config::builder()
-        .add_source(config::Environment::with_prefix("TREASURY_SERVICE"))
-        .build()
-        .expect("Failed to build seed config");
-    let seedcfg: SeedConfig = settings
-        .try_deserialize()
-        .expect("Failed to parse seed config");
-    let signing_seed = seedcfg.mnemonic.to_seed("treasury-service-signing");
-    let signing_slice = bitcoin::hashes::sha256::Hash::hash(&signing_seed);
-    let secret = bitcoin::secp256k1::SecretKey::from_slice(signing_slice.as_byte_array())
-        .expect("Failed to create secret key from seed");
-
-    let (app, routine_hndl) = bcr_wdc_treasury_service::init_app(secret, maincfg.appcfg).await;
+    let (app, routine_hndl) = bcr_wdc_treasury_service::init_app(maincfg.appcfg).await;
     let router = bcr_wdc_treasury_service::routes(app.clone());
 
     let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)

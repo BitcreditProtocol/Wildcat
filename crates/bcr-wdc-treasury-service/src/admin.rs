@@ -26,7 +26,7 @@ pub async fn request_to_pay_ebill(
 }
 
 pub async fn try_htlc_swap(
-    State(ctrl): State<Arc<foreign::sat::Service>>,
+    State(ctrl): State<Arc<foreign::crsat::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     tracing::debug!("Received request to try_htlc_swap");

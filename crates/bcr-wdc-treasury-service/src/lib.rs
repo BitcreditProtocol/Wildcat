@@ -14,7 +14,6 @@ use bcr_common::{
     clwdr_client::ClowderNatsClient,
 };
 use bcr_wdc_utils::{routine, surreal};
-use bitcoin::secp256k1;
 // ----- local modules
 mod admin;
 mod devmode;
@@ -56,8 +55,6 @@ pub struct OnchainConfig {
 pub struct ForeignConfig {
     crsatonline_repo: surreal::DBConnConfig,
     crsatoffline_repo: surreal::DBConnConfig,
-    satonline_repo: surreal::DBConnConfig,
-    satoffline_repo: surreal::DBConnConfig,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -69,17 +66,12 @@ pub struct EbillConfig {
 pub struct AppController {
     ebill: Arc<ebill::Service>,
     onchain: Arc<onchain::Service>,
-    crsat: Arc<foreign::crsat::Service>,
-    sat: Arc<foreign::sat::Service>,
-    clwdr_nats: Arc<ClowderNatsClient>,
-    clwdr_rest: Arc<ClowderClient>,
+    foreign: Arc<foreign::crsat::Service>,
     dev: Arc<devmode::Service>,
+    clwdr_nats: Arc<ClowderNatsClient>,
 }
 
-pub async fn init_app(
-    secret: secp256k1::SecretKey,
-    cfg: AppConfig,
-) -> (AppController, Vec<routine::RoutineHandle>) {
+pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHandle>) {
     let AppConfig {
         onchain,
         foreign,
@@ -97,13 +89,11 @@ pub async fn init_app(
         min_melt_threshold,
         min_mint_threshold,
     } = onchain;
+    let EbillConfig { db: mintops } = ebill;
     let ForeignConfig {
         crsatonline_repo,
         crsatoffline_repo,
-        satonline_repo,
-        satoffline_repo,
     } = foreign;
-    let EbillConfig { db: mintops } = ebill;
 
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
@@ -114,46 +104,60 @@ pub async fn init_app(
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
 
-    let wdc = onchain::WildcatCl {
-        core_cl: core_client.clone(),
-    };
     // repositories
-    let repo = persistence::surreal::DBOnChain::new(onchain_repo)
+    let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
         .await
         .expect("Failed to create repository");
-    let signing_keys = secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &secret);
-    tracing::info!("signing public key: {}", signing_keys.public_key());
+    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
+        .await
+        .expect("Failed to create mintops repository");
+    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(crsatonline_repo)
+        .await
+        .expect("Failed to create foreign online repository");
+    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(crsatoffline_repo)
+        .await
+        .expect("Failed to create foreign offline repository");
+
+    // onChain
     let clowder_cl = onchain::ClowderCl {
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
         min_confirmations,
     };
+    let wdc = onchain::WildcatCl {
+        core_cl: core_client.clone(),
+    };
     let onchain = onchain::Service {
         quote_expiry: chrono::Duration::seconds(quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
-        repo: Arc::new(repo),
+        repo: Arc::new(onchain_repo),
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         min_melt_threshold,
     };
 
-    let crsatonlinerepo = Arc::new(
-        persistence::surreal::DBForeignOnline::new(crsatonline_repo)
-            .await
-            .expect("Failed to create crsat online repository"),
-    );
-    let crsatofflinerepo = Arc::new(
-        persistence::surreal::DBForeignOffline::new(crsatoffline_repo)
-            .await
-            .expect("Failed to create crsat offline repository"),
-    );
-    let crsatcore = Arc::new(foreign::clients::CoreCl {
+    // eBill
+    let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
-    });
+        ebill: Box::new(ebill_client),
+    };
+    let clwdcl = ebill::new_clowder_client(clowder_nats_client.clone(), clowder_client.clone());
+    let ebill = ebill::Service {
+        repo: Box::new(ebill_repo),
+        wildcatcl: Box::new(wdccl),
+        clowdercl: clwdcl,
+    };
+
+    // foreign
     let clowder = Arc::new(foreign::clients::ClowderCl {
         clwdr: clowder_client.clone(),
     });
     let factory = Arc::new(foreign::clients::MintClientFactory {});
+    let crsatonlinerepo = Arc::new(foreign_online_repo);
+    let crsatofflinerepo = Arc::new(foreign_offline_repo);
+    let crsatcore = Arc::new(foreign::clients::CoreCl {
+        core: core_client.clone(),
+    });
     let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
     let settler = {
         let online: Arc<dyn foreign::OnlineRepository> = crsatonlinerepo.clone();
@@ -164,67 +168,24 @@ pub async fn init_app(
             &online, &offline, &clwdr, &fctry, interval,
         ))
     };
-    let crsat = Arc::new(foreign::crsat::Service {
+    let foreign = foreign::crsat::Service {
         online_repo: crsatonlinerepo,
         offline_repo: crsatofflinerepo,
         keys: crsatcore.clone(),
         clowder: clowder.clone(),
         mint_factory: factory.clone(),
         settler,
-    });
-
-    let satonlinerepo = Arc::new(
-        persistence::surreal::DBForeignOnline::new(satonline_repo)
-            .await
-            .expect("Failed to create sat repository"),
-    );
-    let satofflinerepo = Arc::new(
-        persistence::surreal::DBForeignOffline::new(satoffline_repo)
-            .await
-            .expect("Failed to create sat offline repository"),
-    );
-    let settler = {
-        let online: Arc<dyn foreign::OnlineRepository> = satonlinerepo.clone();
-        let offline: Arc<dyn foreign::OfflineRepository> = satofflinerepo.clone();
-        let clwdr: Arc<dyn foreign::ClowderClient> = clowder.clone();
-        let fctry: Arc<dyn foreign::MintClientFactory> = factory.clone();
-        Box::new(foreign::settle::Handler::new(
-            &online, &offline, &clwdr, &fctry, interval,
-        ))
     };
-    let sat = Arc::new(foreign::sat::Service {
-        keys: crsatcore,
-        online_repo: satonlinerepo,
-        offline_repo: satofflinerepo,
-        clowder,
-        mint_factory: factory,
-        settler,
-    });
 
     let dev = devmode::Service {
         crcore: core_client.clone(),
     };
-    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
-        .await
-        .expect("Failed to create mintops repository");
-    let wdccl = ebill::WildcatCl {
-        core: core_client.clone(),
-        ebill: Box::new(ebill_client),
-    };
-    let clowdercl = ebill::new_clowder_client(clowder_nats_client.clone(), clowder_client.clone());
-    let ebill = ebill::Service {
-        repo: Box::new(ebill_repo),
-        wildcatcl: Box::new(wdccl),
-        clowdercl,
-    };
     let app_ctrl = AppController {
         ebill: Arc::new(ebill),
         onchain: Arc::new(onchain),
-        crsat,
-        sat,
-        clwdr_rest: clowder_client.clone(),
-        clwdr_nats: clowder_nats_client.clone(),
+        foreign: Arc::new(foreign),
         dev: Arc::new(dev),
+        clwdr_nats: clowder_nats_client,
     };
 
     let monitor_interval = std::time::Duration::from_secs(monitor_interval_sec as u64);

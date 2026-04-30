@@ -18,7 +18,7 @@ use crate::{ebill, error::Result, foreign, onchain, AppController};
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn online_exchange(
-    State(ctrl): State<Arc<foreign::sat::Service>>,
+    State(ctrl): State<Arc<foreign::crsat::Service>>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");
@@ -41,7 +41,7 @@ pub async fn offline_exchange(
     tracing::debug!("Received request to offline exchange");
 
     let proofs = ctrl
-        .sat
+        .foreign
         .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
