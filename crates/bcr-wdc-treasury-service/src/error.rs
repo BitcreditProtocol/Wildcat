@@ -28,7 +28,6 @@ pub enum Error {
     Borsh(#[from] borsh::io::Error),
     #[error("bitcoin::address: {0}")]
     BtcParse(#[from] bitcoin::address::ParseError),
-
     #[error("cashu::nut00 {0}")]
     CDK00(#[from] CDK00Error),
     #[error("cashu::nut10 {0}")]
@@ -61,10 +60,11 @@ pub enum Error {
     QuoteClient(#[from] bcr_common::client::quote::Error),
     #[error("ebill client {0}")]
     EbillClient(#[from] bcr_common::client::ebill::Error),
+    #[error("foreign mint client {0}")]
+    MintClient(#[from] bcr_common::client::mint::Error),
     // internal errors
     #[error("internal sat wallet has not enough funds: requested {0}, available {1}")]
     InsufficientFunds(cdk::Amount, cdk::Amount),
-
     #[error("invalid inputs {0}")]
     InvalidInput(String),
     #[error("invalid outputs {0}")]
@@ -73,10 +73,10 @@ pub enum Error {
     InactiveKeyset(cashu::Id),
     #[error("active keyset {0}")]
     ActiveKeyset(cashu::Id),
-    #[error("Unmatching amount: input {0} != output {1}")]
-    UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("Unknown keyset {0}")]
     UnknownKeyset(cashu::Id),
+    #[error("Unmatching amount: input {0} != output {1}")]
+    UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
     #[error("request id not found {0}")]
@@ -94,68 +94,50 @@ pub enum Error {
 
     #[error("internal {0}")]
     Internal(String),
-
-    #[error("Clowder unavailable for onchain operations")]
-    ClowderUnavailable,
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
-            Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::EBillNotFound(id) => {
-                (StatusCode::NOT_FOUND, format!("EBill ID not found: {id}"))
-            }
+            Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BtcParse(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::RequestIDNotFound(request_id) => (
-                StatusCode::NOT_FOUND,
-                format!("Request ID not found: {request_id}"),
-            ),
-            Error::UnknownKeyset(keyset) => {
-                (StatusCode::BAD_REQUEST, format!("Unknown keyset: {keyset}"))
-            }
-            Error::UnmatchingAmount(input, output) => (
-                StatusCode::BAD_REQUEST,
-                format!("Unmatching amount: input {input} != output {output}"),
-            ),
-            Error::ActiveKeyset(kid) => (StatusCode::BAD_REQUEST, format!("Active keyset {kid}")),
-            Error::InactiveKeyset(kid) => {
-                (StatusCode::BAD_REQUEST, format!("Inactive keyset {kid}"))
-            }
-
-            Error::InsufficientFunds(_, _) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-
-            Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, format!("Invalid outputs: {e}")),
-            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, format!("Invalid inputs: {e}")),
-            Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderNatsClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BtcParse(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::MintClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+
+            Error::InsufficientFunds(_, _) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::UnknownKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::UnmatchingAmount(..) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::RequestIDNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::EBillNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Error::InsufficientOnchainMeltAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::InsufficientOnchainMintAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::ClowderUnavailable => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Clowder unavailable".to_string(),
-            ),
+
+            Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
         };
         resp.into_response()
     }
