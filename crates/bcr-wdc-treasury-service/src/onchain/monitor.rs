@@ -9,11 +9,11 @@ use crate::{error::Result, onchain::MintStatus};
 
 // ----- end imports
 
-pub struct OnChainMintOpMonitor {
+pub struct MintOpMonitor {
     pub srvc: Arc<crate::onchain::Service>,
 }
 
-impl OnChainMintOpMonitor {
+impl MintOpMonitor {
     async fn check_pendings(&self, now: TStamp) -> Result<()> {
         let pendings = self.srvc.repo.list_onchain_pending_mintops().await?;
         for pending in pendings {
@@ -56,7 +56,7 @@ impl OnChainMintOpMonitor {
 }
 
 #[async_trait]
-impl Routine for OnChainMintOpMonitor {
+impl Routine for MintOpMonitor {
     async fn run_task(&self, now: TStamp) -> AnyResult<Option<std::time::Duration>> {
         self.check_pendings(now).await?;
         Ok(None)

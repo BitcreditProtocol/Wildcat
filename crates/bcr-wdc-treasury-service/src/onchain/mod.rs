@@ -8,6 +8,7 @@ use bcr_common::{
 use uuid::Uuid;
 // ----- local modules
 mod clowder;
+mod monitor;
 mod service;
 mod wildcat;
 // ----- local imports
@@ -16,6 +17,7 @@ use crate::{error::Result, TStamp};
 // ----- end imports
 
 pub use clowder::ClowderCl;
+pub use monitor::MintOpMonitor;
 pub use service::{MintQuote, Service};
 pub use wildcat::WildcatCl;
 
