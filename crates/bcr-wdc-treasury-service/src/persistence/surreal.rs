@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -20,6 +19,7 @@ use crate::{
 
 // ----- end imports
 
+///////////////////////////////////////////////////////////////////////////////// OnChain DB
 #[derive(Debug, Clone)]
 pub struct DBOnChain {
     db: Surreal<Any>,
@@ -172,42 +172,7 @@ impl onchain::Repository for DBOnChain {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ForeignProofEntry {
-    id: RecordId,
-    proof: cashu::Proof,
-    mint_url: cashu::MintUrl,
-    mint_pk: secp256k1::PublicKey,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ForeignOnlineHtlcProofEntry {
-    id: RecordId,
-    proof: cashu::Proof,
-    mint_url: cashu::MintUrl,
-    mint_pk: secp256k1::PublicKey,
-    hash: Sha256Hash,
-}
-
-#[derive(Debug, Clone)]
-pub struct DBForeignOnline {
-    db: Surreal<Any>,
-}
-
-impl DBForeignOnline {
-    const FOREIGNS_TABLE: &'static str = "online-foreigns";
-    const HTLCS_TABLE: &'static str = "online-htlcs";
-
-    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
-        let db_connection = Surreal::<Any>::init();
-        db_connection.connect(config.connection).await?;
-        db_connection.use_ns(config.namespace).await?;
-        db_connection.use_db(config.database).await?;
-        Ok(Self { db: db_connection })
-    }
-}
-
-////////////////////////////////////////////////////////////////////// Credit DB
+///////////////////////////////////////////////////////////////////////////////// Ebill DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EbillMintOpDBEntry {
     id: RecordId,
@@ -343,24 +308,52 @@ impl ebill::Repository for DBEbill {
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////// Foreign DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    mint_id: secp256k1::PublicKey,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignOnlineHtlcProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    mint_id: secp256k1::PublicKey,
+    hash: Sha256Hash,
+}
+
+#[derive(Debug, Clone)]
+pub struct DBForeignOnline {
+    db: Surreal<Any>,
+}
+
+impl DBForeignOnline {
+    const FOREIGNS_TABLE: &'static str = "online-foreigns";
+    const HTLCS_TABLE: &'static str = "online-htlcs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self { db: db_connection })
+    }
+}
 #[async_trait]
 impl foreign::OnlineRepository for DBForeignOnline {
-    async fn store(
-        &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, cashu::MintUrl),
-        proofs: Vec<cashu::Proof>,
-    ) -> Result<()> {
-        let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
+    async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut entries: Vec<ForeignProofDBEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
             let rid = RecordId::from_table_key(Self::FOREIGNS_TABLE, proof.y()?.to_string());
-            entries.push(ForeignProofEntry {
+            entries.push(ForeignProofDBEntry {
                 id: rid,
                 proof,
-                mint_pk,
-                mint_url: mint_url.clone(),
+                mint_id,
             });
         }
-        let _: Vec<ForeignProofEntry> = self
+        let _: Vec<ForeignProofDBEntry> = self
             .db
             .insert(Self::FOREIGNS_TABLE)
             .content(entries)
@@ -369,9 +362,9 @@ impl foreign::OnlineRepository for DBForeignOnline {
         Ok(())
     }
 
-    async fn list(&self) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
+    async fn list(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
         let statement = String::from("SELECT * FROM type::table($table)");
-        let entries: Vec<ForeignProofEntry> = self
+        let entries: Vec<ForeignProofDBEntry> = self
             .db
             .query(statement)
             .bind(("table", Self::FOREIGNS_TABLE))
@@ -381,36 +374,30 @@ impl foreign::OnlineRepository for DBForeignOnline {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let mut ret_val = Vec::with_capacity(entries.len());
         for entry in entries {
-            let ForeignProofEntry {
-                mint_url,
-                mint_pk,
-                proof,
-                ..
-            } = entry;
-            ret_val.push(((mint_pk, mint_url), proof));
+            let ForeignProofDBEntry { mint_id, proof, .. } = entry;
+            ret_val.push((mint_id, proof));
         }
         Ok(ret_val)
     }
 
     async fn store_htlc(
         &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, cashu::MintUrl),
+        mint_id: secp256k1::PublicKey,
         hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
-        let mut entries: Vec<ForeignOnlineHtlcProofEntry> = Vec::with_capacity(proofs.len());
+        let mut entries: Vec<ForeignOnlineHtlcProofDBEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let id = RecordId::from_table_key(Self::HTLCS_TABLE, proof.y()?.to_string());
-            let entry = ForeignOnlineHtlcProofEntry {
+            let entry = ForeignOnlineHtlcProofDBEntry {
                 hash,
                 id,
                 proof,
-                mint_pk,
-                mint_url: mint_url.clone(),
+                mint_id,
             };
             entries.push(entry);
         }
-        let _: Vec<ForeignOnlineHtlcProofEntry> = self
+        let _: Vec<ForeignOnlineHtlcProofDBEntry> = self
             .db
             .insert(Self::HTLCS_TABLE)
             .content(entries)
@@ -422,8 +409,8 @@ impl foreign::OnlineRepository for DBForeignOnline {
     async fn search_htlc(
         &self,
         hash: &Sha256Hash,
-    ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>> {
-        let htlcs: Vec<ForeignOnlineHtlcProofEntry> = self
+    ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
+        let htlcs: Vec<ForeignOnlineHtlcProofDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE hash = $hash")
             .bind(("table", Self::HTLCS_TABLE))
@@ -434,14 +421,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let ret_val = htlcs
             .into_iter()
-            .map(
-                |ForeignOnlineHtlcProofEntry {
-                     proof,
-                     mint_url,
-                     mint_pk,
-                     ..
-                 }| ((mint_pk, mint_url), proof),
-            )
+            .map(|ForeignOnlineHtlcProofDBEntry { proof, mint_id, .. }| (mint_id, proof))
             .collect();
         Ok(ret_val)
     }
@@ -449,7 +429,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         for y in ys {
             let rid = RecordId::from_table_key(Self::HTLCS_TABLE, y.to_string());
-            let _: Option<ForeignOnlineHtlcProofEntry> = self
+            let _: Option<ForeignOnlineHtlcProofDBEntry> = self
                 .db
                 .delete(rid)
                 .await
@@ -478,7 +458,7 @@ impl DBForeignOffline {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ForeignFingerprintEntry {
+struct ForeignFingerprintDBEntry {
     id: RecordId,
     amount: u64,
     keyset_id: cashu::Id,
@@ -486,21 +466,20 @@ struct ForeignFingerprintEntry {
     c: cashu::PublicKey,
     witness: Option<cashu::Witness>,
     dleq: Option<cashu::ProofDleq>,
-    mint_pk: secp256k1::PublicKey,
-    mint_url: reqwest::Url,
+    mint_id: secp256k1::PublicKey,
 }
 
 #[async_trait]
 impl foreign::OfflineRepository for DBForeignOffline {
     async fn store_fps(
         &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, reqwest::Url),
+        mint_id: secp256k1::PublicKey,
         fps: Vec<wire_keys::ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
         for (hash, fp) in hash.into_iter().zip(fps) {
             let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
-            let entry = ForeignFingerprintEntry {
+            let entry = ForeignFingerprintDBEntry {
                 id: rid.clone(),
                 amount: fp.amount,
                 keyset_id: fp.keyset_id,
@@ -508,10 +487,9 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 c: fp.c,
                 witness: fp.witness,
                 dleq: fp.dleq,
-                mint_pk,
-                mint_url: mint_url.clone(),
+                mint_id,
             };
-            let _: Option<ForeignFingerprintEntry> = self
+            let _: Option<ForeignFingerprintDBEntry> = self
                 .db
                 .insert(rid)
                 .content(entry)
@@ -524,14 +502,9 @@ impl foreign::OfflineRepository for DBForeignOffline {
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
-    ) -> Result<
-        Option<(
-            (secp256k1::PublicKey, reqwest::Url),
-            wire_keys::ProofFingerprint,
-        )>,
-    > {
+    ) -> Result<Option<(secp256k1::PublicKey, wire_keys::ProofFingerprint)>> {
         let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
-        let entry: Option<ForeignFingerprintEntry> = self
+        let entry: Option<ForeignFingerprintDBEntry> = self
             .db
             .select(rid)
             .await
@@ -547,11 +520,11 @@ impl foreign::OfflineRepository for DBForeignOffline {
             witness: entry.witness,
             dleq: entry.dleq,
         };
-        Ok(Some(((entry.mint_pk, entry.mint_url), fp)))
+        Ok(Some((entry.mint_id, fp)))
     }
 
     async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()> {
-        let _: Vec<ForeignFingerprintEntry> = self
+        let _: Vec<ForeignFingerprintDBEntry> = self
             .db
             .query("DELETE FROM type::table($table) WHERE array::any($ys, y)")
             .bind(("table", Self::FPS_TABLE))
@@ -564,23 +537,20 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
     async fn store_proofs(
         &self,
-        (mint_pk, mint_url): (secp256k1::PublicKey, reqwest::Url),
+        mint_id: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
-        let mint_url = cashu::MintUrl::from_str(mint_url.as_ref())
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let mut entries: Vec<ForeignProofEntry> = Vec::with_capacity(proofs.len());
+        let mut entries: Vec<ForeignProofDBEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
             let rid = RecordId::from_table_key(Self::PROOFS_TABLE, proof.y()?.to_string());
-            let entry = ForeignProofEntry {
+            let entry = ForeignProofDBEntry {
                 id: rid,
                 proof,
-                mint_pk,
-                mint_url: mint_url.clone(),
+                mint_id,
             };
             entries.push(entry);
         }
-        let _: Vec<ForeignProofEntry> = self
+        let _: Vec<ForeignProofDBEntry> = self
             .db
             .insert(Self::PROOFS_TABLE)
             .content(entries)
@@ -589,18 +559,12 @@ impl foreign::OfflineRepository for DBForeignOffline {
         Ok(())
     }
 
-    async fn load_proofs(
-        &self,
-        (mint_pk, mint_url): &(secp256k1::PublicKey, reqwest::Url),
-    ) -> Result<Vec<cashu::Proof>> {
-        let mint_url = cashu::MintUrl::from_str(mint_url.as_ref())
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let entries: Vec<ForeignProofEntry> = self
+    async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<ForeignProofDBEntry> = self
             .db
-            .query("SELECT * FROM type::table($table) WHERE mint_url = $mint_url AND mint_pk = $mint_pk")
+            .query("SELECT * FROM type::table($table) WHERE mint_id = $mint_id")
             .bind(("table", Self::PROOFS_TABLE))
-            .bind(("mint_url", mint_url))
-            .bind(("mint_pk", *mint_pk))
+            .bind(("mint_id", mint_id))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -613,7 +577,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
 
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
-        let _: Vec<ForeignProofEntry> = self
+        let _: Vec<ForeignProofDBEntry> = self
             .db
             .query("DELETE FROM type::table($table) WHERE array::any($ys, proof.y)")
             .bind(("table", Self::PROOFS_TABLE))
@@ -726,8 +690,7 @@ mod tests {
     async fn offline_search_fps() {
         let db = init_foreignoffline_mem_db().await;
 
-        let alpha_pk = core_tests::generate_random_keypair().public_key();
-        let alpha = (alpha_pk, reqwest::Url::parse("http://example.com").unwrap());
+        let alpha_id = core_tests::generate_random_keypair().public_key();
         let y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
         let c = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
         let fps = vec![
@@ -752,13 +715,13 @@ mod tests {
             Sha256Hash::from_slice(&[0u8; 32]).unwrap(),
             Sha256Hash::from_slice(&[1u8; 32]).unwrap(),
         ];
-        db.store_fps(alpha.clone(), fps, hash.clone())
+        db.store_fps(alpha_id.clone(), fps, hash.clone())
             .await
             .unwrap();
         let result = db.search_fp(&hash[0]).await.unwrap();
         assert!(result.is_some());
         let (mint, fp) = result.unwrap();
-        assert_eq!(mint.0, alpha.0);
+        assert_eq!(mint, alpha_id);
         assert_eq!(fp.y, y);
     }
 

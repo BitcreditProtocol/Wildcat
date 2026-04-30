@@ -140,7 +140,7 @@ async fn monitor(
             warn!("make_client failed {}, retry later", mint.1);
             continue;
         };
-        let Ok(proofs) = offline_repo.load_proofs(&mint).await else {
+        let Ok(proofs) = offline_repo.load_proofs(mint.0).await else {
             warn!("load_proofs failed {}, retry later", mint.1);
             continue;
         };
@@ -190,7 +190,7 @@ async fn monitor(
                 news.push(proof);
             }
             let online_mint = (mint.0, mint_url.clone());
-            if online_repo.store(online_mint, news).await.is_err() {
+            if online_repo.store(online_mint.0, news).await.is_err() {
                 error!("store new proofs failed {}, {total} lost", mint.1);
             };
             if offline_repo.remove_proofs(&ys).await.is_err() {
