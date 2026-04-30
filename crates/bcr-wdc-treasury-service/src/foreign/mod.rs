@@ -8,7 +8,6 @@ pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 pub mod clients;
 pub mod crsat;
 mod proof;
-pub mod sat;
 pub mod settle;
 // ----- local imports
 use crate::error::Result;
