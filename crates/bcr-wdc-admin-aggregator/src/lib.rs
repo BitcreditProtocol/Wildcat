@@ -97,7 +97,6 @@ pub mod endpoints {
     // Core-Client
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
-    pub const ENABLE_REDEMPTION: &str = "/v1/admin/credit/enable_redemption";
     pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
     // Quotes-Client
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
@@ -135,10 +134,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
-        .route(
-            endpoints::ENABLE_REDEMPTION,
-            post(admin::post_enable_redemption),
-        )
         .route(endpoints::POST_TOKEN_STATUS, post(admin::post_token_status))
         // quotes service
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
@@ -207,8 +202,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         cashu::Id,
         cashu::KeySetInfo,
-        wire_keys::DeactivateKeysetRequest,
-        wire_keys::DeactivateKeysetResponse,
         types::TokenStateRequest,
         types::TokenStateResponse,
         // quotes service
@@ -243,7 +236,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::list_keyset_infos,
         admin::get_mintop_status,
         admin::list_mintops,
-        admin::post_enable_redemption,
         admin::post_token_status,
         // quotes service
         admin::get_quote,
