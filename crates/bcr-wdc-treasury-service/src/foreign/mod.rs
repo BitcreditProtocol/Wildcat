@@ -104,24 +104,20 @@ pub mod test_utils {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {
-    async fn store(
-        &self,
-        mint: (secp256k1::PublicKey, cashu::MintUrl),
-        proofs: Vec<cashu::Proof>,
-    ) -> Result<()>;
+    async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
     #[allow(dead_code)]
-    async fn list(&self) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>;
+    async fn list(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>>;
 
     async fn store_htlc(
         &self,
-        mint: (secp256k1::PublicKey, cashu::MintUrl),
+        mint_id: secp256k1::PublicKey,
         hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
     async fn search_htlc(
         &self,
         hash: &Sha256Hash,
-    ) -> Result<Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>>;
+    ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>>;
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 
@@ -130,38 +126,30 @@ pub trait OnlineRepository: Send + Sync {
 pub trait OfflineRepository: Send + Sync {
     async fn store_fps(
         &self,
-        alpha: (secp256k1::PublicKey, reqwest::Url),
+        mint_id: secp256k1::PublicKey,
         fps: Vec<wire_keys::ProofFingerprint>,
         hash: Vec<Sha256Hash>,
     ) -> Result<()>;
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
-    ) -> Result<
-        Option<(
-            (secp256k1::PublicKey, reqwest::Url),
-            wire_keys::ProofFingerprint,
-        )>,
-    >;
+    ) -> Result<Option<(secp256k1::PublicKey, wire_keys::ProofFingerprint)>>;
     async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn store_proofs(
         &self,
-        alpha: (secp256k1::PublicKey, reqwest::Url),
+        mint_id: secp256k1::PublicKey,
         proof: Vec<cashu::Proof>,
     ) -> Result<()>;
     #[allow(dead_code)]
-    async fn load_proofs(
-        &self,
-        alpha: &(secp256k1::PublicKey, reqwest::Url),
-    ) -> Result<Vec<cashu::Proof>>;
+    async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 
 #[async_trait]
 pub trait ClowderClient: proof::ClowderClient {
-    async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl>;
-    async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey>;
+    async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url>;
+    async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey>;
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
     // yes if result is Ok
     async fn can_accept_offline_exchange(
@@ -195,10 +183,9 @@ pub trait OfflineSettleHandler: Send + Sync {
 }
 
 fn proofs_vec_to_map(
-    input: Vec<((secp256k1::PublicKey, cashu::MintUrl), cashu::Proof)>,
-) -> HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> {
-    let mut map: HashMap<(secp256k1::PublicKey, cashu::MintUrl), Vec<cashu::Proof>> =
-        HashMap::new();
+    input: Vec<(secp256k1::PublicKey, cashu::Proof)>,
+) -> HashMap<secp256k1::PublicKey, Vec<cashu::Proof>> {
+    let mut map: HashMap<secp256k1::PublicKey, Vec<cashu::Proof>> = HashMap::new();
     for (mint, proof) in input {
         map.entry(mint).or_default().push(proof);
     }
@@ -238,8 +225,8 @@ mod tests {
         }
         #[async_trait]
         impl super::ClowderClient for ClowderClient {
-            async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl>;
-            async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey>;
+            async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url>;
+            async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey>;
             async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
             async fn can_accept_offline_exchange(
                 &self,

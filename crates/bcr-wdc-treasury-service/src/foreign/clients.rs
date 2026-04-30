@@ -10,6 +10,7 @@ use bcr_common::{
         keys as wire_keys,
     },
 };
+use bitcoin::secp256k1;
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -80,24 +81,16 @@ impl proof::ClowderClient for ClowderCl {
 
 #[async_trait]
 impl foreign::ClowderClient for ClowderCl {
-    async fn get_myself_pk(&self) -> Result<bitcoin::PublicKey> {
-        let my_id = self.clwdr.get_info().await?.node_id;
-        let pk = bitcoin::PublicKey::from(*my_id);
-
-        Ok(pk)
+    async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey> {
+        let my_cashu_pk = self.clwdr.get_info().await?.node_id;
+        let my_id = secp256k1::PublicKey::from_slice(&my_cashu_pk.to_bytes())
+            .expect("secp256k1::PublicKey == cashu::PublicKey");
+        Ok(my_id)
     }
 
-    async fn get_mint_url_from_pk(&self, pk: &cashu::PublicKey) -> Result<cashu::MintUrl> {
-        let response = self.clwdr.get_alphas().await?;
-
-        let mint = response
-            .mints
-            .iter()
-            .find(|mint| cashu::PublicKey::from(mint.node_id) == *pk);
-        if let Some(mint) = mint {
-            return Ok(mint.mint.clone());
-        }
-        Err(Error::InvalidInput(format!("{pk} not in the alpha set")))
+    async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url> {
+        let response = self.clwdr.get_mint_url(pk).await?;
+        Ok(response.mint_url)
     }
 
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>> {

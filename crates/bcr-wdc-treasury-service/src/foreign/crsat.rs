@@ -41,14 +41,14 @@ impl Service {
         hashes: Vec<Sha256Hash>,
         wpk: cashu::PublicKey,
     ) -> Result<Vec<cashu::Proof>> {
-        let (foreign_mint_url, foreign_mint_pk) = self
+        let (_, foreign_mint_id) = self
             .clowder
             .can_accept_offline_exchange(inputs.clone())
             .await?;
         let foreign_fps = fingerprints_vec_to_map(inputs.clone(), hashes.clone());
         let mut retv: Vec<cashu::Proof> = Vec::new();
         for (kid, fps_hashes) in foreign_fps {
-            let k_info = self.clowder.get_keyset_info(&foreign_mint_pk, &kid).await?;
+            let k_info = self.clowder.get_keyset_info(&foreign_mint_id, &kid).await?;
             let Some(foreign_unix_expiration) = k_info.final_expiry else {
                 return Err(Error::InvalidInput(String::from(
                     "Foreign keyset has no expiration",
@@ -86,7 +86,7 @@ impl Service {
             retv.extend(proofs);
         }
         self.offline_repo
-            .store_fps((foreign_mint_pk, foreign_mint_url), inputs, hashes)
+            .store_fps(foreign_mint_id, inputs, hashes)
             .await?;
         Ok(retv)
     }
@@ -104,7 +104,7 @@ impl Service {
         let mut path_it = path.iter().rev();
         let wallet_pk = path_it.next().unwrap();
         let myself = self.clowder.get_myself_pk().await?;
-        let myself = cashu::PublicKey::from(myself.inner);
+        let myself = cashu::PublicKey::from(myself);
         if &myself != path_it.next().unwrap() {
             return Err(Error::InvalidInput(String::from(
                 "Exchange path must end with [myself pk, wallet pk]",
@@ -112,7 +112,9 @@ impl Service {
         };
         let foreign_pk = path_it.next().unwrap();
         let foreign_mint = self.clowder.get_mint_url_from_pk(foreign_pk).await?;
-        let foreign_client = self.mint_factory.make_client(foreign_mint.clone()).await?;
+        let foreign_cashu_url = cashu::MintUrl::from_str(foreign_mint.as_str())
+            .expect("cashu::MintUrl == reqwest::Url");
+        let foreign_client = self.mint_factory.make_client(foreign_cashu_url).await?;
         let (htlc_hash, foreign_locktime) = proof::check_htlc_foreign_proofs(
             *foreign_pk,
             &proofs,
@@ -125,7 +127,7 @@ impl Service {
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
         let kid = proofs[0].keyset_id;
         self.online_repo
-            .store_htlc((*foreign_pk.deref(), foreign_mint), htlc_hash, proofs)
+            .store_htlc(*foreign_pk.deref(), htlc_hash, proofs)
             .await?;
         let foreign_keyset = foreign_client.get_mint_keyset(kid).await?;
         let Some(foreign_unix_expiration) = foreign_keyset.final_expiry else {
@@ -191,7 +193,8 @@ async fn try_online_htlc(
     let foreign_proofs = repo.search_htlc(&hash).await?;
     let foreign_proofs = proofs_vec_to_map(foreign_proofs);
 
-    for ((mint_pk, mint_url), mut f_proofs) in foreign_proofs {
+    for (mint_id, mut f_proofs) in foreign_proofs {
+        let mint_url = clowder.get_mint_url_from_pk(&mint_id).await?;
         let mut f_fingerprints = Vec::with_capacity(f_proofs.len());
         for proof in &mut f_proofs {
             proof.add_preimage(preimage.to_string());
@@ -216,7 +219,9 @@ async fn try_online_htlc(
                 .len(),
             "All foreign proofs must have the same keyset_id"
         );
-        let foreign_client = factory.make_client(mint_url.clone()).await?;
+        let cashu_url =
+            cashu::MintUrl::from_str(mint_url.as_str()).expect("cashu::MintUrl == reqwest::Url");
+        let foreign_client = factory.make_client(cashu_url).await?;
         let keys = foreign_client
             .get_mint_keyset(f_proofs[0].keyset_id)
             .await?;
@@ -227,7 +232,7 @@ async fn try_online_htlc(
             let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
             proofs.push(proof);
         }
-        repo.store((mint_pk, mint_url), proofs).await?;
+        repo.store(mint_id, proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         gran_total += total;
     }
@@ -241,9 +246,10 @@ async fn try_offline_htlc_swap(
     settler: &dyn OfflineSettleHandler,
 ) -> Result<cashu::Amount> {
     let hash = Sha256Hash::hash(preimage.as_bytes());
-    let Some(((mint_pk, mint_url), fp)) = repo.search_fp(&hash).await? else {
+    let Some((mint_id, fp)) = repo.search_fp(&hash).await? else {
         return Ok(cashu::Amount::ZERO);
     };
+    let mint_url = clowder.get_mint_url_from_pk(&mint_id).await?;
     let secret = cashu::secret::Secret::from_str(preimage)?;
     let amount = cashu::Amount::from(fp.amount);
     let proof = cashu::Proof {
@@ -259,16 +265,15 @@ async fn try_offline_htlc_swap(
             "preimage does not match fingerprint",
         )));
     }
-    let keys = clowder.get_keyset(&mint_pk, &proof.keyset_id).await?;
+    let keys = clowder.get_keyset(&mint_id, &proof.keyset_id).await?;
     let key = keys
         .keys
         .get(&proof.amount)
         .ok_or(Error::Internal(String::from("key amount not found")))?;
     proof.verify_dleq(*key)?;
     repo.remove_fps(&[fp.y]).await?;
-    repo.store_proofs((mint_pk, mint_url.clone()), vec![proof])
-        .await?;
-    settler.monitor((mint_pk, mint_url))?;
+    repo.store_proofs(mint_id, vec![proof]).await?;
+    settler.monitor((mint_id, mint_url))?;
     Ok(amount)
 }
 
@@ -342,7 +347,8 @@ mod tests {
         let foreign_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
-        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
+        let cashu_foreign_url = cashu::MintUrl::from_str(foreign_url.as_str()).unwrap();
         let (_, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
         foreign_keyset.final_expiry = Some(expiration.timestamp() as u64);
@@ -368,7 +374,7 @@ mod tests {
             cashu::PublicKey::from(wallet_kp.public_key()),
         ];
         let myself_pk = myself_kp.public_key();
-        let foreign_pk = cashu::PublicKey::from(foreign_kp.public_key());
+        let foreign_pk = foreign_kp.public_key();
         clowder
             .expect_get_myself_pk()
             .times(1)
@@ -382,7 +388,7 @@ mod tests {
         let cloned_keyset = cashu::KeySet::from(foreign_keyset);
         factory
             .expect_make_client()
-            .with(eq(foreign_url.clone()))
+            .with(eq(cashu_foreign_url.clone()))
             .times(1)
             .returning(move |_| {
                 let mut foreign_client = crate::foreign::test_utils::MockMintConnector::new();
@@ -413,9 +419,10 @@ mod tests {
                     .returning(move |_| Ok(cloned_keyset.clone()));
                 Ok(Box::new(foreign_client))
             });
+        let cashu_foreign_pk = cashu::PublicKey::from(foreign_pk);
         clowder
             .expect_check_htlc_proofs()
-            .with(eq(foreign_pk), eq(inputs.clone()))
+            .with(eq(cashu_foreign_pk), eq(inputs.clone()))
             .times(1)
             .returning(|_, _| Ok(()));
 
@@ -524,11 +531,7 @@ mod tests {
         });
         offlinerepo
             .expect_store_fps()
-            .with(
-                eq((foreign_pk, foreign_url.clone())),
-                eq(inputs.clone()),
-                eq(hashes.clone()),
-            )
+            .with(eq(foreign_pk), eq(inputs.clone()), eq(hashes.clone()))
             .times(1)
             .returning(|_, _, _| Ok(()));
 
@@ -556,7 +559,8 @@ mod tests {
         let keys = MockKeysClient::new();
         let mut clowder = crate::foreign::tests::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
-        let foreign_url = cashu::MintUrl::from_str("https://foreign-mint.example").unwrap();
+        let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
+        let cashu_foreign_url = cashu::MintUrl::from_str(foreign_url.as_str()).unwrap();
         let foreign_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
@@ -570,16 +574,18 @@ mod tests {
         );
         let preimage = foreign_proof.secret.to_string();
         let hash = Sha256Hash::hash(foreign_proof.secret.as_bytes());
-        let search_response = vec![(
-            (foreign_kp.public_key(), foreign_url.clone()),
-            foreign_proof.clone(),
-        )];
+        let search_response = vec![(foreign_kp.public_key(), foreign_proof.clone())];
         let myself_sk = cashu::SecretKey::from(myself_kp.secret_key());
         onlinerepo
             .expect_search_htlc()
             .with(eq(hash))
             .times(1)
             .returning(move |_| Ok(search_response.clone()));
+        clowder
+            .expect_get_mint_url_from_pk()
+            .with(eq(foreign_kp.public_key()))
+            .times(1)
+            .returning(move |_| Ok(foreign_url.clone()));
         clowder
             .expect_sign_p2pk_proofs()
             .times(1)
@@ -594,7 +600,7 @@ mod tests {
         let cloned_keyset = foreign_keyset.clone();
         factory
             .expect_make_client()
-            .with(eq(foreign_url.clone()))
+            .with(eq(cashu_foreign_url.clone()))
             .times(1)
             .returning(move |_| {
                 let cloned_keyset = cloned_keyset.clone();
@@ -662,7 +668,7 @@ mod tests {
         let preimage = foreign_proof.secret.to_string();
         let hash = Sha256Hash::hash(foreign_proof.secret.as_bytes());
         let search_response = (
-            (foreign_kp.public_key(), foreign_url.clone()),
+            foreign_kp.public_key(),
             bcr_common::wire::keys::ProofFingerprint::try_from(foreign_proof.clone()).unwrap(),
         );
         onlinerepo
@@ -678,6 +684,12 @@ mod tests {
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
         let cloned_keyset = cashu::KeySet::from(foreign_keyset);
+        let cloned_url = foreign_url.clone();
+        clowder
+            .expect_get_mint_url_from_pk()
+            .with(eq(foreign_pk))
+            .times(1)
+            .returning(move |_| Ok(cloned_url.clone()));
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))
@@ -691,7 +703,7 @@ mod tests {
             .returning(|_| Ok(()));
         offlinerepo
             .expect_store_proofs()
-            .with(eq((foreign_pk, foreign_url.clone())), always())
+            .with(eq(foreign_pk), always())
             .times(1)
             .returning(|_, _| Ok(()));
         settler
