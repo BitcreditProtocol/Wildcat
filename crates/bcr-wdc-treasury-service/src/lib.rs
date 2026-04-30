@@ -21,7 +21,6 @@ mod devmode;
 mod ebill;
 mod error;
 mod foreign;
-mod monitor;
 mod onchain;
 mod persistence;
 mod web;
@@ -229,7 +228,7 @@ pub async fn init_app(
 
     let monitor_interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
     let monitors = vec![routine::RoutineHandle::new(
-        monitor::OnChainMintOpMonitor {
+        onchain::MintOpMonitor {
             srvc: app_ctrl.onchain.clone(),
         },
         monitor_interval,
