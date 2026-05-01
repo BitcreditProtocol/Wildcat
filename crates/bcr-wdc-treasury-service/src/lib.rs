@@ -151,10 +151,16 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // foreign
+    let info = clowder_client
+        .get_info()
+        .await
+        .expect("Failed to get clowder info");
+    let my_pk = secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+        .expect("secp256k1::PublicKey == cashu::PublicKey");
     let clowder = Arc::new(foreign::clients::ClowderCl {
         clwdr: clowder_client.clone(),
     });
-    let factory = Arc::new(foreign::clients::MintClientFactory {});
+    let factory = Arc::new(foreign::clients::MintClientFactory { my_pk });
     let crsatonlinerepo = Arc::new(foreign_online_repo);
     let crsatofflinerepo = Arc::new(foreign_offline_repo);
     let crsatcore = Arc::new(foreign::clients::CoreCl {

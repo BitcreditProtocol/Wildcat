@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, cdk, wire::keys as wire_keys, wire::swap as wire_swap};
+use bcr_common::{cashu, wire::keys as wire_keys};
 pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
@@ -10,96 +10,9 @@ pub mod crsat;
 mod proof;
 pub mod settle;
 // ----- local imports
-use crate::error::Result;
+use crate::{error::Result, TStamp};
 
 // ----- end imports
-
-#[async_trait]
-pub trait MintConnectorExt: cdk::wallet::MintConnector + Send + Sync {
-    async fn swap(
-        &self,
-        request: wire_swap::SwapRequest,
-    ) -> std::result::Result<wire_swap::SwapResponse, cdk::Error>;
-}
-
-#[cfg(test)]
-pub mod test_utils {
-    use async_trait::async_trait;
-    use bcr_common::{cashu, cdk};
-
-    type CdkResult<T> = std::result::Result<T, cdk::Error>;
-
-    mockall::mock! {
-        pub MintConnector {
-        }
-        impl std::fmt::Debug for MintConnector {
-            fn fmt<'a>(&self, f: &mut std::fmt::Formatter<'a>) -> std::fmt::Result;
-        }
-
-        #[async_trait]
-        impl cdk::wallet::MintConnector for MintConnector {
-            async fn get_mint_keys(&self) -> CdkResult<Vec<cashu::KeySet>>;
-            async fn get_mint_keyset(&self, keyset_id: cashu::Id) -> CdkResult<cashu::KeySet>;
-            async fn get_mint_keysets(&self) -> CdkResult<cashu::KeysetResponse>;
-            async fn post_mint_quote(
-                &self,
-                request: cashu::MintQuoteBolt11Request,
-            ) -> CdkResult<cashu::MintQuoteBolt11Response<String>>;
-            async fn get_mint_quote_status(
-                &self,
-                quote_id: &str,
-            ) -> CdkResult<cashu::MintQuoteBolt11Response<String>>;
-            async fn post_mint(&self, request: cashu::MintRequest<String>) -> CdkResult<cashu::MintResponse>;
-            async fn post_melt_quote(
-                &self,
-                request: cashu::MeltQuoteBolt11Request,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-            async fn get_melt_quote_status(
-                &self,
-                quote_id: &str,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-            async fn post_melt(
-                &self,
-                request: cashu::MeltRequest<String>,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-            async fn post_swap(&self, request: cashu::SwapRequest) -> CdkResult<cashu::SwapResponse>;
-            async fn get_mint_info(&self) -> CdkResult<cashu::MintInfo>;
-            async fn post_check_state(
-                &self,
-                request: cashu::CheckStateRequest,
-            ) -> CdkResult<cashu::CheckStateResponse>;
-            async fn post_restore(&self, request: cashu::RestoreRequest) -> CdkResult<cashu::RestoreResponse>;
-            async fn post_mint_bolt12_quote(
-                &self,
-                request: cashu::MintQuoteBolt12Request,
-            ) -> CdkResult<cashu::MintQuoteBolt12Response<String>>;
-            async fn get_mint_quote_bolt12_status(
-                &self,
-                quote_id: &str,
-            ) -> CdkResult<cashu::MintQuoteBolt12Response<String>>;
-            async fn post_melt_bolt12_quote(
-                &self,
-                request: cashu::MeltQuoteBolt12Request,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-            async fn get_melt_bolt12_quote_status(
-                &self,
-                quote_id: &str,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-            async fn post_melt_bolt12(
-                &self,
-                request: cashu::MeltRequest<String>,
-            ) -> CdkResult<cashu::MeltQuoteBolt11Response<String>>;
-        }
-
-        #[async_trait]
-        impl super::MintConnectorExt for MintConnector {
-            async fn swap(
-                &self,
-                request: bcr_common::wire::swap::SwapRequest,
-            ) -> std::result::Result<bcr_common::wire::swap::SwapResponse, cdk::Error>;
-        }
-    }
-}
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -187,8 +100,26 @@ pub trait ClowderClient: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
+pub trait ForeignClient: Send + Sync {
+    async fn swap(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+        now: TStamp,
+    ) -> Result<Vec<cashu::BlindSignature>>;
+
+    async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>>;
+    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
 pub trait MintClientFactory: Send + Sync {
-    async fn make_client(&self, mint_url: cashu::MintUrl) -> Result<Box<dyn MintConnectorExt>>;
+    async fn make_client(
+        &self,
+        mint_url: reqwest::Url,
+        mint_pk: secp256k1::PublicKey,
+    ) -> Result<Box<dyn ForeignClient>>;
 }
 
 #[cfg_attr(test, mockall::automock)]

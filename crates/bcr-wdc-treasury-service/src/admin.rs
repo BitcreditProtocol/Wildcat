@@ -29,9 +29,8 @@ pub async fn try_htlc_swap(
     State(ctrl): State<Arc<foreign::crsat::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
-    tracing::debug!("Received request to try_htlc_swap");
-
-    let amount = ctrl.try_swap_htlc(&request.preimage).await?;
+    let now = chrono::Utc::now();
+    let amount = ctrl.try_swap_htlc(&request.preimage, now).await?;
     Ok(Json(amount))
 }
 
