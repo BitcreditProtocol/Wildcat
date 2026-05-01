@@ -11,7 +11,7 @@ use crate::{error::Result, TStamp};
 
 // ----- end imports
 
-pub use client::{new_clowder_client, WildcatCl};
+pub use client::{ClwdrCl, WildcatCl};
 pub use service::Service;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]

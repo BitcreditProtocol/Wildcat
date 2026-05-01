@@ -140,11 +140,14 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
     };
-    let clwdcl = ebill::new_clowder_client(clowder_nats_client.clone(), clowder_client.clone());
+    let clwdcl = ebill::ClwdrCl {
+        rest: clowder_client.clone(),
+        nats: clowder_nats_client.clone(),
+    };
     let ebill = ebill::Service {
         repo: Box::new(ebill_repo),
         wildcatcl: Box::new(wdccl),
-        clowdercl: clwdcl,
+        clowdercl: Box::new(clwdcl),
     };
 
     // foreign
