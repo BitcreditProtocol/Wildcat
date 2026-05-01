@@ -342,7 +342,7 @@ mod tests {
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = MockKeysClient::new();
-        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
@@ -465,7 +465,7 @@ mod tests {
         let onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = MockKeysClient::new();
-        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
@@ -557,7 +557,7 @@ mod tests {
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = MockKeysClient::new();
-        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let cashu_foreign_url = cashu::MintUrl::from_str(foreign_url.as_str()).unwrap();
@@ -651,7 +651,7 @@ mod tests {
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = MockKeysClient::new();
-        let mut clowder = crate::foreign::tests::MockClowderClient::new();
+        let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let foreign_kp = core_tests::generate_random_keypair();
