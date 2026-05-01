@@ -53,7 +53,7 @@ pub struct ClowderCl {
 }
 
 #[async_trait]
-impl proof::ClowderClient for ClowderCl {
+impl foreign::ClowderClient for ClowderCl {
     async fn check_htlc_proofs(
         &self,
         issuer: cashu::PublicKey,
@@ -77,10 +77,7 @@ impl proof::ClowderClient for ClowderCl {
         }
         Ok(())
     }
-}
 
-#[async_trait]
-impl foreign::ClowderClient for ClowderCl {
     async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey> {
         let my_cashu_pk = self.clwdr.get_info().await?.node_id;
         let my_id = secp256k1::PublicKey::from_slice(&my_cashu_pk.to_bytes())

@@ -10,6 +10,7 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
     error::{Error, Result},
+    foreign::ClowderClient,
     TStamp,
 };
 
@@ -34,15 +35,6 @@ pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, 
     let locktime = TStamp::from_timestamp_secs(locktime as i64)
         .ok_or(Error::InvalidInput(String::from("invalid HTLC time tag")))?;
     Ok((data, locktime))
-}
-
-#[async_trait]
-pub trait ClowderClient: Send + Sync {
-    async fn check_htlc_proofs(
-        &self,
-        issuer: cashu::PublicKey,
-        proofs: Vec<cashu::Proof>,
-    ) -> Result<()>;
 }
 
 /// check that all proofs:

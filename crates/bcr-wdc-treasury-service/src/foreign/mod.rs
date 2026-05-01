@@ -146,8 +146,9 @@ pub trait OfflineRepository: Send + Sync {
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait ClowderClient: proof::ClowderClient {
+pub trait ClowderClient: Send + Sync {
     async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url>;
     async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey>;
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
@@ -167,6 +168,11 @@ pub trait ClowderClient: proof::ClowderClient {
         kid: &cashu::Id,
     ) -> Result<cashu::KeySet>;
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
+    async fn check_htlc_proofs(
+        &self,
+        issuer: cashu::PublicKey,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -202,47 +208,4 @@ fn fingerprints_vec_to_map(
         map.entry(fp.keyset_id).or_default().push((fp, hash));
     }
     map
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::Result;
-    use async_trait::async_trait;
-    use bcr_common::wire::keys as wire_keys;
-
-    mockall::mock! {
-        pub ClowderClient{
-        }
-
-        #[async_trait]
-        impl super::proof::ClowderClient for ClowderClient {
-            async fn check_htlc_proofs(
-                &self,
-                issuer: cashu::PublicKey,
-                proofs: Vec<cashu::Proof>,
-            ) -> Result<()>;
-        }
-        #[async_trait]
-        impl super::ClowderClient for ClowderClient {
-            async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url>;
-            async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey>;
-            async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
-            async fn can_accept_offline_exchange(
-                &self,
-                fps: Vec<wire_keys::ProofFingerprint>,
-            ) -> Result<(reqwest::Url, secp256k1::PublicKey)>;
-            async fn get_keyset_info(
-                &self,
-                alpha_pk: &secp256k1::PublicKey,
-                kid: &cashu::Id,
-            ) -> Result<cashu::KeySetInfo>;
-            async fn get_keyset(
-                &self,
-                alpha_pk: &secp256k1::PublicKey,
-                kid: &cashu::Id,
-            ) -> Result<cashu::KeySet>;
-            async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
-        }
-    }
 }
