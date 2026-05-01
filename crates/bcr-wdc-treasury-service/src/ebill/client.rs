@@ -93,16 +93,6 @@ impl ebill::ClowderClient for ClwdrCl {
         Ok(derived_address)
     }
 }
-pub fn new_clowder_client(
-    nats_cl: Arc<ClowderNatsClient>,
-    rest_cl: Arc<ClowderRestClient>,
-) -> Box<dyn ebill::ClowderClient> {
-    let cl: Box<dyn ebill::ClowderClient> = Box::new(ClwdrCl {
-        nats: nats_cl,
-        rest: rest_cl,
-    });
-    cl
-}
 
 pub struct WildcatCl {
     pub core: Arc<CoreClient>,
