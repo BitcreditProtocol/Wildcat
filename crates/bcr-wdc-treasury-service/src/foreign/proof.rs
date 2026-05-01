@@ -1,7 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
 use super::MintConnectorExt;
-use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
     core::signature::unblind_ecash_signature,
@@ -10,7 +9,7 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::ClowderClient,
+    foreign::{ClowderClient, KeysClient},
     TStamp,
 };
 
@@ -69,11 +68,6 @@ pub async fn check_htlc_foreign_proofs(
     }
     let (hash, locktime) = extract_hash_timelock_from_htlc(&proofs[0])?;
     Ok((hash, locktime))
-}
-
-#[async_trait]
-pub trait KeysClient: Send + Sync {
-    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
 }
 
 fn generate_htlc_conditions(
