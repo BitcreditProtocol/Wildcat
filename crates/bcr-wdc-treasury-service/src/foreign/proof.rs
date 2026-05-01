@@ -1,6 +1,5 @@
 // ----- standard library imports
 // ----- extra library imports
-use super::MintConnectorExt;
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
     core::signature::unblind_ecash_signature,
@@ -9,7 +8,7 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{ClowderClient, KeysClient},
+    foreign::{ClowderClient, ForeignClient, KeysClient},
     TStamp,
 };
 
@@ -43,7 +42,7 @@ pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, 
 pub async fn check_htlc_foreign_proofs(
     issuer: cashu::PublicKey,
     proofs: &[cashu::Proof],
-    mintcl: &dyn MintConnectorExt,
+    mintcl: &dyn ForeignClient,
     clwdcl: &dyn ClowderClient,
 ) -> Result<(Sha256Hash, TStamp)> {
     if proofs.is_empty() {
@@ -55,10 +54,8 @@ pub async fn check_htlc_foreign_proofs(
         .iter()
         .map(|p| p.y())
         .collect::<std::result::Result<_, _>>()?;
-    let request = cashu::CheckStateRequest { ys: fingerprints };
-    let response = mintcl.post_check_state(request).await?;
-    let unspent = response
-        .states
+    let states = mintcl.check_state(fingerprints).await?;
+    let unspent = states
         .iter()
         .all(|s| matches!(s.state, cashu::nut07::State::Unspent));
     if !unspent {

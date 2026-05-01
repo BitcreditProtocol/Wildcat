@@ -1,8 +1,11 @@
 // ----- standard library imports
-use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{cashu, core::signature::unblind_ecash_signature, wire::keys as wire_keys};
-use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
+use bitcoin::{
+    hashes::{sha256::Hash as Sha256Hash, Hash},
+    secp256k1,
+};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -101,13 +104,16 @@ impl Service {
                 "Exchange path must end with [myself pk, wallet pk]",
             )));
         };
-        let foreign_pk = path_it.next().unwrap();
-        let foreign_mint = self.clowder.get_mint_url_from_pk(foreign_pk).await?;
-        let foreign_cashu_url = cashu::MintUrl::from_str(foreign_mint.as_str())
-            .expect("cashu::MintUrl == reqwest::Url");
-        let foreign_client = self.mint_factory.make_client(foreign_cashu_url).await?;
+        let foreign_cpk = path_it.next().unwrap();
+        let foreign_pk = secp256k1::PublicKey::from_slice(&foreign_cpk.to_bytes())
+            .expect("secp256k1::PublicKey == cashu::PublicKey");
+        let foreign_mint = self.clowder.get_mint_url_from_pk(foreign_cpk).await?;
+        let foreign_client = self
+            .mint_factory
+            .make_client(foreign_mint, foreign_pk)
+            .await?;
         let (htlc_hash, foreign_locktime) = proof::check_htlc_foreign_proofs(
-            *foreign_pk,
+            *foreign_cpk,
             &proofs,
             foreign_client.as_ref(),
             self.clowder.as_ref(),
@@ -118,9 +124,9 @@ impl Service {
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
         let kid = proofs[0].keyset_id;
         self.online_repo
-            .store_htlc(*foreign_pk.deref(), htlc_hash, proofs)
+            .store_htlc(foreign_pk, htlc_hash, proofs)
             .await?;
-        let foreign_keyset = foreign_client.get_mint_keyset(kid).await?;
+        let foreign_keyset = foreign_client.get_keyset(kid).await?;
         let Some(foreign_unix_expiration) = foreign_keyset.final_expiry else {
             return Err(Error::InvalidInput(String::from(
                 "Foreign keyset has no expiration",
@@ -147,12 +153,13 @@ impl Service {
         Ok(proofs)
     }
 
-    pub async fn try_swap_htlc(&self, preimage: &str) -> Result<cashu::Amount> {
+    pub async fn try_swap_htlc(&self, preimage: &str, now: TStamp) -> Result<cashu::Amount> {
         let online_amount = try_online_htlc(
             preimage,
             self.online_repo.as_ref(),
             self.clowder.as_ref(),
             self.mint_factory.as_ref(),
+            now,
         )
         .await?;
         if online_amount > cashu::Amount::ZERO {
@@ -178,6 +185,7 @@ async fn try_online_htlc(
     repo: &dyn OnlineRepository,
     clowder: &dyn ClowderClient,
     factory: &dyn MintClientFactory,
+    now: TStamp,
 ) -> Result<cashu::Amount> {
     let mut gran_total = cashu::Amount::ZERO;
     let hash = Sha256Hash::hash(preimage.as_bytes());
@@ -210,16 +218,13 @@ async fn try_online_htlc(
                 .len(),
             "All foreign proofs must have the same keyset_id"
         );
-        let cashu_url =
-            cashu::MintUrl::from_str(mint_url.as_str()).expect("cashu::MintUrl == reqwest::Url");
-        let foreign_client = factory.make_client(cashu_url).await?;
-        let keys = foreign_client
-            .get_mint_keyset(f_proofs[0].keyset_id)
+        let foreign_client = factory.make_client(mint_url, mint_id).await?;
+        let keys = foreign_client.get_keyset(f_proofs[0].keyset_id).await?;
+        let signatures = foreign_client
+            .swap(f_proofs, premints.blinded_messages(), now)
             .await?;
-        let request = cashu::SwapRequest::new(f_proofs, premints.blinded_messages());
-        let swap_response = foreign_client.post_swap(request).await?;
-        let mut proofs = Vec::with_capacity(swap_response.signatures.len());
-        for (sig, pre) in swap_response.signatures.into_iter().zip(premints.iter()) {
+        let mut proofs = Vec::with_capacity(signatures.len());
+        for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
             let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
             proofs.push(proof);
         }
@@ -324,7 +329,6 @@ mod tests {
         let myself_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
-        let cashu_foreign_url = cashu::MintUrl::from_str(foreign_url.as_str()).unwrap();
         let (_, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
         foreign_keyset.final_expiry = Some(expiration.timestamp() as u64);
@@ -364,32 +368,30 @@ mod tests {
         let cloned_keyset = cashu::KeySet::from(foreign_keyset);
         factory
             .expect_make_client()
-            .with(eq(cashu_foreign_url.clone()))
+            .with(eq(foreign_url.clone()), always())
             .times(1)
-            .returning(move |_| {
-                let mut foreign_client = crate::foreign::test_utils::MockMintConnector::new();
+            .returning(move |_, _| {
+                let mut foreign_client = crate::foreign::MockForeignClient::new();
                 foreign_client
-                    .expect_post_check_state()
+                    .expect_check_state()
                     .times(1)
-                    .returning(|request| {
-                        Ok(cashu::CheckStateResponse {
-                            states: vec![
-                                cashu::ProofState {
-                                    y: request.ys[0],
-                                    state: cashu::State::Unspent,
-                                    witness: None,
-                                },
-                                cashu::ProofState {
-                                    y: request.ys[1],
-                                    state: cashu::State::Unspent,
-                                    witness: None,
-                                },
-                            ],
-                        })
+                    .returning(|ys| {
+                        Ok(vec![
+                            cashu::ProofState {
+                                y: ys[0],
+                                state: cashu::State::Unspent,
+                                witness: None,
+                            },
+                            cashu::ProofState {
+                                y: ys[1],
+                                state: cashu::State::Unspent,
+                                witness: None,
+                            },
+                        ])
                     });
                 let cloned_keyset = cloned_keyset.clone();
                 foreign_client
-                    .expect_get_mint_keyset()
+                    .expect_get_keyset()
                     .with(eq(cloned_keyset.id))
                     .times(1)
                     .returning(move |_| Ok(cloned_keyset.clone()));
@@ -536,7 +538,6 @@ mod tests {
         let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
-        let cashu_foreign_url = cashu::MintUrl::from_str(foreign_url.as_str()).unwrap();
         let foreign_kp = core_tests::generate_random_keypair();
         let wallet_kp = core_tests::generate_random_keypair();
         let myself_kp = core_tests::generate_random_keypair();
@@ -557,11 +558,12 @@ mod tests {
             .with(eq(hash))
             .times(1)
             .returning(move |_| Ok(search_response.clone()));
+        let cloned_url = foreign_url.clone();
         clowder
             .expect_get_mint_url_from_pk()
             .with(eq(foreign_kp.public_key()))
             .times(1)
-            .returning(move |_| Ok(foreign_url.clone()));
+            .returning(move |_| Ok(cloned_url.clone()));
         clowder
             .expect_sign_p2pk_proofs()
             .times(1)
@@ -576,29 +578,29 @@ mod tests {
         let cloned_keyset = foreign_keyset.clone();
         factory
             .expect_make_client()
-            .with(eq(cashu_foreign_url.clone()))
+            .with(eq(foreign_url.clone()), always())
             .times(1)
-            .returning(move |_| {
+            .returning(move |_, _| {
                 let cloned_keyset = cloned_keyset.clone();
-                let mut foreign_client = crate::foreign::test_utils::MockMintConnector::new();
+                let mut foreign_client = crate::foreign::MockForeignClient::new();
                 let keyset = cashu::KeySet::from(cloned_keyset.clone());
                 foreign_client
-                    .expect_get_mint_keyset()
+                    .expect_get_keyset()
                     .with(eq(foreign_kid))
                     .times(1)
                     .returning(move |_| Ok(keyset.clone()));
                 foreign_client
-                    .expect_post_swap()
+                    .expect_swap()
                     .times(1)
-                    .returning(move |request| {
-                        let mut signatures = Vec::with_capacity(request.inputs().len());
-                        for blind in request.outputs() {
+                    .returning(move |inputs, outputs, _| {
+                        let mut signatures = Vec::with_capacity(inputs.len());
+                        for blind in outputs {
                             let signature =
-                                bcr_common::core::signature::sign_ecash(&cloned_keyset, blind)
+                                bcr_common::core::signature::sign_ecash(&cloned_keyset, &blind)
                                     .unwrap();
                             signatures.push(signature);
                         }
-                        Ok(cashu::SwapResponse { signatures })
+                        Ok(signatures)
                     });
                 Ok(Box::new(foreign_client))
             });
@@ -617,7 +619,10 @@ mod tests {
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
         };
-        let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
+        let amount = srvc
+            .try_swap_htlc(&preimage, chrono::Utc::now())
+            .await
+            .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
     }
 
@@ -695,7 +700,10 @@ mod tests {
             mint_factory: Arc::new(factory),
             settler: Box::new(settler),
         };
-        let amount = srvc.try_swap_htlc(&preimage).await.unwrap();
+        let amount = srvc
+            .try_swap_htlc(&preimage, chrono::Utc::now())
+            .await
+            .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
     }
 }
