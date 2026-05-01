@@ -14,7 +14,7 @@ use bitcoin::secp256k1;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{self, crsat, proof, MintConnectorExt},
+    foreign::{self, MintConnectorExt},
 };
 
 // ----- end imports
@@ -25,15 +25,7 @@ pub struct CoreCl {
 }
 
 #[async_trait]
-impl proof::KeysClient for CoreCl {
-    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core.sign(blinds).await?;
-        Ok(signatures)
-    }
-}
-
-#[async_trait]
-impl crsat::KeysClient for CoreCl {
+impl foreign::KeysClient for CoreCl {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
@@ -44,6 +36,10 @@ impl crsat::KeysClient for CoreCl {
             .await?;
         let keyset = self.core.keys(kinfo.id).await?;
         Ok(keyset)
+    }
+    async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
+        let signatures = self.core.sign(blinds).await?;
+        Ok(signatures)
     }
 }
 

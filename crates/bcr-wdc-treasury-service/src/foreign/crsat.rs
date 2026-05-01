@@ -1,7 +1,6 @@
 // ----- standard library imports
 use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc};
 // ----- extra library imports
-use async_trait::async_trait;
 use bcr_common::{cashu, core::signature::unblind_ecash_signature, wire::keys as wire_keys};
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
 // ----- local imports
@@ -9,21 +8,13 @@ use crate::{
     error::{Error, Result},
     foreign::proof,
     foreign::{
-        fingerprints_vec_to_map, proofs_vec_to_map, ClowderClient, MintClientFactory,
+        fingerprints_vec_to_map, proofs_vec_to_map, ClowderClient, KeysClient, MintClientFactory,
         OfflineRepository, OfflineSettleHandler, OnlineRepository,
     },
     TStamp,
 };
 
 // ----- end imports
-
-#[async_trait]
-pub trait KeysClient: proof::KeysClient {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
-}
 
 pub struct Service {
     pub online_repo: Arc<dyn OnlineRepository>,
@@ -285,21 +276,6 @@ mod tests {
     use bitcoin::hex::prelude::*;
     use mockall::predicate::*;
 
-    mockall::mock! {
-        pub KeysClient {}
-        #[async_trait]
-        impl proof::KeysClient for KeysClient {
-            async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
-        }
-        #[async_trait]
-        impl KeysClient for KeysClient {
-            async fn get_keyset_with_expiration(
-                &self,
-                expiration: chrono::NaiveDate,
-            ) -> Result<cashu::KeySet>;
-        }
-    }
-
     fn generate_htlc_proof_for_online_exchange(
         keyset: &cashu::MintKeySet,
         amount: cashu::Amount,
@@ -341,7 +317,7 @@ mod tests {
         let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
-        let mut keys = MockKeysClient::new();
+        let mut keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_kp = core_tests::generate_random_keypair();
@@ -464,7 +440,7 @@ mod tests {
         let settler = crate::foreign::MockOfflineSettleHandler::new();
         let onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
-        let mut keys = MockKeysClient::new();
+        let mut keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_kp = core_tests::generate_random_keypair();
@@ -556,7 +532,7 @@ mod tests {
         let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
-        let keys = MockKeysClient::new();
+        let keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
@@ -650,7 +626,7 @@ mod tests {
         let mut settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
-        let keys = MockKeysClient::new();
+        let keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
