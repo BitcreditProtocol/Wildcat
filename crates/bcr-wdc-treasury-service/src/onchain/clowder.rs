@@ -161,7 +161,7 @@ impl ClowderClient for ClowderCl {
             .rest
             .fetch_mint_onchain_signatures(&mint_id, &qid)
             .await?
-            .ok_or(Error::InvalidInput(format!(
+            .ok_or(Error::ResourceNotFound(format!(
                 "on chain mint {qid} in {mint_id} not found"
             )))?;
         Ok(response)
