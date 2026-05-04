@@ -229,6 +229,10 @@ pub fn routes(app: AppController) -> Router {
             cl_treasury::web_ep::MINTQUOTE_ONCHAIN_V1,
             post(web::mint_quote_onchain),
         )
+        .route(
+            cl_treasury::web_ep::MINT_ONCHAIN_V1,
+            post(web::mint_onchain),
+        )
         .route(cl_treasury::web_ep::EBILLMINT_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
