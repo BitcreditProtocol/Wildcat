@@ -28,7 +28,7 @@ pub struct WildcatCl {
 
 #[async_trait]
 impl WdcClient for WildcatCl {
-    async fn get_keyset_with_redemption_date(
+    async fn get_keyset_with_expiration_date(
         &self,
         redemption_date: chrono::NaiveDate,
     ) -> Result<cashu::Id> {
