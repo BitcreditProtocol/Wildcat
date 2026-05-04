@@ -6,13 +6,15 @@ use bcr_common::{cashu, wire::keys as wire_keys};
 pub use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local modules
 pub mod clients;
-pub mod crsat;
 mod proof;
+mod service;
 pub mod settle;
 // ----- local imports
 use crate::{error::Result, TStamp};
 
 // ----- end imports
+
+pub use service::Service;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]

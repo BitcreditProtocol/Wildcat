@@ -52,8 +52,8 @@ pub struct OnchainConfig {
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct ForeignConfig {
-    crsatonline_repo: surreal::DBConnConfig,
-    crsatoffline_repo: surreal::DBConnConfig,
+    online_repo: surreal::DBConnConfig,
+    offline_repo: surreal::DBConnConfig,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -65,7 +65,7 @@ pub struct EbillConfig {
 pub struct AppController {
     ebill: Arc<ebill::Service>,
     onchain: Arc<onchain::Service>,
-    foreign: Arc<foreign::crsat::Service>,
+    foreign: Arc<foreign::Service>,
     dev: Arc<devmode::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
 }
@@ -90,8 +90,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     } = onchain;
     let EbillConfig { db: mintops } = ebill;
     let ForeignConfig {
-        crsatonline_repo,
-        crsatoffline_repo,
+        online_repo,
+        offline_repo,
     } = foreign;
 
     //clients
@@ -110,10 +110,10 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     let ebill_repo = persistence::surreal::DBEbill::new(mintops)
         .await
         .expect("Failed to create mintops repository");
-    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(crsatonline_repo)
+    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
         .await
         .expect("Failed to create foreign online repository");
-    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(crsatoffline_repo)
+    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
         .await
         .expect("Failed to create foreign offline repository");
 
@@ -176,7 +176,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
             &online, &offline, &clwdr, &fctry, interval,
         ))
     };
-    let foreign = foreign::crsat::Service {
+    let foreign = foreign::Service {
         online_repo: crsatonlinerepo,
         offline_repo: crsatofflinerepo,
         keys: crsatcore.clone(),
