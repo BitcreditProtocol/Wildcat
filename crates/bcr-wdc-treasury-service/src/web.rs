@@ -18,7 +18,7 @@ use crate::{ebill, error::Result, foreign, onchain, AppController};
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn online_exchange(
-    State(ctrl): State<Arc<foreign::crsat::Service>>,
+    State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");

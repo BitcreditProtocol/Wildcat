@@ -26,7 +26,7 @@ pub async fn request_to_pay_ebill(
 }
 
 pub async fn try_htlc_swap(
-    State(ctrl): State<Arc<foreign::crsat::Service>>,
+    State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
     let now = chrono::Utc::now();
