@@ -45,9 +45,9 @@ pub enum MintingStatus {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait WdcClient: Send + Sync {
-    async fn get_keyset_with_redemption_date(
+    async fn get_keyset_with_expiration_date(
         &self,
-        redemption_date: chrono::NaiveDate,
+        expiration_date: chrono::NaiveDate,
     ) -> Result<cashu::Id>;
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet>;
     async fn add_new_mint_operation(
@@ -288,10 +288,10 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
-        let maturity_date = quote.bill.maturity_date;
+        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date);
         let kid = self
             .wdc_client
-            .get_keyset_with_redemption_date(maturity_date)
+            .get_keyset_with_expiration_date(expiration_date)
             .await?;
         let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
         quote.offer(kid, expiration, discounted)?;
@@ -350,6 +350,10 @@ impl Service {
 
 pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
     now + chrono::Duration::days(2)
+}
+
+pub fn calculate_expiration_from_maturity(maturity_date: chrono::NaiveDate) -> chrono::NaiveDate {
+    maturity_date + chrono::Duration::days(2)
 }
 
 async fn mint_fees(
