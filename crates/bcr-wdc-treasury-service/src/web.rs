@@ -18,7 +18,7 @@ use crate::{ebill, error::Result, foreign, onchain, AppController};
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn online_exchange(
-    State(ctrl): State<Arc<foreign::sat::Service>>,
+    State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
     tracing::debug!("Received request to online exchange");
@@ -38,10 +38,8 @@ pub async fn offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    tracing::debug!("Received request to offline exchange");
-
     let proofs = ctrl
-        .sat
+        .foreign
         .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
@@ -64,8 +62,6 @@ pub async fn melt_quote_onchain(
     State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    tracing::debug!("Received melt_quote_onchain request");
-
     let now = chrono::Utc::now();
     let response = ctrl.create_onchain_melt_quote(request, now).await?;
     Ok(Json(response))
@@ -76,8 +72,6 @@ pub async fn melt_onchain(
     State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_melt::MeltOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltOnchainResponse>> {
-    tracing::debug!("Received melt_onchain request");
-
     let now = chrono::Utc::now();
     let response = ctrl.melt_onchain(request, now).await?;
     Ok(Json(response))
@@ -90,6 +84,16 @@ pub async fn mint_quote_onchain(
 ) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
     let now = chrono::Utc::now();
     let response = ctrl.create_onchain_mint_quote(request, now).await?;
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn mint_onchain(
+    State(ctrl): State<Arc<onchain::Service>>,
+    Json(request): Json<wire_mint::OnchainMintRequest>,
+) -> Result<Json<cashu::MintResponse>> {
+    let signatures = ctrl.mint_onchain(request.quote, request.alpha_id).await?;
+    let response = cashu::MintResponse { signatures };
     Ok(Json(response))
 }
 

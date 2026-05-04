@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 // ----- extra library imports
 use async_trait::async_trait;
@@ -130,17 +129,11 @@ async fn monitor(
             warn!("MintClientFactory upgrade failed, abandoning {}", mint.1);
             break;
         };
-        let mint_url = cashu::MintUrl::from_str(mint.1.as_ref())
-            .map_err(|e| Error::InvalidInput(e.to_string()));
-        let Ok(mint_url) = mint_url else {
+        let Ok(client) = factory.make_client(mint.1.clone(), mint.0).await else {
             warn!("make_client failed {}, retry later", mint.1);
             continue;
         };
-        let Ok(client) = factory.make_client(mint_url.clone()).await else {
-            warn!("make_client failed {}, retry later", mint.1);
-            continue;
-        };
-        let Ok(proofs) = offline_repo.load_proofs(&mint).await else {
+        let Ok(proofs) = offline_repo.load_proofs(mint.0).await else {
             warn!("load_proofs failed {}, retry later", mint.1);
             continue;
         };
@@ -157,8 +150,8 @@ async fn monitor(
                 };
                 ys.push(y);
             }
-            let Ok(keyset) = client.get_mint_keyset(kid).await else {
-                warn!("get_mint_keyset failed {}, retry later", mint.1);
+            let Ok(keyset) = client.get_keyset(kid).await else {
+                warn!("get_keyset failed {}, retry later", mint.1);
                 continue;
             };
             debug!(
@@ -171,13 +164,13 @@ async fn monitor(
                 warn!("PreMintSecrets::random failed {}, retry later", mint.1);
                 continue;
             };
-            let request = cashu::SwapRequest::new(proofs, premints.blinded_messages());
-            let Ok(response) = client.post_swap(request).await else {
-                warn!("post_swap failed {}, lost {}", mint.1, total);
+            let now = chrono::Utc::now();
+            let Ok(signatures) = client.swap(proofs, premints.blinded_messages(), now).await else {
+                warn!("swap failed {}, lost {}", mint.1, total);
                 continue;
             };
-            let mut news = Vec::with_capacity(response.signatures.len());
-            for (signature, premint) in response.signatures.into_iter().zip(premints.iter()) {
+            let mut news = Vec::with_capacity(signatures.len());
+            for (signature, premint) in signatures.into_iter().zip(premints.iter()) {
                 let amount = signature.amount;
                 let Ok(proof) = bcr_common::core::signature::unblind_ecash_signature(
                     &keyset,
@@ -189,8 +182,7 @@ async fn monitor(
                 };
                 news.push(proof);
             }
-            let online_mint = (mint.0, mint_url.clone());
-            if online_repo.store(online_mint, news).await.is_err() {
+            if online_repo.store(mint.0, news).await.is_err() {
                 error!("store new proofs failed {}, {total} lost", mint.1);
             };
             if offline_repo.remove_proofs(&ys).await.is_err() {

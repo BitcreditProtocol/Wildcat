@@ -8,6 +8,7 @@ use bcr_common::{
 use uuid::Uuid;
 // ----- local modules
 mod clowder;
+mod monitor;
 mod service;
 mod wildcat;
 // ----- local imports
@@ -16,6 +17,7 @@ use crate::{error::Result, TStamp};
 // ----- end imports
 
 pub use clowder::ClowderCl;
+pub use monitor::MintOpMonitor;
 pub use service::{MintQuote, Service};
 pub use wildcat::WildcatCl;
 
@@ -74,6 +76,11 @@ pub trait ClowderClient: Send + Sync {
         inputs: Vec<cashu::Proof>,
         commitment: secp256k1::schnorr::Signature,
     ) -> Result<wire_melt::MeltTx>;
+    async fn fetch_mint_signatures(
+        &self,
+        qid: Uuid,
+        mint_id: secp256k1::PublicKey,
+    ) -> Result<Vec<cashu::BlindSignature>>;
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]

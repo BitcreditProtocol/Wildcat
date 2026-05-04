@@ -26,12 +26,11 @@ pub async fn request_to_pay_ebill(
 }
 
 pub async fn try_htlc_swap(
-    State(ctrl): State<Arc<foreign::sat::Service>>,
+    State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
-    tracing::debug!("Received request to try_htlc_swap");
-
-    let amount = ctrl.try_swap_htlc(&request.preimage).await?;
+    let now = chrono::Utc::now();
+    let amount = ctrl.try_swap_htlc(&request.preimage, now).await?;
     Ok(Json(amount))
 }
 

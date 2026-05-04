@@ -151,4 +151,19 @@ impl ClowderClient for ClowderCl {
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
     }
+
+    async fn fetch_mint_signatures(
+        &self,
+        qid: Uuid,
+        mint_id: secp256k1::PublicKey,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let response = self
+            .rest
+            .fetch_mint_onchain_signatures(&mint_id, &qid)
+            .await?
+            .ok_or(Error::ResourceNotFound(format!(
+                "on chain mint {qid} in {mint_id} not found"
+            )))?;
+        Ok(response)
+    }
 }

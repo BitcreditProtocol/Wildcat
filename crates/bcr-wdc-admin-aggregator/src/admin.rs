@@ -134,26 +134,6 @@ pub async fn list_mintops(
 }
 
 #[utoipa::path(
-    post,
-    path = endpoints::ENABLE_REDEMPTION,
-    request_body(content = wire_keys::DeactivateKeysetRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = wire_keys::DeactivateKeysetResponse , content_type = "application/json"),
-        (status = 404, description = "keyset id not found"),
-    )
-)]
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn post_enable_redemption(
-    State(ctrl): State<AppController>,
-    Json(request): Json<wire_keys::DeactivateKeysetRequest>,
-) -> Result<Json<wire_keys::DeactivateKeysetResponse>> {
-    tracing::debug!("Received enable redemption request");
-
-    let kid = ctrl.core_cl.deactivate_keyset(request.kid).await?;
-    Ok(Json(wire_keys::DeactivateKeysetResponse { kid }))
-}
-
-#[utoipa::path(
     get,
     path = endpoints::GET_CREDIT_QUOTE,
     params(

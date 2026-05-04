@@ -24,41 +24,6 @@ use crate::{
 
 // ----- end imports
 
-#[allow(dead_code)]
-pub struct DummyClwdr {}
-#[async_trait]
-impl ebill::ClowderClient for DummyClwdr {
-    async fn minting_ebill(
-        &self,
-        _keyset_id: cashu::Id,
-        _quote_id: Uuid,
-        _amount: cashu::Amount,
-        _bill_id: core::BillId,
-        signatures: Vec<cashu::BlindSignature>,
-    ) -> Result<Vec<cashu::BlindSignature>> {
-        Ok(signatures)
-    }
-    async fn request_to_pay_ebill(
-        &self,
-        bid: BillId,
-        _payment_address: bitcoin::Address,
-        _block_id: u64,
-        _previous_block_hash: bitcoin::hashes::sha256::Hash,
-        _amount: bitcoin::Amount,
-    ) -> Result<()> {
-        tracing::debug!("DummyClwdr: request_to_pay_ebill called for bid={bid}");
-        Ok(())
-    }
-    async fn request_onchain_ebill_address(
-        &self,
-        _bid: BillId,
-        _block_id: u64,
-        _previous_block_hash: bitcoin::hashes::sha256::Hash,
-    ) -> Result<bitcoin::Address> {
-        return Err(Error::ClowderUnavailable);
-    }
-}
-
 pub struct ClwdrCl {
     pub rest: Arc<ClowderRestClient>,
     pub nats: Arc<ClowderNatsClient>,
@@ -127,16 +92,6 @@ impl ebill::ClowderClient for ClwdrCl {
         .map_err(|e| Error::Internal(e.to_string()))?;
         Ok(derived_address)
     }
-}
-pub fn new_clowder_client(
-    nats_cl: Arc<ClowderNatsClient>,
-    rest_cl: Arc<ClowderRestClient>,
-) -> Box<dyn ebill::ClowderClient> {
-    let cl: Box<dyn ebill::ClowderClient> = Box::new(ClwdrCl {
-        nats: nats_cl,
-        rest: rest_cl,
-    });
-    cl
 }
 
 pub struct WildcatCl {
