@@ -179,6 +179,15 @@ impl Service {
         let response = wire_melt::MeltOnchainResponse { txid: txs };
         Ok(response)
     }
+
+    pub async fn mint_onchain(
+        &self,
+        qid: Uuid,
+        mint_id: secp256k1::PublicKey,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let signatures = self.clowder_cl.fetch_mint_signatures(qid, mint_id).await?;
+        Ok(signatures)
+    }
 }
 
 #[cfg(test)]
