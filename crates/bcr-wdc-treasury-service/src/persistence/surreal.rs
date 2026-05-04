@@ -94,7 +94,7 @@ impl onchain::Repository for DBOnChain {
             .select(rid)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::RequestIDNotFound(qid))
+        result.ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
 
     async fn list_onchain_pending_mintops(&self) -> Result<Vec<Uuid>> {
@@ -126,7 +126,7 @@ impl onchain::Repository for DBOnChain {
             .take(0)
             .map_err(|e| Error::DB(anyhow!(e)))?;
         if entry.is_none() {
-            return Err(Error::RequestIDNotFound(qid));
+            return Err(Error::ResourceNotFound(qid.to_string()));
         }
         Ok(())
     }
@@ -148,7 +148,7 @@ impl onchain::Repository for DBOnChain {
             .select(rid)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::RequestIDNotFound(qid))
+        result.ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
     async fn update_onchain_meltop_status(
         &self,
@@ -166,7 +166,7 @@ impl onchain::Repository for DBOnChain {
             .take(0)
             .map_err(|e| Error::DB(anyhow!(e)))?;
         if entry.is_none() {
-            return Err(Error::RequestIDNotFound(qid));
+            return Err(Error::ResourceNotFound(qid.to_string()));
         }
         Ok(())
     }
@@ -256,7 +256,7 @@ impl ebill::Repository for DBEbill {
         let res: SurrealResult<Option<EbillMintOpDBEntry>> = self.db.select(rid.clone()).await;
         match res {
             Ok(Some(entry)) => Ok(ebill::MintOperation::from(entry)),
-            Ok(None) => Err(Error::RequestIDNotFound(uid)),
+            Ok(None) => Err(Error::ResourceNotFound(uid.to_string())),
             Err(e) => Err(Error::DB(anyhow!(e))),
         }
     }

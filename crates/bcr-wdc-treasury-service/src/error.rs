@@ -12,7 +12,6 @@ use bcr_common::{
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use thiserror::Error;
-use uuid::Uuid;
 // ----- local imports
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -73,16 +72,10 @@ pub enum Error {
     InactiveKeyset(cashu::Id),
     #[error("active keyset {0}")]
     ActiveKeyset(cashu::Id),
-    #[error("Unknown keyset {0}")]
-    UnknownKeyset(cashu::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
     UnmatchingAmount(cdk::Amount, cdk::Amount),
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
-    #[error("request id not found {0}")]
-    RequestIDNotFound(Uuid),
-    #[error("ebill id not found {0}")]
-    EBillNotFound(String),
     #[error("Insufficient amount for melting {0}")]
     InsufficientOnchainMeltAmount(bitcoin::Amount),
     #[error("Insufficient amount for minting {0}")]
@@ -92,6 +85,8 @@ pub enum Error {
     #[error("Signatures supplied for minting does not match original request")]
     MintAmountMismatch(cashu::Amount),
 
+    #[error("resource not found: {0}")]
+    ResourceNotFound(String),
     #[error("internal {0}")]
     Internal(String),
 }
@@ -127,16 +122,14 @@ impl axum::response::IntoResponse for Error {
             Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            Error::UnknownKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::UnmatchingAmount(..) => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::RequestIDNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            Error::EBillNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Error::InsufficientOnchainMeltAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::InsufficientOnchainMintAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
 
+            Error::ResourceNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
         };
         resp.into_response()
