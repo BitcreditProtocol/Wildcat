@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{
     cashu,
@@ -27,20 +26,6 @@ pub struct Service {
 }
 
 impl Service {
-    async fn are_keysets_active(
-        &self,
-        sign_service: &dyn KeysService,
-        kids: impl Iterator<Item = &cashu::Id>,
-    ) -> Result<Vec<(cashu::Id, bool)>> {
-        let joined: JoinAll<_> = kids.map(|kid| sign_service.info(kid)).collect();
-        let responses: Vec<_> = joined.await.into_iter().collect::<Result<_>>()?;
-        let statuses = responses
-            .into_iter()
-            .map(|info| (info.id, info.active))
-            .collect();
-        Ok(statuses)
-    }
-
     pub async fn check_spendable(&self, ys: &[cashu::PublicKey]) -> Result<Vec<cashu::ProofState>> {
         let joined = ys
             .iter()
@@ -204,18 +189,7 @@ impl Service {
     ) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
         signatures_utils::basic_proofs_checks(proofs)?;
-        // expensive verifications
-        let unique_ids: HashSet<_> = proofs.iter().map(|p| p.keyset_id).collect();
-        // 1. verify keysets are inactive
-        let statuses = self
-            .are_keysets_active(sign_service, unique_ids.iter())
-            .await?;
-        for (id, status) in statuses.iter() {
-            if *status {
-                return Err(Error::ActiveKeyset(*id));
-            }
-        }
-        // 2. verify proofs signatures
+        // verify proofs signatures
         sign_service.verify_proofs(proofs).await?;
         let mut ys = Vec::with_capacity(proofs.len());
         for proof in proofs {
