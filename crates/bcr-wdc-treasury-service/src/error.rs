@@ -2,13 +2,9 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::{
-    cashu,
-    cashu::{
-        nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
-        nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut20::Error as CDK20Error,
-    },
-    cdk,
+use bcr_common::cashu::{
+    self, nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
+    nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut20::Error as CDK20Error,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use thiserror::Error;
@@ -39,10 +35,8 @@ pub enum Error {
     CDK13(#[from] CDK13Error),
     #[error("cashu::nut20 {0}")]
     CDK20(#[from] CDK20Error),
-    #[error("CDK Wallet {0}")]
-    CDKWallet(#[from] cdk::Error),
     #[error("CDK secret {0}")]
-    CDKSecret(#[from] cdk::secret::Error),
+    CDKSecret(#[from] cashu::secret::Error),
     #[error("DB error {0}")]
     DB(#[source] AnyError),
     #[error("Secp256k1 error {0}")]
@@ -63,7 +57,7 @@ pub enum Error {
     MintClient(#[from] bcr_common::client::mint::Error),
     // internal errors
     #[error("internal sat wallet has not enough funds: requested {0}, available {1}")]
-    InsufficientFunds(cdk::Amount, cdk::Amount),
+    InsufficientFunds(cashu::Amount, cashu::Amount),
     #[error("invalid inputs {0}")]
     InvalidInput(String),
     #[error("invalid outputs {0}")]
@@ -73,7 +67,7 @@ pub enum Error {
     #[error("active keyset {0}")]
     ActiveKeyset(cashu::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
-    UnmatchingAmount(cdk::Amount, cdk::Amount),
+    UnmatchingAmount(cashu::Amount, cashu::Amount),
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
     #[error("Insufficient amount for melting {0}")]
@@ -105,7 +99,6 @@ impl axum::response::IntoResponse for Error {
             Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDKWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
