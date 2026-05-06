@@ -4,7 +4,7 @@
 use axum::http::StatusCode;
 use bcr_common::{
     cashu,
-    cdk::Error as CDKError,
+    cdk_common::Error as CDKError,
     client::{admin::clowder::Error as ClowderRestError, treasury::Error as TreasuryClientError},
     clwdr_client::ClowderClientError,
 };
