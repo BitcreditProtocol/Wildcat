@@ -103,13 +103,11 @@ impl ClowderClient for ClowderCl {
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
-        let total: u64 = msg.inputs.iter().map(|fp| fp.amount).sum();
         let request = clowder_messages::MeltQuoteOnchainRequest {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
             amount: msg.amount,
-            total: cashu::Amount::from(total),
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };
@@ -159,5 +157,15 @@ impl ClowderClient for ClowderCl {
                 "on chain mint {qid} in {mint_id} not found"
             )))?;
         Ok(response)
+    }
+
+    async fn estimate_onchain_fees(&self, _amount: bitcoin::Amount) -> Result<bitcoin::Amount> {
+        tracing::error!("unimplemented, returning default fee rate for 2 onchain transactions");
+        Ok(bitcoin::Amount::from_sat(1000))
+    }
+
+    async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
+        let collaterals = self.rest.get_mint_collateral().await?;
+        Ok(collaterals.onchain)
     }
 }

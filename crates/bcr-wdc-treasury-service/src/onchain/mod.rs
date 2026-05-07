@@ -80,6 +80,8 @@ pub trait ClowderClient: Send + Sync {
         qid: Uuid,
         mint_id: secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
+    async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
+    async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
