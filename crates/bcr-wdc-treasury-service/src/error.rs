@@ -56,8 +56,8 @@ pub enum Error {
     #[error("foreign mint client {0}")]
     MintClient(#[from] bcr_common::client::mint::Error),
     // internal errors
-    #[error("internal sat wallet has not enough funds: requested {0}, available {1}")]
-    InsufficientFunds(cashu::Amount, cashu::Amount),
+    #[error("Unavailable: {0}")]
+    Unavailable(String),
     #[error("invalid inputs {0}")]
     InvalidInput(String),
     #[error("invalid outputs {0}")]
@@ -110,7 +110,7 @@ impl axum::response::IntoResponse for Error {
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::MintClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
 
-            Error::InsufficientFunds(_, _) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::Unavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),

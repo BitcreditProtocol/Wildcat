@@ -26,13 +26,6 @@ pub struct ClowderCl {
 
 #[async_trait]
 impl ClowderClient for ClowderCl {
-    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address> {
-        let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
-            .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
-        let response = self.rest.request_mint_address(qid, dummy_kid).await?;
-        Ok(response.address.assume_checked())
-    }
-
     async fn request_to_pay_bill(
         &self,
         req: clowder_messages::RequestToPayEbillRequest,
@@ -115,7 +108,6 @@ impl ClowderClient for ClowderCl {
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
             amount: msg.amount,
-            total: msg.total,
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };
@@ -165,5 +157,15 @@ impl ClowderClient for ClowderCl {
                 "on chain mint {qid} in {mint_id} not found"
             )))?;
         Ok(response)
+    }
+
+    async fn estimate_onchain_fees(&self, _amount: bitcoin::Amount) -> Result<bitcoin::Amount> {
+        tracing::error!("unimplemented, returning default fee rate for 2 onchain transactions");
+        Ok(bitcoin::Amount::from_sat(1000))
+    }
+
+    async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
+        let collaterals = self.rest.get_mint_collateral().await?;
+        Ok(collaterals.onchain)
     }
 }

@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, core::signature as core_signature};
+use bcr_common::{cashu, core::signature as core_signature, wire::keys as wire_keys};
 use itertools::Itertools;
 use thiserror::Error;
 // ----- local imports
@@ -94,6 +94,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
+    use bcr_common::core_tests;
     use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
@@ -128,6 +129,18 @@ pub mod test_utils {
             });
         }
         signatures
+    }
+
+    pub fn generate_fingerprints(
+        keyset: &cashu::MintKeySet,
+        amounts: &[cashu::Amount],
+    ) -> Vec<wire_keys::ProofFingerprint> {
+        let proofs = core_tests::generate_random_ecash_proofs(keyset, amounts);
+        proofs
+            .into_iter()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .unwrap()
     }
 
     pub fn verify_signatures_data(

@@ -93,23 +93,38 @@ impl Service {
         request: wire_melt::MeltQuoteOnchainRequest,
         now: TStamp,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        if request.amount < self.min_melt_threshold {
+        let input_sats: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
+        let total = bitcoin::Amount::from_sat(input_sats);
+        if total < self.min_melt_threshold {
             return Err(Error::InvalidInput(String::from("melt amount too low")));
+        }
+        let reserve = self.clowder_cl.get_onchain_reserve().await?;
+        if total > reserve {
+            return Err(Error::Unavailable(String::from(
+                "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
         }
         let address = self
             .clowder_cl
             .verify_onchain_address(request.address.clone())
             .await?;
-        let input_sats: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
-        let total = cashu::Amount::from(input_sats);
+        let admin_fees = self.calculate_melt_fees(reserve, total);
+        let network_fees = self
+            .clowder_cl
+            .estimate_onchain_fees(total - admin_fees)
+            .await?;
+        if total < admin_fees + network_fees {
+            return Err(Error::InvalidInput(String::from(
+                "insufficient funds to cover fees",
+            )));
+        }
+        let available = total - admin_fees - network_fees;
         let expiry = now + self.quote_expiry;
         let qid = Uuid::new_v4();
         let body = wire_melt::MeltQuoteOnchainResponseBody {
             quote: qid,
             inputs: request.inputs.clone(),
             address: request.address.clone(),
-            amount: request.amount,
-            total,
+            amount: available,
             expiry: expiry.timestamp().max(0) as u64,
             wallet_key: request.wallet_key,
         };
@@ -117,9 +132,9 @@ impl Service {
         let op = onchain::OnchainMeltOperation {
             qid,
             address: address.to_string(),
-            amount: request.amount,
+            amount: available,
             expiry,
-            fees: bitcoin::Amount::ZERO,
+            fees: admin_fees + network_fees,
             wallet_key: request.wallet_key,
             commitment,
             status: onchain::MeltStatus::Pending,
@@ -129,6 +144,16 @@ impl Service {
             content,
             commitment,
         })
+    }
+
+    fn calculate_melt_fees(
+        &self,
+        _reserve: bitcoin::Amount,
+        amount: bitcoin::Amount,
+    ) -> bitcoin::Amount {
+        const MELT_FEES_MULTIPLIER: u64 = 100;
+        let fees_sat = amount.to_sat().div_ceil(MELT_FEES_MULTIPLIER);
+        bitcoin::Amount::from_sat(fees_sat)
     }
 
     pub async fn melt_onchain(
@@ -285,6 +310,10 @@ mod tests {
         let mut repo = MockRepository::new();
         let mut clowder = MockClowderClient::new();
         clowder
+            .expect_get_onchain_reserve()
+            .times(1)
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        clowder
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
@@ -296,6 +325,10 @@ mod tests {
                     bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
                 Ok((String::new(), signature))
             });
+        clowder
+            .expect_estimate_onchain_fees()
+            .times(1)
+            .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         repo.expect_store_onchain_meltop()
             .times(1)
             .returning(|_| Ok(()));
@@ -308,10 +341,12 @@ mod tests {
             min_melt_threshold: bitcoin::Amount::ZERO,
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
+        let amounts = vec![Amount::from(512), Amount::from(512)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
-            inputs: Vec::new(),
+            inputs: fps,
             address,
-            amount: bitcoin::Amount::from_sat(1000),
             wallet_key: core_tests::generate_random_keypair().public_key().into(),
         };
         service
