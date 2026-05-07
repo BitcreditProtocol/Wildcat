@@ -26,13 +26,6 @@ pub struct ClowderCl {
 
 #[async_trait]
 impl ClowderClient for ClowderCl {
-    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address> {
-        let dummy_kid = cashu::Id::from_bytes(&[0_u8; 8])
-            .map_err(|_| crate::error::Error::InvalidInput(String::from("Invalid keyset ID")))?;
-        let response = self.rest.request_mint_address(qid, dummy_kid).await?;
-        Ok(response.address.assume_checked())
-    }
-
     async fn request_to_pay_bill(
         &self,
         req: clowder_messages::RequestToPayEbillRequest,
@@ -110,12 +103,13 @@ impl ClowderClient for ClowderCl {
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        let total: u64 = msg.inputs.iter().map(|fp| fp.amount).sum();
         let request = clowder_messages::MeltQuoteOnchainRequest {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
             amount: msg.amount,
-            total: msg.total,
+            total: cashu::Amount::from(total),
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };
