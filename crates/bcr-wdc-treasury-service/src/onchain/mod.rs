@@ -34,7 +34,6 @@ pub trait WildcatClient: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
-    async fn get_sweep(&self, qid: uuid::Uuid) -> Result<bitcoin::Address>;
     async fn request_to_pay_bill(
         &self,
         req: wire_clowder::RequestToPayEbillRequest,

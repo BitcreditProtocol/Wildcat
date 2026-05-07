@@ -311,7 +311,6 @@ mod tests {
         let request = wire_melt::MeltQuoteOnchainRequest {
             inputs: Vec::new(),
             address,
-            amount: bitcoin::Amount::from_sat(1000),
             wallet_key: core_tests::generate_random_keypair().public_key().into(),
         };
         service
