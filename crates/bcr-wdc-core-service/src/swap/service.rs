@@ -3,9 +3,10 @@
 use bcr_common::{
     cashu,
     core::{signature, swap},
-    wire::swap as wire_swap,
+    wire::{attestation::IssuanceAttestation, swap as wire_swap},
 };
 use bcr_wdc_utils::signatures as signatures_utils;
+use bitcoin::secp256k1::PublicKey;
 use futures::future::JoinAll;
 use secp256k1::schnorr;
 // ----- local imports
@@ -23,6 +24,7 @@ pub struct Service {
     pub commitments: Box<dyn CommitmentRepository>,
     pub clowder: Box<dyn ClowderClient>,
     pub max_expiry: chrono::Duration,
+    pub alpha_id: PublicKey,
 }
 
 impl Service {
@@ -118,6 +120,7 @@ impl Service {
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         signature: schnorr::Signature,
+        attestation: IssuanceAttestation,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
@@ -165,6 +168,10 @@ impl Service {
                     ))
                 })?;
         }
+        // verify Beta-issued attestation before any signing
+        self.clowder
+            .verify_attestation(&self.alpha_id, &inputs, &attestation)
+            .await?;
         // verify inputs
         let kinfos = sign_service.list_kinfos().await?;
         swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
@@ -173,7 +180,7 @@ impl Service {
         let signatures = sign_service.sign_blinds(&outputs).await?;
         self.proofs.insert(&inputs).await?;
         self.clowder
-            .post_swap(inputs, outputs, signature, signatures.clone())
+            .post_swap(inputs, outputs, signature, attestation, signatures.clone())
             .await?;
         let res = self.commitments.delete(signature).await;
         if let Err(e) = res {
@@ -203,5 +210,92 @@ impl Service {
     pub async fn recover(&self, proofs: &[cashu::Proof]) -> Result<()> {
         self.proofs.remove(proofs).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        persistence::{MockCommitmentRepository, MockProofRepository},
+        swap::{MockClowderClient, MockKeysService},
+    };
+    use bcr_common::{
+        core_tests,
+        wire::attestation::{AttestationError, IssuanceAttestation},
+    };
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
+
+    fn dummy_attestation() -> IssuanceAttestation {
+        let kp = core_tests::generate_random_keypair();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
+        }
+    }
+
+    /// If attestation verification fails, swap must short-circuit before
+    /// signing or burning.
+    #[tokio::test]
+    async fn swap_rejects_when_attestation_invalid() {
+        let mut clowder = MockClowderClient::new();
+        let mut commitments = MockCommitmentRepository::new();
+        let proofs_repo = MockProofRepository::new();
+        let mut sign_service = MockKeysService::new();
+
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+
+        let proof_ys: Vec<cashu::PublicKey> =
+            proofs.iter().map(|p| p.y().unwrap()).collect();
+        let blind_bs: Vec<cashu::PublicKey> =
+            blinds.iter().map(|b| b.blinded_secret).collect();
+        let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
+        commitments
+            .expect_load()
+            .times(1)
+            .returning(move |_| Ok((proof_ys.clone(), blind_bs.clone(), expiry)));
+
+        clowder
+            .expect_verify_attestation()
+            .times(1)
+            .returning(|_, _, _| Err(Error::Attestation(AttestationError::DigestMismatch)));
+
+        // Signing/insert/post must NOT be called when attestation fails.
+        sign_service.expect_sign_blinds().times(0);
+
+        let alpha_id = core_tests::generate_random_keypair().public_key();
+        let service = Service {
+            proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments),
+            clowder: Box::new(clowder),
+            max_expiry: chrono::Duration::seconds(3600),
+            alpha_id,
+        };
+
+        let err = service
+            .swap(
+                &sign_service,
+                proofs,
+                blinds,
+                commitment,
+                dummy_attestation(),
+                chrono::Utc::now(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::Attestation(AttestationError::DigestMismatch)
+        ));
     }
 }

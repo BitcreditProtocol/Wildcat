@@ -256,8 +256,12 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let commit_response = user_service.commit_swap(commit_request).await;
     info!("Commitment created");
 
+    let wildcat_info = user_service.wildcat_info().await;
+    let attestation = user_service
+        .acquire_attestation(wildcat_info.clowder_node_id, &proofs)
+        .await;
     let signatures = user_service
-        .swap(proofs, bs, commit_response.commitment)
+        .swap(proofs, bs, commit_response.commitment, attestation)
         .await;
     let total_swap = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
     assert_eq!(

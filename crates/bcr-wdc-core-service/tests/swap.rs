@@ -8,9 +8,20 @@ use bcr_common::{
     },
     client::admin::core::Client as CoreClient,
     core_tests,
-    wire::keys as wire_keys,
+    wire::{attestation as wire_attestation, keys as wire_keys},
 };
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+
+fn dummy_attestation() -> wire_attestation::IssuanceAttestation {
+    let kp = core_tests::generate_random_keypair();
+    let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+    wire_attestation::IssuanceAttestation {
+        beta_id: kp.public_key(),
+        fp_digest: [0u8; 32],
+        coords_mac: [0u8; 32],
+        signature,
+    }
+}
 // ----- local imports
 
 // ----- end imports
@@ -53,7 +64,10 @@ async fn swap() {
         )
         .await
         .unwrap();
-    client.swap(proofs, blinds, commitment).await.expect("swap");
+    client
+        .swap(proofs, blinds, commitment, dummy_attestation())
+        .await
+        .expect("swap");
 }
 
 #[tokio::test]
@@ -144,7 +158,7 @@ async fn swap_p2pk() {
         .await
         .unwrap();
     let res = client
-        .swap(correct_proofs, blinds, commitment)
+        .swap(correct_proofs, blinds, commitment, dummy_attestation())
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));

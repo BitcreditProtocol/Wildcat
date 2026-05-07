@@ -169,6 +169,12 @@ impl Service<UserService> {
         self.client.get(url).await.unwrap()
     }
 
+    /// GET v1/wildcat — used to discover the local Alpha's `clowder_node_id`.
+    pub async fn wildcat_info(&self) -> bcr_common::wire::info::WildcatInfo {
+        let url = self.url("v1/wildcat");
+        self.client.get(url).await.unwrap()
+    }
+
     pub async fn commit_swap(
         &self,
         request: wire_swap::SwapCommitmentRequest,
@@ -192,9 +198,38 @@ impl Service<UserService> {
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: bitcoin::secp256k1::schnorr::Signature,
+        attestation: bcr_common::wire::attestation::IssuanceAttestation,
     ) -> Vec<cashu::BlindSignature> {
         self.mint_cl
-            .swap(inputs, outputs, commitment)
+            .swap(inputs, outputs, commitment, attestation)
+            .await
+            .unwrap()
+    }
+
+    /// Acquire a Beta-issued attestation for the given inputs by hitting
+    /// `POST /v1/attest/issuance` (Envoy-routed to the local Clowder node).
+    pub async fn acquire_attestation(
+        &self,
+        alpha_id: bitcoin::secp256k1::PublicKey,
+        proofs: &[cashu::Proof],
+    ) -> bcr_common::wire::attestation::IssuanceAttestation {
+        use bcr_common::wire::{attestation as wire_att, keys as wire_keys};
+        let inputs: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+            .collect();
+        let request = wire_att::IssuanceAttestationRequest { alpha_id, inputs };
+        let url = self.url("v1/attest/issuance");
+        self.client
+            .http
+            .post(url)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
             .await
             .unwrap()
     }

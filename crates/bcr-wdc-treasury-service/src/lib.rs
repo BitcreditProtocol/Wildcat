@@ -117,6 +117,14 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         .await
         .expect("Failed to create foreign offline repository");
 
+    // foreign clowder info (used for both onchain alpha_id and foreign module below)
+    let info = clowder_client
+        .get_info()
+        .await
+        .expect("Failed to get clowder info");
+    let my_pk = secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+        .expect("secp256k1::PublicKey == cashu::PublicKey");
+
     // onChain
     let clowder_cl = onchain::ClowderCl {
         rest: clowder_client.clone(),
@@ -133,6 +141,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         min_melt_threshold,
+        alpha_id: my_pk,
     };
 
     // eBill
@@ -151,16 +160,13 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // foreign
-    let info = clowder_client
-        .get_info()
-        .await
-        .expect("Failed to get clowder info");
-    let my_pk = secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
-        .expect("secp256k1::PublicKey == cashu::PublicKey");
     let clowder = Arc::new(foreign::clients::ClowderCl {
         clwdr: clowder_client.clone(),
     });
-    let factory = Arc::new(foreign::clients::MintClientFactory { my_pk });
+    let factory = Arc::new(foreign::clients::MintClientFactory {
+        my_pk,
+        clwdr: clowder_client.clone(),
+    });
     let crsatonlinerepo = Arc::new(foreign_online_repo);
     let crsatofflinerepo = Arc::new(foreign_offline_repo);
     let crsatcore = Arc::new(foreign::clients::CoreCl {

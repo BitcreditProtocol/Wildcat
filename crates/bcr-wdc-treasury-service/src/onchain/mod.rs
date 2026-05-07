@@ -3,8 +3,12 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    wire::{clowder::messages as wire_clowder, melt as wire_melt, mint as wire_mint},
+    wire::{
+        attestation::IssuanceAttestation, clowder::messages as wire_clowder, melt as wire_melt,
+        mint as wire_mint,
+    },
 };
+use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local modules
 mod clowder;
@@ -75,12 +79,19 @@ pub trait ClowderClient: Send + Sync {
         address: bitcoin::Address,
         inputs: Vec<cashu::Proof>,
         commitment: secp256k1::schnorr::Signature,
+        attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
         mint_id: secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
+    async fn verify_attestation(
+        &self,
+        alpha_id: &PublicKey,
+        inputs: &[cashu::Proof],
+        attestation: &IssuanceAttestation,
+    ) -> Result<()>;
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]

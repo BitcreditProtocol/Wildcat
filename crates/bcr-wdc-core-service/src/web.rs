@@ -118,6 +118,7 @@ pub async fn swap_tokens(
             request.inputs,
             request.outputs,
             request.commitment,
+            request.attestation,
             now,
         )
         .await?;

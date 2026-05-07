@@ -7,8 +7,14 @@ use bcr_common::{
     client::admin::clowder::Client as ClowderRestClient,
     clwdr_client::ClowderNatsClient,
     core::signature,
-    wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
+    wire::{
+        attestation::{self as wire_attestation, IssuanceAttestation},
+        clowder::messages as clowder_messages,
+        melt as wire_melt,
+        mint as wire_mint,
+    },
 };
+use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -140,6 +146,7 @@ impl ClowderClient for ClowderCl {
         address: bitcoin::Address,
         inputs: Vec<cashu::Proof>,
         commitment: secp256k1::schnorr::Signature,
+        attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx> {
         let request = clowder_messages::MeltOnchainRequest {
             quote: qid,
@@ -147,6 +154,7 @@ impl ClowderClient for ClowderCl {
             amount,
             inputs,
             commitment,
+            attestation,
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
@@ -165,5 +173,40 @@ impl ClowderClient for ClowderCl {
                 "on chain mint {qid} in {mint_id} not found"
             )))?;
         Ok(response)
+    }
+
+    async fn verify_attestation(
+        &self,
+        alpha_id: &PublicKey,
+        inputs: &[cashu::Proof],
+        attestation: &IssuanceAttestation,
+    ) -> Result<()> {
+        let betas = self.rest.get_betas().await?;
+        let beta = betas
+            .mints
+            .iter()
+            .find(|b| b.node_id == attestation.beta_id)
+            .ok_or(Error::Attestation(
+                wire_attestation::AttestationError::UnknownBeta(attestation.beta_id),
+            ))?;
+        wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
+            id == &attestation.beta_id
+        })
+        .map_err(Error::Attestation)?;
+        let beta_cl = ClowderRestClient::new(beta.clowder.clone());
+        let response = beta_cl
+            .post_attest_verify(&wire_attestation::AttestationVerifyRequest {
+                alpha_id: *alpha_id,
+                attestation: attestation.clone(),
+            })
+            .await?;
+        wire_attestation::verify_attestation_response(
+            alpha_id,
+            &attestation.beta_id,
+            attestation,
+            &response,
+        )
+        .map_err(Error::Attestation)?;
+        Ok(())
     }
 }
