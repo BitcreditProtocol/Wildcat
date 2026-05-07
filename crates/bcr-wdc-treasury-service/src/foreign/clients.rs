@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
-    wire::{clowder as wire_clowder, keys as wire_keys},
+    wire::{attestation as wire_attestation, clowder as wire_clowder, keys as wire_keys},
 };
 // ----- local imports
 use crate::{
@@ -160,6 +160,7 @@ impl foreign::ClowderClient for ClowderCl {
 
 pub struct MintClient {
     cl: bcr_common::client::mint::Client,
+    clwdr: Arc<ClowderClient>,
     my_pk: secp256k1::PublicKey,
     foreign_pk: secp256k1::PublicKey,
 }
@@ -181,14 +182,23 @@ impl ForeignClient for MintClient {
         let commitment = self
             .cl
             .commit_swap(
-                fps,
+                fps.clone(),
                 outputs.clone(),
                 expiry.timestamp() as u64,
                 self.my_pk,
                 self.foreign_pk,
             )
             .await?;
-        let signatures = self.cl.swap(inputs, outputs, commitment).await?;
+        // Acquire an attestation from the local Clowder node (assumed Beta of
+        // the foreign Alpha) so the foreign mint accepts the spend.
+        let attestation = self
+            .clwdr
+            .post_attest_issuance(&wire_attestation::IssuanceAttestationRequest {
+                alpha_id: self.foreign_pk,
+                inputs: fps,
+            })
+            .await?;
+        let signatures = self.cl.swap(inputs, outputs, commitment, attestation).await?;
         Ok(signatures)
     }
 
@@ -205,6 +215,7 @@ impl ForeignClient for MintClient {
 
 pub struct MintClientFactory {
     pub my_pk: secp256k1::PublicKey,
+    pub clwdr: Arc<ClowderClient>,
 }
 #[async_trait]
 impl foreign::MintClientFactory for MintClientFactory {
@@ -216,6 +227,7 @@ impl foreign::MintClientFactory for MintClientFactory {
         let cl = bcr_common::client::mint::Client::new(mint_url);
         Ok(Box::new(MintClient {
             cl,
+            clwdr: self.clwdr.clone(),
             my_pk: self.my_pk,
             foreign_pk: mint_pk,
         }))

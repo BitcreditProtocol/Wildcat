@@ -6,7 +6,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{client::admin::core, clwdr_client};
+use bcr_common::{
+    client::{self, admin::core},
+    clwdr_client,
+};
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
@@ -28,6 +31,8 @@ pub struct AppConfig {
     proofs: surreal::DBConnConfig,
     commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
+    clowder_rest_url: client::Url,
+    alpha_id: bitcoin::secp256k1::PublicKey,
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
@@ -47,6 +52,8 @@ impl AppController {
             proofs,
             commitments,
             clowder_url,
+            clowder_rest_url,
+            alpha_id,
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
@@ -79,13 +86,18 @@ impl AppController {
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
-        let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
+        let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
+        let clowder_for_swap = swap::ClowderCl {
+            nats: clowder_cl,
+            rest: clowder_rest,
+        };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
             clowder: Box::new(clowder_for_swap),
             max_expiry,
+            alpha_id,
         };
 
         Self {
@@ -159,6 +171,7 @@ pub mod test_utils {
             commitments: Box::new(commitments_repo),
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             max_expiry: chrono::Duration::seconds(3600),
+            alpha_id: mint_kp().public_key(),
         };
         AppController {
             keys: Arc::new(keysrv),
@@ -198,9 +211,20 @@ mod tests {
         cashu,
         core::signature::schnorr_verify_b64,
         core_tests,
-        wire::{keys as wire_keys, swap as wire_swap},
+        wire::{attestation as wire_attestation, keys as wire_keys, swap as wire_swap},
     };
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+
+    fn dummy_attestation() -> wire_attestation::IssuanceAttestation {
+        let kp = core_tests::generate_random_keypair();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        wire_attestation::IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
+        }
+    }
 
     #[tokio::test]
     async fn commit_swap() {
@@ -291,7 +315,7 @@ mod tests {
 
         controller
             .swap
-            .swap(&signsrvc, proofs, blinds, commitment, now)
+            .swap(&signsrvc, proofs, blinds, commitment, dummy_attestation(), now)
             .await
             .unwrap();
     }
@@ -385,7 +409,14 @@ mod tests {
 
         let res = controller
             .swap
-            .swap(&signsrvc, proofs.clone(), blinds.clone(), commitment, now)
+            .swap(
+                &signsrvc,
+                proofs.clone(),
+                blinds.clone(),
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await;
         assert!(res.is_err());
         for p in proofs.iter_mut() {
@@ -393,7 +424,14 @@ mod tests {
         }
         controller
             .swap
-            .swap(&signsrvc, proofs.clone(), blinds, commitment, now)
+            .swap(
+                &signsrvc,
+                proofs.clone(),
+                blinds,
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await
             .unwrap();
     }

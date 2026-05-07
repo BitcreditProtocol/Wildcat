@@ -40,6 +40,8 @@ pub enum Error {
     BasicChecks(#[from] signatures_utils::ChecksError),
     #[error("Verification: {0}")]
     Verify(#[from] bcr_common::core::swap::mint::VerificationError),
+    #[error("Attestation: {0}")]
+    Attestation(#[from] bcr_common::wire::attestation::AttestationError),
     // domain errors
     #[error("invalid inputs {0}")]
     InvalidInput(String),
@@ -74,6 +76,7 @@ impl axum::response::IntoResponse for Error {
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BasicChecks(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::Verify(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::Attestation(e) => (StatusCode::BAD_REQUEST, e.to_string()),
 
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::Conflict(e) => (StatusCode::CONFLICT, e.to_string()),
