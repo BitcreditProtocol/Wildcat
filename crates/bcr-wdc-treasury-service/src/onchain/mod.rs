@@ -78,7 +78,7 @@ pub trait ClowderClient: Send + Sync {
         address: bitcoin::Address,
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
-        commitment: secp256k1::schnorr::Signature,
+        commitment: bitcoin::secp256k1::schnorr::Signature,
         attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx>;
     async fn fetch_mint_signatures(
