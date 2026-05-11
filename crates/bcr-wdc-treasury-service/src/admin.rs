@@ -7,7 +7,7 @@ use bcr_common::{
     wire::{exchange as wire_exchange, treasury as wire_treasury},
 };
 // ----- local imports
-use crate::{ebill, error::Result, foreign};
+use crate::{ebill, error::Result, foreign, vault};
 // ----- end imports
 
 // ----- sat APIs
@@ -67,8 +67,6 @@ pub async fn ebill_mintop_status(
     State(ctrl): State<Arc<ebill::Service>>,
     Path(qid): Path<uuid::Uuid>,
 ) -> Result<Json<wire_treasury::MintOperationStatus>> {
-    tracing::debug!("Received mint operation status request {qid}");
-
     let status = ctrl.mintop_status(qid).await?;
     let status = convert_ebill_mintop_status(status);
     Ok(Json(status))
@@ -79,9 +77,31 @@ pub async fn list_ebill_mintops(
     State(ctrl): State<Arc<ebill::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<Vec<uuid::Uuid>>> {
-    tracing::debug!("Received list mint operations request");
-
     let mint_ops = ctrl.list_mintops_for_kid(kid).await?;
     let response = mint_ops.into_iter().map(|mop| mop.uid).collect();
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn store_fees_proofs(
+    State(ctrl): State<Arc<vault::Service>>,
+    Json(request): Json<wire_treasury::StoreProofsRequest>,
+) -> Result<Json<wire_treasury::StoreProofsResponse>> {
+    ctrl.store_proofs(request.proofs).await?;
+    let response = wire_treasury::StoreProofsResponse {};
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn generate_fees_token(
+    State(ctrl): State<Arc<vault::Service>>,
+) -> Result<Json<wire_treasury::FeesTokenResponse>> {
+    let now = chrono::Utc::now();
+    let token = ctrl.generate_token(now).await?;
+    let total = token.value()?;
+    let response = wire_treasury::FeesTokenResponse {
+        token: token.to_string(),
+        total,
+    };
     Ok(Json(response))
 }
