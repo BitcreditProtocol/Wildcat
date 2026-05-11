@@ -233,21 +233,20 @@ mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockWildcatClient};
     use bcr_common::core_tests;
-    use bcr_common::wire::attestation::IssuanceAttestation;
-    use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use cashu::Amount;
-    use std::str::FromStr;
 
-    fn dummy_attestation() -> IssuanceAttestation {
+    fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
         let kp = core_tests::generate_random_keypair();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        IssuanceAttestation {
+        bcr_common::wire::attestation::IssuanceAttestation {
             beta_id: kp.public_key(),
             fp_digest: [0u8; 32],
             coords_mac: [0u8; 32],
             signature,
         }
     }
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
+    use cashu::Amount;
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn new_onchain_mintop() {

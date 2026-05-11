@@ -8,20 +8,10 @@ use bcr_common::{
     },
     client::admin::core::Client as CoreClient,
     core_tests,
-    wire::{attestation as wire_attestation, keys as wire_keys},
+    wire::keys as wire_keys,
 };
+use bcr_wdc_core_service::test_utils::dummy_attestation;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-
-fn dummy_attestation() -> wire_attestation::IssuanceAttestation {
-    let kp = core_tests::generate_random_keypair();
-    let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-    wire_attestation::IssuanceAttestation {
-        beta_id: kp.public_key(),
-        fp_digest: [0u8; 32],
-        coords_mac: [0u8; 32],
-        signature,
-    }
-}
 // ----- local imports
 
 // ----- end imports

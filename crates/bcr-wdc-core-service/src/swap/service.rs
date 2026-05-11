@@ -168,12 +168,14 @@ impl Service {
                     ))
                 })?;
         }
-        // verify Beta-issued attestation before any signing
-        self.clowder
-            .verify_attestation(&self.alpha_id, &inputs, &attestation)
-            .await?;
-        // verify inputs
-        let kinfos = sign_service.list_kinfos().await?;
+        // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
+        let (verify_res, kinfos_res) = tokio::join!(
+            self.clowder
+                .verify_attestation(&self.alpha_id, &inputs, &attestation),
+            sign_service.list_kinfos(),
+        );
+        verify_res?;
+        let kinfos = kinfos_res?;
         swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
         sign_service.verify_proofs(&inputs).await?;
         // generate signatures
@@ -216,29 +218,14 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::dummy_attestation;
     use crate::{
         persistence::{MockCommitmentRepository, MockProofRepository},
         swap::{MockClowderClient, MockKeysService},
     };
-    use bcr_common::{
-        core_tests,
-        wire::attestation::{AttestationError, IssuanceAttestation},
-    };
+    use bcr_common::{core_tests, wire::attestation::AttestationError};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
 
-    fn dummy_attestation() -> IssuanceAttestation {
-        let kp = core_tests::generate_random_keypair();
-        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        IssuanceAttestation {
-            beta_id: kp.public_key(),
-            fp_digest: [0u8; 32],
-            coords_mac: [0u8; 32],
-            signature,
-        }
-    }
-
-    /// If attestation verification fails, swap must short-circuit before
-    /// signing or burning.
     #[tokio::test]
     async fn swap_rejects_when_attestation_invalid() {
         let mut clowder = MockClowderClient::new();
@@ -255,10 +242,8 @@ mod tests {
             .collect();
         let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
 
-        let proof_ys: Vec<cashu::PublicKey> =
-            proofs.iter().map(|p| p.y().unwrap()).collect();
-        let blind_bs: Vec<cashu::PublicKey> =
-            blinds.iter().map(|b| b.blinded_secret).collect();
+        let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let blind_bs: Vec<cashu::PublicKey> = blinds.iter().map(|b| b.blinded_secret).collect();
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
         commitments
             .expect_load()
@@ -270,7 +255,10 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Err(Error::Attestation(AttestationError::DigestMismatch)));
 
-        // Signing/insert/post must NOT be called when attestation fails.
+        // list_kinfos may run concurrently with verify_attestation; signing must not.
+        sign_service
+            .expect_list_kinfos()
+            .returning(|| Ok(std::collections::HashMap::new()));
         sign_service.expect_sign_blinds().times(0);
 
         let alpha_id = core_tests::generate_random_keypair().public_key();

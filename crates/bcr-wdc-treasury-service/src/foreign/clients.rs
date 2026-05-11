@@ -198,7 +198,10 @@ impl ForeignClient for MintClient {
                 inputs: fps,
             })
             .await?;
-        let signatures = self.cl.swap(inputs, outputs, commitment, attestation).await?;
+        let signatures = self
+            .cl
+            .swap(inputs, outputs, commitment, attestation)
+            .await?;
         Ok(signatures)
     }
 

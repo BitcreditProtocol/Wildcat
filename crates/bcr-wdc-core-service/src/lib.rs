@@ -32,7 +32,6 @@ pub struct AppConfig {
     commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
     clowder_rest_url: client::Url,
-    alpha_id: bitcoin::secp256k1::PublicKey,
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
@@ -53,7 +52,6 @@ impl AppController {
             commitments,
             clowder_url,
             clowder_rest_url,
-            alpha_id,
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
@@ -87,6 +85,12 @@ impl AppController {
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
         let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
+        let info = clowder_rest
+            .get_info()
+            .await
+            .expect("Failed to get clowder info");
+        let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+            .expect("secp256k1::PublicKey == cashu::PublicKey");
         let clowder_for_swap = swap::ClowderCl {
             nats: clowder_cl,
             rest: clowder_rest,
@@ -179,6 +183,17 @@ pub mod test_utils {
         }
     }
 
+    pub fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
+        let kp = mint_kp();
+        let signature = secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        bcr_common::wire::attestation::IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
+        }
+    }
+
     pub fn mint_kp() -> secp256k1::Keypair {
         let sk = secp256k1::SecretKey::from_str(
             "0000000000000000000000000000000000000000000000000000000000000001",
@@ -207,24 +222,14 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::dummy_attestation;
     use bcr_common::{
         cashu,
         core::signature::schnorr_verify_b64,
         core_tests,
-        wire::{attestation as wire_attestation, keys as wire_keys, swap as wire_swap},
+        wire::{keys as wire_keys, swap as wire_swap},
     };
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-
-    fn dummy_attestation() -> wire_attestation::IssuanceAttestation {
-        let kp = core_tests::generate_random_keypair();
-        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        wire_attestation::IssuanceAttestation {
-            beta_id: kp.public_key(),
-            fp_digest: [0u8; 32],
-            coords_mac: [0u8; 32],
-            signature,
-        }
-    }
 
     #[tokio::test]
     async fn commit_swap() {
@@ -315,7 +320,14 @@ mod tests {
 
         controller
             .swap
-            .swap(&signsrvc, proofs, blinds, commitment, dummy_attestation(), now)
+            .swap(
+                &signsrvc,
+                proofs,
+                blinds,
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await
             .unwrap();
     }

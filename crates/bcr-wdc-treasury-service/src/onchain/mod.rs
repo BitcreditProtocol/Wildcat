@@ -62,11 +62,11 @@ pub trait ClowderClient: Send + Sync {
     async fn sign_onchain_mint_response(
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
-    ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    ) -> Result<(String, bitcoin::secp256k1::schnorr::Signature)>;
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
-    ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    ) -> Result<(String, bitcoin::secp256k1::schnorr::Signature)>;
     async fn verify_onchain_address(
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
@@ -77,13 +77,13 @@ pub trait ClowderClient: Send + Sync {
         amount: bitcoin::Amount,
         address: bitcoin::Address,
         inputs: Vec<cashu::Proof>,
-        commitment: secp256k1::schnorr::Signature,
+        commitment: bitcoin::secp256k1::schnorr::Signature,
         attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
-        mint_id: secp256k1::PublicKey,
+        mint_id: bitcoin::secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
@@ -130,7 +130,7 @@ pub struct OnchainMeltOperation {
     pub expiry: TStamp,
     pub fees: bitcoin::Amount,
     pub wallet_key: cashu::PublicKey,
-    pub commitment: secp256k1::schnorr::Signature,
+    pub commitment: bitcoin::secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }
 

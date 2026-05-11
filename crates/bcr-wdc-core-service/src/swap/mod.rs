@@ -9,11 +9,10 @@ use bcr_common::{
     core::signature,
     wire::{
         attestation::{self as wire_attestation, IssuanceAttestation},
-        clowder as wire_clowder,
-        swap as wire_swap,
+        clowder as wire_clowder, swap as wire_swap,
     },
 };
-use bitcoin::secp256k1::{PublicKey, schnorr};
+use bitcoin::secp256k1::{schnorr, PublicKey};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -151,37 +150,28 @@ impl ClowderClient for ClowderCl {
         inputs: &[cashu::Proof],
         attestation: &IssuanceAttestation,
     ) -> Result<()> {
-        let betas = self
-            .rest
-            .get_betas()
-            .await
-            .map_err(|e| Error::Internal(format!("failed to fetch beta cohort: {e}")))?;
+        let betas = self.rest.get_betas().await?;
+        wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
+            betas.mints.iter().any(|b| &b.node_id == id)
+        })?;
         let beta = betas
             .mints
             .iter()
             .find(|b| b.node_id == attestation.beta_id)
-            .ok_or(Error::Attestation(
-                wire_attestation::AttestationError::UnknownBeta(attestation.beta_id),
-            ))?;
-        wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
-            id == &attestation.beta_id
-        })
-        .map_err(Error::Attestation)?;
+            .expect("verify_attestation_local already checked beta membership");
         let beta_cl = clwdr_rest::Client::new(beta.clowder.clone());
         let response = beta_cl
             .post_attest_verify(&wire_attestation::AttestationVerifyRequest {
                 alpha_id: *alpha_id,
                 attestation: attestation.clone(),
             })
-            .await
-            .map_err(|e| Error::Internal(format!("attest verify call failed: {e}")))?;
+            .await?;
         wire_attestation::verify_attestation_response(
             alpha_id,
             &attestation.beta_id,
             attestation,
             &response,
-        )
-        .map_err(Error::Attestation)?;
+        )?;
         Ok(())
     }
 }

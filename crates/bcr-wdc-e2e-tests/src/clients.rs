@@ -84,6 +84,17 @@ impl RestClient {
         let resp = req.send().await?.error_for_status()?;
         Ok(resp.json().await?)
     }
+
+    pub async fn post<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        url: Url,
+        body: &B,
+    ) -> Result<T> {
+        let req = self.http.post(url).json(body);
+        let req = self.authorize(req);
+        let resp = req.send().await?.error_for_status()?;
+        Ok(resp.json().await?)
+    }
 }
 
 impl Default for RestClient {
@@ -169,7 +180,6 @@ impl Service<UserService> {
         self.client.get(url).await.unwrap()
     }
 
-    /// GET v1/wildcat — used to discover the local Alpha's `clowder_node_id`.
     pub async fn wildcat_info(&self) -> bcr_common::wire::info::WildcatInfo {
         let url = self.url("v1/wildcat");
         self.client.get(url).await.unwrap()
@@ -180,17 +190,7 @@ impl Service<UserService> {
         request: wire_swap::SwapCommitmentRequest,
     ) -> wire_swap::SwapCommitmentResponse {
         let url = self.url("v1/swap/commitment");
-        let resp = self
-            .client
-            .http
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap();
-        resp.json().await.unwrap()
+        self.client.post(url, &request).await.unwrap()
     }
 
     pub async fn swap(
@@ -206,8 +206,6 @@ impl Service<UserService> {
             .unwrap()
     }
 
-    /// Acquire a Beta-issued attestation for the given inputs by hitting
-    /// `POST /v1/attest/issuance` (Envoy-routed to the local Clowder node).
     pub async fn acquire_attestation(
         &self,
         alpha_id: bitcoin::secp256k1::PublicKey,
@@ -220,18 +218,7 @@ impl Service<UserService> {
             .collect();
         let request = wire_att::IssuanceAttestationRequest { alpha_id, inputs };
         let url = self.url("v1/attest/issuance");
-        self.client
-            .http
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap()
-            .json()
-            .await
-            .unwrap()
+        self.client.post(url, &request).await.unwrap()
     }
 }
 

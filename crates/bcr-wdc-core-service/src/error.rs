@@ -30,6 +30,8 @@ pub enum Error {
     BorshVerify(#[from] signature::BorshMsgSignatureError),
     #[error("clowder client {0}")]
     ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
+    #[error("clowder rest client {0}")]
+    ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut00 error: {0}")]
@@ -71,6 +73,7 @@ impl axum::response::IntoResponse for Error {
             Error::SignVerifyEcash(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::BorshVerify(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CdkDhke(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::CDKNUT00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
