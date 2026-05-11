@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use bcr_common::{
+    cashu,
     client::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
         ebill::Client as EbClient, treasury as cl_treasury, Url as ClientUrl,
@@ -22,6 +23,7 @@ mod error;
 mod foreign;
 mod onchain;
 mod persistence;
+mod vault;
 mod web;
 // ----- local imports
 
@@ -34,6 +36,7 @@ pub struct AppConfig {
     onchain: OnchainConfig,
     foreign: ForeignConfig,
     ebill: EbillConfig,
+    vault: VaultConfig,
     core_url: ClientUrl,
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
@@ -61,11 +64,17 @@ pub struct EbillConfig {
     db: surreal::DBConnConfig,
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct VaultConfig {
+    db: surreal::DBConnConfig,
+}
+
 #[derive(Clone, FromRef)]
 pub struct AppController {
     ebill: Arc<ebill::Service>,
     onchain: Arc<onchain::Service>,
     foreign: Arc<foreign::Service>,
+    vault: Arc<vault::Service>,
     dev: Arc<devmode::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
 }
@@ -75,24 +84,12 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         onchain,
         foreign,
         ebill,
+        vault,
         core_url,
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
     } = cfg;
-    let OnchainConfig {
-        db: onchain_repo,
-        monitor_interval_sec,
-        quote_expiry_seconds,
-        min_confirmations,
-        min_melt_threshold,
-        min_mint_threshold,
-    } = onchain;
-    let EbillConfig { db: mintops } = ebill;
-    let ForeignConfig {
-        online_repo,
-        offline_repo,
-    } = foreign;
 
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
@@ -103,21 +100,25 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
 
-    // repositories
+    let info = clowder_client
+        .get_info()
+        .await
+        .expect("Failed to get clowder info");
+    let my_pk = secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+        .expect("secp256k1::PublicKey == cashu::PublicKey");
+
+    // onChain
+    let OnchainConfig {
+        db: onchain_repo,
+        monitor_interval_sec,
+        quote_expiry_seconds,
+        min_confirmations,
+        min_melt_threshold,
+        min_mint_threshold,
+    } = onchain;
     let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
         .await
         .expect("Failed to create repository");
-    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
-        .await
-        .expect("Failed to create mintops repository");
-    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
-        .await
-        .expect("Failed to create foreign online repository");
-    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
-        .await
-        .expect("Failed to create foreign offline repository");
-
-    // onChain
     let clowder_cl = onchain::ClowderCl {
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
@@ -136,6 +137,10 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // eBill
+    let EbillConfig { db: mintops } = ebill;
+    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
+        .await
+        .expect("Failed to create ebill repository");
     let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
@@ -151,25 +156,29 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // foreign
-    let info = clowder_client
-        .get_info()
+    let ForeignConfig {
+        online_repo,
+        offline_repo,
+    } = foreign;
+    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
         .await
-        .expect("Failed to get clowder info");
-    let my_pk = secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
-        .expect("secp256k1::PublicKey == cashu::PublicKey");
+        .expect("Failed to create foreign online repository");
+    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
+        .await
+        .expect("Failed to create foreign offline repository");
+    let onlinerepo = Arc::new(foreign_online_repo);
+    let offlinerepo = Arc::new(foreign_offline_repo);
     let clowder = Arc::new(foreign::clients::ClowderCl {
         clwdr: clowder_client.clone(),
     });
     let factory = Arc::new(foreign::clients::MintClientFactory { my_pk });
-    let crsatonlinerepo = Arc::new(foreign_online_repo);
-    let crsatofflinerepo = Arc::new(foreign_offline_repo);
-    let crsatcore = Arc::new(foreign::clients::CoreCl {
+    let foreigncore = Arc::new(foreign::clients::CoreCl {
         core: core_client.clone(),
     });
     let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
     let settler = {
-        let online: Arc<dyn foreign::OnlineRepository> = crsatonlinerepo.clone();
-        let offline: Arc<dyn foreign::OfflineRepository> = crsatofflinerepo.clone();
+        let online: Arc<dyn foreign::OnlineRepository> = onlinerepo.clone();
+        let offline: Arc<dyn foreign::OfflineRepository> = offlinerepo.clone();
         let clwdr: Arc<dyn foreign::ClowderClient> = clowder.clone();
         let fctry: Arc<dyn foreign::MintClientFactory> = factory.clone();
         Box::new(foreign::settle::Handler::new(
@@ -177,14 +186,35 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         ))
     };
     let foreign = foreign::Service {
-        online_repo: crsatonlinerepo,
-        offline_repo: crsatofflinerepo,
-        keys: crsatcore.clone(),
+        online_repo: onlinerepo,
+        offline_repo: offlinerepo,
+        keys: foreigncore.clone(),
         clowder: clowder.clone(),
         mint_factory: factory.clone(),
         settler,
     };
 
+    // vault
+    let VaultConfig { db } = vault;
+    let vault_repo = persistence::surreal::DBVault::new(db)
+        .await
+        .expect("Failed to create vault repository");
+    let wdccl = vault::WildcatCl {
+        core: core_client.clone(),
+    };
+    let url_response = clowder_client
+        .get_mint_url(&my_pk)
+        .await
+        .expect("Failed to get mint url");
+    let my_url = cashu::MintUrl::from_str(url_response.mint_url.as_str())
+        .expect("cashu::MintUrl == reqwest::Url");
+    let vault = vault::Service {
+        repo: Box::new(vault_repo),
+        wdc_cl: Box::new(wdccl),
+        my_url,
+    };
+
+    // devmode
     let dev = devmode::Service {
         crcore: core_client.clone(),
     };
@@ -192,6 +222,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         ebill: Arc::new(ebill),
         onchain: Arc::new(onchain),
         foreign: Arc::new(foreign),
+        vault: Arc::new(vault),
         dev: Arc::new(dev),
         clwdr_nats: clowder_nats_client,
     };
@@ -254,6 +285,14 @@ pub fn routes(app: AppController) -> Router {
         .route(
             cl_treasury::admin_ep::EBILL_MINTOP_STATUS_V1,
             get(admin::ebill_mintop_status),
+        )
+        .route(
+            cl_treasury::admin_ep::FEES_STORE_PROOFS_V1,
+            post(admin::store_fees_proofs),
+        )
+        .route(
+            cl_treasury::admin_ep::FEES_TOKEN_V1,
+            get(admin::generate_fees_token),
         );
     admin.merge(web).with_state(app)
 }

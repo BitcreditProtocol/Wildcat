@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 // ----- standard library imports
 // ----- extra library imports
 use anyhow::anyhow;
@@ -14,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    foreign, onchain,
+    foreign, onchain, vault,
 };
 
 // ----- end imports
@@ -253,7 +255,7 @@ impl ebill::Repository for DBEbill {
 
     async fn mint_load(&self, uid: Uuid) -> Result<ebill::MintOperation> {
         let rid = RecordId::from_table_key(Self::MINT_OPS, uid);
-        let res: SurrealResult<Option<EbillMintOpDBEntry>> = self.db.select(rid.clone()).await;
+        let res: SurrealResult<Option<EbillMintOpDBEntry>> = self.db.select(rid).await;
         match res {
             Ok(Some(entry)) => Ok(ebill::MintOperation::from(entry)),
             Ok(None) => Err(Error::ResourceNotFound(uid.to_string())),
@@ -590,12 +592,107 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
 }
 
+/////////////////////////////////////////////////////////////////////////////// Vault DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct VaultProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+}
+impl std::convert::From<VaultProofDBEntry> for cashu::Proof {
+    fn from(entry: VaultProofDBEntry) -> Self {
+        entry.proof
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    db: Surreal<Any>,
+}
+
+impl DBVault {
+    const PROOFS_TABLE: &'static str = "vault_proofs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self { db: db_connection })
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut entries: Vec<VaultProofDBEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y()?;
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry = VaultProofDBEntry { id: rid, proof };
+            entries.push(entry);
+        }
+        let _: Vec<VaultProofDBEntry> = self
+            .db
+            .insert(Self::PROOFS_TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let mut proofs = Vec::with_capacity(ys.len());
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry: Option<VaultProofDBEntry> = self
+                .db
+                .select(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            if let Some(entry) = entry {
+                proofs.push(entry.proof);
+            }
+        }
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let rids: Vec<RecordId> = self
+            .db
+            .query("SELECT VALUE id FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(rids.len());
+        for rid in rids {
+            let y = cashu::PublicKey::from_str(&rid.key().to_string())
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let _: Option<VaultProofDBEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         ebill::Repository as CreditRepo, foreign::OfflineRepository,
-        onchain::Repository as DebitRepo,
+        onchain::Repository as DebitRepo, vault::Repository as VaultRepo,
     };
     use bcr_common::core_tests;
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
@@ -840,5 +937,74 @@ mod tests {
         let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
         assert!(rids.contains(&op1.uid));
         assert!(rids.contains(&op2.uid));
+    }
+
+    async fn init_vault_mem_db() -> DBVault {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBVault { db: sdb }
+    }
+
+    fn generate_test_proofs(n: usize) -> Vec<cashu::Proof> {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = vec![cashu::Amount::from(8u64); n];
+        core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+    }
+
+    #[tokio::test]
+    async fn vault_store_load_proofs() {
+        let db = init_vault_mem_db().await;
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let loaded = db.load_proofs(vec![]).await.unwrap();
+        assert!(loaded.is_empty());
+        let loaded = db.load_proofs(ys).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+        for proof in &proofs {
+            assert!(loaded.contains(proof));
+        }
+    }
+
+    #[tokio::test]
+    async fn vault_load_proofs_partial() {
+        let db = init_vault_mem_db().await;
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let mut all_ys = ys.clone();
+        let extra_y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        all_ys.push(extra_y);
+        let loaded = db.load_proofs(all_ys).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn vault_list_ys() {
+        let db = init_vault_mem_db().await;
+        let ys = db.list_ys().await.unwrap();
+        assert!(ys.is_empty());
+        let proofs = generate_test_proofs(2);
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let ys = db.list_ys().await.unwrap();
+        assert_eq!(ys.len(), 2);
+        for proof in &proofs {
+            assert!(ys.contains(&proof.y().unwrap()));
+        }
+    }
+
+    #[tokio::test]
+    async fn vault_delete_proofs() {
+        let db = init_vault_mem_db().await;
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let to_delete = &ys[..2];
+        db.delete_proofs(to_delete).await.unwrap();
+        let remaining_ys = db.list_ys().await.unwrap();
+        assert_eq!(remaining_ys.len(), 1);
+        assert!(remaining_ys.contains(&ys[2]));
     }
 }

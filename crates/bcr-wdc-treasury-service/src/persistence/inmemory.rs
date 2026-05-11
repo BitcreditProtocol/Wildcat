@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    foreign,
+    foreign, vault,
 };
 
 // ----- end imports
@@ -194,6 +194,45 @@ impl ebill::Repository for EbillMintOpMap {
             )));
         }
         operation.minted = new;
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Default, Debug)]
+pub struct VaultMap {
+    proofs: Arc<Mutex<HashMap<cashu::PublicKey, cashu::Proof>>>,
+}
+
+#[async_trait]
+impl vault::Repository for VaultMap {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for proof in proofs {
+            let y = proof.y()?;
+            locked.insert(y, proof);
+        }
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(ys
+            .into_iter()
+            .filter_map(|y| locked.get(&y).cloned())
+            .collect())
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(locked.keys().cloned().collect())
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for y in ys {
+            locked.remove(y);
+        }
         Ok(())
     }
 }
