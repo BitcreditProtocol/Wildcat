@@ -5,8 +5,7 @@ use bcr_common::{
     cashu::{self, MintVersion},
     client::treasury::Client as TreasuryClient,
     wire::{
-        clowder::{self as wire_clowder, messages},
-        exchange as wire_exchange,
+        clowder as wire_clowder, exchange as wire_exchange,
         info::{VersionInfo, WildcatInfo},
         swap as wire_swap,
     },
@@ -123,12 +122,12 @@ pub async fn post_swap(
         .core_client
         .swap(inputs.clone(), outputs.clone(), commitment)
         .await?;
-    let req = messages::SwapRequest {
+    let req = wire_clowder::SwapRequest {
         proofs: inputs,
         blinds: outputs,
         commitment,
     };
-    let resp = messages::SwapResponse {
+    let resp = wire_clowder::SwapResponse {
         signatures: signatures.clone(),
     };
     ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
@@ -159,11 +158,11 @@ pub async fn post_online_exchange(
     if let Err(e) = ctrl
         .clwdr_stream_client
         .mint_foreign_ecash(
-            messages::MintForeignEcashRequest {
+            wire_clowder::MintForeignEcashRequest {
                 proofs: stream_proofs,
                 exchange_path: stream_exchange_path,
             },
-            messages::MintForeignEcashResponse {
+            wire_clowder::MintForeignEcashResponse {
                 proofs: proofs.clone(),
             },
         )
@@ -205,12 +204,12 @@ pub async fn post_offline_exchange(
     if let Err(e) = ctrl
         .clwdr_stream_client
         .mint_offline_foreign_ecash(
-            messages::MintForeignOfflineEcashRequest {
+            wire_clowder::MintForeignOfflineEcashRequest {
                 fingerprints: stream_fingerprints,
                 hashes: stream_hashes,
                 wallet_pk,
             },
-            messages::MintForeignOfflineEcashResponse {
+            wire_clowder::MintForeignOfflineEcashResponse {
                 proofs: payload.proofs,
             },
         )

@@ -7,7 +7,7 @@ use bcr_common::{
     client::admin::clowder::Client as ClowderRestClient,
     clwdr_client::ClowderNatsClient,
     core::signature,
-    wire::{clowder::messages as clowder_messages, melt as wire_melt, mint as wire_mint},
+    wire::{clowder as wire_clowder, melt as wire_melt, mint as wire_mint},
 };
 use uuid::Uuid;
 // ----- local imports
@@ -28,8 +28,8 @@ pub struct ClowderCl {
 impl ClowderClient for ClowderCl {
     async fn request_to_pay_bill(
         &self,
-        req: clowder_messages::RequestToPayEbillRequest,
-        resp: clowder_messages::RequestToPayEbillResponse,
+        req: wire_clowder::RequestToPayEbillRequest,
+        resp: wire_clowder::RequestToPayEbillResponse,
     ) -> Result<()> {
         self.nats.request_to_pay_bill(req, resp).await?;
         Ok(())
@@ -72,12 +72,12 @@ impl ClowderClient for ClowderCl {
         let output_amount = signatures
             .iter()
             .fold(cashu::Amount::ZERO, |acc, sig| acc + sig.amount);
-        let request = clowder_messages::MintOnchainRequest {
+        let request = wire_clowder::MintOnchainRequest {
             quote_id: qid,
             keyset_id: kid,
             amount: output_amount,
         };
-        let response = clowder_messages::MintOnchainResponse { signatures };
+        let response = wire_clowder::MintOnchainResponse { signatures };
         let response = self.nats.mint_onchain(request, response).await?;
         Ok(response.signatures)
     }
@@ -86,7 +86,7 @@ impl ClowderClient for ClowderCl {
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
-        let request = clowder_messages::MintQuoteOnchainRequest {
+        let request = wire_clowder::MintQuoteOnchainRequest {
             quote_id: msg.quote,
             address: msg.address.clone(),
             payment_amount: msg.payment_amount,
@@ -103,7 +103,7 @@ impl ClowderClient for ClowderCl {
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
-        let request = clowder_messages::MeltQuoteOnchainRequest {
+        let request = wire_clowder::MeltQuoteOnchainRequest {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
@@ -133,7 +133,7 @@ impl ClowderClient for ClowderCl {
         inputs: Vec<cashu::Proof>,
         commitment: secp256k1::schnorr::Signature,
     ) -> Result<wire_melt::MeltTx> {
-        let request = clowder_messages::MeltOnchainRequest {
+        let request = wire_clowder::MeltOnchainRequest {
             quote: qid,
             address: address.into_unchecked(),
             amount,

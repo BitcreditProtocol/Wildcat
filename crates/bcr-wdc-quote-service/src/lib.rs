@@ -12,7 +12,7 @@ use bcr_common::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
         ebill::Client as EBillClient, quote, treasury::Client as TreasuryClient, Url as ClientUrl,
     },
-    wire::clowder::messages as clwdr_msgs,
+    wire::clowder as wire_clowder,
 };
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules
@@ -66,7 +66,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         .await
         .expect("Failed to get Clowder ID")
         .node_id;
-    let clwdr_msgs::MintUrlResponse { mint_url, .. } = clwdr_cl
+    let wire_clowder::MintUrlResponse { mint_url, .. } = clwdr_cl
         .get_mint_url(&public_key)
         .await
         .expect("Failed to get mint URL");

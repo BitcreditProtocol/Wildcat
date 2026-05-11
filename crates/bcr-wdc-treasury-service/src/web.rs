@@ -5,8 +5,7 @@ use axum::extract::{Json, State};
 use bcr_common::{
     cashu,
     wire::{
-        clowder::messages as clowder_messages, exchange as wire_exchange, melt as wire_melt,
-        mint as wire_mint,
+        clowder as wire_clowder, exchange as wire_exchange, melt as wire_melt, mint as wire_mint,
     },
 };
 use bitcoin::base64::prelude::*;
@@ -44,7 +43,7 @@ pub async fn offline_exchange(
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;
-    let request = clowder_messages::OfflineExchangeSignRequest {
+    let request = wire_clowder::OfflineExchangeSignRequest {
         payload: serialized.clone(),
     };
     let signature = ctrl

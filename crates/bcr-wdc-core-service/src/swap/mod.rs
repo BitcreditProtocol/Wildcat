@@ -6,7 +6,7 @@ use bcr_common::{
     cashu,
     clwdr_client::ClowderNatsClient,
     core::signature,
-    wire::{clowder::messages as wire_clowder, swap as wire_swap},
+    wire::{clowder as wire_clowder, swap as wire_swap},
 };
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
