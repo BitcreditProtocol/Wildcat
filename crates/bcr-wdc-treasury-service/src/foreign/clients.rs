@@ -5,10 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
-    wire::{
-        clowder::{self as wire_clowder, messages as clwdr_msgs},
-        keys as wire_keys,
-    },
+    wire::{clowder as wire_clowder, keys as wire_keys},
 };
 // ----- local imports
 use crate::{
@@ -100,7 +97,7 @@ impl foreign::ClowderClient for ClowderCl {
         });
         let fps_len = fps.len();
         let fps: Vec<wire_keys::ProofFingerprint> = fps.into_iter().collect();
-        let clwdr_msgs::IntermintOriginResponse {
+        let wire_clowder::IntermintOriginResponse {
             node_id: origin_id,
             mint_url: origin_url,
         } = self.clwdr.post_fingerprints_origin(fps.clone()).await?;
@@ -114,7 +111,7 @@ impl foreign::ClowderClient for ClowderCl {
                 "currently not a substitute",
             )));
         }
-        let clwdr_msgs::ValidFingerprints {
+        let wire_clowder::ValidFingerprints {
             valid_proofs,
             amount,
         } = self.clwdr.post_verify_fingerprints(&origin_id, fps).await?;

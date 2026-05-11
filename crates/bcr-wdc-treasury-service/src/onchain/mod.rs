@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    wire::{clowder::messages as wire_clowder, melt as wire_melt, mint as wire_mint},
+    wire::{clowder as wire_clowder, melt as wire_melt, mint as wire_mint},
 };
 use uuid::Uuid;
 // ----- local modules

@@ -39,13 +39,13 @@ impl ebill::ClowderClient for ClwdrCl {
         bill_id: core::BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
-        let request = wire_clowder::messages::MintEbillRequest {
+        let request = wire_clowder::MintEbillRequest {
             keyset_id,
             amount,
             bill_id,
             quote_id,
         };
-        let response = wire_clowder::messages::MintEbillResponse { signatures };
+        let response = wire_clowder::MintEbillResponse { signatures };
         let res = self.nats.mint_bill(request, response).await?;
         Ok(res.signatures)
     }
@@ -58,14 +58,14 @@ impl ebill::ClowderClient for ClwdrCl {
         previous_block_hash: bitcoin::hashes::sha256::Hash,
         amount: bitcoin::Amount,
     ) -> Result<()> {
-        let req = wire_clowder::messages::RequestToPayEbillRequest {
+        let req = wire_clowder::RequestToPayEbillRequest {
             bill_id: bid,
             payment_address: payment_address.into_unchecked(),
             block_id,
             previous_block_hash,
             amount,
         };
-        let resp = wire_clowder::messages::RequestToPayEbillResponse {};
+        let resp = wire_clowder::RequestToPayEbillResponse {};
         let _resp = self.nats.request_to_pay_bill(req, resp).await?;
         Ok(())
     }
