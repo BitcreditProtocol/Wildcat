@@ -13,11 +13,8 @@ use bcr_common::{
     },
     clwdr_client::ClowderNatsClient,
 };
-use bcr_wdc_utils::surreal;
 // ----- local modules
-mod commitment;
 mod error;
-mod persistence;
 mod web;
 // ----- local imports
 use error::Result;
@@ -32,13 +29,6 @@ pub struct AppConfig {
     treasury_client_url: bcr_common::client::Url,
     clwdr_nats_url: ClientUrl,
     clwdr_rest_url: ClientUrl,
-    commit_repo_cfg: surreal::DBConnConfig,
-    #[serde(default = "default_commitment_expiry_secs")]
-    commitment_expiry_secs: u64,
-}
-
-fn default_commitment_expiry_secs() -> u64 {
-    1200
 }
 
 #[derive(Clone, FromRef)]
@@ -47,7 +37,6 @@ pub struct AppController {
     treasury_client: bcr_common::client::treasury::Client,
     clwdr_stream_client: Arc<ClowderNatsClient>,
     clwdr_rest_client: Arc<clowder::Client>,
-    commit_srv: Arc<commitment::Service>,
     time_started: chrono::DateTime<chrono::Utc>,
 }
 
@@ -58,8 +47,6 @@ impl AppController {
             treasury_client_url,
             clwdr_nats_url,
             clwdr_rest_url,
-            commit_repo_cfg,
-            commitment_expiry_secs,
         } = cfg;
 
         let core_client = bcr_common::client::core::Client::new(core_client_url);
@@ -70,20 +57,12 @@ impl AppController {
                 .expect("failed to init clowder nats client"),
         );
         let clwdr_rest_client = Arc::new(clowder::Client::new(clwdr_rest_url));
-        let commit_repo = persistence::surreal::DBCommitments::new(commit_repo_cfg)
-            .await
-            .expect("failed to init commitment repo");
-        let commit_srv = Arc::new(commitment::Service {
-            repo: Box::new(commit_repo),
-            max_expiry: chrono::Duration::seconds(commitment_expiry_secs as i64),
-        });
 
         Self {
             core_client,
             treasury_client,
             clwdr_stream_client,
             clwdr_rest_client,
-            commit_srv,
             time_started: chrono::Utc::now(),
         }
     }
