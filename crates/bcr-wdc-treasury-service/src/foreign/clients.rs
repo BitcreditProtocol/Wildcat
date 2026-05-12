@@ -1,10 +1,11 @@
 // ----- standard library imports
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
+    clwdr_client::ClowderNatsClient,
     wire::{clowder as wire_clowder, keys as wire_keys},
 };
 // ----- local imports
@@ -42,27 +43,24 @@ impl foreign::KeysClient for CoreCl {
 
 ///--------------------------- ClowderCl
 pub struct ClowderCl {
-    pub clwdr: Arc<ClowderClient>,
+    pub rest: Arc<ClowderClient>,
+    pub stream: Arc<ClowderNatsClient>,
 }
 
 #[async_trait]
 impl foreign::ClowderClient for ClowderCl {
     async fn check_htlc_proofs(
         &self,
-        issuer: cashu::PublicKey,
+        issuer: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
-        let issuer_pk: &bitcoin::secp256k1::PublicKey = issuer.deref();
-        let response = self
-            .clwdr
-            .post_verify_proofs(*issuer_pk, proofs.clone())
-            .await?;
+        let response = self.rest.post_verify_proofs(issuer, proofs.clone()).await?;
         if response.valid_proofs != proofs {
             return Err(Error::InvalidInput(String::from(
                 "One or more proofs are invalid",
             )));
         }
-        let response = self.clwdr.post_validate_wallet_lock(&proofs).await?;
+        let response = self.rest.post_validate_wallet_lock(&proofs).await?;
         if !response.success {
             return Err(Error::InvalidInput(String::from(
                 "One or more proofs failed wallet lock validation",
@@ -72,19 +70,19 @@ impl foreign::ClowderClient for ClowderCl {
     }
 
     async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey> {
-        let my_cashu_pk = self.clwdr.get_info().await?.node_id;
+        let my_cashu_pk = self.rest.get_info().await?.node_id;
         let my_id = secp256k1::PublicKey::from_slice(&my_cashu_pk.to_bytes())
             .expect("secp256k1::PublicKey == cashu::PublicKey");
         Ok(my_id)
     }
 
     async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url> {
-        let response = self.clwdr.get_mint_url(pk).await?;
+        let response = self.rest.get_mint_url(pk).await?;
         Ok(response.mint_url)
     }
 
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>> {
-        let response = self.clwdr.post_sign_proofs(proofs).await?;
+        let response = self.rest.post_sign_proofs(proofs).await?;
         Ok(response.proofs)
     }
 
@@ -100,12 +98,12 @@ impl foreign::ClowderClient for ClowderCl {
         let wire_clowder::IntermintOriginResponse {
             node_id: origin_id,
             mint_url: origin_url,
-        } = self.clwdr.post_fingerprints_origin(fps.clone()).await?;
+        } = self.rest.post_fingerprints_origin(fps.clone()).await?;
         let wire_clowder::ConnectedMintResponse {
             node_id: substitute_id,
             ..
-        } = self.clwdr.get_substitute(&origin_id).await?;
-        let myself = self.clwdr.get_info().await?.node_id;
+        } = self.rest.get_substitute(&origin_id).await?;
+        let myself = self.rest.get_info().await?.node_id;
         if substitute_id != *myself {
             return Err(Error::InvalidInput(String::from(
                 "currently not a substitute",
@@ -114,7 +112,7 @@ impl foreign::ClowderClient for ClowderCl {
         let wire_clowder::ValidFingerprints {
             valid_proofs,
             amount,
-        } = self.clwdr.post_verify_fingerprints(&origin_id, fps).await?;
+        } = self.rest.post_verify_fingerprints(&origin_id, fps).await?;
         if valid_proofs.len() != fps_len || amount != input_amount {
             return Err(Error::InvalidInput(String::from(
                 "One or more fingerprints are invalid",
@@ -129,7 +127,7 @@ impl foreign::ClowderClient for ClowderCl {
         kid: &cashu::Id,
     ) -> Result<cashu::KeySetInfo> {
         let cashu::KeysetResponse { mut keysets } =
-            self.clwdr.get_keyset_info(alpha_pk, kid).await?;
+            self.rest.get_keyset_info(alpha_pk, kid).await?;
         if keysets.is_empty() {
             return Err(Error::InvalidInput(String::from(
                 "No keyset info found for given kid",
@@ -143,7 +141,7 @@ impl foreign::ClowderClient for ClowderCl {
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
     ) -> Result<cashu::KeySet> {
-        let cashu::KeysResponse { mut keysets } = self.clwdr.get_keyset(alpha_pk, kid).await?;
+        let cashu::KeysResponse { mut keysets } = self.rest.get_keyset(alpha_pk, kid).await?;
         if keysets.is_empty() {
             return Err(Error::InvalidInput(String::from(
                 "No keyset info found for given kid",
@@ -153,8 +151,24 @@ impl foreign::ClowderClient for ClowderCl {
     }
 
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
-        let response = self.clwdr.get_offline(&pk).await?;
+        let response = self.rest.get_offline(&pk).await?;
         Ok(response.offline)
+    }
+
+    async fn signal_online_exchange_event(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::Proof>,
+        path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>> {
+        let request = wire_clowder::MintForeignEcashRequest {
+            proofs: inputs,
+            exchange_path: path,
+        };
+        let response = wire_clowder::MintForeignEcashResponse { proofs: outputs };
+        let wire_clowder::MintForeignEcashResponse { proofs } =
+            self.stream.mint_foreign_ecash(request, response).await?;
+        Ok(proofs)
     }
 }
 

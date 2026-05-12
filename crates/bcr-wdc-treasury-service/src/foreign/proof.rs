@@ -40,7 +40,7 @@ pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, 
 /// - have same keyset_id, same htlc hash, same locktime
 /// - perform check_htlc_foreign_proof
 pub async fn check_htlc_foreign_proofs(
-    issuer: cashu::PublicKey,
+    issuer: secp256k1::PublicKey,
     proofs: &[cashu::Proof],
     mintcl: &dyn ForeignClient,
     clwdcl: &dyn ClowderClient,

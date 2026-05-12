@@ -95,9 +95,15 @@ pub trait ClowderClient: Send + Sync {
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
     async fn check_htlc_proofs(
         &self,
-        issuer: cashu::PublicKey,
+        issuer: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
+    async fn signal_online_exchange_event(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::Proof>,
+        path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
