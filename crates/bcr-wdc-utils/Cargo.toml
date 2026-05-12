@@ -7,7 +7,7 @@ build = "build.rs"
 
 
 [features]
-test-utils = ["rand"]
+test-utils = ["rand", "bcr-common/test-utils"]
 auth = ["reqwest/json"]
 
 
