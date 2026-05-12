@@ -115,7 +115,7 @@ impl std::convert::From<KeysDBEntry> for KeysetEntry {
 
 #[derive(Debug, Clone)]
 pub struct DBKeys {
-    db: Surreal<surrealdb::engine::any::Any>,
+    pub(in crate::persistence) db: Surreal<surrealdb::engine::any::Any>,
 }
 
 impl DBKeys {
@@ -287,7 +287,7 @@ impl std::convert::From<SignatureDBEntry> for cashu::BlindSignature {
 
 #[derive(Debug, Clone)]
 pub struct DBSignatures {
-    db: Surreal<surrealdb::engine::any::Any>,
+    pub(in crate::persistence) db: Surreal<surrealdb::engine::any::Any>,
 }
 
 impl DBSignatures {
@@ -329,16 +329,16 @@ impl persistence::SignaturesRepository for DBSignatures {
 
 ////////////////////////////////////////////////////////////////////// Proofs DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DBProof {
+pub struct ProofDBEntry {
     id: RecordId,
     kid: cashu::Id,
     secret: cashu::secret::Secret,
     c: cashu::PublicKey,
     witness: Option<cashu::Witness>,
 }
-fn convert_to_db(proof: &cashu::Proof, table: &str) -> Result<DBProof> {
+fn convert_to_db(proof: &cashu::Proof, table: &str) -> Result<ProofDBEntry> {
     let rid = proof_to_record_id(table, proof)?;
-    let dbentry = DBProof {
+    let dbentry = ProofDBEntry {
         id: rid,
         kid: proof.keyset_id,
         secret: proof.secret.clone(),
@@ -350,7 +350,7 @@ fn convert_to_db(proof: &cashu::Proof, table: &str) -> Result<DBProof> {
 
 #[derive(Debug, Clone)]
 pub struct DBProofs {
-    db: Surreal<surrealdb::engine::any::Any>,
+    pub(in crate::persistence) db: Surreal<surrealdb::engine::any::Any>,
 }
 
 impl DBProofs {
@@ -367,22 +367,22 @@ impl DBProofs {
 #[async_trait]
 impl persistence::ProofRepository for DBProofs {
     async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()> {
-        let mut entries: Vec<DBProof> = Vec::with_capacity(tokens.len());
+        let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         for tk in tokens {
             let db_entry = convert_to_db(tk, Self::TABLE)?;
             entries.push(db_entry);
         }
-        let _: Vec<DBProof> = self
-            .db
-            .insert(())
-            .content(entries)
-            .await
-            .map_err(|e| match e {
-                surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
-                    Error::InvalidInput(String::from("proofs already spent"))
-                }
-                _ => Error::ProofRepository(anyhow!(e)),
-            })?;
+        let _: Vec<ProofDBEntry> =
+            self.db
+                .insert(())
+                .content(entries)
+                .await
+                .map_err(|e| match e {
+                    surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
+                        Error::InvalidInput(String::from("proofs already spent"))
+                    }
+                    _ => Error::ProofRepository(anyhow!(e)),
+                })?;
         Ok(())
     }
 
@@ -400,7 +400,7 @@ impl persistence::ProofRepository for DBProofs {
 
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
         let rid = y_to_record_id(Self::TABLE, y);
-        let res: Option<DBProof> = self
+        let res: Option<ProofDBEntry> = self
             .db
             .select(rid)
             .await
@@ -437,7 +437,7 @@ struct CommitmentDBEntry {
 
 #[derive(Debug, Clone)]
 pub struct DBCommitments {
-    db: Surreal<Any>,
+    pub(in crate::persistence) db: Surreal<Any>,
 }
 
 impl DBCommitments {
@@ -541,453 +541,5 @@ impl persistence::CommitmentRepository for DBCommitments {
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bcr_common::core_tests;
-    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-    use bitcoin::{
-        key::rand,
-        secp256k1::{self as secp, schnorr},
-    };
-    use persistence::{
-        CommitmentRepository, KeysRepository, ProofRepository, SignaturesRepository,
-    };
-    use rand::Rng;
-
-    async fn init_keys_mem_db() -> DBKeys {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBKeys { db: sdb }
-    }
-
-    #[tokio::test]
-    async fn info() {
-        let db = init_keys_mem_db().await;
-        let (info, keyset) = core_tests::generate_random_ecash_keyset();
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-
-        let rinfo = db.info(info.id).await.unwrap().unwrap();
-        assert_eq!(rinfo, info);
-    }
-
-    #[tokio::test]
-    async fn list_info() {
-        let db = init_keys_mem_db().await;
-        {
-            let (info, keyset) = core_tests::generate_random_ecash_keyset();
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        {
-            let (info, keyset) = core_tests::generate_random_ecash_keyset();
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn list_info_with_unit() {
-        let db = init_keys_mem_db().await;
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.unit = cashu::CurrencyUnit::Sat;
-            info.final_expiry = Some(10);
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.unit = cashu::CurrencyUnit::Usd;
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-
-        let rinfos = db
-            .list_info(Some(cashu::CurrencyUnit::Sat), None, None)
-            .await
-            .unwrap();
-        assert_eq!(rinfos.len(), 1);
-        assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Sat);
-    }
-
-    #[tokio::test]
-    async fn list_info_with_min_expiration() {
-        let db = init_keys_mem_db().await;
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.final_expiry = Some(10);
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.final_expiry = Some(20);
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-        let rinfos = db.list_info(None, Some(15), None).await.unwrap();
-        assert_eq!(rinfos.len(), 1);
-        assert_eq!(rinfos[0].final_expiry, Some(20));
-    }
-
-    #[tokio::test]
-    async fn list_info_with_max_expiration() {
-        let db = init_keys_mem_db().await;
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.final_expiry = Some(10);
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        {
-            let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-            info.final_expiry = Some(20);
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-        let rinfos = db.list_info(None, None, Some(15)).await.unwrap();
-        assert_eq!(rinfos.len(), 1);
-        assert_eq!(rinfos[0].final_expiry, Some(10));
-    }
-
-    #[tokio::test]
-    async fn keyset() {
-        let db = init_keys_mem_db().await;
-        let (info, keyset) = core_tests::generate_random_ecash_keyset();
-        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset.clone()), DBKeys::TABLE);
-        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-
-        let rkeys = db.keyset(info.id).await.unwrap().unwrap();
-        assert_eq!(rkeys, keyset);
-    }
-
-    #[tokio::test]
-    async fn list_keyset() {
-        let db = init_keys_mem_db().await;
-        {
-            let (info, keyset) = core_tests::generate_random_ecash_keyset();
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        {
-            let (info, keyset) = core_tests::generate_random_ecash_keyset();
-            let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-            let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-            let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        }
-        let rkeys = db.list_keyset().await.unwrap();
-        assert_eq!(rkeys.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn update_info() {
-        let db = init_keys_mem_db().await;
-        let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
-        let rid = RecordId::from_table_key(DBKeys::TABLE, info.id.to_string());
-        let dbkeys = convert_to_keysdbentry((info.clone(), keyset), DBKeys::TABLE);
-        let _r: Option<KeysDBEntry> = db.db.insert(&rid).content(dbkeys).await.unwrap();
-        info.active = false;
-        db.update_info(info.clone()).await.unwrap();
-        let updated_info = db.info(info.id).await.unwrap().unwrap();
-        assert!(!updated_info.active);
-    }
-
-    #[tokio::test]
-    async fn update_info_kid_not_present() {
-        let db = init_keys_mem_db().await;
-        let (info, _) = core_tests::generate_random_ecash_keyset();
-        let res = db.update_info(info).await;
-        assert!(res.is_err());
-    }
-
-    #[tokio::test]
-    #[ignore = "SurrealDB issue #6405"]
-    async fn infos_for_expiration_date() {
-        let db = init_keys_mem_db().await;
-        let mut keys0 = core_tests::generate_random_ecash_keyset();
-        keys0.0.final_expiry = Some(30);
-        keys0.1.final_expiry = keys0.0.final_expiry;
-        db.store(keys0).await.unwrap();
-        let mut keys1 = core_tests::generate_random_ecash_keyset();
-        keys1.0.final_expiry = Some(10);
-        keys1.1.final_expiry = keys1.0.final_expiry;
-        db.store(keys1).await.unwrap();
-        let res = db.infos_for_expiration_date(10).await.unwrap();
-        assert_eq!(res.len(), 2);
-        assert_eq!(res[0].final_expiry, Some(10));
-        assert_eq!(res[1].final_expiry, Some(30));
-        let res = db.infos_for_expiration_date(20).await.unwrap();
-        assert_eq!(res.len(), 1);
-        assert_eq!(res[0].final_expiry, Some(30));
-    }
-
-    async fn init_mem_dbsignatures() -> DBSignatures {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBSignatures { db: sdb }
-    }
-
-    #[tokio::test]
-    async fn dbsignatures_store() {
-        let db = init_mem_dbsignatures().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let amounts = [cashu::Amount::from(8u64)];
-
-        let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
-
-        db.store(y, signature).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn dbsignatures_store_same_signature_twice() {
-        let db = init_mem_dbsignatures().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let amounts = [cashu::Amount::from(8u64)];
-
-        let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
-
-        db.store(y, signature.clone()).await.unwrap();
-        let res = db.store(y, signature).await;
-        assert!(matches!(res, Err(Error::Conflict(_))));
-    }
-
-    async fn init_proofs_mem_db() -> DBProofs {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBProofs { db: sdb }
-    }
-
-    #[tokio::test]
-    async fn test_insert() {
-        let db = init_proofs_mem_db().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(
-            &keyset,
-            &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
-        );
-        db.insert(&proofs).await.unwrap();
-
-        let rid = proof_to_record_id(DBProofs::TABLE, &proofs[0]).expect("Failed to get record id");
-        let res: Option<DBProof> = db.db.select(rid).await.unwrap();
-        assert!(res.is_some());
-        assert_eq!(res.unwrap().secret, proofs[0].secret);
-
-        let rid = proof_to_record_id(DBProofs::TABLE, &proofs[1]).expect("Failed to get record id");
-        let res: Option<DBProof> = db.db.select(rid).await.unwrap();
-        assert!(res.is_some());
-        assert_eq!(res.unwrap().secret, proofs[1].secret);
-    }
-
-    #[tokio::test]
-    async fn test_insert_double_spent_all() {
-        let db = init_proofs_mem_db().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(
-            &keyset,
-            &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
-        );
-        db.insert(&proofs).await.unwrap();
-
-        let res = db.insert(&proofs).await;
-        assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
-    }
-
-    #[tokio::test]
-    async fn test_insert_double_spent_partial() {
-        let db = init_proofs_mem_db().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(
-            &keyset,
-            &[
-                cashu::Amount::from(16_u64),
-                cashu::Amount::from(8_u64),
-                cashu::Amount::from(4_u64),
-            ],
-        );
-        db.insert(&proofs[0..2]).await.unwrap();
-
-        let res = db.insert(&proofs[1..]).await;
-        assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
-    }
-
-    #[tokio::test]
-    async fn test_insert_double_spent_partial_still_valid() {
-        let db = init_proofs_mem_db().await;
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(
-            &keyset,
-            &[
-                cashu::Amount::from(16_u64),
-                cashu::Amount::from(8_u64),
-                cashu::Amount::from(4_u64),
-            ],
-        );
-        db.insert(&proofs[0..2]).await.unwrap();
-        let res = db.insert(&proofs[1..]).await;
-        assert!(res.is_err());
-        db.insert(&proofs[2..]).await.unwrap();
-    }
-
-    async fn init_commitments_mem_db() -> DBCommitments {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBCommitments { db: sdb }
-    }
-
-    fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
-        std::iter::repeat_with(|| {
-            cashu::PublicKey::from(bcr_common::core_tests::generate_random_keypair().public_key())
-        })
-        .take(sz)
-        .collect()
-    }
-
-    fn random_signature() -> schnorr::Signature {
-        let mut sl = [0; secp::constants::SCHNORR_SIGNATURE_SIZE];
-        rand::thread_rng().fill(&mut sl[..]);
-        schnorr::Signature::from_slice(&sl).unwrap()
-    }
-
-    fn random_wallet_key() -> cashu::PublicKey {
-        let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
-        cashu::PublicKey::from(pk)
-    }
-
-    #[tokio::test]
-    async fn store() {
-        let db = init_commitments_mem_db().await;
-        let mut inputs = random_cdk_pks(5);
-        let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
-        db.store(
-            inputs.clone(),
-            outputs.clone(),
-            tstamp,
-            random_wallet_key(),
-            signature,
-        )
-        .await
-        .unwrap();
-        inputs.swap(0, 1);
-        let signature = random_signature();
-        db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn contains_inputs() {
-        let db = init_commitments_mem_db().await;
-        let inputs = random_cdk_pks(5);
-        let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
-        db.store(
-            inputs.clone(),
-            outputs.clone(),
-            tstamp,
-            random_wallet_key(),
-            signature,
-        )
-        .await
-        .unwrap();
-        let mut tester = random_cdk_pks(2);
-        let result = db.contains_inputs(&tester).await;
-        assert!(!result.unwrap());
-        tester.push(inputs[0]);
-        let result = db.contains_inputs(&tester).await;
-        assert!(result.unwrap());
-        let result = db.contains_inputs(&inputs).await;
-        assert!(result.unwrap());
-        let result = db.contains_inputs(&outputs).await;
-        assert!(!result.unwrap());
-    }
-
-    #[tokio::test]
-    async fn contains_outputs() {
-        let db = init_commitments_mem_db().await;
-        let inputs = random_cdk_pks(5);
-        let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
-        db.store(
-            inputs.clone(),
-            outputs.clone(),
-            tstamp,
-            random_wallet_key(),
-            signature,
-        )
-        .await
-        .unwrap();
-        let mut tester = random_cdk_pks(2);
-        let result = db.contains_outputs(&tester).await;
-        assert!(!result.unwrap());
-        tester.push(outputs[0]);
-        let result = db.contains_outputs(&tester).await;
-        assert!(result.unwrap());
-        let result = db.contains_outputs(&outputs).await;
-        assert!(result.unwrap());
-        let result = db.contains_outputs(&inputs).await;
-        assert!(!result.unwrap());
-    }
-
-    #[tokio::test]
-    async fn load() {
-        let db = init_commitments_mem_db().await;
-        let inputs = random_cdk_pks(5);
-        let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
-        db.store(
-            inputs.clone(),
-            outputs.clone(),
-            tstamp,
-            random_wallet_key(),
-            signature,
-        )
-        .await
-        .unwrap();
-        let result = db.load(&signature).await.unwrap();
-        assert_eq!(result.0, inputs);
-        assert_eq!(result.1, outputs);
-        assert_eq!(result.2, tstamp)
     }
 }
