@@ -20,14 +20,12 @@ pub async fn online_exchange(
     State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::OnlineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
-    tracing::debug!("Received request to online exchange");
+    let wire_exchange::OnlineExchangeRequest {
+        proofs,
+        exchange_path,
+    } = request;
 
-    let exchange_path: Vec<cashu::PublicKey> = request
-        .exchange_path
-        .iter()
-        .map(|p| cashu::PublicKey::from(*p))
-        .collect();
-    let signatures = ctrl.online_exchange(request.proofs, &exchange_path).await?;
+    let signatures = ctrl.online_exchange(proofs, exchange_path).await?;
     let response = wire_exchange::OnlineExchangeResponse { proofs: signatures };
     Ok(Json(response))
 }
