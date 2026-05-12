@@ -6,6 +6,7 @@ use bcr_common::{
     core::BillId,
     wire::{melt as wire_melt, mint as wire_mint},
 };
+use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -31,6 +32,7 @@ pub struct Service {
     pub quote_expiry: chrono::Duration,
     pub min_mint_threshold: bitcoin::Amount,
     pub min_melt_threshold: bitcoin::Amount,
+    pub alpha_id: PublicKey,
 }
 
 impl Service {
@@ -191,7 +193,11 @@ impl Service {
         now: TStamp,
         vault: &dyn onchain::VaultService,
     ) -> Result<wire_melt::MeltOnchainResponse> {
-        let wire_melt::MeltOnchainRequest { inputs, .. } = request;
+        let wire_melt::MeltOnchainRequest {
+            inputs,
+            attestation,
+            ..
+        } = request;
         // verify proofs
         bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
         self.wdc.verify_proofs(&inputs).await?;
@@ -216,6 +222,10 @@ impl Service {
                 "melt proofs != committed fingerprints",
             )));
         }
+        // verify Beta-issued attestation before burning any proofs
+        self.clowder_cl
+            .verify_attestation(&self.alpha_id, &inputs, &attestation)
+            .await?;
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
         let fees_pre = generate_fee_premints(&self.wdc, &inputs, op.fees).await?;
@@ -233,6 +243,7 @@ impl Service {
                 inputs.clone(),
                 fees_signatures,
                 op.commitment,
+                attestation,
             )
             .await
         {
@@ -278,6 +289,17 @@ mod tests {
     use cashu::Amount;
     use std::str::FromStr;
 
+    fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
+        let kp = core::generate_random_keypair();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        bcr_common::wire::attestation::IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
+        }
+    }
+
     #[tokio::test]
     async fn new_onchain_mintop() {
         let mut wdc = MockWildcatClient::new();
@@ -315,6 +337,7 @@ mod tests {
             quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
             .into_iter()
@@ -342,6 +365,7 @@ mod tests {
             quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::from_sat(1000),
             min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
         };
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
@@ -407,6 +431,7 @@ mod tests {
             quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512), Amount::from(512)];
@@ -462,6 +487,10 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(op.clone()));
         clowder
+            .expect_verify_attestation()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        clowder
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
@@ -483,7 +512,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _, _| {
+            .returning(|_, _, _, _, _, _, _| {
                 Ok(wire_melt::MeltTx {
                     alpha_txid: None,
                     beta_txid: None,
@@ -499,15 +528,88 @@ mod tests {
             quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
             inputs: proofs,
+            attestation: dummy_attestation(),
         };
         service
             .melt_onchain(request, chrono::Utc::now(), &vault)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn melt_onchain_rejects_when_attestation_invalid() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        let vault = MockVaultService::new();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let input_ys = proofs.ys().unwrap();
+        let qid = Uuid::new_v4();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let op = onchain::OnchainMeltOperation {
+            qid,
+            available: cashu::Amount::from(8),
+            address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
+            target: bitcoin::Amount::from_sat(8),
+            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            fees: cashu::Amount::ZERO,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys,
+            commitment: signature,
+            status: onchain::MeltStatus::Pending,
+        };
+        wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
+        repo.expect_load_onchain_meltop()
+            .times(1)
+            .returning(move |_| Ok(op.clone()));
+        clowder
+            .expect_verify_attestation()
+            .times(1)
+            .returning(|_, _, _| {
+                Err(Error::Attestation(
+                    bcr_common::wire::attestation::AttestationError::DigestMismatch,
+                ))
+            });
+
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
+        };
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+            attestation: dummy_attestation(),
+        };
+        let err = service
+            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::Attestation(bcr_common::wire::attestation::AttestationError::DigestMismatch)
+        ));
     }
 
     #[tokio::test]
@@ -527,6 +629,7 @@ mod tests {
             quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds1: Vec<_> = signatures_test::generate_blinds(keyset1.id, &[Amount::from(8_u64)])
             .into_iter()

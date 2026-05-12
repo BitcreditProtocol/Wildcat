@@ -84,6 +84,17 @@ impl RestClient {
         let resp = req.send().await?.error_for_status()?;
         Ok(resp.json().await?)
     }
+
+    pub async fn post<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        url: Url,
+        body: &B,
+    ) -> Result<T> {
+        let req = self.http.post(url).json(body);
+        let req = self.authorize(req);
+        let resp = req.send().await?.error_for_status()?;
+        Ok(resp.json().await?)
+    }
 }
 
 impl Default for RestClient {
@@ -169,22 +180,17 @@ impl Service<UserService> {
         self.client.get(url).await.unwrap()
     }
 
+    pub async fn wildcat_info(&self) -> bcr_common::wire::info::WildcatInfo {
+        let url = self.url("v1/wildcat");
+        self.client.get(url).await.unwrap()
+    }
+
     pub async fn commit_swap(
         &self,
         request: wire_swap::SwapCommitmentRequest,
     ) -> wire_swap::SwapCommitmentResponse {
         let url = self.url("v1/swap/commitment");
-        let resp = self
-            .client
-            .http
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap();
-        resp.json().await.unwrap()
+        self.client.post(url, &request).await.unwrap()
     }
 
     pub async fn swap(
@@ -192,11 +198,26 @@ impl Service<UserService> {
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: bitcoin::secp256k1::schnorr::Signature,
+        attestation: bcr_common::wire::attestation::IssuanceAttestation,
     ) -> Vec<cashu::BlindSignature> {
         self.mint_cl
-            .swap(inputs, outputs, commitment)
+            .swap(inputs, outputs, commitment, attestation)
             .await
             .unwrap()
+    }
+
+    pub async fn acquire_attestation(
+        &self,
+        alpha_id: bitcoin::secp256k1::PublicKey,
+        proofs: &[cashu::Proof],
+    ) -> bcr_common::wire::attestation::IssuanceAttestation {
+        use bcr_common::wire::{attestation as wire_att, keys as wire_keys};
+        let inputs: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+            .collect();
+        let request = wire_att::IssuanceAttestationRequest { alpha_id, inputs };
+        self.mint_cl.post_attest_issuance(&request).await.unwrap()
     }
 }
 

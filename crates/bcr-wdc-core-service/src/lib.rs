@@ -7,7 +7,10 @@ use axum::{
     Router,
 };
 use bcr_common::{
-    client::admin::{core, treasury::Client as TreasuryClient},
+    client::{
+        self,
+        admin::{core, treasury::Client as TreasuryClient},
+    },
     clwdr_client,
 };
 use bcr_wdc_utils::surreal;
@@ -31,7 +34,8 @@ pub struct AppConfig {
     proofs: surreal::DBConnConfig,
     commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
-    treasury_url: bcr_common::client::Url,
+    treasury_url: client::Url,
+    clowder_rest_url: client::Url,
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
@@ -52,6 +56,7 @@ impl AppController {
             commitments,
             clowder_url,
             treasury_url,
+            clowder_rest_url,
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
@@ -84,7 +89,17 @@ impl AppController {
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
-        let clowder_for_swap = swap::ClowderCl { stream: clowder_cl };
+        let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
+        let info = clowder_rest
+            .get_info()
+            .await
+            .expect("Failed to get clowder info");
+        let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+            .expect("secp256k1::PublicKey == cashu::PublicKey");
+        let clowder_for_swap = swap::ClowderCl {
+            nats: clowder_cl,
+            rest: clowder_rest,
+        };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
         let treasury_cl = TreasuryClient::new(treasury_url);
         let treasury_for_swap = swap::TreasuryCl {
@@ -96,6 +111,7 @@ impl AppController {
             clowder: Box::new(clowder_for_swap),
             treasury: Box::new(treasury_for_swap),
             max_expiry,
+            alpha_id,
         };
 
         Self {
@@ -170,10 +186,22 @@ pub mod test_utils {
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
+            alpha_id: mint_kp().public_key(),
         };
         AppController {
             keys: Arc::new(keysrv),
             swap: Arc::new(swprv),
+        }
+    }
+
+    pub fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
+        let kp = mint_kp();
+        let signature = secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        bcr_common::wire::attestation::IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
         }
     }
 
@@ -205,6 +233,7 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::dummy_attestation;
     use bcr_common::{
         cashu,
         core::signature::schnorr_verify_b64,
@@ -302,7 +331,14 @@ mod tests {
 
         controller
             .swap
-            .swap(&signsrvc, proofs, blinds, commitment, now)
+            .swap(
+                &signsrvc,
+                proofs,
+                blinds,
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await
             .unwrap();
     }
@@ -396,7 +432,14 @@ mod tests {
 
         let res = controller
             .swap
-            .swap(&signsrvc, proofs.clone(), blinds.clone(), commitment, now)
+            .swap(
+                &signsrvc,
+                proofs.clone(),
+                blinds.clone(),
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await;
         assert!(res.is_err());
         for p in proofs.iter_mut() {
@@ -404,7 +447,14 @@ mod tests {
         }
         controller
             .swap
-            .swap(&signsrvc, proofs.clone(), blinds, commitment, now)
+            .swap(
+                &signsrvc,
+                proofs.clone(),
+                blinds,
+                commitment,
+                dummy_attestation(),
+                now,
+            )
             .await
             .unwrap();
     }
