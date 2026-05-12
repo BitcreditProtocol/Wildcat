@@ -3,8 +3,12 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    wire::{clowder as wire_clowder, melt as wire_melt, mint as wire_mint},
+    wire::{
+        attestation::IssuanceAttestation, clowder as wire_clowder, melt as wire_melt,
+        mint as wire_mint,
+    },
 };
+use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local modules
 mod clowder;
@@ -58,11 +62,11 @@ pub trait ClowderClient: Send + Sync {
     async fn sign_onchain_mint_response(
         &self,
         msg: &wire_mint::OnchainMintQuoteResponseBody,
-    ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    ) -> Result<(String, bitcoin::secp256k1::schnorr::Signature)>;
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
-    ) -> Result<(String, secp256k1::schnorr::Signature)>;
+    ) -> Result<(String, bitcoin::secp256k1::schnorr::Signature)>;
     async fn verify_onchain_address(
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
@@ -75,14 +79,21 @@ pub trait ClowderClient: Send + Sync {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
+        attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
-        mint_id: secp256k1::PublicKey,
+        mint_id: bitcoin::secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
+    async fn verify_attestation(
+        &self,
+        alpha_id: &PublicKey,
+        inputs: &[cashu::Proof],
+        attestation: &IssuanceAttestation,
+    ) -> Result<()>;
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
@@ -120,7 +131,7 @@ pub struct OnchainMeltOperation {
     pub expiry: TStamp,
     pub fees: bitcoin::Amount,
     pub wallet_key: cashu::PublicKey,
-    pub commitment: secp256k1::schnorr::Signature,
+    pub commitment: bitcoin::secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }
 
