@@ -77,10 +77,6 @@ pub async fn routes(app: AppController) -> Result<Router> {
         .route(core::web_ep::SWAP_V1, post(web::post_swap))
         // Clowder Endpoints
         .route(
-            clowder::web_ep::ONLINE_EXCHANGE_V1,
-            post(web::post_online_exchange),
-        )
-        .route(
             clowder::web_ep::OFFLINE_EXCHANGE_V1,
             post(web::post_offline_exchange),
         )
