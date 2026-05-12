@@ -95,7 +95,7 @@ impl Service {
                 "Exchange path must be at least [foreign pk, myself pk, wallet pk]",
             )));
         };
-        let wallet_pk = path.get(path.len() - 1).unwrap();
+        let wallet_pk = path.last().unwrap();
         let myself_pk = path.get(path.len() - 2).unwrap();
         let foreign_pk = path.get(path.len() - 3).unwrap();
         let myself = self.clowder.get_myself_pk().await?;
@@ -120,9 +120,6 @@ impl Service {
             .iter()
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
         let kid = inputs[0].keyset_id;
-        self.online_repo
-            .store_htlc(*foreign_pk, htlc_hash, inputs.clone())
-            .await?;
         let foreign_keyset = foreign_client.get_keyset(kid).await?;
         let Some(foreign_unix_expiration) = foreign_keyset.final_expiry else {
             return Err(Error::InvalidInput(String::from(
@@ -150,8 +147,18 @@ impl Service {
         .await?;
         let proofs = self
             .clowder
-            .signal_online_exchange_event(inputs, outputs, path.to_vec())
+            .signal_online_exchange_event(inputs.clone(), outputs.clone(), path.clone())
             .await?;
+        let store_response = self
+            .online_repo
+            .store_htlc(*foreign_pk, htlc_hash, inputs)
+            .await;
+        if store_response.is_err() {
+            tracing::error!(
+                "failed to store_htlc, for {total} from {foreign_pk} with hash {htlc_hash}: {}",
+                store_response.unwrap_err()
+            );
+        }
         Ok(proofs)
     }
 
