@@ -135,46 +135,6 @@ pub async fn post_swap(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
-pub async fn post_online_exchange(
-    State(ctrl): State<AppController>,
-    Json(request): Json<wire_exchange::OnlineExchangeRequest>,
-) -> Result<Json<wire_exchange::OnlineExchangeResponse>> {
-    if request.exchange_path.len() < 3 {
-        return Err(Error::Invalid(String::from(
-            "minimum exchange path [alpha_pk, this_mint_pk, wallet_pk] not met",
-        )));
-    }
-    // Clone what we need for the stream before consuming request
-    let stream_proofs = request.proofs.clone();
-    let stream_exchange_path = request.exchange_path.clone();
-    let wire_exchange::OnlineExchangeRequest {
-        proofs,
-        exchange_path,
-    } = request;
-    let proofs = ctrl
-        .treasury_client
-        .exchange_online(proofs, exchange_path)
-        .await?;
-    if let Err(e) = ctrl
-        .clwdr_stream_client
-        .mint_foreign_ecash(
-            wire_clowder::MintForeignEcashRequest {
-                proofs: stream_proofs,
-                exchange_path: stream_exchange_path,
-            },
-            wire_clowder::MintForeignEcashResponse {
-                proofs: proofs.clone(),
-            },
-        )
-        .await
-    {
-        tracing::error!("Failed to post online exchange to clowder stream: {e}");
-    }
-    let response = wire_exchange::OnlineExchangeResponse { proofs };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
 pub async fn post_offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
