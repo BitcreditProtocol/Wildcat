@@ -113,10 +113,7 @@ impl persistence::SignaturesRepository for SignatureMap {
     async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
         let mut locked = self.signs.write().unwrap();
         if locked.contains_key(&y) {
-            return Err(Error::InvalidInput(format!(
-                "signature already exists: {}",
-                y
-            )));
+            return Err(Error::Conflict(format!("signature already exists: {}", y)));
         }
         locked.insert(y, signature);
         Ok(())
