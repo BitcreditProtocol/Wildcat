@@ -109,8 +109,6 @@ pub async fn post_swap(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
-    tracing::debug!("Requested /v1/swap");
-
     let wire_swap::SwapRequest {
         inputs,
         outputs,
@@ -118,19 +116,7 @@ pub async fn post_swap(
     } = request;
     let htlc_unlocked = test_for_htlc(&inputs, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
-    let signatures = ctrl
-        .core_client
-        .swap(inputs.clone(), outputs.clone(), commitment)
-        .await?;
-    let req = wire_clowder::SwapRequest {
-        proofs: inputs,
-        blinds: outputs,
-        commitment,
-    };
-    let resp = wire_clowder::SwapResponse {
-        signatures: signatures.clone(),
-    };
-    ctrl.clwdr_stream_client.mint_swap(req, resp).await?;
+    let signatures = ctrl.core_client.swap(inputs, outputs, commitment).await?;
     Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 
