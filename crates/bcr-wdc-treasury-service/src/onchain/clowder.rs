@@ -131,6 +131,7 @@ impl ClowderClient for ClowderCl {
         amount: bitcoin::Amount,
         address: bitcoin::Address,
         inputs: Vec<cashu::Proof>,
+        fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
     ) -> Result<wire_melt::MeltTx> {
         let request = wire_clowder::MeltOnchainRequest {
@@ -139,6 +140,7 @@ impl ClowderClient for ClowderCl {
             amount,
             inputs,
             commitment,
+            fees,
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)

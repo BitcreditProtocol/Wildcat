@@ -177,9 +177,11 @@ impl Service {
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
         self.wdc.burn(proofs.clone()).await?;
+        // TODO: generate and store fees
+        let fees = vec![];
         let txs = match self
             .clowder_cl
-            .melt_onchain(qid, op.amount, recipient, proofs, op.commitment)
+            .melt_onchain(qid, op.amount, recipient, proofs, fees, op.commitment)
             .await
         {
             Ok(txs) => txs,
@@ -385,7 +387,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _| {
+            .returning(|_, _, _, _, _, _| {
                 Ok(wire_melt::MeltTx {
                     alpha_txid: None,
                     beta_txid: None,
