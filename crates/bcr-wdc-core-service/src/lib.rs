@@ -79,7 +79,7 @@ impl AppController {
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
-        let clowder_for_swap = swap::ClowderCl { nats: clowder_cl };
+        let clowder_for_swap = swap::ClowderCl { stream: clowder_cl };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
