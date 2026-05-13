@@ -123,6 +123,7 @@ impl Service {
         // cheap verifications
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
+        // cross check with commitment
         let (committed_inputs, committed_outputs, expiration) =
             self.commitments.load(&signature).await?;
         // check expiration
@@ -171,9 +172,12 @@ impl Service {
         sign_service.verify_proofs(&inputs).await?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
+        // TODO: generate fees signatures
+        let fees = vec![];
+        // burn inputs
         self.proofs.insert(&inputs).await?;
         self.clowder
-            .post_swap(inputs, outputs, signature, signatures.clone())
+            .signal_swap_event(inputs, outputs, fees, signature, signatures.clone())
             .await?;
         let res = self.commitments.delete(signature).await;
         if let Err(e) = res {

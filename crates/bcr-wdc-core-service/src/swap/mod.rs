@@ -80,17 +80,18 @@ pub trait ClowderClient: Send + Sync {
         request: wire_swap::SwapCommitmentRequest,
     ) -> Result<(String, schnorr::Signature)>;
 
-    async fn post_swap(
+    async fn signal_swap_event(
         &self,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
+        fees: Vec<cashu::BlindSignature>,
         commitment: schnorr::Signature,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()>;
 }
 
 pub struct ClowderCl {
-    pub nats: Arc<ClowderNatsClient>,
+    pub stream: Arc<ClowderNatsClient>,
 }
 
 #[async_trait]
@@ -107,14 +108,15 @@ impl ClowderClient for ClowderCl {
             expiry: request.expiry,
             wallet_key: request.wallet_key.into(),
         };
-        let response = self.nats.swap_commitment(request).await?;
+        let response = self.stream.swap_commitment(request).await?;
         Ok((content, response.commitment))
     }
 
-    async fn post_swap(
+    async fn signal_swap_event(
         &self,
         proofs: Vec<cashu::Proof>,
         blinds: Vec<cashu::BlindedMessage>,
+        fees: Vec<cashu::BlindSignature>,
         commitment: schnorr::Signature,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()> {
@@ -123,8 +125,8 @@ impl ClowderClient for ClowderCl {
             blinds,
             commitment,
         };
-        let response = wire_clowder::SwapResponse { signatures };
-        self.nats.mint_swap(request, response).await?;
+        let response = wire_clowder::SwapResponse { signatures, fees };
+        self.stream.mint_swap(request, response).await?;
         Ok(())
     }
 }
@@ -146,10 +148,11 @@ pub mod test_utils {
                 .map_err(|e| Error::Internal(format!("failed to sign commitment: {e}")))
         }
 
-        async fn post_swap(
+        async fn signal_swap_event(
             &self,
             _inputs: Vec<cashu::Proof>,
             _outputs: Vec<cashu::BlindedMessage>,
+            _fees: Vec<cashu::BlindSignature>,
             _commitment: schnorr::Signature,
             _signatures: Vec<cashu::BlindSignature>,
         ) -> Result<()> {
