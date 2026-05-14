@@ -85,7 +85,7 @@ pub async fn burn_tokens(
     State(keys_srvc): State<Arc<keys::service::Service>>,
     Json(request): Json<wire_swap::BurnRequest>,
 ) -> Result<Json<wire_swap::BurnResponse>> {
-    let signsrvc = swap::KeysSignService { keys: keys_srvc };
+    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let wire_swap::BurnRequest { proofs } = request;
     let ys = ctrl.burn(&signsrvc, proofs).await?;
     Ok(Json(wire_swap::BurnResponse { ys }))

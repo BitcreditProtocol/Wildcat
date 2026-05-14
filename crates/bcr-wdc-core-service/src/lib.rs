@@ -6,7 +6,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{client::admin::core, clwdr_client};
+use bcr_common::{
+    client::admin::{core, treasury::Client as TreasuryClient},
+    clwdr_client,
+};
 use bcr_wdc_utils::surreal;
 use bitcoin::bip32 as btc32;
 // ----- local modules
@@ -28,6 +31,7 @@ pub struct AppConfig {
     proofs: surreal::DBConnConfig,
     commitments: surreal::DBConnConfig,
     clowder_url: clwdr_client::Url,
+    treasury_url: bcr_common::client::Url,
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
@@ -47,6 +51,7 @@ impl AppController {
             proofs,
             commitments,
             clowder_url,
+            treasury_url,
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
@@ -81,10 +86,15 @@ impl AppController {
         };
         let clowder_for_swap = swap::ClowderCl { stream: clowder_cl };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
+        let treasury_cl = TreasuryClient::new(treasury_url);
+        let treasury_for_swap = swap::TreasuryCl {
+            cl: Box::new(treasury_cl),
+        };
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
             clowder: Box::new(clowder_for_swap),
+            treasury: Box::new(treasury_for_swap),
             max_expiry,
         };
 
@@ -158,6 +168,7 @@ pub mod test_utils {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
             clowder: Box::new(swap::test_utils::DummyClowderClient),
+            treasury: Box::new(swap::test_utils::DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
         };
         AppController {
@@ -236,7 +247,7 @@ mod tests {
             wallet_key: wallet_kp.public_key().into(),
         };
         let signsrvc = crate::swap::KeysSignService {
-            keys: controller.keys.clone(),
+            srvc: controller.keys.clone(),
         };
         let (content, commitment) = controller
             .swap
@@ -280,7 +291,7 @@ mod tests {
             wallet_key: wallet_kp.public_key().into(),
         };
         let signsrvc = crate::swap::KeysSignService {
-            keys: controller.keys.clone(),
+            srvc: controller.keys.clone(),
         };
         let (content, commitment) = controller
             .swap
@@ -375,7 +386,7 @@ mod tests {
             wallet_key: wallet_kp.public_key().into(),
         };
         let signsrvc = crate::swap::KeysSignService {
-            keys: controller.keys.clone(),
+            srvc: controller.keys.clone(),
         };
         let (_, commitment) = controller
             .swap

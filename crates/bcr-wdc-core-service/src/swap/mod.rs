@@ -4,6 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    client::admin::treasury::Client as TreasuryClient,
     clwdr_client::ClowderNatsClient,
     core::signature,
     wire::{clowder as wire_clowder, swap as wire_swap},
@@ -20,6 +21,22 @@ pub mod service;
 // ----- end imports
 
 #[async_trait]
+pub trait TreasuryService: Send + Sync {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+}
+
+pub struct TreasuryCl {
+    pub cl: Box<TreasuryClient>,
+}
+#[async_trait]
+impl TreasuryService for TreasuryCl {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.cl.fees_store_proofs(proofs).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
 pub trait KeysService: Send + Sync {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn sign_blinds(
@@ -29,38 +46,39 @@ pub trait KeysService: Send + Sync {
     async fn verify_proofs(&self, proof: &[cashu::Proof]) -> Result<()>;
     async fn verify_fingerprints(&self, fp: &[signature::ProofFingerprint]) -> Result<()>;
     async fn list_kinfos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>>;
+    async fn get_keyset(&self, kid: &cashu::Id) -> Result<cashu::KeySet>;
 }
 
 pub struct KeysSignService {
-    pub keys: Arc<keys::service::Service>,
+    pub srvc: Arc<keys::service::Service>,
 }
 
 #[async_trait]
 impl KeysService for KeysSignService {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo> {
-        self.keys.info(*id).await.map(cashu::KeySetInfo::from)
+        self.srvc.info(*id).await.map(cashu::KeySetInfo::from)
     }
 
     async fn sign_blinds(
         &self,
         blinds: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.keys.sign_blinds(blinds.iter()).await?;
+        let signatures = self.srvc.sign_blinds(blinds.iter()).await?;
         Ok(signatures)
     }
 
     async fn verify_proofs(&self, proofs: &[cashu::Proof]) -> Result<()> {
-        self.keys.verify_proofs(proofs).await
+        self.srvc.verify_proofs(proofs).await
     }
 
     async fn verify_fingerprints(&self, fps: &[signature::ProofFingerprint]) -> Result<()> {
-        self.keys.verify_fingerprints(fps).await?;
+        self.srvc.verify_fingerprints(fps).await?;
         Ok(())
     }
 
     async fn list_kinfos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
         let kinfos = self
-            .keys
+            .srvc
             .list_info(keys::service::ListFilters::default())
             .await?;
         let kmap: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::from_iter(
@@ -69,6 +87,11 @@ impl KeysService for KeysSignService {
                 .map(|kinfo| (kinfo.id, cashu::KeySetInfo::from(kinfo))),
         );
         Ok(kmap)
+    }
+
+    async fn get_keyset(&self, kid: &cashu::Id) -> Result<cashu::KeySet> {
+        let keyset = self.srvc.keys(*kid).await?;
+        Ok(cashu::KeySet::from(keyset))
     }
 }
 
@@ -156,6 +179,14 @@ pub mod test_utils {
             _commitment: schnorr::Signature,
             _signatures: Vec<cashu::BlindSignature>,
         ) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    pub struct DummyTreasuryClient;
+    #[async_trait]
+    impl TreasuryService for DummyTreasuryClient {
+        async fn store_proofs(&self, _proofs: Vec<cashu::Proof>) -> Result<()> {
             Ok(())
         }
     }
