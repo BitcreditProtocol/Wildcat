@@ -186,7 +186,14 @@ impl Service {
         // burn inputs
         self.proofs.insert(&inputs).await?;
         self.clowder
-            .signal_swap_event(inputs, outputs, fees, signature, attestation, signatures.clone())
+            .signal_swap_event(
+                inputs,
+                outputs,
+                fees,
+                signature,
+                attestation,
+                signatures.clone(),
+            )
             .await?;
         let res = self.commitments.delete(signature).await;
         if let Err(e) = res {
