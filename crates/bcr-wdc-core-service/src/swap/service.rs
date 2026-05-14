@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{
     cashu,
@@ -12,7 +13,7 @@ use secp256k1::schnorr;
 use crate::{
     error::{Error, Result},
     persistence::{CommitmentRepository, ProofRepository},
-    swap::{ClowderClient, KeysService},
+    swap::{ClowderClient, KeysService, TreasuryService},
     TStamp,
 };
 
@@ -22,6 +23,7 @@ pub struct Service {
     pub proofs: Box<dyn ProofRepository>,
     pub commitments: Box<dyn CommitmentRepository>,
     pub clowder: Box<dyn ClowderClient>,
+    pub treasury: Box<dyn TreasuryService>,
     pub max_expiry: chrono::Duration,
 }
 
@@ -170,19 +172,38 @@ impl Service {
         let kinfos = sign_service.list_kinfos().await?;
         swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
         sign_service.verify_proofs(&inputs).await?;
+        // check inputs are unspent
+        let ys: Vec<cashu::PublicKey> = inputs
+            .iter()
+            .map(|fp| fp.y())
+            .collect::<std::result::Result<_, _>>()?;
+        let states = self.check_spendable(&ys).await?;
+        let all_unspent = states
+            .iter()
+            .all(|s| matches!(s.state, cashu::State::Unspent));
+        if !all_unspent {
+            return Err(Error::InvalidInput(
+                "One or more proofs are not unspent".to_string(),
+            ));
+        }
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
-        // TODO: generate fees signatures
-        let fees = vec![];
-        // burn inputs
-        self.proofs.insert(inputs.clone()).await?;
+        let fees_premints = generate_fees_premints(&inputs, &outputs)?;
+        let (fees_signatures, fees_proofs) = sign_fees(sign_service, fees_premints).await?;
+        // signal swap to clowder
         self.clowder
-            .signal_swap_event(inputs, outputs, fees, signature, signatures.clone())
+            .signal_swap_event(
+                inputs.clone(),
+                outputs,
+                fees_signatures,
+                signature,
+                signatures.clone(),
+            )
             .await?;
-        let res = self.commitments.delete(signature).await;
-        if let Err(e) = res {
-            tracing::error!("failed to delete commitment: {e}");
-        }
+        // update state
+        self.commitments.delete(signature).await?;
+        self.proofs.insert(inputs).await?;
+        self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
     }
 
@@ -212,4 +233,54 @@ impl Service {
         self.proofs.remove(&ys).await?;
         Ok(())
     }
+}
+
+fn generate_fees_premints(
+    inputs: &[cashu::Proof],
+    outputs: &[cashu::BlindedMessage],
+) -> Result<Vec<cashu::PreMintSecrets>> {
+    let unique_kids: HashSet<_> = inputs.iter().map(|proof| proof.keyset_id).collect();
+    let mut premints = Vec::with_capacity(unique_kids.len());
+    for kid in unique_kids {
+        let inputs_amount = inputs
+            .iter()
+            .filter(|proof| proof.keyset_id == kid)
+            .fold(cashu::Amount::ZERO, |acc, proof| acc + proof.amount);
+        let outputs_amount = outputs
+            .iter()
+            .filter(|b| b.keyset_id == kid)
+            .fold(cashu::Amount::ZERO, |acc, b| acc + b.amount);
+        if inputs_amount <= outputs_amount {
+            continue;
+        }
+        let premint = cashu::PreMintSecrets::random(
+            kid,
+            inputs_amount - outputs_amount,
+            &cashu::amount::SplitTarget::None,
+        )?;
+        premints.push(premint);
+    }
+    Ok(premints)
+}
+
+async fn sign_fees(
+    signer: &dyn KeysService,
+    premints: Vec<cashu::PreMintSecrets>,
+) -> Result<(Vec<cashu::BlindSignature>, Vec<cashu::Proof>)> {
+    let total_len = premints.iter().map(|p| p.len()).sum();
+    let mut signatures = Vec::with_capacity(total_len);
+    let mut proofs = Vec::with_capacity(total_len);
+    for premint in premints {
+        let keyset = signer.get_keyset(&premint.keyset_id).await?;
+        let signs = signer.sign_blinds(&premint.blinded_messages()).await?;
+        let (rs, secrets) = premint
+            .secrets
+            .into_iter()
+            .map(|premint| (premint.r, premint.secret))
+            .unzip();
+        let prfs = cashu::dhke::construct_proofs(signs.clone(), rs, secrets, &keyset.keys)?;
+        signatures.extend(signs);
+        proofs.extend(prfs);
+    }
+    Ok((signatures, proofs))
 }

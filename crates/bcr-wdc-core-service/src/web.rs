@@ -95,7 +95,7 @@ pub async fn commit_to_swap(
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    let signsrvc = swap::KeysSignService { keys: keys_srvc };
+    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let (content, commitment) = service.commit_to_swap(&signsrvc, request, now).await?;
     let response = wire_swap::SwapCommitmentResponse {
         content,
@@ -111,7 +111,7 @@ pub async fn swap_tokens(
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
     let now = chrono::Utc::now();
-    let signsrvc = swap::KeysSignService { keys: keys_srvc };
+    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let signatures = ctrl
         .swap(
             &signsrvc,
