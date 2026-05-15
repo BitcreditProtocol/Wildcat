@@ -136,7 +136,7 @@ pub struct ProofMap {
 
 #[async_trait()]
 impl persistence::ProofRepository for ProofMap {
-    async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()> {
+    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut items = Vec::with_capacity(tokens.len());
         for token in tokens {
             let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
@@ -153,11 +153,10 @@ impl persistence::ProofRepository for ProofMap {
         }
         Ok(())
     }
-    async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()> {
+    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
         for token in tokens {
-            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
-            locked.remove(&y);
+            locked.remove(token);
         }
         Ok(())
     }
