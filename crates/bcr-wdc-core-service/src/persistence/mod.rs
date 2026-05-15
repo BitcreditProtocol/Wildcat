@@ -42,8 +42,8 @@ pub trait ProofRepository: Send + Sync {
     /// WARNING: this method should do strict insert.
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call
-    async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()>;
-    async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()>;
+    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
+    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
@@ -353,7 +353,7 @@ mod tests {
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
-        db.insert(&proofs).await.unwrap();
+        db.insert(proofs.clone()).await.unwrap();
         db.contains(proofs[0].y().unwrap()).await.unwrap().unwrap();
     }
 
@@ -371,8 +371,8 @@ mod tests {
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
-        db.insert(&proofs).await.unwrap();
-        let res = db.insert(&proofs).await;
+        db.insert(proofs.clone()).await.unwrap();
+        let res = db.insert(proofs).await;
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
@@ -395,9 +395,9 @@ mod tests {
                 cashu::Amount::from(4_u64),
             ],
         );
-        db.insert(&proofs[0..2]).await.unwrap();
+        db.insert(proofs[0..2].to_vec()).await.unwrap();
 
-        let res = db.insert(&proofs[1..]).await;
+        let res = db.insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
@@ -420,10 +420,10 @@ mod tests {
                 cashu::Amount::from(4_u64),
             ],
         );
-        db.insert(&proofs[0..2]).await.unwrap();
-        let res = db.insert(&proofs[1..]).await;
+        db.insert(proofs[0..2].to_vec()).await.unwrap();
+        let res = db.insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
-        db.insert(&proofs[2..]).await.unwrap();
+        db.insert(proofs[2..].to_vec()).await.unwrap();
     }
 
     /////////////////////////////////////////////////////////////////// CommitmentRepository

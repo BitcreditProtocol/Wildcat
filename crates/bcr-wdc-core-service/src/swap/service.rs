@@ -175,7 +175,7 @@ impl Service {
         // TODO: generate fees signatures
         let fees = vec![];
         // burn inputs
-        self.proofs.insert(&inputs).await?;
+        self.proofs.insert(inputs.clone()).await?;
         self.clowder
             .signal_swap_event(inputs, outputs, fees, signature, signatures.clone())
             .await?;
@@ -189,14 +189,14 @@ impl Service {
     pub async fn burn(
         &self,
         sign_service: &dyn KeysService,
-        proofs: &[cashu::Proof],
+        proofs: Vec<cashu::Proof>,
     ) -> Result<Vec<cashu::PublicKey>> {
         // cheap verifications
-        signatures_utils::basic_proofs_checks(proofs)?;
+        signatures_utils::basic_proofs_checks(&proofs)?;
         // verify proofs signatures
-        sign_service.verify_proofs(proofs).await?;
+        sign_service.verify_proofs(&proofs).await?;
         let mut ys = Vec::with_capacity(proofs.len());
-        for proof in proofs {
+        for proof in &proofs {
             let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
             ys.push(y);
         }
@@ -205,7 +205,11 @@ impl Service {
     }
 
     pub async fn recover(&self, proofs: &[cashu::Proof]) -> Result<()> {
-        self.proofs.remove(proofs).await?;
+        let ys = proofs
+            .iter()
+            .map(|proof| cashu::dhke::hash_to_curve(proof.secret.as_bytes()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        self.proofs.remove(&ys).await?;
         Ok(())
     }
 }

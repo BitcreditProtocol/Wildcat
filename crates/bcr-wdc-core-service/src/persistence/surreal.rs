@@ -336,14 +336,14 @@ pub struct ProofDBEntry {
     c: cashu::PublicKey,
     witness: Option<cashu::Witness>,
 }
-fn convert_to_db(proof: &cashu::Proof, table: &str) -> Result<ProofDBEntry> {
-    let rid = proof_to_record_id(table, proof)?;
+fn convert_to_db(proof: cashu::Proof, table: &str) -> Result<ProofDBEntry> {
+    let rid = y_to_record_id(table, proof.y()?);
     let dbentry = ProofDBEntry {
         id: rid,
         kid: proof.keyset_id,
-        secret: proof.secret.clone(),
+        secret: proof.secret,
         c: proof.c,
-        witness: proof.witness.clone(),
+        witness: proof.witness,
     };
     Ok(dbentry)
 }
@@ -366,7 +366,7 @@ impl DBProofs {
 
 #[async_trait]
 impl persistence::ProofRepository for DBProofs {
-    async fn insert(&self, tokens: &[cashu::Proof]) -> Result<()> {
+    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         for tk in tokens {
             let db_entry = convert_to_db(tk, Self::TABLE)?;
@@ -386,9 +386,9 @@ impl persistence::ProofRepository for DBProofs {
         Ok(())
     }
 
-    async fn remove(&self, tokens: &[cashu::Proof]) -> Result<()> {
+    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         for tk in tokens {
-            let rid = proof_to_record_id(Self::TABLE, tk)?;
+            let rid = y_to_record_id(Self::TABLE, *tk);
             let _p: Option<cashu::Proof> = self
                 .db
                 .delete(rid)
@@ -417,10 +417,6 @@ impl persistence::ProofRepository for DBProofs {
     }
 }
 
-fn proof_to_record_id(main_table: &str, proof: &cashu::Proof) -> Result<RecordId> {
-    let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
-    Ok(y_to_record_id(main_table, y))
-}
 fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
     RecordId::from_table_key(main_table, y.to_string())
 }
