@@ -192,7 +192,7 @@ impl ForeignClient for MintClient {
             .map(wire_keys::ProofFingerprint::try_from)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let expiry = now + chrono::Duration::minutes(1);
-        let commitment = self
+        let (_, commitment) = self
             .cl
             .commit_swap(
                 fps,

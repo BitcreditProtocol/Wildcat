@@ -221,7 +221,7 @@ impl Service {
 mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockWildcatClient};
-    use bcr_common::core_tests;
+    use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::Amount;
     use std::str::FromStr;
@@ -270,7 +270,7 @@ mod tests {
             .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
-            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())
@@ -298,7 +298,7 @@ mod tests {
             .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
-            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())
@@ -349,7 +349,7 @@ mod tests {
         let request = wire_melt::MeltQuoteOnchainRequest {
             inputs: fps,
             address,
-            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_melt_quote(request, chrono::Utc::now())
@@ -372,7 +372,7 @@ mod tests {
             amount: bitcoin::Amount::from_sat(8),
             expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
             fees: bitcoin::Amount::ZERO,
-            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key().into(),
             commitment: signature,
             status: onchain::MeltStatus::Pending,
         };
@@ -445,7 +445,7 @@ mod tests {
         blinded_messages.extend(blinds2);
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages,
-            wallet_key: core_tests::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
             .create_onchain_mint_quote(request, chrono::Utc::now())

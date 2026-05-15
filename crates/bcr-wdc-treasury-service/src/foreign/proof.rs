@@ -113,14 +113,14 @@ pub async fn generate_htlc_proofs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bcr_common::core_tests;
+    use bcr_common::{core, core_tests};
     use bitcoin::hashes::Hash;
     use std::collections::HashSet;
 
     #[test]
     fn generate_htlc_premints_have_unique_y_and_correct_hash() {
         let hash = Sha256Hash::hash(b"test_preimage");
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let pk = cashu::PublicKey::from(kp.public_key());
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amount = cashu::Amount::from(1023);

@@ -694,7 +694,7 @@ mod tests {
         ebill::Repository as CreditRepo, foreign::OfflineRepository,
         onchain::Repository as DebitRepo, vault::Repository as VaultRepo,
     };
-    use bcr_common::core_tests;
+    use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
@@ -787,9 +787,9 @@ mod tests {
     async fn offline_search_fps() {
         let db = init_foreignoffline_mem_db().await;
 
-        let alpha_id = core_tests::generate_random_keypair().public_key();
-        let y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
-        let c = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        let alpha_id = core::generate_random_keypair().public_key();
+        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let c = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let fps = vec![
             wire_keys::ProofFingerprint {
                 amount: 10,
@@ -802,8 +802,8 @@ mod tests {
             wire_keys::ProofFingerprint {
                 amount: 10,
                 keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
-                y: cashu::PublicKey::from(core_tests::generate_random_keypair().public_key()),
-                c: cashu::PublicKey::from(core_tests::generate_random_keypair().public_key()),
+                y: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+                c: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 witness: None,
                 dleq: None,
             },
@@ -835,7 +835,7 @@ mod tests {
         let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -851,7 +851,7 @@ mod tests {
         let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -870,7 +870,7 @@ mod tests {
         let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -890,7 +890,7 @@ mod tests {
         let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -913,7 +913,7 @@ mod tests {
         let db = init_credit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
-        let kp = core_tests::generate_random_keypair();
+        let kp = core::generate_random_keypair();
         let op1 = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid,
@@ -975,7 +975,7 @@ mod tests {
         let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
         db.store_proofs(proofs.clone()).await.unwrap();
         let mut all_ys = ys.clone();
-        let extra_y = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        let extra_y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         all_ys.push(extra_y);
         let loaded = db.load_proofs(all_ys).await.unwrap();
         assert_eq!(loaded.len(), 3);

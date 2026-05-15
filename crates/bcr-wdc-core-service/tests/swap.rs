@@ -43,7 +43,7 @@ async fn swap() {
     let mint_pk = mint_kp.public_key();
     let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
     let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
-    let commitment = client
+    let (_, commitment) = client
         .commit_swap(
             proof_fps,
             blinds.clone(),
@@ -133,7 +133,7 @@ async fn swap_p2pk() {
     let mint_pk = mint_kp.public_key();
     let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
     let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
-    let commitment = client
+    let (_, commitment) = client
         .commit_swap(
             correct_fps,
             blinds.clone(),

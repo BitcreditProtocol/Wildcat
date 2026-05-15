@@ -107,7 +107,6 @@ impl ClowderClient for ClowderCl {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
-            amount: msg.amount,
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };
