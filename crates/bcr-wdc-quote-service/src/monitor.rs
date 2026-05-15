@@ -77,7 +77,7 @@ impl Routine for EbillMonitor {
 mod tests {
     use super::*;
     use crate::{persistence::MockRepository, quotes, service::MockWdcClient};
-    use bcr_common::{cashu, core_tests, wire::bill as wire_bill, wire_tests};
+    use bcr_common::{cashu, core, core_tests, wire::bill as wire_bill, wire_tests};
     use mockall::predicate::{always, eq};
     use std::str::FromStr;
     use uuid::Uuid;
@@ -92,9 +92,7 @@ mod tests {
             id: qid,
             status: quotes::Status::Accepted {
                 discounted: bitcoin::Amount::from_sat(1000),
-                wallet_pubkey: cashu::PublicKey::from(
-                    core_tests::generate_random_keypair().public_key(),
-                ),
+                wallet_pubkey: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             },
             submitted: chrono::DateTime::default(),
@@ -126,7 +124,7 @@ mod tests {
         let mut wdc = MockWdcClient::new();
         let qid = Uuid::new_v4();
         let keyset = core_tests::generate_random_ecash_keyset().1;
-        let pk = cashu::PublicKey::from(core_tests::generate_random_keypair().public_key());
+        let pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let quote = quotes::Quote {
             id: qid,
             status: quotes::Status::Accepted {

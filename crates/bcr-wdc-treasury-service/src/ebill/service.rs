@@ -149,7 +149,7 @@ mod tests {
         let mut core_cl = MockWildcatClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         let uid = Uuid::new_v4();
-        let pub_key = bcr_common::core_tests::generate_random_keypair()
+        let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
         let amount = cashu::Amount::from(32);
@@ -180,7 +180,7 @@ mod tests {
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
-        let pub_key = bcr_common::core_tests::generate_random_keypair()
+        let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
         let amount = cashu::Amount::from(64);
@@ -222,7 +222,7 @@ mod tests {
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
-        let kp = bcr_common::core_tests::generate_random_keypair();
+        let kp = bcr_common::core::generate_random_keypair();
         let pub_key = cashu::PublicKey::from(kp.public_key());
         let amounts = [cashu::Amount::from(128), cashu::Amount::from(64)];
         let total = amounts
@@ -281,7 +281,7 @@ mod tests {
         let core_cl = MockWildcatClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         let uid = Uuid::new_v4();
-        let kp = bcr_common::core_tests::generate_random_keypair();
+        let kp = bcr_common::core::generate_random_keypair();
         let amounts = [cashu::Amount::from(128)];
         mintop_repo
             .expect_mint_load()

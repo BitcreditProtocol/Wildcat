@@ -440,7 +440,7 @@ mod tests {
 
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
         std::iter::repeat_with(|| {
-            cashu::PublicKey::from(bcr_common::core_tests::generate_random_keypair().public_key())
+            cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key())
         })
         .take(sz)
         .collect()

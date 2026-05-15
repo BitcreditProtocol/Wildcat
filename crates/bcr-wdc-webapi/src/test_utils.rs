@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
-use bcr_common::{core::BillId, core_tests, wire::quotes as wire_quotes, wire_tests};
+use bcr_common::{core, core_tests, wire::quotes as wire_quotes, wire_tests};
 use bcr_ebill_core::protocol::{
     blockchain::bill::{
         block::{BillIssueBlockData, BillSignerIdentityProofBlockdata},
@@ -27,8 +27,8 @@ pub fn generate_random_bill_enquire_request(
     payee_kp: Option<secp::Keypair>,
     amount: Option<btc::Amount>,
 ) -> (wire_quotes::EnquireRequest, secp::Keypair) {
-    let bill_keys = BcrKeys::from_private_key(&core_tests::generate_random_keypair().secret_key());
-    let bill_id = BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
+    let bill_keys = BcrKeys::from_private_key(&core::generate_random_keypair().secret_key());
+    let bill_id = core::BillId::new(bill_keys.pub_key(), btc::Network::Testnet);
     let (_, drawee) = wire_tests::random_identity_public_data();
     let (drawer_key_pair, drawer) = wire_tests::random_identity_public_data();
     let (signing_key, payee) = match payee_kp {

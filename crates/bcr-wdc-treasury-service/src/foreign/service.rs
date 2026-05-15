@@ -286,7 +286,7 @@ async fn try_offline_htlc_swap(
 mod tests {
 
     use super::*;
-    use bcr_common::core_tests;
+    use bcr_common::{core, core_tests};
     use bitcoin::hex::prelude::*;
     use mockall::predicate::*;
 
@@ -334,9 +334,9 @@ mod tests {
         let mut keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
-        let foreign_kp = core_tests::generate_random_keypair();
-        let myself_kp = core_tests::generate_random_keypair();
-        let wallet_kp = core_tests::generate_random_keypair();
+        let foreign_kp = core::generate_random_keypair();
+        let myself_kp = core::generate_random_keypair();
+        let wallet_kp = core::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let (_, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
@@ -458,9 +458,9 @@ mod tests {
         let mut keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
-        let foreign_kp = core_tests::generate_random_keypair();
-        let myself_kp = core_tests::generate_random_keypair();
-        let wallet_kp = core_tests::generate_random_keypair();
+        let foreign_kp = core::generate_random_keypair();
+        let myself_kp = core::generate_random_keypair();
+        let wallet_kp = core::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
@@ -551,9 +551,9 @@ mod tests {
         let mut clowder = crate::foreign::MockClowderClient::new();
         let mut factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
-        let foreign_kp = core_tests::generate_random_keypair();
-        let wallet_kp = core_tests::generate_random_keypair();
-        let myself_kp = core_tests::generate_random_keypair();
+        let foreign_kp = core::generate_random_keypair();
+        let wallet_kp = core::generate_random_keypair();
+        let myself_kp = core::generate_random_keypair();
         let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let foreign_proof = generate_htlc_proof_for_online_exchange(
             &foreign_keyset,
@@ -648,9 +648,9 @@ mod tests {
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
-        let foreign_kp = core_tests::generate_random_keypair();
-        let wallet_kp = core_tests::generate_random_keypair();
-        let myself_kp = core_tests::generate_random_keypair();
+        let foreign_kp = core::generate_random_keypair();
+        let wallet_kp = core::generate_random_keypair();
+        let myself_kp = core::generate_random_keypair();
         let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let foreign_proof = generate_htlc_proof_for_online_exchange(
             &foreign_keyset,
