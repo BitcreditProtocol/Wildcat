@@ -1,6 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 // ----- local modules
+pub mod attestation;
 #[cfg(feature = "auth")]
 pub mod client;
 pub mod convert;

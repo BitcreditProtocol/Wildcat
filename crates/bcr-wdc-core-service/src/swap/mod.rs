@@ -7,10 +7,7 @@ use bcr_common::{
     client::admin::{clowder as clwdr_rest, treasury::Client as TreasuryClient},
     clwdr_client::ClowderNatsClient,
     core::signature,
-    wire::{
-        attestation::{self as wire_attestation, IssuanceAttestation},
-        clowder as wire_clowder, swap as wire_swap,
-    },
+    wire::{attestation::IssuanceAttestation, clowder as wire_clowder, swap as wire_swap},
 };
 use bitcoin::secp256k1::{schnorr, PublicKey};
 // ----- local imports
@@ -40,6 +37,7 @@ impl TreasuryService for TreasuryCl {
     }
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysService: Send + Sync {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo>;
@@ -174,28 +172,7 @@ impl ClowderClient for ClowderCl {
         inputs: &[cashu::Proof],
         attestation: &IssuanceAttestation,
     ) -> Result<()> {
-        let betas = self.rest.get_betas().await?;
-        wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
-            betas.mints.iter().any(|b| &b.node_id == id)
-        })?;
-        let beta = betas
-            .mints
-            .iter()
-            .find(|b| b.node_id == attestation.beta_id)
-            .expect("verify_attestation_local already checked beta membership");
-        let beta_cl = clwdr_rest::Client::new(beta.clowder.clone());
-        let response = beta_cl
-            .post_attest_verify(&wire_attestation::AttestationVerifyRequest {
-                alpha_id: *alpha_id,
-                attestation: attestation.clone(),
-            })
-            .await?;
-        wire_attestation::verify_attestation_response(
-            alpha_id,
-            &attestation.beta_id,
-            attestation,
-            &response,
-        )?;
+        bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
         Ok(())
     }
 }

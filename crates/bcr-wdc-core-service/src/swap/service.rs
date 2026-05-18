@@ -303,7 +303,7 @@ mod tests {
         persistence::{MockCommitmentRepository, MockProofRepository},
         swap::{test_utils::DummyTreasuryClient, MockClowderClient, MockKeysService},
     };
-    use bcr_common::{core_tests, wire::attestation::AttestationError};
+    use bcr_common::{core, core_tests, wire::attestation::AttestationError};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
 
     #[tokio::test]
@@ -340,7 +340,7 @@ mod tests {
             .returning(|| Ok(std::collections::HashMap::new()));
         sign_service.expect_sign_blinds().times(0);
 
-        let alpha_id = core_tests::generate_random_keypair().public_key();
+        let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),

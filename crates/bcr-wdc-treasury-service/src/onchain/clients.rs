@@ -8,8 +8,8 @@ use bcr_common::{
     clwdr_client::ClowderNatsClient,
     core::signature,
     wire::{
-        attestation::{self as wire_attestation, IssuanceAttestation},
-        clowder as wire_clowder, keys as wire_keys, melt as wire_melt, mint as wire_mint,
+        attestation::IssuanceAttestation, clowder as wire_clowder, keys as wire_keys,
+        melt as wire_melt, mint as wire_mint,
     },
 };
 use bitcoin::secp256k1::PublicKey;
@@ -258,28 +258,7 @@ impl ClowderClient for ClowderCl {
         inputs: &[cashu::Proof],
         attestation: &IssuanceAttestation,
     ) -> Result<()> {
-        let betas = self.rest.get_betas().await?;
-        wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
-            betas.mints.iter().any(|b| &b.node_id == id)
-        })?;
-        let beta = betas
-            .mints
-            .iter()
-            .find(|b| b.node_id == attestation.beta_id)
-            .expect("verify_attestation_local already checked beta membership");
-        let beta_cl = ClowderRestClient::new(beta.clowder.clone());
-        let response = beta_cl
-            .post_attest_verify(&wire_attestation::AttestationVerifyRequest {
-                alpha_id: *alpha_id,
-                attestation: attestation.clone(),
-            })
-            .await?;
-        wire_attestation::verify_attestation_response(
-            alpha_id,
-            &attestation.beta_id,
-            attestation,
-            &response,
-        )?;
+        bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
         Ok(())
     }
 }
