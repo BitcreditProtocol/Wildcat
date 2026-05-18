@@ -21,6 +21,132 @@ use crate::{
 
 // ----- end imports
 
+////////////////////////////////////////////////////////////////// SurrealDB-safe wrappers
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BlindedMessageDB {
+    amount: cashu::Amount,
+    keyset_id: cashu::Id,
+    blinded_secret: cashu::PublicKey,
+    witness: Option<cashu::Witness>,
+}
+impl From<cashu::BlindedMessage> for BlindedMessageDB {
+    fn from(m: cashu::BlindedMessage) -> Self {
+        Self {
+            amount: m.amount,
+            keyset_id: m.keyset_id,
+            blinded_secret: m.blinded_secret,
+            witness: m.witness,
+        }
+    }
+}
+impl From<BlindedMessageDB> for cashu::BlindedMessage {
+    fn from(m: BlindedMessageDB) -> Self {
+        Self {
+            amount: m.amount,
+            keyset_id: m.keyset_id,
+            blinded_secret: m.blinded_secret,
+            witness: m.witness,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BlindSignatureDB {
+    amount: cashu::Amount,
+    keyset_id: cashu::Id,
+    c: cashu::PublicKey,
+    dleq: Option<cashu::BlindSignatureDleq>,
+}
+impl From<cashu::BlindSignature> for BlindSignatureDB {
+    fn from(s: cashu::BlindSignature) -> Self {
+        Self {
+            amount: s.amount,
+            keyset_id: s.keyset_id,
+            c: s.c,
+            dleq: s.dleq,
+        }
+    }
+}
+impl From<BlindSignatureDB> for cashu::BlindSignature {
+    fn from(s: BlindSignatureDB) -> Self {
+        Self {
+            amount: s.amount,
+            keyset_id: s.keyset_id,
+            c: s.c,
+            dleq: s.dleq,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "status")]
+enum MintStatusDB {
+    Pending { blinds: Vec<BlindedMessageDB> },
+    Paid { signatures: Vec<BlindSignatureDB> },
+    Expired,
+}
+impl From<onchain::MintStatus> for MintStatusDB {
+    fn from(s: onchain::MintStatus) -> Self {
+        match s {
+            onchain::MintStatus::Pending { blinds } => MintStatusDB::Pending {
+                blinds: blinds.into_iter().map(Into::into).collect(),
+            },
+            onchain::MintStatus::Paid { signatures } => MintStatusDB::Paid {
+                signatures: signatures.into_iter().map(Into::into).collect(),
+            },
+            onchain::MintStatus::Expired => MintStatusDB::Expired,
+        }
+    }
+}
+impl From<MintStatusDB> for onchain::MintStatus {
+    fn from(s: MintStatusDB) -> Self {
+        match s {
+            MintStatusDB::Pending { blinds } => onchain::MintStatus::Pending {
+                blinds: blinds.into_iter().map(Into::into).collect(),
+            },
+            MintStatusDB::Paid { signatures } => onchain::MintStatus::Paid {
+                signatures: signatures.into_iter().map(Into::into).collect(),
+            },
+            MintStatusDB::Expired => onchain::MintStatus::Expired,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainMintOperationDB {
+    qid: Uuid,
+    kid: cashu::Id,
+    recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    target: bitcoin::Amount,
+    expiry: crate::TStamp,
+    status: MintStatusDB,
+}
+impl From<onchain::OnChainMintOperation> for OnChainMintOperationDB {
+    fn from(op: onchain::OnChainMintOperation) -> Self {
+        Self {
+            qid: op.qid,
+            kid: op.kid,
+            recipient: op.recipient,
+            target: op.target,
+            expiry: op.expiry,
+            status: op.status.into(),
+        }
+    }
+}
+impl From<OnChainMintOperationDB> for onchain::OnChainMintOperation {
+    fn from(op: OnChainMintOperationDB) -> Self {
+        Self {
+            qid: op.qid,
+            kid: op.kid,
+            recipient: op.recipient,
+            target: op.target,
+            expiry: op.expiry,
+            status: op.status.into(),
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////// OnChain DB
 #[derive(Debug, Clone)]
 pub struct DBOnChain {
@@ -80,10 +206,11 @@ impl onchain::Repository for DBOnChain {
 
     async fn store_onchain_mintop(&self, op: onchain::OnChainMintOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
-        let _: Option<onchain::OnChainMintOperation> = self
+        let db_op = OnChainMintOperationDB::from(op);
+        let _: Option<OnChainMintOperationDB> = self
             .db
             .insert(rid)
-            .content(op)
+            .content(db_op)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
@@ -91,12 +218,14 @@ impl onchain::Repository for DBOnChain {
 
     async fn load_onchain_mintop(&self, qid: Uuid) -> Result<onchain::OnChainMintOperation> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
-        let result: Option<onchain::OnChainMintOperation> = self
+        let result: Option<OnChainMintOperationDB> = self
             .db
             .select(rid)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
+        result
+            .map(Into::into)
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
 
     async fn list_onchain_pending_mintops(&self) -> Result<Vec<Uuid>> {
@@ -118,11 +247,12 @@ impl onchain::Repository for DBOnChain {
         status: onchain::MintStatus,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
-        let entry: Option<onchain::OnChainMintOperation> = self
+        let db_status = MintStatusDB::from(status);
+        let entry: Option<OnChainMintOperationDB> = self
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))
-            .bind(("status", status))
+            .bind(("status", db_status))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
