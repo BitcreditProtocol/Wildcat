@@ -87,4 +87,9 @@ impl WdcClient for WildcatCl {
         let ebill = self.ebill.get_bill(&bid).await?;
         Ok(ebill)
     }
+
+    async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.treasury.fees_store_proofs(proofs).await?;
+        Ok(())
+    }
 }

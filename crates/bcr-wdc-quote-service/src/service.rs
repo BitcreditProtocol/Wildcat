@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     core::{BillId, NodeId},
-    wallet::Token,
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use bitcoin::Amount;
@@ -65,6 +64,7 @@ pub trait WdcClient: Send + Sync {
         shared_bill: &wire_quotes::SharedBill,
     ) -> Result<wire_quotes::BillInfo>;
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill>;
+    async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
 
 // ---------- Service
@@ -322,19 +322,9 @@ impl Service {
         let fees_amount = quote.bill.sum - discounted;
         let fees_amount = cashu::Amount::from(fees_amount.to_sat());
         let keys = self.wdc_client.get_keys(keyset_id).await?;
-        let fees_token = mint_fees(
-            self.wdc_client.as_ref(),
-            fees_amount,
-            keys,
-            self.mint_url.clone(),
-            &quote.bill.id,
-        )
-        .await?;
+        let fees = mint_fees(self.wdc_client.as_ref(), fees_amount, keys).await?;
         let discounted_amount = cashu::Amount::from(discounted.to_sat());
-        quote.start_minting(fees_token)?;
-        self.quotes
-            .update_status_if_accepted(quote.id, quote.status)
-            .await?;
+        quote.start_minting(fees_amount)?;
         self.wdc_client
             .add_new_mint_operation(
                 qid,
@@ -343,6 +333,10 @@ impl Service {
                 discounted_amount,
                 quote.bill.id.clone(),
             )
+            .await?;
+        self.wdc_client.collect_fees(fees).await?;
+        self.quotes
+            .update_status_if_accepted(quote.id, quote.status)
             .await?;
         Ok(())
     }
@@ -360,25 +354,21 @@ async fn mint_fees(
     keyscl: &dyn WdcClient,
     fees_amount: cashu::Amount,
     keys: cashu::KeySet,
-    mint_url: cashu::MintUrl,
-    billid: &BillId,
-) -> Result<Token> {
-    let premints =
+) -> Result<Vec<cashu::Proof>> {
+    let premint =
         cashu::PreMintSecrets::random(keys.id, fees_amount, &cashu::amount::SplitTarget::None)
             .map_err(|e| {
                 Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}"))
             })?;
-    let blinds = premints.blinded_messages();
-    let signatures = keyscl.sign(&blinds).await?;
-    let mut proofs = Vec::new();
-    for (signature, premint) in signatures.into_iter().zip(premints.iter()) {
-        let proof =
-            bcr_common::core::signature::unblind_ecash_signature(&keys, premint.clone(), signature)
-                .map_err(|e| Error::InternalServer(e.to_string()))?;
-        proofs.push(proof);
-    }
-    let token = Token::new_bitcr(mint_url, proofs, Some(billid.to_string()), keys.unit);
-    Ok(token)
+    let signatures = keyscl.sign(&premint.blinded_messages()).await?;
+    let (rs, secrets) = premint
+        .secrets
+        .into_iter()
+        .map(|secret| (secret.r, secret.secret))
+        .unzip();
+    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)
+        .map_err(|e| Error::InternalServer(format!("mint_fees(): construct_proofs(): {e}")))?;
+    Ok(prfs)
 }
 
 #[cfg(test)]
