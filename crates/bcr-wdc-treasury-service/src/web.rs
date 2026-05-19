@@ -66,11 +66,13 @@ pub async fn melt_quote_onchain(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn melt_onchain(
-    State(ctrl): State<Arc<onchain::Service>>,
+    State(ctrl): State<AppController>,
     Json(request): Json<wire_melt::MeltOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltOnchainResponse>> {
     let now = chrono::Utc::now();
-    let response = ctrl.melt_onchain(request, now).await?;
+    let vault_srvc = ctrl.vault.clone();
+    let vault = onchain::VaultSrvc { vault: vault_srvc };
+    let response = ctrl.onchain.melt_onchain(request, now, &vault).await?;
     Ok(Json(response))
 }
 

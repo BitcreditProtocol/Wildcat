@@ -16,6 +16,7 @@ use crate::{error::Result, TStamp};
 // ----- end imports
 
 pub use clients::ClowderCl;
+pub use clients::VaultSrvc;
 pub use clients::WildcatCl;
 pub use monitor::MintOpMonitor;
 pub use service::{MintQuote, Service};
@@ -89,6 +90,12 @@ pub trait ClowderClient: Send + Sync {
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait VaultService: Send + Sync {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
