@@ -190,6 +190,7 @@ mod tests {
                 eq(bid),
             )
             .returning(|_, _, _, _, _| Ok(()));
+        wdc.expect_collect_fees().times(1).returning(|_| Ok(()));
         let serv = Service {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),

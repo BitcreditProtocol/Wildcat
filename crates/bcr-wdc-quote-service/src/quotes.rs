@@ -128,7 +128,7 @@ pub enum Status {
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
         discounted: bitcoin::Amount,
-        fee: String,
+        fee: cashu::Amount,
     },
 }
 
@@ -261,34 +261,24 @@ impl Quote {
         Ok(())
     }
 
-    pub fn start_minting(&mut self, fee: bcr_common::wallet::Token) -> Result<()> {
+    pub fn start_minting(&mut self, fee: cashu::Amount) -> Result<()> {
         match self.status {
             Status::Accepted {
                 keyset_id,
                 wallet_pubkey,
                 discounted,
             } => {
-                let calculated_fees = self.bill.sum - discounted;
-                let fee_token_value: u64 = fee
-                    .value()
-                    .map_err(|e| Error::InternalServer(format!("fee.value() error: {e}")))?
-                    .into();
-                if fee_token_value != calculated_fees.to_sat() {
-                    return Err(Error::InternalServer(format!(
-                        "fee.value() {fee_token_value} != discounted {discounted}",
-                    )));
-                }
                 self.status = Status::MintingEnabled {
                     keyset_id,
                     wallet_pubkey,
                     discounted,
-                    fee: fee.to_string(),
+                    fee,
                 }
             }
             _ => {
                 return Err(Error::InvalidQuoteStatus(
                     self.id,
-                    StatusDiscriminants::MintingEnabled,
+                    StatusDiscriminants::Accepted,
                     StatusDiscriminants::from(self.status.clone()),
                 ))
             }
