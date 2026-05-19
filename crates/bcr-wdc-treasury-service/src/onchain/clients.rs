@@ -7,8 +7,12 @@ use bcr_common::{
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
     clwdr_client::ClowderNatsClient,
     core::signature,
-    wire::{clowder as wire_clowder, keys as wire_keys, melt as wire_melt, mint as wire_mint},
+    wire::{
+        attestation::IssuanceAttestation, clowder as wire_clowder, keys as wire_keys,
+        melt as wire_melt, mint as wire_mint,
+    },
 };
+use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -208,6 +212,7 @@ impl ClowderClient for ClowderCl {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
+        attestation: IssuanceAttestation,
     ) -> Result<wire_melt::MeltTx> {
         let request = wire_clowder::MeltOnchainRequest {
             quote: qid,
@@ -216,6 +221,7 @@ impl ClowderClient for ClowderCl {
             inputs,
             commitment,
             fees,
+            attestation,
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
@@ -244,6 +250,16 @@ impl ClowderClient for ClowderCl {
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
         let collaterals = self.rest.get_mint_collateral().await?;
         Ok(collaterals.onchain)
+    }
+
+    async fn verify_attestation(
+        &self,
+        alpha_id: &PublicKey,
+        inputs: &[cashu::Proof],
+        attestation: &IssuanceAttestation,
+    ) -> Result<()> {
+        bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
+        Ok(())
     }
 }
 

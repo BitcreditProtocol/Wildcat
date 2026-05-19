@@ -10,6 +10,7 @@ use bcr_common::{
     core_tests,
     wire::keys as wire_keys,
 };
+use bcr_wdc_core_service::test_utils::dummy_attestation;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 // ----- local imports
 
@@ -53,7 +54,10 @@ async fn swap() {
         )
         .await
         .unwrap();
-    client.swap(proofs, blinds, commitment).await.expect("swap");
+    client
+        .swap(proofs, blinds, commitment, dummy_attestation())
+        .await
+        .expect("swap");
 }
 
 #[tokio::test]
@@ -144,7 +148,7 @@ async fn swap_p2pk() {
         .await
         .unwrap();
     let res = client
-        .swap(correct_proofs, blinds, commitment)
+        .swap(correct_proofs, blinds, commitment, dummy_attestation())
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));

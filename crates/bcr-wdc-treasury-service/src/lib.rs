@@ -134,6 +134,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         min_melt_threshold,
+        alpha_id: my_pk,
     };
 
     // eBill
@@ -172,7 +173,10 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         rest: clowder_client.clone(),
         stream: clowder_nats_client.clone(),
     });
-    let factory = Arc::new(foreign::clients::MintClientFactory { my_pk });
+    let factory = Arc::new(foreign::clients::MintClientFactory {
+        my_pk,
+        clwdr: clowder_client.clone(),
+    });
     let foreigncore = Arc::new(foreign::clients::CoreCl {
         core: core_client.clone(),
     });

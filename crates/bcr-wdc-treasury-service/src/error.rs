@@ -59,6 +59,10 @@ pub enum Error {
     EbillClient(#[from] bcr_common::client::ebill::Error),
     #[error("foreign mint client {0}")]
     MintClient(#[from] bcr_common::client::mint::Error),
+    #[error("attestation: {0}")]
+    Attestation(#[from] bcr_common::wire::attestation::AttestationError),
+    #[error("attestation verify: {0}")]
+    AttestationVerify(#[from] bcr_wdc_utils::attestation::VerifyError),
     // internal errors
     #[error("Unavailable: {0}")]
     Unavailable(String),
@@ -115,6 +119,15 @@ impl axum::response::IntoResponse for Error {
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::MintClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
+            Error::Attestation(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::AttestationVerify(e) => match e {
+                bcr_wdc_utils::attestation::VerifyError::Attestation(a) => {
+                    (StatusCode::BAD_REQUEST, a.to_string())
+                }
+                bcr_wdc_utils::attestation::VerifyError::Rest(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+                }
+            },
 
             Error::Unavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),

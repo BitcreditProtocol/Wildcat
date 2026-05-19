@@ -32,6 +32,8 @@ pub enum Error {
     TreasuryClient(#[from] bcr_common::client::admin::treasury::Error),
     #[error("clowder client {0}")]
     ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
+    #[error("clowder rest client {0}")]
+    ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut00 error: {0}")]
@@ -42,6 +44,10 @@ pub enum Error {
     BasicChecks(#[from] signatures_utils::ChecksError),
     #[error("Verification: {0}")]
     Verify(#[from] bcr_common::core::swap::mint::VerificationError),
+    #[error("Attestation: {0}")]
+    Attestation(#[from] bcr_common::wire::attestation::AttestationError),
+    #[error("AttestationVerify: {0}")]
+    AttestationVerify(#[from] bcr_wdc_utils::attestation::VerifyError),
     // domain errors
     #[error("invalid inputs {0}")]
     InvalidInput(String),
@@ -72,11 +78,21 @@ impl axum::response::IntoResponse for Error {
             Error::BorshVerify(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CdkDhke(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::CDKNUT00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BasicChecks(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::Verify(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::Attestation(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::AttestationVerify(e) => match e {
+                bcr_wdc_utils::attestation::VerifyError::Attestation(a) => {
+                    (StatusCode::BAD_REQUEST, a.to_string())
+                }
+                bcr_wdc_utils::attestation::VerifyError::Rest(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+                }
+            },
 
             Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             Error::Conflict(e) => (StatusCode::CONFLICT, e.to_string()),
