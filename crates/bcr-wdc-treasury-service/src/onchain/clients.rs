@@ -13,7 +13,8 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    onchain::{ClowderClient, WildcatClient},
+    onchain::{ClowderClient, VaultService, WildcatClient},
+    vault,
 };
 
 // ----- end imports
@@ -243,5 +244,17 @@ impl ClowderClient for ClowderCl {
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
         let collaterals = self.rest.get_mint_collateral().await?;
         Ok(collaterals.onchain)
+    }
+}
+
+pub struct VaultSrvc {
+    pub vault: Arc<vault::Service>,
+}
+
+#[async_trait]
+impl VaultService for VaultSrvc {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.vault.store_proofs(proofs).await?;
+        Ok(())
     }
 }
