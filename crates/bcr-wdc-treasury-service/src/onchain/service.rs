@@ -93,49 +93,78 @@ impl Service {
         request: wire_melt::MeltQuoteOnchainRequest,
         now: TStamp,
     ) -> Result<wire_melt::MeltQuoteOnchainResponse> {
-        let input_sats: u64 = request.inputs.iter().map(|fp| fp.amount).sum();
-        let total = bitcoin::Amount::from_sat(input_sats);
-        if total < self.min_melt_threshold {
+        let wire_melt::MeltQuoteOnchainRequest {
+            inputs,
+            wallet_key,
+            address,
+        } = request;
+        // valid fingerprints
+        let core_fps: Vec<_> = inputs
+            .iter()
+            .cloned()
+            .map(bcr_common::core::signature::ProofFingerprint::from)
+            .collect();
+        bcr_wdc_utils::signatures::basic_fingerprints_checks(&core_fps)?;
+        self.wdc.verify_fingerprints(&inputs).await?;
+        // Unspent fingerprints
+        let mut input_ys = inputs.iter().map(|fp| fp.y).collect::<Vec<_>>();
+        let states = self.wdc.check_spendable(input_ys.clone()).await?;
+        let all_unspent = states
+            .iter()
+            .all(|s| matches!(s.state, cashu::State::Unspent));
+        if !all_unspent {
+            return Err(Error::InvalidInput(String::from("proofs already spent")));
+        }
+        // amount > dust
+        let input_total = bitcoin::Amount::from_sat(inputs.iter().map(|fp| fp.amount).sum::<u64>());
+        if input_total < self.min_melt_threshold {
             return Err(Error::InvalidInput(String::from("melt amount too low")));
         }
-        let reserve = self.clowder_cl.get_onchain_reserve().await?;
-        if total > reserve {
-            return Err(Error::Unavailable(String::from(
-                "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
-        }
-        let address = self
+        // valid address
+        let checked_address = self
             .clowder_cl
-            .verify_onchain_address(request.address.clone())
+            .verify_onchain_address(address.clone())
             .await?;
-        let admin_fees = self.calculate_melt_fees(reserve, total);
+        // sufficient amount for fees
+        let reserve = self.clowder_cl.get_onchain_reserve().await?;
+        let admin_fees = self.calculate_melt_fees(reserve, input_total);
         let network_fees = self
             .clowder_cl
-            .estimate_onchain_fees(total - admin_fees)
+            .estimate_onchain_fees(input_total - admin_fees)
             .await?;
-        if total < admin_fees + network_fees {
+        if input_total < admin_fees + network_fees {
             return Err(Error::InvalidInput(String::from(
                 "insufficient funds to cover fees",
             )));
         }
-        let available = total - admin_fees - network_fees;
+        // insufficient funds in clowder
+        if input_total > reserve {
+            return Err(Error::Unavailable(String::from(
+                "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
+        }
+        // all ok, proceed
+        let target = input_total - admin_fees - network_fees;
         let expiry = now + self.quote_expiry;
         let qid = Uuid::new_v4();
         let body = wire_melt::MeltQuoteOnchainResponseBody {
             quote: qid,
-            inputs: request.inputs.clone(),
-            address: request.address.clone(),
-            amount: available,
+            inputs: inputs.clone(),
+            address: address.clone(),
+            amount: target,
             expiry: expiry.timestamp().max(0) as u64,
-            wallet_key: request.wallet_key,
+            wallet_key,
         };
         let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
+        input_ys.sort();
         let op = onchain::OnchainMeltOperation {
             qid,
-            address: address.to_string(),
-            amount: available,
+            available: cashu::Amount::from(input_total.to_sat()),
+            address: checked_address.to_string(),
+            target,
+            fees: cashu::Amount::from(admin_fees.to_sat()),
             expiry,
-            fees: admin_fees + network_fees,
-            wallet_key: request.wallet_key,
+            wallet_key,
+            input_ys,
             commitment,
             status: onchain::MeltStatus::Pending,
         };
@@ -161,37 +190,55 @@ impl Service {
         request: wire_melt::MeltOnchainRequest,
         now: TStamp,
     ) -> Result<wire_melt::MeltOnchainResponse> {
+        let wire_melt::MeltOnchainRequest { inputs, .. } = request;
+        // verify proofs
+        bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
+        self.wdc.verify_proofs(&inputs).await?;
+        // verify unspent
+        let mut p_ys = inputs.ys()?;
+        let states = self.wdc.check_spendable(p_ys.clone()).await?;
+        let all_unspent = states
+            .iter()
+            .all(|s| matches!(s.state, cashu::State::Unspent));
+        if !all_unspent {
+            return Err(Error::InvalidInput(String::from("proofs already spent")));
+        }
+        // load melt operation
         let qid = request.quote;
         let op = self.repo.load_onchain_meltop(qid).await?;
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        let proofs = request.inputs.clone();
-        let inputs_amount = proofs.total_amount()?;
-        let req_camount = cashu::Amount::from((op.amount + op.fees).to_sat());
-        if inputs_amount < req_camount {
-            return Err(Error::InvalidInput(format!(
-                "input amount, required: {req_camount}, provided: {inputs_amount}"
+        p_ys.sort();
+        if p_ys != op.input_ys {
+            return Err(Error::InvalidInput(String::from(
+                "melt proofs != committed fingerprints",
             )));
         }
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
-        self.wdc.burn(proofs.clone()).await?;
+        self.wdc.burn(inputs.clone()).await?;
         // TODO: generate and store fees
         let fees = vec![];
         let txs = match self
             .clowder_cl
-            .melt_onchain(qid, op.amount, recipient, proofs, fees, op.commitment)
+            .melt_onchain(
+                qid,
+                op.target,
+                recipient,
+                inputs.clone(),
+                fees,
+                op.commitment,
+            )
             .await
         {
             Ok(txs) => txs,
             Err(e) => {
-                let ys = request.inputs.ys()?;
                 tracing::warn!(
                     "Failed to melt onchain for quote {qid}: {e}, recovering proofs {:?}",
-                    ys
+                    op.input_ys,
                 );
-                self.wdc.recover(request.inputs.clone()).await?;
+                self.wdc.recover(inputs.clone()).await?;
                 return Err(Error::Internal(format!("Failed to melt onchain: {e}")));
             }
         };
@@ -308,9 +355,23 @@ mod tests {
 
     #[tokio::test]
     async fn new_onchain_meltop_ok() {
-        let wdc = MockWildcatClient::new();
+        let mut wdc = MockWildcatClient::new();
         let mut repo = MockRepository::new();
         let mut clowder = MockClowderClient::new();
+        wdc.expect_verify_fingerprints()
+            .times(1)
+            .returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
         clowder
             .expect_get_onchain_reserve()
             .times(1)
@@ -364,18 +425,33 @@ mod tests {
         let mut clowder = MockClowderClient::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
         let op = onchain::OnchainMeltOperation {
             qid,
+            available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
-            amount: bitcoin::Amount::from_sat(8),
+            target: bitcoin::Amount::from_sat(8),
             expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
-            fees: bitcoin::Amount::ZERO,
+            fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys,
             commitment: signature,
             status: onchain::MeltStatus::Pending,
         };
+        wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
         repo.expect_load_onchain_meltop()
             .times(1)
             .returning(move |_| Ok(op.clone()));

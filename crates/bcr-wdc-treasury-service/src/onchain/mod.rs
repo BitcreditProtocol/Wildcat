@@ -3,31 +3,37 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    wire::{clowder as wire_clowder, melt as wire_melt, mint as wire_mint},
+    wire::{clowder as wire_clowder, keys as wire_keys, melt as wire_melt, mint as wire_mint},
 };
 use uuid::Uuid;
 // ----- local modules
-mod clowder;
+mod clients;
 mod monitor;
 mod service;
-mod wildcat;
 // ----- local imports
 use crate::{error::Result, TStamp};
 
 // ----- end imports
 
-pub use clowder::ClowderCl;
+pub use clients::ClowderCl;
+pub use clients::WildcatCl;
 pub use monitor::MintOpMonitor;
 pub use service::{MintQuote, Service};
-pub use wildcat::WildcatCl;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
+    async fn verify_fingerprints(&self, fps: &[wire_keys::ProofFingerprint]) -> Result<()>;
+    async fn verify_proofs(&self, proofs: &[cashu::Proof]) -> Result<()>;
+    async fn check_spendable(
+        &self,
+        proofs: Vec<cashu::PublicKey>,
+    ) -> Result<Vec<cashu::ProofState>>;
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
+    async fn keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
     async fn get_active_keyset(&self) -> Result<cashu::Id>;
 }
 
@@ -116,10 +122,13 @@ pub enum MeltStatus {
 pub struct OnchainMeltOperation {
     pub qid: Uuid,
     pub address: String,
-    pub amount: bitcoin::Amount,
+    pub target: bitcoin::Amount,
+    pub available: cashu::Amount,
+    pub fees: cashu::Amount,
+    // network fees = available - target - fees
     pub expiry: TStamp,
-    pub fees: bitcoin::Amount,
     pub wallet_key: cashu::PublicKey,
+    pub input_ys: Vec<cashu::PublicKey>,
     pub commitment: secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }

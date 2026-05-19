@@ -15,6 +15,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     // external errors wrappers
+    #[error("bcr_utils::signature {0}")]
+    BcrSignatures(#[from] bcr_wdc_utils::signatures::ChecksError),
     #[error("bcr_common::signature::ecash {0}")]
     BcrEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("bcr_common::signature::borsh {0}")]
@@ -37,6 +39,8 @@ pub enum Error {
     CDK20(#[from] CDK20Error),
     #[error("CDK secret {0}")]
     CDKSecret(#[from] cashu::secret::Error),
+    #[error("CDK dhke {0}")]
+    CDKdhke(#[from] cashu::dhke::Error),
     #[error("DB error {0}")]
     DB(#[source] AnyError),
     #[error("Secp256k1 error {0}")]
@@ -89,6 +93,7 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
+            Error::BcrSignatures(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -100,6 +105,7 @@ impl axum::response::IntoResponse for Error {
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::CDKdhke(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::SerdeJson(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
