@@ -154,7 +154,6 @@ pub struct DBOnChain {
 }
 
 impl DBOnChain {
-    const QUOTES_TABLE: &'static str = "mint_quotes";
     const MELTS_TABLE: &'static str = "onchain_melts";
     const MINTS_TABLE: &'static str = "onchain_mints";
 
@@ -169,42 +168,7 @@ impl DBOnChain {
 
 #[async_trait]
 impl onchain::Repository for DBOnChain {
-    async fn store_quote(&self, quote: onchain::MintQuote) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::QUOTES_TABLE, quote.qid.clone());
-        let _: Option<onchain::MintQuote> = self
-            .db
-            .insert(rid)
-            .content(quote)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(())
-    }
-
-    async fn update_quote(&self, quote: onchain::MintQuote) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::QUOTES_TABLE, quote.qid.clone());
-        let _: Option<onchain::MintQuote> = self
-            .db
-            .update(rid)
-            .content(quote)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(())
-    }
-
-    async fn list_quotes(&self) -> Result<Vec<onchain::MintQuote>> {
-        let statement = String::from("SELECT * FROM type::table($table)");
-        let entries: Vec<onchain::MintQuote> = self
-            .db
-            .query(statement)
-            .bind(("table", Self::QUOTES_TABLE))
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(entries)
-    }
-
-    async fn store_onchain_mintop(&self, op: onchain::OnChainMintOperation) -> Result<()> {
+    async fn store_mintop(&self, op: onchain::OnChainMintOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
         let db_op = OnChainMintOperationDB::from(op);
         let _: Option<OnChainMintOperationDB> = self
@@ -216,7 +180,7 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn load_onchain_mintop(&self, qid: Uuid) -> Result<onchain::OnChainMintOperation> {
+    async fn load_mintop(&self, qid: Uuid) -> Result<onchain::OnChainMintOperation> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
         let result: Option<OnChainMintOperationDB> = self
             .db
@@ -228,7 +192,7 @@ impl onchain::Repository for DBOnChain {
             .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
 
-    async fn list_onchain_pending_mintops(&self) -> Result<Vec<Uuid>> {
+    async fn list_pending_mintops(&self) -> Result<Vec<Uuid>> {
         let entry: Vec<Uuid> = self
             .db
             .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
@@ -241,11 +205,7 @@ impl onchain::Repository for DBOnChain {
         Ok(entry)
     }
 
-    async fn update_onchain_mintop_status(
-        &self,
-        qid: Uuid,
-        status: onchain::MintStatus,
-    ) -> Result<()> {
+    async fn update_mintop_status(&self, qid: Uuid, status: onchain::MintStatus) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
         let db_status = MintStatusDB::from(status);
         let entry: Option<OnChainMintOperationDB> = self
@@ -263,7 +223,7 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn store_onchain_meltop(&self, op: onchain::OnchainMeltOperation) -> Result<()> {
+    async fn store_meltop(&self, op: onchain::OnchainMeltOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, op.qid);
         let _: Option<onchain::OnchainMeltOperation> = self
             .db
@@ -273,7 +233,7 @@ impl onchain::Repository for DBOnChain {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
-    async fn load_onchain_meltop(&self, qid: Uuid) -> Result<onchain::OnchainMeltOperation> {
+    async fn load_meltop(&self, qid: Uuid) -> Result<onchain::OnchainMeltOperation> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
         let result: Option<onchain::OnchainMeltOperation> = self
             .db
@@ -282,11 +242,7 @@ impl onchain::Repository for DBOnChain {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         result.ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
-    async fn update_onchain_meltop_status(
-        &self,
-        qid: Uuid,
-        status: onchain::MeltStatus,
-    ) -> Result<()> {
+    async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
         let entry: Option<onchain::OnchainMeltOperation> = self
             .db
@@ -838,22 +794,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mint_quote() {
-        let db = init_debit_mem_db().await;
-        let quote = onchain::MintQuote {
-            qid: Uuid::new_v4().to_string(),
-            ebill_id: core_tests::random_bill_id(),
-            clowder_qid: Uuid::new_v4(),
-            mint_complete: false,
-        };
-        db.store_quote(quote.clone()).await.unwrap();
-        let list = db.list_quotes().await.unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].qid, quote.qid);
-        db.update_quote(quote).await.unwrap();
-    }
-
-    #[tokio::test]
     async fn update_onchain_mintop_status() {
         let db = init_debit_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
@@ -871,13 +811,11 @@ mod tests {
             expiry: chrono::Utc::now() + chrono::Duration::hours(1),
             status: onchain::MintStatus::Pending { blinds },
         };
-        db.store_onchain_mintop(op.clone()).await.unwrap();
+        db.store_mintop(op.clone()).await.unwrap();
         let signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
         let status = onchain::MintStatus::Paid { signatures };
-        db.update_onchain_mintop_status(op.qid, status)
-            .await
-            .unwrap();
-        let res = db.load_onchain_mintop(op.qid).await.unwrap();
+        db.update_mintop_status(op.qid, status).await.unwrap();
+        let res = db.load_mintop(op.qid).await.unwrap();
         assert!(matches!(res.status, onchain::MintStatus::Paid { .. }));
     }
 
@@ -899,8 +837,8 @@ mod tests {
             expiry: chrono::Utc::now() + chrono::Duration::hours(1),
             status: onchain::MintStatus::Pending { blinds },
         };
-        db.store_onchain_mintop(op.clone()).await.unwrap();
-        let pending = db.list_onchain_pending_mintops().await.unwrap();
+        db.store_mintop(op.clone()).await.unwrap();
+        let pending = db.list_pending_mintops().await.unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0], op.qid);
     }

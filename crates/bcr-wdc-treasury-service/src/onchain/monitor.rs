@@ -15,9 +15,9 @@ pub struct MintOpMonitor {
 
 impl MintOpMonitor {
     async fn check_pendings(&self, now: TStamp) -> Result<()> {
-        let pendings = self.srvc.repo.list_onchain_pending_mintops().await?;
+        let pendings = self.srvc.repo.list_pending_mintops().await?;
         for pending in pendings {
-            let op = self.srvc.repo.load_onchain_mintop(pending).await?;
+            let op = self.srvc.repo.load_mintop(pending).await?;
             let MintStatus::Pending { blinds } = op.status else {
                 tracing::warn!("mintop {pending} is not pending, skipping");
                 continue;
@@ -37,18 +37,12 @@ impl MintOpMonitor {
                     .clowder_cl
                     .mint_onchain(op.qid, op.kid, signatures)
                     .await?;
-                self.srvc
-                    .repo
-                    .update_onchain_mintop_status(op.qid, new)
-                    .await?;
+                self.srvc.repo.update_mintop_status(op.qid, new).await?;
             } else if op.expiry < now {
                 // TODO: we should accept transactions included in the first block after expiry
                 tracing::info!("mintop {pending} expired");
                 let new = MintStatus::Expired;
-                self.srvc
-                    .repo
-                    .update_onchain_mintop_status(op.qid, new)
-                    .await?;
+                self.srvc.repo.update_mintop_status(op.qid, new).await?;
             }
         }
         Ok(())
