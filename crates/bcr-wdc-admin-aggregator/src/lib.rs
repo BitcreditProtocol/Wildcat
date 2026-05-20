@@ -23,7 +23,6 @@ use utoipa::OpenApi;
 // ----- local modules
 mod admin;
 mod error;
-mod types;
 
 // ----- end imports
 
@@ -97,7 +96,6 @@ pub mod endpoints {
     // Core-Client
     pub const KEYSET_INFO: &str = "/v1/admin/keysets/{kid}";
     pub const LIST_KEYSET_INFOS: &str = "/v1/admin/keysets";
-    pub const POST_TOKEN_STATUS: &str = "/v1/admin/credit/token_status";
     // Quotes-Client
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const LIST_CREDIT_QUOTES: &str = "/v1/admin/credit/quote";
@@ -120,8 +118,8 @@ pub mod endpoints {
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     // Treasury-Client
-    pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/credit/mint_op_status/{qid}";
-    pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/credit/mint_ops/{kid}";
+    pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/ebill/mint_op_status/{qid}";
+    pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/ebill/mint_ops/{kid}";
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
 }
 
@@ -134,7 +132,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
         .route(endpoints::LIST_KEYSET_INFOS, get(admin::list_keyset_infos))
-        .route(endpoints::POST_TOKEN_STATUS, post(admin::post_token_status))
         // quotes service
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
         .route(endpoints::LIST_CREDIT_QUOTES, get(admin::list_quotes))
@@ -202,8 +199,6 @@ pub fn routes(ctrl: AppController) -> Router {
         // core service
         cashu::Id,
         cashu::KeySetInfo,
-        types::TokenStateRequest,
-        types::TokenStateResponse,
         // quotes service
         wire_quotes::ListSort,
         wire_quotes::InfoReply,
@@ -236,7 +231,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::list_keyset_infos,
         admin::get_mintop_status,
         admin::list_mintops,
-        admin::post_token_status,
         // quotes service
         admin::get_quote,
         admin::list_quotes,
