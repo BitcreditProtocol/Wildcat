@@ -1,5 +1,4 @@
 // ----- standard library imports
-use std::str::FromStr;
 // ----- extra library imports
 use axum::{
     extract::{Json, Path, Query, State},
@@ -7,12 +6,12 @@ use axum::{
     response::{AppendHeaders, IntoResponse},
 };
 use bcr_common::{
-    cashu::{self, ProofsMethods},
+    cashu,
     client::ebill::Error as EbillClientError,
     core::BillId,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
-        identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
+        identity as wire_identity, info as wire_info, quotes as wire_quotes,
         treasury as wire_treasury,
     },
 };
@@ -21,7 +20,7 @@ use wire_clowder::ClowderNodeInfo;
 use crate::{
     endpoints,
     error::{Error, Result},
-    types, AppController,
+    AppController,
 };
 
 // ----- end imports
@@ -611,44 +610,4 @@ pub async fn get_mint_info(
         versions,
     };
     Ok(Json(response))
-}
-
-#[utoipa::path(
-    post,
-    path = endpoints::POST_TOKEN_STATUS,
-    request_body(content = types::TokenStateRequest, content_type = "application/json"),
-    responses (
-        (status = 200, description = "Successful response", body = types::TokenStateResponse, content_type = "application/json"),
-    )
-)]
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn post_token_status(
-    State(ctrl): State<AppController>,
-    Json(req): Json<types::TokenStateRequest>,
-) -> Result<Json<types::TokenStateResponse>> {
-    let head = req.token.chars().take(16).collect::<String>();
-    tracing::debug!("Received token state request {}", head);
-
-    let token = bcr_common::wallet::Token::from_str(&req.token)?;
-
-    let kinfo_filters = wire_keys::KeysetInfoFilters {
-        unit: token.unit(),
-        ..Default::default()
-    };
-    let kinfos = ctrl.core_cl.list_keyset_info(kinfo_filters).await?;
-    let ys = token.proofs(&kinfos)?.ys()?;
-    let states = ctrl.core_cl.check_state(ys).await?;
-    let is_any_spent = states
-        .into_iter()
-        .map(|s| s.state)
-        .any(|s| matches!(s, cashu::State::Spent));
-    if is_any_spent {
-        Ok(Json(types::TokenStateResponse {
-            state: types::TokenState::Spent,
-        }))
-    } else {
-        Ok(Json(types::TokenStateResponse {
-            state: types::TokenState::Unspent,
-        }))
-    }
 }
