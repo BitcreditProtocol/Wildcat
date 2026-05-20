@@ -23,7 +23,7 @@ pub use clients::ClowderCl;
 pub use clients::VaultSrvc;
 pub use clients::WildcatCl;
 pub use monitor::MintOpMonitor;
-pub use service::{MintQuote, Service};
+pub use service::Service;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -154,15 +154,11 @@ pub struct OnchainMeltOperation {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
-    async fn store_quote(&self, quote: MintQuote) -> Result<()>;
-    async fn update_quote(&self, quote: MintQuote) -> Result<()>;
-    async fn list_quotes(&self) -> Result<Vec<MintQuote>>;
-
-    async fn store_onchain_mintop(&self, op: OnChainMintOperation) -> Result<()>;
-    async fn load_onchain_mintop(&self, qid: Uuid) -> Result<OnChainMintOperation>;
-    async fn update_onchain_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
-    async fn list_onchain_pending_mintops(&self) -> Result<Vec<Uuid>>;
-    async fn store_onchain_meltop(&self, op: OnchainMeltOperation) -> Result<()>;
-    async fn load_onchain_meltop(&self, qid: Uuid) -> Result<OnchainMeltOperation>;
-    async fn update_onchain_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
+    async fn store_mintop(&self, op: OnChainMintOperation) -> Result<()>;
+    async fn load_mintop(&self, qid: Uuid) -> Result<OnChainMintOperation>;
+    async fn update_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
+    async fn list_pending_mintops(&self) -> Result<Vec<Uuid>>;
+    async fn store_meltop(&self, op: OnchainMeltOperation) -> Result<()>;
+    async fn load_meltop(&self, qid: Uuid) -> Result<OnchainMeltOperation>;
+    async fn update_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
 }

@@ -3,7 +3,6 @@ use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
-    core::BillId,
     wire::{melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
@@ -16,14 +15,6 @@ use crate::{
 };
 
 // ----- end imports
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct MintQuote {
-    pub qid: String,
-    pub ebill_id: BillId,
-    pub clowder_qid: uuid::Uuid,
-    pub mint_complete: bool,
-}
 
 pub struct Service {
     pub wdc: Arc<dyn WildcatClient>,
@@ -72,7 +63,7 @@ impl Service {
                 blinds: request.blinded_messages.clone(),
             },
         };
-        self.repo.store_onchain_mintop(mintop).await?;
+        self.repo.store_mintop(mintop).await?;
         let body = wire_mint::OnchainMintQuoteResponseBody {
             quote: qid,
             address: address.to_string(),
@@ -170,7 +161,7 @@ impl Service {
             commitment,
             status: onchain::MeltStatus::Pending,
         };
-        self.repo.store_onchain_meltop(op).await?;
+        self.repo.store_meltop(op).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
             content,
             commitment,
@@ -212,7 +203,7 @@ impl Service {
         }
         // load melt operation
         let qid = request.quote;
-        let op = self.repo.load_onchain_meltop(qid).await?;
+        let op = self.repo.load_meltop(qid).await?;
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
@@ -259,7 +250,7 @@ impl Service {
         };
         vault.store_proofs(fees).await?;
         let new = onchain::MeltStatus::Paid { tx: txs.clone() };
-        match self.repo.update_onchain_meltop_status(qid, new).await {
+        match self.repo.update_meltop_status(qid, new).await {
             Ok(_) => {}
             Err(e) => {
                 tracing::error!("DB Failure, lost MeltStatus update for {qid} with txs {txs:?}");
@@ -319,9 +310,7 @@ mod tests {
                         .assume_checked(),
                 )
             });
-        repo.expect_store_onchain_mintop()
-            .times(1)
-            .returning(|_| Ok(()));
+        repo.expect_store_mintop().times(1).returning(|_| Ok(()));
         clowder
             .expect_sign_onchain_mint_response()
             .times(1)
@@ -421,9 +410,7 @@ mod tests {
             .expect_estimate_onchain_fees()
             .times(1)
             .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
-        repo.expect_store_onchain_meltop()
-            .times(1)
-            .returning(|_| Ok(()));
+        repo.expect_store_meltop().times(1).returning(|_| Ok(()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
@@ -483,7 +470,7 @@ mod tests {
             }
             Ok(states)
         });
-        repo.expect_load_onchain_meltop()
+        repo.expect_load_meltop()
             .times(1)
             .returning(move |_| Ok(op.clone()));
         clowder
@@ -518,7 +505,7 @@ mod tests {
                     beta_txid: None,
                 })
             });
-        repo.expect_update_onchain_meltop_status()
+        repo.expect_update_meltop_status()
             .times(1)
             .returning(|_, _| Ok(()));
         let service = Service {
@@ -576,7 +563,7 @@ mod tests {
             }
             Ok(states)
         });
-        repo.expect_load_onchain_meltop()
+        repo.expect_load_meltop()
             .times(1)
             .returning(move |_| Ok(op.clone()));
         clowder
