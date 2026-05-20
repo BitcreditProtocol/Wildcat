@@ -122,8 +122,8 @@ struct OnChainMintOperationDB {
     expiry: crate::TStamp,
     status: MintStatusDB,
 }
-impl From<onchain::OnChainMintOperation> for OnChainMintOperationDB {
-    fn from(op: onchain::OnChainMintOperation) -> Self {
+impl From<onchain::MintOperation> for OnChainMintOperationDB {
+    fn from(op: onchain::MintOperation) -> Self {
         Self {
             qid: op.qid,
             kid: op.kid,
@@ -134,7 +134,7 @@ impl From<onchain::OnChainMintOperation> for OnChainMintOperationDB {
         }
     }
 }
-impl From<OnChainMintOperationDB> for onchain::OnChainMintOperation {
+impl From<OnChainMintOperationDB> for onchain::MintOperation {
     fn from(op: OnChainMintOperationDB) -> Self {
         Self {
             qid: op.qid,
@@ -168,7 +168,7 @@ impl DBOnChain {
 
 #[async_trait]
 impl onchain::Repository for DBOnChain {
-    async fn store_mintop(&self, op: onchain::OnChainMintOperation) -> Result<()> {
+    async fn store_mintop(&self, op: onchain::MintOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
         let db_op = OnChainMintOperationDB::from(op);
         let _: Option<OnChainMintOperationDB> = self
@@ -180,7 +180,7 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn load_mintop(&self, qid: Uuid) -> Result<onchain::OnChainMintOperation> {
+    async fn load_mintop(&self, qid: Uuid) -> Result<onchain::MintOperation> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
         let result: Option<OnChainMintOperationDB> = self
             .db
@@ -223,9 +223,9 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn store_meltop(&self, op: onchain::OnchainMeltOperation) -> Result<()> {
+    async fn store_meltop(&self, op: onchain::MeltOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, op.qid);
-        let _: Option<onchain::OnchainMeltOperation> = self
+        let _: Option<onchain::MeltOperation> = self
             .db
             .insert(rid)
             .content(op)
@@ -233,9 +233,9 @@ impl onchain::Repository for DBOnChain {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
-    async fn load_meltop(&self, qid: Uuid) -> Result<onchain::OnchainMeltOperation> {
+    async fn load_meltop(&self, qid: Uuid) -> Result<onchain::MeltOperation> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
-        let result: Option<onchain::OnchainMeltOperation> = self
+        let result: Option<onchain::MeltOperation> = self
             .db
             .select(rid)
             .await
@@ -244,7 +244,7 @@ impl onchain::Repository for DBOnChain {
     }
     async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
-        let entry: Option<onchain::OnchainMeltOperation> = self
+        let entry: Option<onchain::MeltOperation> = self
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))
@@ -257,6 +257,19 @@ impl onchain::Repository for DBOnChain {
             return Err(Error::ResourceNotFound(qid.to_string()));
         }
         Ok(())
+    }
+
+    async fn list_pending_meltops(&self) -> Result<Vec<Uuid>> {
+        let entries: Vec<Uuid> = self
+            .db
+            .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
+            .bind(("table", Self::MELTS_TABLE))
+            .bind(("status", onchain::MeltStatusDiscriminants::Pending))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take("qid")
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entries)
     }
 }
 
@@ -803,7 +816,7 @@ mod tests {
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
-        let op = onchain::OnChainMintOperation {
+        let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
             kid,
             target: bitcoin::Amount::ZERO,
@@ -829,7 +842,7 @@ mod tests {
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
-        let op = onchain::OnChainMintOperation {
+        let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
             kid,
             target: bitcoin::Amount::ZERO,

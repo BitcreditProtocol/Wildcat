@@ -10,7 +10,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    onchain::{self, ClowderClient, MintStatus, OnChainMintOperation, Repository, WildcatClient},
+    onchain::{self, ClowderClient, MintOperation, MintStatus, Repository, WildcatClient},
     TStamp,
 };
 
@@ -53,7 +53,7 @@ impl Service {
             .request_onchain_mint_address(qid, kid)
             .await?;
         let expiry = now + self.quote_expiry;
-        let mintop = OnChainMintOperation {
+        let mintop = MintOperation {
             qid,
             kid,
             target: blinds_amount,
@@ -131,7 +131,8 @@ impl Service {
             )));
         }
         // insufficient funds in clowder
-        if input_total > reserve {
+        let pending_amount = self.pending_meltops_amount().await?;
+        if input_total > reserve - pending_amount {
             return Err(Error::Unavailable(String::from(
                 "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
         }
@@ -149,7 +150,7 @@ impl Service {
         };
         let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
         input_ys.sort();
-        let op = onchain::OnchainMeltOperation {
+        let op = onchain::MeltOperation {
             qid,
             available: cashu::Amount::from(input_total.to_sat()),
             address: checked_address.to_string(),
@@ -166,6 +167,20 @@ impl Service {
             content,
             commitment,
         })
+    }
+
+    async fn pending_meltops_amount(&self) -> Result<bitcoin::Amount> {
+        let pendings_ids = self.repo.list_pending_meltops().await?;
+        let mut total = bitcoin::Amount::ZERO;
+        for id in pendings_ids {
+            let op = self.repo.load_meltop(id).await;
+            let Ok(op) = op else {
+                tracing::error!("DB Failure, lost access to pending MeltOp with id {id}");
+                continue;
+            };
+            total += op.target;
+        }
+        Ok(total)
     }
 
     fn calculate_melt_fees(
@@ -278,6 +293,7 @@ mod tests {
     use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use cashu::Amount;
+    use mockall::predicate::eq;
     use std::str::FromStr;
 
     fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
@@ -372,6 +388,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_onchain_meltop_no_reserves() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        wdc.expect_verify_fingerprints()
+            .times(1)
+            .returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
+        clowder
+            .expect_get_onchain_reserve()
+            .times(1)
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        clowder
+            .expect_verify_onchain_address()
+            .times(1)
+            .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_estimate_onchain_fees()
+            .times(1)
+            .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
+        let qid = Uuid::new_v4();
+        let cloned_qid = qid.clone();
+        repo.expect_list_pending_meltops()
+            .times(1)
+            .returning(move || Ok(vec![cloned_qid.clone()]));
+        repo.expect_load_meltop()
+            .times(1)
+            .with(eq(qid))
+            .returning(move |_| {
+                Ok(onchain::MeltOperation {
+                    qid,
+                    available: cashu::Amount::from(99_000),
+                    address: String::new(),
+                    target: bitcoin::Amount::from_sat(99_000),
+                    expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+                    fees: cashu::Amount::ZERO,
+                    wallet_key: core::generate_random_keypair().public_key().into(),
+                    input_ys: vec![],
+                    commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64])
+                        .unwrap(),
+                    status: onchain::MeltStatus::Pending,
+                })
+            });
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
+        };
+        let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
+        let amounts = vec![Amount::from(512), Amount::from(512)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
+        let request = wire_melt::MeltQuoteOnchainRequest {
+            inputs: fps,
+            address,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+        };
+        let response = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await;
+        assert!(matches!(response, Err(Error::Unavailable(_))));
+    }
+
+    #[tokio::test]
     async fn new_onchain_meltop_ok() {
         let mut wdc = MockWildcatClient::new();
         let mut repo = MockRepository::new();
@@ -398,6 +492,9 @@ mod tests {
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
+        repo.expect_list_pending_meltops()
+            .times(1)
+            .returning(|| Ok(vec![]));
         clowder
             .expect_sign_onchain_melt_response()
             .times(1)
@@ -446,7 +543,7 @@ mod tests {
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        let op = onchain::OnchainMeltOperation {
+        let op = onchain::MeltOperation {
             qid,
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
@@ -539,7 +636,7 @@ mod tests {
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        let op = onchain::OnchainMeltOperation {
+        let op = onchain::MeltOperation {
             qid,
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
