@@ -121,8 +121,8 @@ pub enum MintStatus {
     },
     Expired,
 }
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct OnChainMintOperation {
+#[derive(Debug, Clone)]
+pub struct MintOperation {
     pub qid: Uuid,
     pub kid: cashu::Id,
     pub recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
@@ -131,13 +131,14 @@ pub struct OnChainMintOperation {
     pub status: MintStatus,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
 pub enum MeltStatus {
     Pending,
     Paid { tx: wire_melt::MeltTx },
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct OnchainMeltOperation {
+pub struct MeltOperation {
     pub qid: Uuid,
     pub address: String,
     pub target: bitcoin::Amount,
@@ -154,11 +155,12 @@ pub struct OnchainMeltOperation {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
-    async fn store_mintop(&self, op: OnChainMintOperation) -> Result<()>;
-    async fn load_mintop(&self, qid: Uuid) -> Result<OnChainMintOperation>;
+    async fn store_mintop(&self, op: MintOperation) -> Result<()>;
+    async fn load_mintop(&self, qid: Uuid) -> Result<MintOperation>;
     async fn update_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
     async fn list_pending_mintops(&self) -> Result<Vec<Uuid>>;
-    async fn store_meltop(&self, op: OnchainMeltOperation) -> Result<()>;
-    async fn load_meltop(&self, qid: Uuid) -> Result<OnchainMeltOperation>;
+    async fn store_meltop(&self, op: MeltOperation) -> Result<()>;
+    async fn load_meltop(&self, qid: Uuid) -> Result<MeltOperation>;
     async fn update_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
+    async fn list_pending_meltops(&self) -> Result<Vec<Uuid>>;
 }
