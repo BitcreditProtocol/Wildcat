@@ -74,11 +74,7 @@ mod tests {
     use crate::error::Error;
     use bcr_common::core_tests;
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-    use bitcoin::{
-        key::rand,
-        secp256k1::{self as secp, schnorr},
-    };
-    use rand::Rng;
+    use bitcoin::{key::rand, secp256k1 as secp};
 
     //////////////////////////////////////////////////////////////////// KeysRepository
     async fn init_surreal_keys_db() -> impl KeysRepository {
@@ -446,12 +442,6 @@ mod tests {
         .collect()
     }
 
-    fn random_signature() -> schnorr::Signature {
-        let mut sl = [0; secp::constants::SCHNORR_SIGNATURE_SIZE];
-        rand::thread_rng().fill(&mut sl[..]);
-        schnorr::Signature::from_slice(&sl).unwrap()
-    }
-
     fn random_wallet_key() -> cashu::PublicKey {
         let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
         cashu::PublicKey::from(pk)
@@ -469,7 +459,7 @@ mod tests {
         let mut inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
+        let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
             outputs.clone(),
@@ -480,7 +470,7 @@ mod tests {
         .await
         .unwrap();
         inputs.swap(0, 1);
-        let signature = random_signature();
+        let signature = signatures_test::random_schnorr_signature();
         db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
             .await
             .unwrap();
@@ -498,7 +488,7 @@ mod tests {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
+        let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
             outputs.clone(),
@@ -532,7 +522,7 @@ mod tests {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
+        let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
             outputs.clone(),
@@ -566,7 +556,7 @@ mod tests {
         let mut inputs = random_cdk_pks(5);
         let mut outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let signature = random_signature();
+        let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
             outputs.clone(),

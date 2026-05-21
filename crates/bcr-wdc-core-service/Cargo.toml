@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-test-utils = ["axum-test", "bcr-wdc-utils/test-utils", "rand"]
+test-utils = ["axum-test", "bcr-wdc-utils/test-utils"]
 
 [dependencies]
 anyhow.workspace = true
@@ -20,7 +20,6 @@ borsh.workspace = true
 chrono.workspace = true
 config = {workspace = true}
 futures.workspace = true
-rand = {workspace = true, optional = true}
 reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
