@@ -883,7 +883,7 @@ mod tests {
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
 
-    async fn init_debit_mem_db() -> DBOnChain {
+    async fn init_onchain_mem_db() -> DBOnChain {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
@@ -892,8 +892,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_onchain_mintop_status() {
-        let db = init_debit_mem_db().await;
+    async fn onchain_update_mintop_status() {
+        let db = init_onchain_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
@@ -918,8 +918,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_onchain_pending_mintops() {
-        let db = init_debit_mem_db().await;
+    async fn onchain_list_pending_mintops() {
+        let db = init_onchain_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
