@@ -10,7 +10,10 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    onchain::{self, ClowderClient, MintOperation, MintStatus, Repository, WildcatClient},
+    onchain::{
+        self, ClowderClient, DeniedMeltOperation, MintOperation, MintStatus, Repository,
+        WildcatClient,
+    },
     TStamp,
 };
 
@@ -132,7 +135,14 @@ impl Service {
         }
         // insufficient funds in clowder
         let pending_amount = self.pending_meltops_amount().await?;
-        if input_total > reserve - pending_amount {
+        let available_reserve = reserve.checked_sub(pending_amount).unwrap_or_default();
+        if input_total > available_reserve {
+            let op = DeniedMeltOperation {
+                qid: Uuid::new_v4(),
+                inputs: input_total,
+                created: now,
+            };
+            self.repo.store_denied_meltop(op).await?;
             return Err(Error::Unavailable(String::from(
                 "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
         }
@@ -191,6 +201,14 @@ impl Service {
         const MELT_FEES_MULTIPLIER: u64 = 100;
         let fees_sat = amount.to_sat().div_ceil(MELT_FEES_MULTIPLIER);
         bitcoin::Amount::from_sat(fees_sat)
+    }
+
+    pub async fn list_denied_meltops(&self) -> Result<Vec<DeniedMeltOperation>> {
+        self.repo.list_denied_meltops().await
+    }
+
+    pub async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
+        self.repo.delete_denied_meltop(qid).await
     }
 
     pub async fn melt_onchain(
@@ -441,6 +459,9 @@ mod tests {
                     status: onchain::MeltStatus::Pending,
                 })
             });
+        repo.expect_store_denied_meltop()
+            .times(1)
+            .returning(|_| Ok(()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
