@@ -235,9 +235,7 @@ mod tests {
     use super::*;
     use crate::test_utils::dummy_attestation;
     use bcr_common::{
-        cashu,
-        core::signature::schnorr_verify_b64,
-        core_tests,
+        cashu, core, core_tests,
         wire::{keys as wire_keys, swap as wire_swap},
     };
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
@@ -268,7 +266,7 @@ mod tests {
         let mint_kp = test_utils::mint_kp();
         let now = chrono::Utc::now();
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
-        let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
+        let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: proof_fps,
             outputs: blinds.clone(),
@@ -283,7 +281,8 @@ mod tests {
             .commit_to_swap(&signsrvc, request, now)
             .await
             .unwrap();
-        schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0).unwrap();
+        core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
+            .unwrap();
     }
 
     #[tokio::test]
@@ -312,7 +311,7 @@ mod tests {
         let mint_kp = test_utils::mint_kp();
         let now = chrono::Utc::now();
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
-        let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
+        let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: proof_fps,
             outputs: blinds.clone(),
@@ -327,7 +326,8 @@ mod tests {
             .commit_to_swap(&signsrvc, request, now)
             .await
             .unwrap();
-        schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0).unwrap();
+        core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
+            .unwrap();
 
         controller
             .swap
@@ -406,7 +406,7 @@ mod tests {
                 .into_iter()
                 .map(|bbb| bbb.0)
                 .collect();
-        let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
+        let wallet_kp = core::generate_random_keypair();
         let now = chrono::Utc::now();
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs

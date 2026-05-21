@@ -7,7 +7,7 @@ use bcr_common::{
         Amount,
     },
     client::admin::core::Client as CoreClient,
-    core_tests,
+    core, core_tests,
     wire::keys as wire_keys,
 };
 use bcr_wdc_core_service::test_utils::dummy_attestation;
@@ -43,7 +43,7 @@ async fn swap() {
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
     let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
-    let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
+    let wallet_kp = core::generate_random_keypair();
     let (_, commitment) = client
         .commit_swap(
             proof_fps,
@@ -135,7 +135,7 @@ async fn swap_p2pk() {
     }
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
-    let wallet_kp = bitcoin::secp256k1::Keypair::new_global(&mut rand::thread_rng());
+    let wallet_kp = core::generate_random_keypair();
     let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
     let (_, commitment) = client
         .commit_swap(
