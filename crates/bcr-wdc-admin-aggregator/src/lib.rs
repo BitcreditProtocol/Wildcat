@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::{
     extract::FromRef,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 use bcr_common::{
@@ -121,6 +121,8 @@ pub mod endpoints {
     pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/ebill/mint_op_status/{qid}";
     pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/ebill/mint_ops/{kid}";
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
+    pub const DENIED_MELTOPS: &str = "/v1/admin/treasury/onchain/meltops/denied";
+    pub const DENIED_MELTOP: &str = "/v1/admin/treasury/onchain/meltops/denied/{qid}";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -185,6 +187,11 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::POST_EBILL_REQTOPAY,
             post(admin::post_ebill_reqtopay),
+        )
+        .route(endpoints::DENIED_MELTOPS, get(admin::list_denied_meltops))
+        .route(
+            endpoints::DENIED_MELTOP,
+            delete(admin::delete_denied_meltop),
         );
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
@@ -222,6 +229,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_treasury::MintOperationStatus,
         wire_wallet::ECashBalance,
         wire_wallet::EbillPaymentComplete,
+        wire_treasury::DeniedMeltOperations,
     ),),
     paths(
         admin::get_health,
@@ -253,6 +261,8 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_status,
         // treasury service
         admin::post_ebill_reqtopay,
+        admin::list_denied_meltops,
+        admin::delete_denied_meltop,
     )
 )]
 pub struct ApiDoc;

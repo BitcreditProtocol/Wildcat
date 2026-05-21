@@ -611,3 +611,39 @@ pub async fn get_mint_info(
     };
     Ok(Json(response))
 }
+
+#[utoipa::path(
+    get,
+    path = endpoints::DENIED_MELTOPS,
+    responses (
+        (status = 200, description = "Successful response", body = wire_treasury::DeniedMeltOperations, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn list_denied_meltops(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_treasury::DeniedMeltOperations>> {
+    let ops = ctrl.treasury_cl.list_denied().await?;
+    let response = wire_treasury::DeniedMeltOperations { ops };
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    delete,
+    path = endpoints::DENIED_MELTOP,
+    params(
+        ("qid" = uuid::Uuid, Path, description = "the uid of the denied melt operation to delete")
+    ),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "denied melt operation id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn delete_denied_meltop(
+    State(ctrl): State<AppController>,
+    Path(qid): Path<uuid::Uuid>,
+) -> Result<()> {
+    ctrl.treasury_cl.delete_denied(qid).await?;
+    Ok(())
+}
