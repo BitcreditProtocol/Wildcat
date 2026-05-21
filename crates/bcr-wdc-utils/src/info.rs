@@ -34,10 +34,23 @@ pub fn get_cashu_version() -> Option<built::semver::Version> {
     version
 }
 
+const BCR_COMMON: &str = "bcr-common";
+pub fn get_bcr_common_version() -> Option<built::semver::Version> {
+    let version = built::util::parse_versions(&built_info::DEPENDENCIES).find_map(|(n, v)| {
+        if n == BCR_COMMON {
+            Some(v)
+        } else {
+            None
+        }
+    });
+    version
+}
+
 pub fn get_deps_versions() -> HashMap<String, Option<built::semver::Version>> {
     HashMap::from([
         (String::from(EBILL_CORE), get_ebill_version()),
         (String::from(CASHU_CORE), get_cashu_version()),
+        (String::from(BCR_COMMON), get_bcr_common_version()),
     ])
 }
 
