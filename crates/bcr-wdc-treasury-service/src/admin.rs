@@ -7,7 +7,8 @@ use bcr_common::{
     wire::{exchange as wire_exchange, treasury as wire_treasury},
 };
 // ----- local imports
-use crate::{ebill, error::Result, foreign, vault};
+use crate::{ebill, error::Result, foreign, onchain, vault};
+
 // ----- end imports
 
 // ----- sat APIs
@@ -104,4 +105,31 @@ pub async fn generate_fees_token(
         total,
     };
     Ok(Json(response))
+}
+
+fn convert_denied_meltop(mo: onchain::DeniedMeltOperation) -> wire_treasury::DeniedMeltOp {
+    wire_treasury::DeniedMeltOp {
+        id: mo.qid,
+        amount: mo.inputs,
+        created: mo.created,
+    }
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn list_denied_meltops(
+    State(ctrl): State<Arc<onchain::Service>>,
+) -> Result<Json<wire_treasury::DeniedMeltOperations>> {
+    let ops = ctrl.list_denied_meltops().await?;
+    let ops = ops.into_iter().map(convert_denied_meltop).collect();
+    let response = wire_treasury::DeniedMeltOperations { ops };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn delete_denied_meltop(
+    State(ctrl): State<Arc<onchain::Service>>,
+    Path(qid): Path<uuid::Uuid>,
+) -> Result<()> {
+    ctrl.delete_denied_meltop(qid).await?;
+    Ok(())
 }

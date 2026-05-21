@@ -152,6 +152,13 @@ pub struct MeltOperation {
     pub status: MeltStatus,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeniedMeltOperation {
+    pub qid: Uuid,
+    pub inputs: bitcoin::Amount,
+    pub created: TStamp,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
@@ -163,4 +170,7 @@ pub trait Repository: Send + Sync {
     async fn load_meltop(&self, qid: Uuid) -> Result<MeltOperation>;
     async fn update_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
     async fn list_pending_meltops(&self) -> Result<Vec<Uuid>>;
+    async fn store_denied_meltop(&self, op: DeniedMeltOperation) -> Result<()>;
+    async fn list_denied_meltops(&self) -> Result<Vec<DeniedMeltOperation>>;
+    async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()>;
 }

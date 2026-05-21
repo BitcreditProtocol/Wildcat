@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    foreign, onchain, vault,
+    foreign, onchain, vault, TStamp,
 };
 
 // ----- end imports
@@ -147,6 +147,32 @@ impl From<OnChainMintOperationDB> for onchain::MintOperation {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainDeniedMeltOpDb {
+    id: RecordId,
+    inputs: bitcoin::Amount,
+    created: TStamp,
+}
+impl From<onchain::DeniedMeltOperation> for OnChainDeniedMeltOpDb {
+    fn from(op: onchain::DeniedMeltOperation) -> Self {
+        Self {
+            id: RecordId::from_table_key(DBOnChain::DENIED_TABLE, op.qid),
+            inputs: op.inputs,
+            created: op.created,
+        }
+    }
+}
+impl From<OnChainDeniedMeltOpDb> for onchain::DeniedMeltOperation {
+    fn from(db: OnChainDeniedMeltOpDb) -> Self {
+        let qid = Uuid::try_from(db.id.key().clone()).expect("key is a uuid");
+        Self {
+            qid,
+            inputs: db.inputs,
+            created: db.created,
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////// OnChain DB
 #[derive(Debug, Clone)]
 pub struct DBOnChain {
@@ -156,6 +182,7 @@ pub struct DBOnChain {
 impl DBOnChain {
     const MELTS_TABLE: &'static str = "onchain_melts";
     const MINTS_TABLE: &'static str = "onchain_mints";
+    const DENIED_TABLE: &'static str = "onchain_denied";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -270,6 +297,40 @@ impl onchain::Repository for DBOnChain {
             .take("qid")
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(entries)
+    }
+
+    async fn store_denied_meltop(&self, op: onchain::DeniedMeltOperation) -> Result<()> {
+        let entry = OnChainDeniedMeltOpDb::from(op);
+        let _: Option<OnChainDeniedMeltOpDb> = self
+            .db
+            .insert(entry.id.clone())
+            .content(entry)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list_denied_meltops(&self) -> Result<Vec<onchain::DeniedMeltOperation>> {
+        let entries: Vec<OnChainDeniedMeltOpDb> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::DENIED_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let meltops = entries.into_iter().map(Into::into).collect();
+        Ok(meltops)
+    }
+
+    async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
+        let rid = RecordId::from_table_key(Self::DENIED_TABLE, qid);
+        let _: Option<OnChainDeniedMeltOpDb> = self
+            .db
+            .delete(rid)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
     }
 }
 

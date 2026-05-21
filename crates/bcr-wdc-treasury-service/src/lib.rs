@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use bcr_common::{
@@ -298,6 +298,14 @@ pub fn routes(app: AppController) -> Router {
         .route(
             cl_treasury::admin_ep::FEES_TOKEN_V1,
             get(admin::generate_fees_token),
+        )
+        .route(
+            cl_treasury::admin_ep::DENIED_MELTOPS_V1,
+            get(admin::list_denied_meltops),
+        )
+        .route(
+            cl_treasury::admin_ep::DENIED_MELTOP_V1,
+            delete(admin::delete_denied_meltop),
         );
     admin.merge(web).with_state(app)
 }
