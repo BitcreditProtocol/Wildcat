@@ -138,6 +138,7 @@ pub struct MintOperation {
 pub enum MeltStatus {
     Pending,
     Paid { tx: wire_melt::MeltTx },
+    Expired,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MeltOperation {

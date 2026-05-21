@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
@@ -95,6 +95,9 @@ impl Service {
             address,
         } = request;
         // valid fingerprints
+        if inputs.is_empty() {
+            return Err(Error::InvalidInput(String::from("missing inputs")));
+        }
         let core_fps: Vec<_> = inputs
             .iter()
             .cloned()
@@ -111,6 +114,9 @@ impl Service {
         if !all_unspent {
             return Err(Error::InvalidInput(String::from("proofs already spent")));
         }
+        // unlocked fingerprints
+        let pending_ops = self.retrieve_pending_meltops(now).await?;
+        cross_check_locked_fps(input_ys.clone(), &pending_ops)?;
         // amount > dust
         let input_total = bitcoin::Amount::from_sat(inputs.iter().map(|fp| fp.amount).sum::<u64>());
         if input_total < self.min_melt_threshold {
@@ -134,9 +140,11 @@ impl Service {
             )));
         }
         // insufficient funds in clowder
-        let pending_amount = self.pending_meltops_amount().await?;
-        let available_reserve = reserve.checked_sub(pending_amount).unwrap_or_default();
-        if input_total > available_reserve {
+        let pending_amount = pending_ops
+            .iter()
+            .map(|op| op.target)
+            .sum::<bitcoin::Amount>();
+        if input_total > reserve - pending_amount {
             let op = DeniedMeltOperation {
                 qid: Uuid::new_v4(),
                 inputs: input_total,
@@ -182,18 +190,30 @@ impl Service {
         })
     }
 
-    async fn pending_meltops_amount(&self) -> Result<bitcoin::Amount> {
+    async fn retrieve_pending_meltops(&self, now: TStamp) -> Result<Vec<onchain::MeltOperation>> {
         let pendings_ids = self.repo.list_pending_meltops().await?;
-        let mut total = bitcoin::Amount::ZERO;
+        let mut ops: Vec<onchain::MeltOperation> = Vec::with_capacity(pendings_ids.len());
         for id in pendings_ids {
             let op = self.repo.load_meltop(id).await;
             let Ok(op) = op else {
                 tracing::error!("DB Failure, lost access to pending MeltOp with id {id}");
                 continue;
             };
-            total += op.target;
+            if op.expiry > now {
+                ops.push(op);
+            } else {
+                let res = self
+                    .repo
+                    .update_meltop_status(id, onchain::MeltStatus::Expired)
+                    .await;
+                if let Err(e) = res {
+                    tracing::error!(
+                        "DB Failure, lost access to update expired MeltOp with id {id}: {e}"
+                    );
+                }
+            }
         }
-        Ok(total)
+        Ok(ops)
     }
 
     fn calculate_melt_fees(
@@ -305,6 +325,23 @@ impl Service {
         let signatures = self.clowder_cl.fetch_mint_signatures(qid, mint_id).await?;
         Ok(signatures)
     }
+}
+
+fn cross_check_locked_fps(
+    input_ys: Vec<cashu::PublicKey>,
+    pending_ops: &[onchain::MeltOperation],
+) -> Result<()> {
+    assert!(!input_ys.is_empty());
+    let input_set: HashSet<cashu::PublicKey> = HashSet::from_iter(input_ys);
+    for op in pending_ops {
+        let op_set: HashSet<cashu::PublicKey> = HashSet::from_iter(op.input_ys.clone());
+        if !input_set.is_disjoint(&op_set) {
+            return Err(Error::InvalidInput(String::from(
+                "some proofs are locked in pending melt operations",
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
