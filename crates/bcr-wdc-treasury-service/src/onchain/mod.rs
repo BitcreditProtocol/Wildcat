@@ -73,6 +73,8 @@ pub trait ClowderClient: Send + Sync {
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
+        admin_fees: bitcoin::Amount,
+        network_fees: bitcoin::Amount,
     ) -> Result<(String, secp256k1::schnorr::Signature)>;
     async fn verify_onchain_address(
         &self,
