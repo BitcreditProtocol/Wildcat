@@ -182,11 +182,15 @@ impl ClowderClient for ClowderCl {
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
+        admin_fees: bitcoin::Amount,
+        network_fees: bitcoin::Amount,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
         let request = wire_clowder::MeltQuoteOnchainRequest {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
+            admin_fees: cashu::Amount::from(admin_fees.to_sat()),
+            network_fees,
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };

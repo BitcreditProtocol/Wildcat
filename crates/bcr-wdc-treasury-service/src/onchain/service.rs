@@ -158,7 +158,10 @@ impl Service {
             expiry: expiry.timestamp().max(0) as u64,
             wallet_key,
         };
-        let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
+        let (content, commitment) = self
+            .clowder_cl
+            .sign_onchain_melt_response(&body, admin_fees, network_fees)
+            .await?;
         input_ys.sort();
         let op = onchain::MeltOperation {
             qid,
@@ -519,7 +522,7 @@ mod tests {
         clowder
             .expect_sign_onchain_melt_response()
             .times(1)
-            .returning(|_| {
+            .returning(|_, _, _| {
                 let signature =
                     bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
                 Ok((String::new(), signature))
