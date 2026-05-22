@@ -11,7 +11,7 @@ use bcr_common::{
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{self, ForeignClient},
+    foreign::{self, ForeignClient, Sha256Hash},
     TStamp,
 };
 
@@ -169,6 +169,25 @@ impl foreign::ClowderClient for ClowderCl {
         let wire_clowder::MintForeignEcashResponse { proofs } =
             self.stream.mint_foreign_ecash(request, response).await?;
         Ok(proofs)
+    }
+
+    async fn signal_offline_exchange_event(
+        &self,
+        fingerprints: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let request = wire_clowder::MintForeignOfflineEcashRequest {
+            fingerprints,
+            hashes,
+            wallet_pk,
+        };
+        let response = wire_clowder::MintForeignOfflineEcashResponse { proofs };
+        self.stream
+            .mint_offline_foreign_ecash(request, response)
+            .await?;
+        Ok(())
     }
 }
 

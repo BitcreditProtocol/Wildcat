@@ -104,6 +104,13 @@ pub trait ClowderClient: Send + Sync {
         outputs: Vec<cashu::Proof>,
         path: Vec<secp256k1::PublicKey>,
     ) -> Result<Vec<cashu::Proof>>;
+    async fn signal_offline_exchange_event(
+        &self,
+        inputs: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        wallet_pk: cashu::PublicKey,
+        outputs: Vec<cashu::Proof>,
+    ) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
