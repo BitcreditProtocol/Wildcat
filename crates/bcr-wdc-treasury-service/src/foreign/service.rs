@@ -527,6 +527,16 @@ mod tests {
             }
             Ok(signatures)
         });
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .with(
+                eq(inputs.clone()),
+                eq(hashes.clone()),
+                eq(cashu::PublicKey::from(wallet_kp.public_key())),
+                always(),
+            )
+            .returning(|_, _, _, _| Ok(()));
         offlinerepo
             .expect_store_fps()
             .with(eq(foreign_pk), eq(inputs.clone()), eq(hashes.clone()))
