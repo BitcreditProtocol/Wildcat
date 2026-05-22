@@ -5,12 +5,11 @@ use bcr_common::{
     cashu::{self, MintVersion},
     client::treasury::Client as TreasuryClient,
     wire::{
-        clowder as wire_clowder, exchange as wire_exchange,
+        clowder as wire_clowder,
         info::{VersionInfo, WildcatInfo},
         swap as wire_swap,
     },
 };
-use bitcoin::base64::{engine::general_purpose::STANDARD, Engine};
 // ----- local imports
 use crate::{
     error::{Error, Result},
@@ -122,52 +121,6 @@ pub async fn post_swap(
         .swap(inputs, outputs, commitment, attestation)
         .await?;
     Ok(Json(wire_swap::SwapResponse { signatures }))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
-pub async fn post_offline_exchange(
-    State(ctrl): State<AppController>,
-    Json(request): Json<wire_exchange::OfflineExchangeRequest>,
-) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    let _origin = ctrl
-        .clwdr_rest_client
-        .post_fingerprints_origin(request.fingerprints.clone())
-        .await?;
-    // Clone what we need for the stream before consuming request
-    let stream_fingerprints = request.fingerprints.clone();
-    let stream_hashes = request.hashes.clone();
-    let wire_exchange::OfflineExchangeRequest {
-        fingerprints,
-        hashes,
-        wallet_pk,
-    } = request;
-    let response = ctrl
-        .treasury_client
-        .exchange_offline_raw(fingerprints, hashes, wallet_pk)
-        .await?;
-    let serialized = STANDARD
-        .decode(&response.content)
-        .map_err(|e| Error::InvalidInput(e.to_string()))?;
-    let payload: bcr_common::wire::exchange::OfflineExchangePayload =
-        borsh::from_slice(&serialized)?;
-
-    if let Err(e) = ctrl
-        .clwdr_stream_client
-        .mint_offline_foreign_ecash(
-            wire_clowder::MintForeignOfflineEcashRequest {
-                fingerprints: stream_fingerprints,
-                hashes: stream_hashes,
-                wallet_pk,
-            },
-            wire_clowder::MintForeignOfflineEcashResponse {
-                proofs: payload.proofs,
-            },
-        )
-        .await
-    {
-        tracing::error!("Failed to post offline exchange to clowder stream: {e}");
-    }
-    Ok(Json(response))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
