@@ -79,6 +79,13 @@ impl Service {
             }
             retv.extend(proofs);
         }
+        let result = self
+            .clowder
+            .signal_offline_exchange_event(inputs.clone(), hashes.clone(), wpk, retv.clone())
+            .await;
+        if let Err(e) = result {
+            tracing::error!("clowder.signal_offline_exchange_event: {e}");
+        }
         self.offline_repo
             .store_fps(foreign_mint_id, inputs, hashes)
             .await?;
