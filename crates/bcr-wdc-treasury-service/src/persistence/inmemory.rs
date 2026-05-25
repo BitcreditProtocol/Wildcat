@@ -122,6 +122,10 @@ impl foreign::OfflineRepository for OfflineRepository {
         }
         Ok(())
     }
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(locked.keys().cloned().collect())
+    }
 }
 
 #[allow(dead_code)]

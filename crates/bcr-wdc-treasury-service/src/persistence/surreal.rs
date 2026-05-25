@@ -475,7 +475,8 @@ impl ebill::Repository for DBEbill {
 struct ForeignProofDBEntry {
     id: RecordId,
     proof: cashu::Proof,
-    mint_id: secp256k1::PublicKey,
+    // storing as String, otherwise array::group() merges them into one entry
+    mint_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -512,7 +513,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             entries.push(ForeignProofDBEntry {
                 id: rid,
                 proof,
-                mint_id,
+                mint_id: mint_id.to_string(),
             });
         }
         let _: Vec<ForeignProofDBEntry> = self
@@ -537,6 +538,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         let mut ret_val = Vec::with_capacity(entries.len());
         for entry in entries {
             let ForeignProofDBEntry { mint_id, proof, .. } = entry;
+            let mint_id = secp256k1::PublicKey::from_str(&mint_id).expect("mint_id <--> String");
             ret_val.push((mint_id, proof));
         }
         Ok(ret_val)
@@ -601,6 +603,18 @@ impl foreign::OnlineRepository for DBForeignOnline {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignFingerprintDBEntry {
+    id: RecordId,
+    amount: u64,
+    keyset_id: cashu::Id,
+    y: cashu::PublicKey,
+    c: cashu::PublicKey,
+    witness: Option<cashu::Witness>,
+    dleq: Option<cashu::ProofDleq>,
+    mint_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct DBForeignOffline {
     db: Surreal<Any>,
@@ -617,18 +631,6 @@ impl DBForeignOffline {
         db_connection.use_db(config.database).await?;
         Ok(Self { db: db_connection })
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ForeignFingerprintDBEntry {
-    id: RecordId,
-    amount: u64,
-    keyset_id: cashu::Id,
-    y: cashu::PublicKey,
-    c: cashu::PublicKey,
-    witness: Option<cashu::Witness>,
-    dleq: Option<cashu::ProofDleq>,
-    mint_id: secp256k1::PublicKey,
 }
 
 #[async_trait]
@@ -649,7 +651,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 c: fp.c,
                 witness: fp.witness,
                 dleq: fp.dleq,
-                mint_id,
+                mint_id: mint_id.to_string(),
             };
             let _: Option<ForeignFingerprintDBEntry> = self
                 .db
@@ -682,7 +684,8 @@ impl foreign::OfflineRepository for DBForeignOffline {
             witness: entry.witness,
             dleq: entry.dleq,
         };
-        Ok(Some((entry.mint_id, fp)))
+        let mint_id = secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
+        Ok(Some((mint_id, fp)))
     }
 
     async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()> {
@@ -708,7 +711,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             let entry = ForeignProofDBEntry {
                 id: rid,
                 proof,
-                mint_id,
+                mint_id: mint_id.to_string(),
             };
             entries.push(entry);
         }
@@ -726,7 +729,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .db
             .query("SELECT * FROM type::table($table) WHERE mint_id = $mint_id")
             .bind(("table", Self::PROOFS_TABLE))
-            .bind(("mint_id", mint_id))
+            .bind(("mint_id", mint_id.to_string()))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -749,6 +752,27 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .take(0)
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
+    }
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
+        #[derive(Debug, Default, Clone, serde::Deserialize)]
+        struct MintIdEntries {
+            mint_id: Vec<String>,
+        }
+        let entries: Option<MintIdEntries> = self
+            .db
+            .query("SELECT array::group(mint_id) AS mint_id FROM type::table($table) GROUP ALL")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mint_ids: Vec<secp256k1::PublicKey> = entries
+            .unwrap_or_default()
+            .mint_id
+            .into_iter()
+            .map(|m| secp256k1::PublicKey::from_str(&m).expect("mint_id <--> String"))
+            .collect();
+        Ok(mint_ids)
     }
 }
 
@@ -962,6 +986,42 @@ mod tests {
         let (mint, fp) = result.unwrap();
         assert_eq!(mint, alpha_id);
         assert_eq!(fp.y, y);
+    }
+
+    #[tokio::test]
+    async fn offline_list_foreign() {
+        let db = init_foreignoffline_mem_db().await;
+        let amounts = vec![cashu::Amount::from(8u64), cashu::Amount::from(16u64)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let alpha1 = core::generate_random_keypair().public_key();
+        let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        db.store_proofs(alpha1.clone(), proofs.clone())
+            .await
+            .unwrap();
+        let alpha2 = core::generate_random_keypair().public_key();
+        let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        db.store_proofs(alpha2.clone(), proofs).await.unwrap();
+        let result = db.list_foreign_pks().await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&alpha1));
+        assert!(result.contains(&alpha2));
+    }
+
+    #[tokio::test]
+    async fn offline_load_proofs() {
+        let db = init_foreignoffline_mem_db().await;
+        let amounts = vec![cashu::Amount::from(8u64), cashu::Amount::from(16u64)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let alpha = core::generate_random_keypair().public_key();
+        let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        db.store_proofs(alpha.clone(), proofs.clone())
+            .await
+            .unwrap();
+        let result = db.load_proofs(alpha.clone()).await.unwrap();
+        assert_eq!(result.len(), proofs.len());
+        for proof in proofs {
+            assert!(result.contains(&proof));
+        }
     }
 
     async fn init_credit_mem_db() -> DBEbill {

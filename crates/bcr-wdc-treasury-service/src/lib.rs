@@ -180,23 +180,12 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     let foreigncore = Arc::new(foreign::clients::CoreCl {
         core: core_client.clone(),
     });
-    let interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
-    let settler = {
-        let online: Arc<dyn foreign::OnlineRepository> = onlinerepo.clone();
-        let offline: Arc<dyn foreign::OfflineRepository> = offlinerepo.clone();
-        let clwdr: Arc<dyn foreign::ClowderClient> = clowder.clone();
-        let fctry: Arc<dyn foreign::MintClientFactory> = factory.clone();
-        Box::new(foreign::settle::Handler::new(
-            &online, &offline, &clwdr, &fctry, interval,
-        ))
-    };
     let foreign = foreign::Service {
-        online_repo: onlinerepo,
-        offline_repo: offlinerepo,
+        online_repo: onlinerepo.clone(),
+        offline_repo: offlinerepo.clone(),
         keys: foreigncore.clone(),
         clowder: clowder.clone(),
         mint_factory: factory.clone(),
-        settler,
     };
 
     // vault
@@ -233,12 +222,23 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     let monitor_interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
-    let monitors = vec![routine::RoutineHandle::new(
-        onchain::MintOpMonitor {
-            srvc: app_ctrl.onchain.clone(),
-        },
-        monitor_interval,
-    )];
+    let monitors = vec![
+        routine::RoutineHandle::new(
+            onchain::MintOpMonitor {
+                srvc: app_ctrl.onchain.clone(),
+            },
+            monitor_interval,
+        ),
+        routine::RoutineHandle::new(
+            foreign::settle::Handler {
+                online: onlinerepo,
+                offline: offlinerepo,
+                clowder,
+                mint_factory: factory,
+            },
+            monitor_interval,
+        ),
+    ];
     (app_ctrl, monitors)
 }
 
