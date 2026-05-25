@@ -59,6 +59,7 @@ pub trait OfflineRepository: Send + Sync {
     async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -128,13 +129,6 @@ pub trait MintClientFactory: Send + Sync {
         mint_url: reqwest::Url,
         mint_pk: secp256k1::PublicKey,
     ) -> Result<Box<dyn ForeignClient>>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait OfflineSettleHandler: Send + Sync {
-    fn monitor(&self, mint: (secp256k1::PublicKey, reqwest::Url)) -> Result<()>;
-    async fn stop(&self) -> Result<()>;
 }
 
 fn proofs_vec_to_map(

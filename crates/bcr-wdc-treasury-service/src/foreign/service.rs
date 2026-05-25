@@ -12,7 +12,7 @@ use crate::{
     foreign::proof,
     foreign::{
         fingerprints_vec_to_map, proofs_vec_to_map, ClowderClient, KeysClient, MintClientFactory,
-        OfflineRepository, OfflineSettleHandler, OnlineRepository,
+        OfflineRepository, OnlineRepository,
     },
     TStamp,
 };
@@ -25,7 +25,6 @@ pub struct Service {
     pub keys: Arc<dyn KeysClient>,
     pub clowder: Arc<dyn ClowderClient>,
     pub mint_factory: Arc<dyn MintClientFactory>,
-    pub settler: Box<dyn OfflineSettleHandler>,
 }
 
 impl Service {
@@ -174,18 +173,10 @@ impl Service {
         if online_amount > cashu::Amount::ZERO {
             return Ok(online_amount);
         }
-        let offline_amount = try_offline_htlc_swap(
-            preimage,
-            self.offline_repo.as_ref(),
-            self.clowder.as_ref(),
-            self.settler.as_ref(),
-        )
-        .await?;
+        let offline_amount =
+            try_offline_htlc_swap(preimage, self.offline_repo.as_ref(), self.clowder.as_ref())
+                .await?;
         Ok(offline_amount)
-    }
-
-    pub async fn stop(&self) -> Result<()> {
-        self.settler.stop().await
     }
 }
 
@@ -248,13 +239,11 @@ async fn try_offline_htlc_swap(
     preimage: &str,
     repo: &dyn OfflineRepository,
     clowder: &dyn ClowderClient,
-    settler: &dyn OfflineSettleHandler,
 ) -> Result<cashu::Amount> {
     let hash = Sha256Hash::hash(preimage.as_bytes());
     let Some((mint_id, fp)) = repo.search_fp(&hash).await? else {
         return Ok(cashu::Amount::ZERO);
     };
-    let mint_url = clowder.get_mint_url_from_pk(&mint_id).await?;
     let secret = cashu::secret::Secret::from_str(preimage)?;
     let amount = cashu::Amount::from(fp.amount);
     let proof = cashu::Proof {
@@ -278,7 +267,6 @@ async fn try_offline_htlc_swap(
     proof.verify_dleq(*key)?;
     repo.remove_fps(&[fp.y]).await?;
     repo.store_proofs(mint_id, vec![proof]).await?;
-    settler.monitor((mint_id, mint_url))?;
     Ok(amount)
 }
 
@@ -328,7 +316,6 @@ mod tests {
 
     #[tokio::test]
     async fn online_exchange_works() {
-        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = crate::foreign::MockKeysClient::new();
@@ -444,7 +431,6 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
-            settler: Box::new(settler),
         };
         let proofs = srvc.online_exchange(inputs, exchange_path).await.unwrap();
         assert_eq!(2, proofs.len());
@@ -452,7 +438,6 @@ mod tests {
 
     #[tokio::test]
     async fn offline_exchange_works() {
-        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let mut keys = crate::foreign::MockKeysClient::new();
@@ -533,7 +518,6 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
-            settler: Box::new(settler),
         };
         let proofs = srvc
             .offline_exchange(inputs, hashes, wallet_pk)
@@ -544,7 +528,6 @@ mod tests {
 
     #[tokio::test]
     async fn try_swap_htlc_online() {
-        let settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = crate::foreign::MockKeysClient::new();
@@ -630,7 +613,6 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
-            settler: Box::new(settler),
         };
         let amount = srvc
             .try_swap_htlc(&preimage, chrono::Utc::now())
@@ -641,13 +623,11 @@ mod tests {
 
     #[tokio::test]
     async fn try_swap_htlc_offline() {
-        let mut settler = crate::foreign::MockOfflineSettleHandler::new();
         let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
-        let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let foreign_kp = core::generate_random_keypair();
         let wallet_kp = core::generate_random_keypair();
         let myself_kp = core::generate_random_keypair();
@@ -678,12 +658,6 @@ mod tests {
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
         let cloned_keyset = cashu::KeySet::from(foreign_keyset);
-        let cloned_url = foreign_url.clone();
-        clowder
-            .expect_get_mint_url_from_pk()
-            .with(eq(foreign_pk))
-            .times(1)
-            .returning(move |_| Ok(cloned_url.clone()));
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))
@@ -700,18 +674,12 @@ mod tests {
             .with(eq(foreign_pk), always())
             .times(1)
             .returning(|_, _| Ok(()));
-        settler
-            .expect_monitor()
-            .times(1)
-            .with(eq((foreign_pk, foreign_url)))
-            .returning(|_| Ok(()));
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
-            settler: Box::new(settler),
         };
         let amount = srvc
             .try_swap_htlc(&preimage, chrono::Utc::now())
