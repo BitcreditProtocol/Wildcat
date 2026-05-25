@@ -246,9 +246,9 @@ impl ClowderClient for ClowderCl {
         Ok(response)
     }
 
-    async fn estimate_onchain_fees(&self, _amount: bitcoin::Amount) -> Result<bitcoin::Amount> {
-        tracing::error!("unimplemented, returning default fee rate for 2 onchain transactions");
-        Ok(bitcoin::Amount::from_sat(1000))
+    async fn estimate_onchain_fees(&self, target: bitcoin::Amount) -> Result<bitcoin::Amount> {
+        let response = self.rest.onchain_fees_estimate(target).await?;
+        Ok(response)
     }
 
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
