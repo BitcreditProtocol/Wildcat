@@ -183,7 +183,7 @@ impl Service {
             commitment,
             status: onchain::MeltStatus::Pending,
         };
-        self.repo.store_meltop(op).await?;
+        self.repo.store_meltop(op, now).await?;
         Ok(wire_melt::MeltQuoteOnchainResponse {
             content,
             commitment,
@@ -191,7 +191,7 @@ impl Service {
     }
 
     async fn retrieve_pending_meltops(&self, now: TStamp) -> Result<Vec<onchain::MeltOperation>> {
-        let pendings_ids = self.repo.list_pending_meltops().await?;
+        let pendings_ids = self.repo.list_pending_meltops(now).await?;
         let mut ops: Vec<onchain::MeltOperation> = Vec::with_capacity(pendings_ids.len());
         for id in pendings_ids {
             let op = self.repo.load_meltop(id).await;
@@ -480,7 +480,7 @@ mod tests {
         let cloned_qid = qid.clone();
         repo.expect_list_pending_meltops()
             .times(1)
-            .returning(move || Ok(vec![cloned_qid.clone()]));
+            .returning(move |_| Ok(vec![cloned_qid.clone()]));
         repo.expect_load_meltop()
             .times(1)
             .with(eq(qid))
@@ -555,7 +555,7 @@ mod tests {
             .returning(|addr| Ok(addr.assume_checked()));
         repo.expect_list_pending_meltops()
             .times(1)
-            .returning(|| Ok(vec![]));
+            .returning(|_| Ok(vec![]));
         clowder
             .expect_sign_onchain_melt_response()
             .times(1)
@@ -568,7 +568,7 @@ mod tests {
             .expect_estimate_onchain_fees()
             .times(1)
             .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
-        repo.expect_store_meltop().times(1).returning(|_| Ok(()));
+        repo.expect_store_meltop().times(1).returning(|_, _| Ok(()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
