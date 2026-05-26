@@ -622,8 +622,8 @@ dependencies = [
 
 [[package]]
 name = "bcr-ebill-core"
-version = "0.5.9"
-source = "git+https://github.com/BitcreditProtocol/Bitcredit-Core.git?tag=v0.5.9#98d8b5bb6e112cf9a1a901bac26d727136c8d0aa"
+version = "0.5.10"
+source = "git+https://github.com/BitcreditProtocol/Bitcredit-Core.git?tag=v0.5.10#b6774f9c10e35234a49f478e86a288d158004fae"
 dependencies = [
  "ammonia",
  "bcr-common",
@@ -693,7 +693,6 @@ dependencies = [
  "config",
  "futures",
  "mockall",
- "rand 0.8.6",
  "reqwest",
  "secp256k1",
  "serde",
