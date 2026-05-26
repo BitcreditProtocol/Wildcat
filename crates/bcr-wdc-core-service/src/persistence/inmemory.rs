@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 // ----- extra library imports
 use async_trait::async_trait;
@@ -131,7 +131,7 @@ impl persistence::SignaturesRepository for SignatureMap {
 
 #[derive(Default, Clone)]
 pub struct ProofMap {
-    proofs: Arc<Mutex<HashMap<cashu::PublicKey, cashu::Proof>>>,
+    proofs: Arc<RwLock<HashMap<cashu::PublicKey, cashu::Proof>>>,
 }
 
 #[async_trait()]
@@ -142,7 +142,7 @@ impl persistence::ProofRepository for ProofMap {
             let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
             items.push((y, token.clone()));
         }
-        let mut locked = self.proofs.lock().unwrap();
+        let mut locked = self.proofs.write().unwrap();
         for (y, _) in &items {
             if locked.contains_key(y) {
                 return Err(Error::InvalidInput(String::from("proofs already spent")));
@@ -153,8 +153,9 @@ impl persistence::ProofRepository for ProofMap {
         }
         Ok(())
     }
+
     async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
-        let mut locked = self.proofs.lock().unwrap();
+        let mut locked = self.proofs.write().unwrap();
         for token in tokens {
             locked.remove(token);
         }
@@ -162,7 +163,7 @@ impl persistence::ProofRepository for ProofMap {
     }
 
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
-        let locked = self.proofs.lock().unwrap();
+        let locked = self.proofs.read().unwrap();
         if locked.get(&y).is_some() {
             let ret_v = cashu::ProofState {
                 y,
@@ -184,20 +185,15 @@ type Commitment = (
 #[allow(dead_code)]
 #[derive(Clone, Default)]
 pub struct CommitmentMap {
-    commitments: Arc<RwLock<HashMap<schnorr::Signature, Commitment>>>,
+    commitments: Arc<Mutex<HashMap<schnorr::Signature, Commitment>>>,
 }
 
-#[async_trait]
-impl persistence::CommitmentRepository for CommitmentMap {
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
-        let mut commitments = self.commitments.write().unwrap();
-        commitments.retain(|_, (_, _, expiration, _)| *expiration > now);
-        Ok(())
-    }
-
-    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
-        let commitments = self.commitments.read().unwrap();
-        for (_, (inputs, _, _, _)) in commitments.iter() {
+impl CommitmentMap {
+    fn _contains_inputs(
+        locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
+        ys: &[cashu::PublicKey],
+    ) -> Result<bool> {
+        for (_, (inputs, _, _, _)) in locked.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -207,9 +203,11 @@ impl persistence::CommitmentRepository for CommitmentMap {
         Ok(false)
     }
 
-    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
-        let commitments = self.commitments.read().unwrap();
-        for (_, (_, outputs, _, _)) in commitments.iter() {
+    fn _contains_outputs(
+        locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
+        secrets: &[cashu::PublicKey],
+    ) -> Result<bool> {
+        for (_, (_, outputs, _, _)) in locked.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -217,6 +215,25 @@ impl persistence::CommitmentRepository for CommitmentMap {
             }
         }
         Ok(false)
+    }
+}
+
+#[async_trait]
+impl persistence::CommitmentRepository for CommitmentMap {
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        let mut locked = self.commitments.lock().unwrap();
+        locked.retain(|_, (_, _, expiration, _)| *expiration > now);
+        Ok(())
+    }
+
+    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
+        let locked = self.commitments.lock().unwrap();
+        Self::_contains_inputs(&locked, ys)
+    }
+
+    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
+        let locked = self.commitments.lock().unwrap();
+        Self::_contains_outputs(&locked, secrets)
     }
 
     async fn store(
@@ -227,10 +244,16 @@ impl persistence::CommitmentRepository for CommitmentMap {
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
     ) -> Result<()> {
-        let mut commitments = self.commitments.write().unwrap();
         inputs.sort();
         outputs.sort();
-        commitments.insert(signature, (inputs, outputs, expiration, wallet_key));
+        let mut locked = self.commitments.lock().unwrap();
+        if Self::_contains_inputs(&locked, &inputs)? {
+            return Err(Error::Conflict(String::from("inputs already used")));
+        }
+        if Self::_contains_outputs(&locked, &outputs)? {
+            return Err(Error::Conflict(String::from("outputs already used")));
+        }
+        locked.insert(signature, (inputs, outputs, expiration, wallet_key));
         Ok(())
     }
 
@@ -238,8 +261,8 @@ impl persistence::CommitmentRepository for CommitmentMap {
         &self,
         signature: &schnorr::Signature,
     ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
-        let comms = self.commitments.read().unwrap();
-        let comm = comms
+        let locked = self.commitments.lock().unwrap();
+        let comm = locked
             .get(signature)
             .ok_or(Error::ResourceNotFound(signature.to_string()))?
             .clone();
@@ -247,8 +270,8 @@ impl persistence::CommitmentRepository for CommitmentMap {
     }
 
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
-        let mut commitments = self.commitments.write().unwrap();
-        commitments.remove(&commitment);
+        let mut locked = self.commitments.lock().unwrap();
+        locked.remove(&commitment);
         Ok(())
     }
 }
