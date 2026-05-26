@@ -15,7 +15,7 @@ pub struct MintOpMonitor {
 
 impl MintOpMonitor {
     async fn check_pendings(&self, now: TStamp) -> Result<()> {
-        let pendings = self.srvc.repo.list_pending_mintops().await?;
+        let pendings = self.srvc.repo.list_pending_mintops(now).await?;
         for pending in pendings {
             let op = self.srvc.repo.load_mintop(pending).await?;
             let MintStatus::Pending { blinds } = op.status else {

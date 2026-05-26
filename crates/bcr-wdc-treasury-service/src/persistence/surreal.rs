@@ -24,13 +24,13 @@ use crate::{
 ////////////////////////////////////////////////////////////////// SurrealDB-safe wrappers
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct BlindedMessageDB {
+struct BlindedMessageDBEntry {
     amount: cashu::Amount,
     keyset_id: cashu::Id,
     blinded_secret: cashu::PublicKey,
     witness: Option<cashu::Witness>,
 }
-impl From<cashu::BlindedMessage> for BlindedMessageDB {
+impl From<cashu::BlindedMessage> for BlindedMessageDBEntry {
     fn from(m: cashu::BlindedMessage) -> Self {
         Self {
             amount: m.amount,
@@ -40,8 +40,8 @@ impl From<cashu::BlindedMessage> for BlindedMessageDB {
         }
     }
 }
-impl From<BlindedMessageDB> for cashu::BlindedMessage {
-    fn from(m: BlindedMessageDB) -> Self {
+impl From<BlindedMessageDBEntry> for cashu::BlindedMessage {
+    fn from(m: BlindedMessageDBEntry) -> Self {
         Self {
             amount: m.amount,
             keyset_id: m.keyset_id,
@@ -52,13 +52,13 @@ impl From<BlindedMessageDB> for cashu::BlindedMessage {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct BlindSignatureDB {
+struct BlindSignatureDBEntry {
     amount: cashu::Amount,
     keyset_id: cashu::Id,
     c: cashu::PublicKey,
     dleq: Option<cashu::BlindSignatureDleq>,
 }
-impl From<cashu::BlindSignature> for BlindSignatureDB {
+impl From<cashu::BlindSignature> for BlindSignatureDBEntry {
     fn from(s: cashu::BlindSignature) -> Self {
         Self {
             amount: s.amount,
@@ -68,8 +68,8 @@ impl From<cashu::BlindSignature> for BlindSignatureDB {
         }
     }
 }
-impl From<BlindSignatureDB> for cashu::BlindSignature {
-    fn from(s: BlindSignatureDB) -> Self {
+impl From<BlindSignatureDBEntry> for cashu::BlindSignature {
+    fn from(s: BlindSignatureDBEntry) -> Self {
         Self {
             amount: s.amount,
             keyset_id: s.keyset_id,
@@ -81,48 +81,52 @@ impl From<BlindSignatureDB> for cashu::BlindSignature {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "status")]
-enum MintStatusDB {
-    Pending { blinds: Vec<BlindedMessageDB> },
-    Paid { signatures: Vec<BlindSignatureDB> },
+enum MintStatusDBEntry {
+    Pending {
+        blinds: Vec<BlindedMessageDBEntry>,
+    },
+    Paid {
+        signatures: Vec<BlindSignatureDBEntry>,
+    },
     Expired,
 }
-impl From<onchain::MintStatus> for MintStatusDB {
+impl From<onchain::MintStatus> for MintStatusDBEntry {
     fn from(s: onchain::MintStatus) -> Self {
         match s {
-            onchain::MintStatus::Pending { blinds } => MintStatusDB::Pending {
+            onchain::MintStatus::Pending { blinds } => MintStatusDBEntry::Pending {
                 blinds: blinds.into_iter().map(Into::into).collect(),
             },
-            onchain::MintStatus::Paid { signatures } => MintStatusDB::Paid {
+            onchain::MintStatus::Paid { signatures } => MintStatusDBEntry::Paid {
                 signatures: signatures.into_iter().map(Into::into).collect(),
             },
-            onchain::MintStatus::Expired => MintStatusDB::Expired,
+            onchain::MintStatus::Expired => MintStatusDBEntry::Expired,
         }
     }
 }
-impl From<MintStatusDB> for onchain::MintStatus {
-    fn from(s: MintStatusDB) -> Self {
+impl From<MintStatusDBEntry> for onchain::MintStatus {
+    fn from(s: MintStatusDBEntry) -> Self {
         match s {
-            MintStatusDB::Pending { blinds } => onchain::MintStatus::Pending {
+            MintStatusDBEntry::Pending { blinds } => onchain::MintStatus::Pending {
                 blinds: blinds.into_iter().map(Into::into).collect(),
             },
-            MintStatusDB::Paid { signatures } => onchain::MintStatus::Paid {
+            MintStatusDBEntry::Paid { signatures } => onchain::MintStatus::Paid {
                 signatures: signatures.into_iter().map(Into::into).collect(),
             },
-            MintStatusDB::Expired => onchain::MintStatus::Expired,
+            MintStatusDBEntry::Expired => onchain::MintStatus::Expired,
         }
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct OnChainMintOperationDB {
+struct OnChainMintOperationDBEntry {
     qid: Uuid,
     kid: cashu::Id,
     recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     target: bitcoin::Amount,
     expiry: crate::TStamp,
-    status: MintStatusDB,
+    status: MintStatusDBEntry,
 }
-impl From<onchain::MintOperation> for OnChainMintOperationDB {
+impl From<onchain::MintOperation> for OnChainMintOperationDBEntry {
     fn from(op: onchain::MintOperation) -> Self {
         Self {
             qid: op.qid,
@@ -134,8 +138,8 @@ impl From<onchain::MintOperation> for OnChainMintOperationDB {
         }
     }
 }
-impl From<OnChainMintOperationDB> for onchain::MintOperation {
-    fn from(op: OnChainMintOperationDB) -> Self {
+impl From<OnChainMintOperationDBEntry> for onchain::MintOperation {
+    fn from(op: OnChainMintOperationDBEntry) -> Self {
         Self {
             qid: op.qid,
             kid: op.kid,
@@ -148,12 +152,12 @@ impl From<OnChainMintOperationDB> for onchain::MintOperation {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct OnChainDeniedMeltOpDb {
+struct OnChainDeniedMeltOpDbEntry {
     id: RecordId,
     inputs: bitcoin::Amount,
     created: TStamp,
 }
-impl From<onchain::DeniedMeltOperation> for OnChainDeniedMeltOpDb {
+impl From<onchain::DeniedMeltOperation> for OnChainDeniedMeltOpDbEntry {
     fn from(op: onchain::DeniedMeltOperation) -> Self {
         Self {
             id: RecordId::from_table_key(DBOnChain::DENIED_TABLE, op.qid),
@@ -162,14 +166,65 @@ impl From<onchain::DeniedMeltOperation> for OnChainDeniedMeltOpDb {
         }
     }
 }
-impl From<OnChainDeniedMeltOpDb> for onchain::DeniedMeltOperation {
-    fn from(db: OnChainDeniedMeltOpDb) -> Self {
+impl From<OnChainDeniedMeltOpDbEntry> for onchain::DeniedMeltOperation {
+    fn from(db: OnChainDeniedMeltOpDbEntry) -> Self {
         let qid = Uuid::try_from(db.id.key().clone()).expect("key is a uuid");
         Self {
             qid,
             inputs: db.inputs,
             created: db.created,
         }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainMeltOpDbEntry {
+    id: RecordId,
+    address: String,
+    available: cashu::Amount,
+    target: bitcoin::Amount,
+    fees: cashu::Amount,
+    expiry: TStamp,
+    commitment: String,
+    input_ys: Vec<String>,
+    status: onchain::MeltStatus,
+    wallet_key: String,
+}
+impl From<OnChainMeltOpDbEntry> for onchain::MeltOperation {
+    fn from(entry: OnChainMeltOpDbEntry) -> Self {
+        Self {
+            qid: Uuid::try_from(entry.id.key().clone()).expect("key is a uuid"),
+            address: entry.address,
+            available: entry.available,
+            target: entry.target,
+            fees: entry.fees,
+            expiry: entry.expiry,
+            status: entry.status,
+            commitment: secp256k1::schnorr::Signature::from_str(&entry.commitment)
+                .expect("commitment <--> String"),
+            wallet_key: cashu::PublicKey::from_str(&entry.wallet_key)
+                .expect("wallet_key <--> String"),
+            input_ys: entry
+                .input_ys
+                .into_iter()
+                .map(|s| cashu::PublicKey::from_str(&s).expect("input_ys <--> String"))
+                .collect(),
+        }
+    }
+}
+fn convert_to_onchainmeltop(op: onchain::MeltOperation, table: &str) -> OnChainMeltOpDbEntry {
+    let id = RecordId::from_table_key(table, op.qid);
+    OnChainMeltOpDbEntry {
+        id,
+        address: op.address,
+        available: op.available,
+        target: op.target,
+        fees: op.fees,
+        expiry: op.expiry,
+        commitment: op.commitment.to_string(),
+        input_ys: op.input_ys.into_iter().map(|y| y.to_string()).collect(),
+        status: op.status,
+        wallet_key: op.wallet_key.to_string(),
     }
 }
 
@@ -191,14 +246,46 @@ impl DBOnChain {
         db_connection.use_db(config.database).await?;
         Ok(Self { db: db_connection })
     }
+
+    async fn mintops_mark_expired(&self, now: TStamp) -> SurrealResult<()> {
+        self.db
+            .query(
+                "
+            UPDATE type::table($table)
+            SET status = $expired
+            WHERE status != $expired AND expiry < $now
+            ",
+            )
+            .bind(("table", Self::MINTS_TABLE))
+            .bind(("expired", onchain::MintStatus::Expired))
+            .bind(("now", now))
+            .await?;
+        Ok(())
+    }
+
+    async fn meltops_mark_expired(&self, now: TStamp) -> SurrealResult<()> {
+        self.db
+            .query(
+                "
+            UPDATE type::table($table)
+            SET status = $expired
+            WHERE status != $expired AND expiry < $now
+            ",
+            )
+            .bind(("table", Self::MELTS_TABLE))
+            .bind(("expired", onchain::MeltStatus::Expired))
+            .bind(("now", now))
+            .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl onchain::Repository for DBOnChain {
     async fn store_mintop(&self, op: onchain::MintOperation) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
-        let db_op = OnChainMintOperationDB::from(op);
-        let _: Option<OnChainMintOperationDB> = self
+        let db_op = OnChainMintOperationDBEntry::from(op);
+        let _: Option<OnChainMintOperationDBEntry> = self
             .db
             .insert(rid)
             .content(db_op)
@@ -209,7 +296,7 @@ impl onchain::Repository for DBOnChain {
 
     async fn load_mintop(&self, qid: Uuid) -> Result<onchain::MintOperation> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
-        let result: Option<OnChainMintOperationDB> = self
+        let result: Option<OnChainMintOperationDBEntry> = self
             .db
             .select(rid)
             .await
@@ -219,7 +306,10 @@ impl onchain::Repository for DBOnChain {
             .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
     }
 
-    async fn list_pending_mintops(&self) -> Result<Vec<Uuid>> {
+    async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        self.mintops_mark_expired(now)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let entry: Vec<Uuid> = self
             .db
             .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
@@ -234,8 +324,8 @@ impl onchain::Repository for DBOnChain {
 
     async fn update_mintop_status(&self, qid: Uuid, status: onchain::MintStatus) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
-        let db_status = MintStatusDB::from(status);
-        let entry: Option<OnChainMintOperationDB> = self
+        let db_status = MintStatusDBEntry::from(status);
+        let entry: Option<OnChainMintOperationDBEntry> = self
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))
@@ -250,28 +340,65 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn store_meltop(&self, op: onchain::MeltOperation) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::MELTS_TABLE, op.qid);
-        let _: Option<onchain::MeltOperation> = self
-            .db
-            .insert(rid)
-            .content(op)
+    async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
+        self.meltops_mark_expired(now)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(())
+        let entry = convert_to_onchainmeltop(op, Self::MELTS_TABLE);
+        let mut query = self
+            .db
+            .query(
+                "
+            BEGIN;
+            LET $noys = array::is_empty(
+                SELECT input_ys
+                FROM type::table($table)
+                WHERE
+                    status.status = $status
+                    AND
+                    !array::is_empty(array::intersect(input_ys, $input_ys))
+
+            );
+            if $noys {
+                INSERT $content
+            };
+            SELECT * FROM $newrid;
+            COMMIT
+            ",
+            )
+            .bind(("table", Self::MELTS_TABLE))
+            .bind(("status", onchain::MeltStatusDiscriminants::Pending))
+            .bind(("input_ys", entry.input_ys.clone()))
+            .bind(("newrid", entry.id.clone()))
+            .bind(("content", entry))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let inserted: Option<OnChainMeltOpDbEntry> = query
+            .take(query.num_statements() - 1)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if inserted.is_none() {
+            Err(Error::InvalidInput(String::from(
+                "meltop: inputs already locked in",
+            )))
+        } else {
+            Ok(())
+        }
     }
+
     async fn load_meltop(&self, qid: Uuid) -> Result<onchain::MeltOperation> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
-        let result: Option<onchain::MeltOperation> = self
+        let result: OnChainMeltOpDbEntry = self
             .db
             .select(rid)
             .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        result.ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        Ok(result.into())
     }
+
     async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
-        let entry: Option<onchain::MeltOperation> = self
+        let entry: Option<OnChainMeltOpDbEntry> = self
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))
@@ -286,7 +413,10 @@ impl onchain::Repository for DBOnChain {
         Ok(())
     }
 
-    async fn list_pending_meltops(&self) -> Result<Vec<Uuid>> {
+    async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        self.meltops_mark_expired(now)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         let entries: Vec<Uuid> = self
             .db
             .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
@@ -300,8 +430,8 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn store_denied_meltop(&self, op: onchain::DeniedMeltOperation) -> Result<()> {
-        let entry = OnChainDeniedMeltOpDb::from(op);
-        let _: Option<OnChainDeniedMeltOpDb> = self
+        let entry = OnChainDeniedMeltOpDbEntry::from(op);
+        let _: Option<OnChainDeniedMeltOpDbEntry> = self
             .db
             .insert(entry.id.clone())
             .content(entry)
@@ -311,7 +441,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn list_denied_meltops(&self) -> Result<Vec<onchain::DeniedMeltOperation>> {
-        let entries: Vec<OnChainDeniedMeltOpDb> = self
+        let entries: Vec<OnChainDeniedMeltOpDbEntry> = self
             .db
             .query("SELECT * FROM type::table($table)")
             .bind(("table", Self::DENIED_TABLE))
@@ -325,7 +455,7 @@ impl onchain::Repository for DBOnChain {
 
     async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
         let rid = RecordId::from_table_key(Self::DENIED_TABLE, qid);
-        let _: Option<OnChainDeniedMeltOpDb> = self
+        let _: Option<OnChainDeniedMeltOpDbEntry> = self
             .db
             .delete(rid)
             .await
@@ -878,7 +1008,7 @@ mod tests {
         ebill::Repository as CreditRepo, foreign::OfflineRepository,
         onchain::Repository as DebitRepo, vault::Repository as VaultRepo,
     };
-    use bcr_common::{core, core_tests};
+    use bcr_common::{core, core_tests, wire::melt::MeltTx};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
@@ -923,6 +1053,7 @@ mod tests {
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
+        let now = chrono::Utc::now();
         let blinds = signature_tests::generate_blinds(kid, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
@@ -932,13 +1063,77 @@ mod tests {
             kid,
             target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
-            expiry: chrono::Utc::now() + chrono::Duration::hours(1),
+            expiry: now + chrono::Duration::hours(1),
             status: onchain::MintStatus::Pending { blinds },
         };
         db.store_mintop(op.clone()).await.unwrap();
-        let pending = db.list_pending_mintops().await.unwrap();
+        let pending = db.list_pending_mintops(now).await.unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0], op.qid);
+    }
+
+    #[tokio::test]
+    async fn onchain_store_meltop_duplicates() {
+        let db = init_onchain_mem_db().await;
+        let input_ys = vec![
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+        ];
+        let now = chrono::Utc::now();
+        let meltop = onchain::MeltOperation {
+            qid: Uuid::new_v4(),
+            target: bitcoin::Amount::ZERO,
+            available: cashu::Amount::ZERO,
+            fees: cashu::Amount::ZERO,
+            address: String::new(),
+            wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            commitment: signature_tests::random_schnorr_signature(),
+            expiry: now + chrono::Duration::hours(1),
+            input_ys: input_ys.clone(),
+            status: onchain::MeltStatus::Pending,
+        };
+        db.store_meltop(meltop, now).await.unwrap();
+        let input_ys2 = vec![
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+        ];
+        let meltop = onchain::MeltOperation {
+            qid: Uuid::new_v4(),
+            target: bitcoin::Amount::ZERO,
+            available: cashu::Amount::ZERO,
+            fees: cashu::Amount::ZERO,
+            address: String::new(),
+            wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            commitment: signature_tests::random_schnorr_signature(),
+            expiry: now + chrono::Duration::hours(1),
+            input_ys: input_ys2.clone(),
+            status: onchain::MeltStatus::Paid {
+                tx: MeltTx {
+                    alpha_txid: None,
+                    beta_txid: None,
+                },
+            },
+        };
+        db.store_meltop(meltop, now).await.unwrap();
+        let test_ys = vec![
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            input_ys[0],
+        ];
+        let test_meltop = onchain::MeltOperation {
+            qid: Uuid::new_v4(),
+            target: bitcoin::Amount::ZERO,
+            available: cashu::Amount::ZERO,
+            fees: cashu::Amount::ZERO,
+            address: String::new(),
+            wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            commitment: signature_tests::random_schnorr_signature(),
+            expiry: now + chrono::Duration::hours(1),
+            input_ys: test_ys,
+            status: onchain::MeltStatus::Pending,
+        };
+        let res = db.store_meltop(test_meltop, now).await;
+        assert!(matches!(res, Err(Error::InvalidInput(_))));
     }
 
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {

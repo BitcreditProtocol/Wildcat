@@ -134,13 +134,14 @@ pub struct MintOperation {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]
+#[serde(tag = "status")]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
 pub enum MeltStatus {
     Pending,
     Paid { tx: wire_melt::MeltTx },
     Expired,
 }
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MeltOperation {
     pub qid: Uuid,
     pub address: String,
@@ -168,11 +169,11 @@ pub trait Repository: Send + Sync {
     async fn store_mintop(&self, op: MintOperation) -> Result<()>;
     async fn load_mintop(&self, qid: Uuid) -> Result<MintOperation>;
     async fn update_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
-    async fn list_pending_mintops(&self) -> Result<Vec<Uuid>>;
-    async fn store_meltop(&self, op: MeltOperation) -> Result<()>;
+    async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>>;
+    async fn store_meltop(&self, op: MeltOperation, now: TStamp) -> Result<()>;
     async fn load_meltop(&self, qid: Uuid) -> Result<MeltOperation>;
     async fn update_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
-    async fn list_pending_meltops(&self) -> Result<Vec<Uuid>>;
+    async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>>;
     async fn store_denied_meltop(&self, op: DeniedMeltOperation) -> Result<()>;
     async fn list_denied_meltops(&self) -> Result<Vec<DeniedMeltOperation>>;
     async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()>;
