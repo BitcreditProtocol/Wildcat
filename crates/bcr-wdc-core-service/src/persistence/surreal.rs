@@ -495,20 +495,52 @@ impl persistence::CommitmentRepository for DBCommitments {
         signature: schnorr::Signature,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
-        let entry = CommitmentDBEntry {
-            id: rid.clone(),
+        let newentry = CommitmentDBEntry {
+            id: rid,
             inputs,
             outputs,
             expiration,
             wallet_key,
         };
-        let _: Option<CommitmentDBEntry> = self
+        let mut query = self
             .db
-            .insert(rid)
-            .content(entry)
+            .query(
+                "
+    BEGIN;
+        LET $no_inputs = array::is_empty(
+            SELECT inputs
+            FROM type::table($table)
+            WHERE !array::is_empty(array::intersect(inputs, $inputs))
+        );
+        LET $no_outputs = array::is_empty(
+            SELECT outputs
+            FROM type::table($table)
+            WHERE !array::is_empty(array::intersect(outputs, $outputs))
+        );
+        IF $no_inputs && $no_outputs {
+            INSERT $content
+        };
+        SELECT * FROM $newrid;
+    COMMIT
+            ",
+            )
+            .bind(("table", Self::TABLE))
+            .bind(("inputs", newentry.inputs.clone()))
+            .bind(("outputs", newentry.outputs.clone()))
+            .bind(("newrid", newentry.id.clone()))
+            .bind(("content", newentry))
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
-        Ok(())
+        let inserted: Option<CommitmentDBEntry> = query
+            .take(query.num_statements() - 1)
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if inserted.is_none() {
+            Err(Error::Conflict(String::from(
+                "commitment with same inputs or outputs already exists",
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     async fn load(

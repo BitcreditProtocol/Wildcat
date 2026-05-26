@@ -448,15 +448,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_commitmentsrepo_store() {
+    async fn test_commitmentsrepo_store_duplicates() {
         let db = init_memmap_commitments_db();
-        commitmentsrepo_store(db).await;
+        commitmentsrepo_store_duplicates(db).await;
         //
         let db = init_surreal_commitments_db().await;
-        commitmentsrepo_store(db).await;
+        commitmentsrepo_store_duplicates(db).await;
     }
-    async fn commitmentsrepo_store(db: impl CommitmentRepository) {
-        let mut inputs = random_cdk_pks(5);
+    async fn commitmentsrepo_store_duplicates(db: impl CommitmentRepository) {
+        let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
@@ -469,11 +469,32 @@ mod tests {
         )
         .await
         .unwrap();
-        inputs.swap(0, 1);
+        let mut duplicated_inputs = random_cdk_pks(3);
+        duplicated_inputs.push(inputs[0]);
+        let mut duplicated_outputs = random_cdk_pks(3);
         let signature = signatures_test::random_schnorr_signature();
-        db.store(inputs, outputs, tstamp, random_wallet_key(), signature)
-            .await
-            .unwrap();
+        let res = db
+            .store(
+                duplicated_inputs,
+                outputs.clone(),
+                tstamp,
+                random_wallet_key(),
+                signature,
+            )
+            .await;
+        assert!(res.is_err());
+        duplicated_outputs.push(outputs[0]);
+        let signature = signatures_test::random_schnorr_signature();
+        let res = db
+            .store(
+                inputs,
+                duplicated_outputs,
+                tstamp,
+                random_wallet_key(),
+                signature,
+            )
+            .await;
+        assert!(res.is_err());
     }
 
     #[tokio::test]
