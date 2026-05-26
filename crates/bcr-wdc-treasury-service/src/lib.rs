@@ -17,7 +17,6 @@ use bcr_common::{
 use bcr_wdc_utils::{routine, surreal};
 // ----- local modules
 mod admin;
-mod devmode;
 mod ebill;
 mod error;
 mod foreign;
@@ -75,7 +74,6 @@ pub struct AppController {
     onchain: Arc<onchain::Service>,
     foreign: Arc<foreign::Service>,
     vault: Arc<vault::Service>,
-    dev: Arc<devmode::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
 }
 
@@ -208,16 +206,11 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         my_url,
     };
 
-    // devmode
-    let dev = devmode::Service {
-        crcore: core_client.clone(),
-    };
     let app_ctrl = AppController {
         ebill: Arc::new(ebill),
         onchain: Arc::new(onchain),
         foreign: Arc::new(foreign),
         vault: Arc::new(vault),
-        dev: Arc::new(dev),
         clwdr_nats: clowder_nats_client,
     };
 
@@ -248,7 +241,6 @@ pub fn routes(app: AppController) -> Router {
             cl_treasury::web_ep::EXCHANGE_ONLINE_V1,
             post(web::online_exchange),
         )
-        .route("/v1/free_money", post(devmode::free_money))
         .route(
             cl_treasury::web_ep::EXCHANGE_OFFLINE_V1,
             post(web::offline_exchange),
