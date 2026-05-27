@@ -17,6 +17,8 @@ pub enum Error {
     // external errors wrappers
     #[error("bcr_utils::signature {0}")]
     BcrSignatures(#[from] bcr_wdc_utils::signatures::ChecksError),
+    #[error("bcr_common::core::swap::wallet {0}")]
+    BcrSwapWallet(#[from] bcr_common::core::swap::wallet::Error),
     #[error("bcr_common::signature::ecash {0}")]
     BcrEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("bcr_common::signature::borsh {0}")]
@@ -98,6 +100,7 @@ impl axum::response::IntoResponse for Error {
         tracing::error!("Error: {}", self);
         let resp = match self {
             Error::BcrSignatures(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::BcrSwapWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

@@ -1,7 +1,7 @@
 // ----- standard library imports
-use std::{collections::HashSet, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 // ----- extra library imports
-use bcr_common::{cashu, core::signature::unblind_ecash_signature, wire::keys as wire_keys};
+use bcr_common::{cashu, core, wire::keys as wire_keys};
 use bitcoin::{
     hashes::{sha256::Hash as Sha256Hash, Hash},
     secp256k1,
@@ -11,7 +11,7 @@ use crate::{
     error::{Error, Result},
     foreign::proof,
     foreign::{
-        fingerprints_vec_to_map, proofs_vec_to_map, ClowderClient, KeysClient, MintClientFactory,
+        fingerprints_vec_to_map, to_mint_proofs_map, ClowderClient, KeysClient, MintClientFactory,
         OfflineRepository, OnlineRepository,
     },
     TStamp,
@@ -73,7 +73,7 @@ impl Service {
             let signatures = self.keys.sign(&premints.blinded_messages()).await?;
             let mut proofs = Vec::with_capacity(signatures.len());
             for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
-                let proof = unblind_ecash_signature(&keyset, pre.clone(), sig)?;
+                let proof = core::signature::unblind_ecash_signature(&keyset, pre.clone(), sig)?;
                 proofs.push(proof);
             }
             retv.extend(proofs);
@@ -197,44 +197,41 @@ async fn try_online_htlc(
     let mut gran_total = cashu::Amount::ZERO;
     let hash = Sha256Hash::hash(preimage.as_bytes());
     let foreign_proofs = repo.search_htlc(&hash).await?;
-    let foreign_proofs = proofs_vec_to_map(foreign_proofs);
+    let foreign_proofs = to_mint_proofs_map(foreign_proofs);
 
     for (mint_id, mut f_proofs) in foreign_proofs {
         let mint_url = clowder.get_mint_url_from_pk(&mint_id).await?;
+        let foreign_client = factory.make_client(mint_url, mint_id).await?;
+        let kinfos = foreign_client.list_keyset_infos().await?;
+        let swap_plan = core::swap::wallet::prepare_swap(&f_proofs, &kinfos)?;
+        let mut outputs = Vec::with_capacity(f_proofs.len());
+        let mut secrets = Vec::with_capacity(f_proofs.len());
+        let mut keysets = HashMap::new();
+        for (kid, amount) in swap_plan {
+            let premint =
+                cashu::PreMintSecrets::random(kid, amount, &cashu::amount::SplitTarget::None)?;
+            outputs.extend(premint.blinded_messages());
+            secrets.extend(premint.secrets);
+            let keyset = foreign_client.get_keyset(kid).await?;
+            keysets.insert(keyset.id, keyset);
+        }
         let mut f_fingerprints = Vec::with_capacity(f_proofs.len());
         for proof in &mut f_proofs {
             proof.add_preimage(preimage.to_string());
             f_fingerprints.push(proof.y()?);
         }
         f_proofs = clowder.sign_p2pk_proofs(&f_proofs).await?;
-        let total = f_proofs
-            .iter()
-            .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
-        let premints = cashu::PreMintSecrets::random(
-            f_proofs[0].keyset_id,
-            total,
-            &cashu::amount::SplitTarget::None,
-        )
-        .map_err(|e| Error::Internal(e.to_string()))?;
-        assert_eq!(
-            1,
-            f_proofs
-                .iter()
-                .map(|p| p.keyset_id)
-                .collect::<HashSet<_>>()
-                .len(),
-            "All foreign proofs must have the same keyset_id"
-        );
-        let foreign_client = factory.make_client(mint_url, mint_id).await?;
-        let keys = foreign_client.get_keyset(f_proofs[0].keyset_id).await?;
-        let signatures = foreign_client
-            .swap(f_proofs, premints.blinded_messages(), now)
-            .await?;
+        let signatures = foreign_client.swap(f_proofs, outputs, now).await?;
         let mut proofs = Vec::with_capacity(signatures.len());
-        for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
-            let proof = unblind_ecash_signature(&keys, pre.clone(), sig)?;
+        let mut total = cashu::Amount::ZERO;
+        for (signature, secret) in signatures.into_iter().zip(secrets.iter()) {
+            let keyset = keysets.get(&signature.keyset_id).unwrap();
+            let proof =
+                core::signature::unblind_ecash_signature(keyset, secret.clone(), signature)?;
+            total += proof.amount;
             proofs.push(proof);
         }
+
         repo.store(mint_id, proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         gran_total += total;
@@ -554,7 +551,7 @@ mod tests {
         let foreign_kp = core::generate_random_keypair();
         let wallet_kp = core::generate_random_keypair();
         let myself_kp = core::generate_random_keypair();
-        let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let (foreign_kinfo, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let foreign_proof = generate_htlc_proof_for_online_exchange(
             &foreign_keyset,
             cashu::Amount::from(256),
@@ -597,6 +594,11 @@ mod tests {
                 let cloned_keyset = cloned_keyset.clone();
                 let mut foreign_client = crate::foreign::MockForeignClient::new();
                 let keyset = cashu::KeySet::from(cloned_keyset.clone());
+                let cloned_info = cashu::KeySetInfo::from(foreign_kinfo.clone());
+                foreign_client
+                    .expect_list_keyset_infos()
+                    .times(1)
+                    .returning(move || Ok(HashMap::from([(cloned_info.id, cloned_info.clone())])));
                 foreign_client
                     .expect_get_keyset()
                     .with(eq(foreign_kid))
