@@ -138,19 +138,16 @@ where
         .route(core::web_ep::CHECK_STATE_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
-        .route(core::admin_ep::NEW_KEYSET_V1, post(admin::new_keyset))
-        .route(core::admin_ep::SIGN_V1, post(admin::sign_blind))
-        .route(core::admin_ep::VERIFY_PROOF_V1, post(admin::verify_proof))
+        .route(core::admin_ep::NEW_KEYSET, post(admin::new_keyset))
+        .route(core::admin_ep::SIGN, post(admin::sign_blind))
+        .route(core::admin_ep::VERIFY_PROOF, post(admin::verify_proof))
         .route(
-            core::admin_ep::VERIFY_FINGERPRINT_V1,
+            core::admin_ep::VERIFY_FINGERPRINT,
             post(admin::verify_fingerprint),
         )
-        .route(
-            core::admin_ep::DEACTIVATE_KEYSET_V1,
-            post(admin::deactivate),
-        )
-        .route(core::admin_ep::BURN_V1, post(admin::burn_tokens))
-        .route(core::admin_ep::RECOVER_V1, post(admin::recover_tokens));
+        .route(core::admin_ep::DEACTIVATE_KEYSET, post(admin::deactivate))
+        .route(core::admin_ep::BURN, post(admin::burn_tokens))
+        .route(core::admin_ep::RECOVER, post(admin::recover_tokens));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }

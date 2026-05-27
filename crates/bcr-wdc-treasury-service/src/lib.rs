@@ -264,39 +264,39 @@ pub fn routes(app: AppController) -> Router {
         .route(cl_treasury::web_ep::EBILLMINT_V1, post(web::mint_ebill));
     let admin = Router::new()
         .route(
-            cl_treasury::admin_ep::REQUEST_TO_PAY_EBILL_V1,
+            cl_treasury::admin_ep::REQUEST_TO_PAY_EBILL,
             post(admin::request_to_pay_ebill),
         )
         .route(
-            cl_treasury::admin_ep::TRY_HTLC_SWAP_V1,
+            cl_treasury::admin_ep::TRY_HTLC_SWAP,
             post(admin::try_htlc_swap),
         )
         .route(
-            cl_treasury::admin_ep::NEW_EBILL_MINTOP_V1,
+            cl_treasury::admin_ep::NEW_EBILL_MINTOP,
             post(admin::new_ebill_mintop),
         )
         .route(
-            cl_treasury::admin_ep::LIST_EBILL_MINTOPS_V1,
+            cl_treasury::admin_ep::LIST_EBILL_MINTOPS,
             get(admin::list_ebill_mintops),
         )
         .route(
-            cl_treasury::admin_ep::EBILL_MINTOP_STATUS_V1,
+            cl_treasury::admin_ep::EBILL_MINTOP_STATUS,
             get(admin::ebill_mintop_status),
         )
         .route(
-            cl_treasury::admin_ep::FEES_STORE_PROOFS_V1,
+            cl_treasury::admin_ep::FEES_STORE_PROOFS,
             post(admin::store_fees_proofs),
         )
         .route(
-            cl_treasury::admin_ep::FEES_TOKEN_V1,
+            cl_treasury::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
         )
         .route(
-            cl_treasury::admin_ep::DENIED_MELTOPS_V1,
+            cl_treasury::admin_ep::DENIED_MELTOPS,
             get(admin::list_denied_meltops),
         )
         .route(
-            cl_treasury::admin_ep::DENIED_MELTOP_V1,
+            cl_treasury::admin_ep::DENIED_MELTOP,
             delete(admin::delete_denied_meltop),
         );
     admin.merge(web).with_state(app)

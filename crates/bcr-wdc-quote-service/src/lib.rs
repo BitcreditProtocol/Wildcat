@@ -110,9 +110,9 @@ where
         .route(quote::web_ep::RESOLVE_V1, patch(web::resolve_offer));
 
     let admin = Router::new()
-        .route(quote::admin_ep::LIST_V1, get(admin::list_quotes))
-        .route(quote::admin_ep::LOOKUP_V1, get(admin::lookup_quote))
-        .route(quote::admin_ep::UPDATE_V1, patch(admin::update_quote));
+        .route(quote::admin_ep::LIST, get(admin::list_quotes))
+        .route(quote::admin_ep::LOOKUP, get(admin::lookup_quote))
+        .route(quote::admin_ep::UPDATE, patch(admin::update_quote));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
