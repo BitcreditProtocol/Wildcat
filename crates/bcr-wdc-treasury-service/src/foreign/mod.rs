@@ -126,6 +126,7 @@ pub trait ForeignClient: Send + Sync {
 
     async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>>;
     async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
+    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -138,7 +139,7 @@ pub trait MintClientFactory: Send + Sync {
     ) -> Result<Box<dyn ForeignClient>>;
 }
 
-fn proofs_vec_to_map(
+fn to_mint_proofs_map(
     input: Vec<(secp256k1::PublicKey, cashu::Proof)>,
 ) -> HashMap<secp256k1::PublicKey, Vec<cashu::Proof>> {
     let mut map: HashMap<secp256k1::PublicKey, Vec<cashu::Proof>> = HashMap::new();

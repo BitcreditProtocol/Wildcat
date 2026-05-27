@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -246,6 +246,12 @@ impl ForeignClient for MintClient {
     async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
         let keys = self.cl.keys(kid).await?;
         Ok(keys)
+    }
+
+    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
+        let kinfos = self.cl.list_keyset_info(Default::default()).await?;
+        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
+        Ok(map)
     }
 }
 
