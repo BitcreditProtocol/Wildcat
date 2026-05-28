@@ -89,7 +89,7 @@ pub trait ClowderClient: Send + Sync {
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
         attestation: IssuanceAttestation,
-    ) -> Result<wire_melt::MeltTx>;
+    ) -> Result<bitcoin::Txid>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
@@ -138,7 +138,7 @@ pub struct MintOperation {
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
 pub enum MeltStatus {
     Pending,
-    Paid { tx: wire_melt::MeltTx },
+    Paid { tx: bitcoin::Txid },
     Expired,
 }
 #[derive(Debug, Clone)]

@@ -78,12 +78,9 @@ impl ebill::ClowderClient for ClwdrCl {
     ) -> Result<bitcoin::Address> {
         let info = self.rest.get_info().await?;
         let network = info.network;
-        let alpha_key = info.node_id.x_only_public_key();
         let frost_agg_key = info.multisig_agg_xonly;
         let derived_address = taproot::derive_ebill_mint_req_to_pay_address(
             &frost_agg_key,
-            &alpha_key,
-            144, // will be removed in the future
             &bid,
             block_id,
             previous_block_hash.as_byte_array(),

@@ -178,6 +178,36 @@ impl From<OnChainDeniedMeltOpDbEntry> for onchain::DeniedMeltOperation {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "status")]
+enum MeltStatusDBEntry {
+    Pending,
+    Paid { tx: String },
+    Expired,
+}
+impl From<onchain::MeltStatus> for MeltStatusDBEntry {
+    fn from(s: onchain::MeltStatus) -> Self {
+        match s {
+            onchain::MeltStatus::Pending => MeltStatusDBEntry::Pending,
+            onchain::MeltStatus::Paid { tx } => MeltStatusDBEntry::Paid {
+                tx: tx.to_string(),
+            },
+            onchain::MeltStatus::Expired => MeltStatusDBEntry::Expired,
+        }
+    }
+}
+impl From<MeltStatusDBEntry> for onchain::MeltStatus {
+    fn from(s: MeltStatusDBEntry) -> Self {
+        match s {
+            MeltStatusDBEntry::Pending => onchain::MeltStatus::Pending,
+            MeltStatusDBEntry::Paid { tx } => onchain::MeltStatus::Paid {
+                tx: bitcoin::Txid::from_str(&tx).expect("tx <--> String"),
+            },
+            MeltStatusDBEntry::Expired => onchain::MeltStatus::Expired,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OnChainMeltOpDbEntry {
     id: RecordId,
     address: String,
@@ -187,7 +217,7 @@ struct OnChainMeltOpDbEntry {
     expiry: TStamp,
     commitment: String,
     input_ys: Vec<String>,
-    status: onchain::MeltStatus,
+    status: MeltStatusDBEntry,
     wallet_key: String,
 }
 impl From<OnChainMeltOpDbEntry> for onchain::MeltOperation {
@@ -199,7 +229,7 @@ impl From<OnChainMeltOpDbEntry> for onchain::MeltOperation {
             target: entry.target,
             fees: entry.fees,
             expiry: entry.expiry,
-            status: entry.status,
+            status: entry.status.into(),
             commitment: secp256k1::schnorr::Signature::from_str(&entry.commitment)
                 .expect("commitment <--> String"),
             wallet_key: cashu::PublicKey::from_str(&entry.wallet_key)
@@ -223,7 +253,7 @@ fn convert_to_onchainmeltop(op: onchain::MeltOperation, table: &str) -> OnChainM
         expiry: op.expiry,
         commitment: op.commitment.to_string(),
         input_ys: op.input_ys.into_iter().map(|y| y.to_string()).collect(),
-        status: op.status,
+        status: op.status.into(),
         wallet_key: op.wallet_key.to_string(),
     }
 }
@@ -273,7 +303,7 @@ impl DBOnChain {
             ",
             )
             .bind(("table", Self::MELTS_TABLE))
-            .bind(("expired", onchain::MeltStatus::Expired))
+            .bind(("expired", MeltStatusDBEntry::Expired))
             .bind(("now", now))
             .await?;
         Ok(())
@@ -402,7 +432,7 @@ impl onchain::Repository for DBOnChain {
             .db
             .query("UPDATE $rid SET status = $status")
             .bind(("rid", rid))
-            .bind(("status", status))
+            .bind(("status", MeltStatusDBEntry::from(status)))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -1008,7 +1038,7 @@ mod tests {
         ebill::Repository as CreditRepo, foreign::OfflineRepository,
         onchain::Repository as DebitRepo, vault::Repository as VaultRepo,
     };
-    use bcr_common::{core, core_tests, wire::melt::MeltTx};
+    use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
     use std::str::FromStr;
@@ -1108,10 +1138,7 @@ mod tests {
             expiry: now + chrono::Duration::hours(1),
             input_ys: input_ys2.clone(),
             status: onchain::MeltStatus::Paid {
-                tx: MeltTx {
-                    alpha_txid: None,
-                    beta_txid: None,
-                },
+                tx: bitcoin::Txid::all_zeros(),
             },
         };
         db.store_meltop(meltop, now).await.unwrap();
