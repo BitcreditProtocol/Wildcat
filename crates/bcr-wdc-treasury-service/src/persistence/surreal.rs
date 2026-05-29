@@ -188,9 +188,7 @@ impl From<onchain::MeltStatus> for MeltStatusDBEntry {
     fn from(s: onchain::MeltStatus) -> Self {
         match s {
             onchain::MeltStatus::Pending => MeltStatusDBEntry::Pending,
-            onchain::MeltStatus::Paid { tx } => MeltStatusDBEntry::Paid {
-                tx: tx.to_string(),
-            },
+            onchain::MeltStatus::Paid { tx } => MeltStatusDBEntry::Paid { tx: tx.to_string() },
             onchain::MeltStatus::Expired => MeltStatusDBEntry::Expired,
         }
     }
