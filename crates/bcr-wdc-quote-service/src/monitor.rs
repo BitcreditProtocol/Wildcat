@@ -165,7 +165,7 @@ mod tests {
             .times(1)
             .with(eq(bid.clone()))
             .returning(move |_| Ok(bill.clone()));
-        let cloned = cashu::KeySet::from(keyset.clone());
+        let cloned = bcr_wdc_utils::keys::to_keyset(&keyset, None);
         wdc.expect_get_keys()
             .times(1)
             .with(eq(keyset.id))

@@ -20,6 +20,8 @@ pub enum ChecksError {
     P2PK(#[from] cashu::nut11::Error),
     #[error("verify_htlc: {0}")]
     HTLC(#[from] cashu::nut14::Error),
+    #[error("verify_offline_exchange_htlc: {0}")]
+    OfflineHTLC(#[from] core_signature::ECashSignatureError),
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
@@ -63,7 +65,15 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     for proof in proofs {
         match &proof.witness {
             Some(cashu::Witness::P2PKWitness(_)) => proof.verify_p2pk()?,
-            Some(cashu::Witness::HTLCWitness(_)) => proof.verify_htlc()?,
+            // A 32-byte hex preimage is a standard/online HTLC (cashu verification);
+            // any other preimage identifies an offline-exchange HTLC (raw-bytes verification).
+            Some(cashu::Witness::HTLCWitness(htlc)) => {
+                if htlc.preimage_data().is_ok() {
+                    proof.verify_htlc()?;
+                } else {
+                    core_signature::verify_offline_exchange_htlc(proof)?;
+                }
+            }
             None => (),
         }
     }

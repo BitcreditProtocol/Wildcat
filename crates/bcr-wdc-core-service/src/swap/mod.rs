@@ -93,7 +93,7 @@ impl KeysService for KeysSignService {
 
     async fn get_keyset(&self, kid: &cashu::Id) -> Result<cashu::KeySet> {
         let keyset = self.srvc.keys(*kid).await?;
-        Ok(cashu::KeySet::from(keyset))
+        Ok(bcr_wdc_utils::keys::to_keyset(&keyset, None))
     }
 }
 

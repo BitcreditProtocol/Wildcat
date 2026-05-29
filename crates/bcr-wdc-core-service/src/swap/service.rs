@@ -267,6 +267,7 @@ fn generate_fees_premints(
             kid,
             inputs_amount - outputs_amount,
             &cashu::amount::SplitTarget::None,
+            &bcr_wdc_utils::keys::fee_and_amounts(inputs_amount - outputs_amount),
         )?;
         premints.push(premint);
     }

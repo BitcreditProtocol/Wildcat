@@ -99,6 +99,7 @@ pub async fn generate_htlc_proofs(
         amount,
         &cashu::amount::SplitTarget::None,
         &spending_conds,
+        &bcr_wdc_utils::keys::fee_and_amounts(amount),
     )?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
@@ -132,6 +133,7 @@ mod tests {
             amount,
             &cashu::amount::SplitTarget::None,
             &spending_conds,
+            &bcr_wdc_utils::keys::fee_and_amounts(amount),
         )
         .unwrap();
 
@@ -146,6 +148,7 @@ mod tests {
                 c: cashu::PublicKey::from(kp.public_key()), // dummy
                 witness: None,
                 dleq: None,
+                p2pk_e: None,
             };
             let y = proof.y().unwrap();
             assert!(ys.insert(y), "duplicate Y found");

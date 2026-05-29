@@ -7,6 +7,30 @@ use bcr_common::{cashu, cdk_common::mint as cdk_mint};
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cashu::MintKeySet);
 
+// Build a public KeySet from a MintKeySet (the `From` impl was removed in cashu 0.16).
+pub fn to_keyset(keyset: &cashu::MintKeySet, active: Option<bool>) -> cashu::KeySet {
+    cashu::KeySet {
+        id: keyset.id,
+        unit: keyset.unit.clone(),
+        active,
+        keys: keyset.keys.clone().into(),
+        input_fee_ppk: keyset.input_fee_ppk,
+        final_expiry: keyset.final_expiry,
+    }
+}
+
+// Powers-of-two denominations covering `max`, with zero fee, for amount splitting.
+pub fn fee_and_amounts(max: cashu::Amount) -> cashu::amount::FeeAndAmounts {
+    let max = max.to_u64();
+    let mut amounts = Vec::new();
+    let mut d = 1u64;
+    while d <= max {
+        amounts.push(d);
+        d <<= 1;
+    }
+    (0u64, amounts).into()
+}
+
 #[cfg(any(feature = "test-utils", test))]
 pub mod test_utils {
 
@@ -23,6 +47,7 @@ pub mod test_utils {
             &denominations,
             cashu::CurrencyUnit::Sat,
             path.clone(),
+            0,
             None,
             KeySetVersion::Version00,
         );
@@ -36,7 +61,7 @@ pub mod test_utils {
             derivation_path_index: None,
             derivation_path: path,
             input_fee_ppk: 0,
-            max_order: 10,
+            issuer_version: None,
         };
         (info, set)
     }

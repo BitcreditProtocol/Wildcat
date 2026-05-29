@@ -58,9 +58,12 @@ impl Routine for Handler {
                     "Settling proofs totaling {total} at {} with keysetID {kid}",
                     mint_url
                 );
-                let Ok(premints) =
-                    cashu::PreMintSecrets::random(kid, total, &cashu::amount::SplitTarget::None)
-                else {
+                let Ok(premints) = cashu::PreMintSecrets::random(
+                    kid,
+                    total,
+                    &cashu::amount::SplitTarget::None,
+                    &bcr_wdc_utils::keys::fee_and_amounts(total),
+                ) else {
                     warn!("PreMintSecrets::random failed {}, retry later", mint_url);
                     continue;
                 };

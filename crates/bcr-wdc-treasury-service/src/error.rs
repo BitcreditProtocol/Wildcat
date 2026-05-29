@@ -4,7 +4,8 @@ use anyhow::Error as AnyError;
 use axum::http::StatusCode;
 use bcr_common::cashu::{
     self, nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
-    nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut20::Error as CDK20Error,
+    nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut14::Error as CDK14Error,
+    nut20::Error as CDK20Error,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use thiserror::Error;
@@ -37,6 +38,8 @@ pub enum Error {
     CDK12(#[from] CDK12Error),
     #[error("cashu::nut13 {0}")]
     CDK13(#[from] CDK13Error),
+    #[error("cashu::nut14 {0}")]
+    CDK14(#[from] CDK14Error),
     #[error("cashu::nut20 {0}")]
     CDK20(#[from] CDK20Error),
     #[error("CDK secret {0}")]
@@ -110,6 +113,7 @@ impl axum::response::IntoResponse for Error {
             Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::CDK14(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::CDKdhke(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

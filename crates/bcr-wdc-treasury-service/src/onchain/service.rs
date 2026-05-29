@@ -646,7 +646,7 @@ mod tests {
         let cloned_keyset = keyset.clone();
         wdc.expect_keyset()
             .times(1)
-            .returning(move |_| Ok(cashu::KeySet::from(cloned_keyset.clone())));
+            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset, None)));
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
@@ -812,7 +812,12 @@ async fn generate_fee_premints(
             kid = p.keyset_id;
         }
     }
-    let pre = cashu::PreMintSecrets::random(kid, fees, &cashu::amount::SplitTarget::None)?;
+    let pre = cashu::PreMintSecrets::random(
+        kid,
+        fees,
+        &cashu::amount::SplitTarget::None,
+        &bcr_wdc_utils::keys::fee_and_amounts(fees),
+    )?;
     Ok(pre)
 }
 

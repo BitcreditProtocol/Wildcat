@@ -60,7 +60,7 @@ pub async fn lookup_keys(
 
     let keyset = ctrl.keys(kid).await?;
     let response = cashu::KeysResponse {
-        keysets: vec![keyset.into()],
+        keysets: vec![bcr_wdc_utils::keys::to_keyset(&keyset, None)],
     };
     Ok(Json(response))
 }
@@ -76,7 +76,6 @@ pub async fn restore(
     let mut response = cashu::RestoreResponse {
         outputs: Vec::new(),
         signatures: Vec::new(),
-        promises: None,
     };
     for blind in req.outputs.into_iter() {
         let sign_opt = ctrl.search_signature(&blind).await?;

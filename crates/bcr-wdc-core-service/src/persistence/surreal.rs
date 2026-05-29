@@ -47,10 +47,10 @@ impl std::convert::From<KeysInfoDBEntry> for MintKeySetInfo {
             valid_from: info.valid_from,
             derivation_path: info.derivation_path,
             derivation_path_index: info.derivation_path_index,
-            max_order: info.max_order,
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
             amounts: info.denominations,
+            issuer_version: None,
         }
     }
 }
@@ -63,7 +63,7 @@ impl std::convert::From<MintKeySetInfo> for KeysInfoDBEntry {
             valid_from: info.valid_from,
             derivation_path: info.derivation_path,
             derivation_path_index: info.derivation_path_index,
-            max_order: info.max_order,
+            max_order: info.amounts.len() as u8,
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
             denominations: info.amounts,
@@ -107,6 +107,7 @@ impl std::convert::From<KeysDBEntry> for KeysetEntry {
             id: info.id,
             unit: info.unit.clone(),
             keys: MintKeys::new(keysmap),
+            input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
         };
         (info, keyset)
