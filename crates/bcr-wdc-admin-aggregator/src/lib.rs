@@ -123,6 +123,7 @@ pub mod endpoints {
     pub const POST_EBILL_REQTOPAY: &str = "/v1/admin/treasury/ebill/reqtopay";
     pub const DENIED_MELTOPS: &str = "/v1/admin/treasury/onchain/meltops/denied";
     pub const DENIED_MELTOP: &str = "/v1/admin/treasury/onchain/meltops/denied/{qid}";
+    pub const FEES_TOKEN: &str = "/v1/admin/fees/token";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -192,7 +193,8 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::DENIED_MELTOP,
             delete(admin::delete_denied_meltop),
-        );
+        )
+        .route(endpoints::FEES_TOKEN, get(admin::collect_fees_token));
     Router::new().merge(admin).with_state(ctrl).merge(swagger)
 }
 
@@ -230,6 +232,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_wallet::ECashBalance,
         wire_wallet::EbillPaymentComplete,
         wire_treasury::DeniedMeltOperations,
+        wire_treasury::FeesTokenResponse,
     ),),
     paths(
         admin::get_health,
@@ -263,6 +266,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::post_ebill_reqtopay,
         admin::list_denied_meltops,
         admin::delete_denied_meltop,
+        admin::collect_fees_token,
     )
 )]
 pub struct ApiDoc;

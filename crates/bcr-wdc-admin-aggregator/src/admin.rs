@@ -647,3 +647,18 @@ pub async fn delete_denied_meltop(
     ctrl.treasury_cl.delete_denied(qid).await?;
     Ok(())
 }
+
+#[utoipa::path(
+    get,
+    path = endpoints::FEES_TOKEN,
+    responses (
+        (status = 200, description = "Successful response", body = wire_treasury::FeesTokenResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn collect_fees_token(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_treasury::FeesTokenResponse>> {
+    let response = ctrl.treasury_cl.fees_token().await?;
+    Ok(Json(response))
+}
