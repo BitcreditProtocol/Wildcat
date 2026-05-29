@@ -121,6 +121,8 @@ pub trait ClowderClient: Send + Sync {
         inputs: &[cashu::Proof],
         attestation: &IssuanceAttestation,
     ) -> Result<()>;
+
+    async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey>;
 }
 
 pub struct ClowderCl {
@@ -175,6 +177,16 @@ impl ClowderClient for ClowderCl {
         bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
         Ok(())
     }
+
+    async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey> {
+        let betas = self.rest.get_betas().await?;
+        for beta in betas.mints {
+            if beta.node_id == *beta_pk {
+                return Ok(beta.node_id);
+            }
+        }
+        Err(Error::InvalidInput(format!("unknown pubkey {beta_pk}")))
+    }
 }
 
 #[cfg(feature = "test-utils")]
@@ -213,6 +225,10 @@ pub mod test_utils {
             _attestation: &IssuanceAttestation,
         ) -> Result<()> {
             Ok(())
+        }
+
+        async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey> {
+            Ok(*beta_pk)
         }
     }
 

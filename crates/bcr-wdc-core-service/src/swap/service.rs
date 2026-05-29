@@ -121,7 +121,7 @@ impl Service {
         sign_service: &dyn KeysService,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
-        signature: schnorr::Signature,
+        commitment: schnorr::Signature,
         attestation: IssuanceAttestation,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -130,7 +130,7 @@ impl Service {
         signatures_utils::basic_blinds_checks(&outputs)?;
         // cross check with commitment
         let (committed_inputs, committed_outputs, expiration) =
-            self.commitments.load(&signature).await?;
+            self.commitments.load(&commitment).await?;
         // check expiration
         if expiration < now {
             return Err(Error::InvalidInput(String::from("commitment has expired")));
@@ -205,16 +205,45 @@ impl Service {
                 inputs.clone(),
                 outputs,
                 fees_signatures,
-                signature,
+                commitment,
                 attestation,
                 signatures.clone(),
             )
             .await?;
         // update state
-        self.commitments.delete(signature).await?;
+        self.commitments.delete(commitment).await?;
         self.proofs.insert(inputs).await?;
         self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
+    }
+
+    pub async fn signed_swap(
+        &self,
+        sign_service: &dyn KeysService,
+        content: String,
+        signature: schnorr::Signature,
+        signer_pk: PublicKey,
+        commitment: schnorr::Signature,
+        attestation: IssuanceAttestation,
+        now: TStamp,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let beta_id = self.clowder.verify_pk(&signer_pk).await?;
+        bcr_common::core::signature::schnorr_verify_b64(
+            &content,
+            &signature,
+            &beta_id.x_only_public_key().0,
+        )?;
+        let payload: wire_swap::SignedSwapRequestContent =
+            bcr_common::core::signature::deserialize_borsh_msg(&content)?;
+        self.swap(
+            sign_service,
+            payload.inputs,
+            payload.outputs,
+            commitment,
+            attestation,
+            now,
+        )
+        .await
     }
 
     pub async fn burn(
@@ -365,5 +394,44 @@ mod tests {
             err,
             Error::Attestation(AttestationError::DigestMismatch)
         ));
+    }
+
+    #[tokio::test]
+    async fn signed_swap_unknown_signer() {
+        let mut clowder = MockClowderClient::new();
+        let commitments = MockCommitmentRepository::new();
+        let proofs_repo = MockProofRepository::new();
+        let sign_service = MockKeysService::new();
+        let content = "test content".to_string();
+        let signature = schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let signer_pk = core::generate_random_keypair().public_key();
+        let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let attestation = dummy_attestation();
+        clowder
+            .expect_verify_pk()
+            .times(1)
+            .returning(|_| Err(Error::InvalidInput(String::new())));
+        let alpha_id = core::generate_random_keypair().public_key();
+        let service = Service {
+            proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments),
+            clowder: Box::new(clowder),
+            treasury: Box::new(DummyTreasuryClient),
+            max_expiry: chrono::Duration::seconds(3600),
+            alpha_id,
+        };
+        let err = service
+            .signed_swap(
+                &sign_service,
+                content,
+                signature,
+                signer_pk,
+                commitment,
+                attestation,
+                chrono::Utc::now(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
     }
 }
