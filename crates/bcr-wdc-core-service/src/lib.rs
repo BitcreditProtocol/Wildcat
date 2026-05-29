@@ -134,6 +134,7 @@ where
         .route(core::web_ep::KEYS_V1, get(web::lookup_keys))
         .route(core::web_ep::RESTORE_V1, post(web::restore))
         .route(core::web_ep::SWAP_V1, post(web::swap_tokens))
+        .route(core::web_ep::SIGNED_SWAP_V1, post(web::signed_swap_tokens))
         .route(core::web_ep::SWAP_COMMIT_V1, post(web::commit_to_swap))
         .route(core::web_ep::CHECK_STATE_V1, post(web::check_state));
     // separate admin as it will likely have different auth requirements

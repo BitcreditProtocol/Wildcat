@@ -126,6 +126,29 @@ pub async fn swap_tokens(
     Ok(Json(response))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
+pub async fn signed_swap_tokens(
+    State(ctrl): State<Arc<swap::service::Service>>,
+    State(keys_srvc): State<Arc<keys::service::Service>>,
+    Json(request): Json<wire_swap::SignedSwapRequest>,
+) -> Result<Json<wire_swap::SwapResponse>> {
+    let now = chrono::Utc::now();
+    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
+    let signatures = ctrl
+        .signed_swap(
+            &signsrvc,
+            request.content,
+            request.signature,
+            request.mint_id,
+            request.commitment,
+            request.attestation,
+            now,
+        )
+        .await?;
+    let response = wire_swap::SwapResponse { signatures };
+    Ok(Json(response))
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn check_state(
     State(ctrl): State<Arc<swap::service::Service>>,
