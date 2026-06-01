@@ -217,7 +217,7 @@ impl ClowderClient for ClowderCl {
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
         attestation: IssuanceAttestation,
-    ) -> Result<wire_melt::MeltTx> {
+    ) -> Result<bitcoin::Txid> {
         let request = wire_clowder::MeltOnchainRequest {
             quote: qid,
             address: address.into_unchecked(),

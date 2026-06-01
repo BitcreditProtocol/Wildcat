@@ -350,6 +350,7 @@ mod tests {
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
     use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
+    use bitcoin::hashes::Hash;
     use cashu::Amount;
     use mockall::predicate::eq;
     use std::str::FromStr;
@@ -657,12 +658,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _, _, _| {
-                Ok(wire_melt::MeltTx {
-                    alpha_txid: None,
-                    beta_txid: None,
-                })
-            });
+            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
         repo.expect_update_meltop_status()
             .times(1)
             .returning(|_, _| Ok(()));
