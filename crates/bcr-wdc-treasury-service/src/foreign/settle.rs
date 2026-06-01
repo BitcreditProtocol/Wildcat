@@ -53,7 +53,7 @@ impl Routine for Handler {
                     .iter()
                     .map(|p| p.y().expect("Proof::y(): impossible!!"))
                     .collect();
-                let keyset = try_or_warn!(client.get_keyset(kid));
+                let keyset = try_or_warn!(self.clowder.get_keyset(&mint_id, &kid));
                 debug!(
                     "Settling proofs totaling {total} at {} with keysetID {kid}",
                     mint_url
