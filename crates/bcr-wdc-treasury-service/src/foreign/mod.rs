@@ -68,43 +68,62 @@ pub trait KeysClient: Send + Sync {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
+        now: TStamp,
     ) -> Result<cashu::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
+    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
 }
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
     async fn get_mint_url_from_pk(&self, pk: &secp256k1::PublicKey) -> Result<reqwest::Url>;
+
     async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey>;
+
     async fn sign_p2pk_proofs(&self, proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>>;
+
     // yes if result is Ok
     async fn can_accept_offline_exchange(
         &self,
         fps: Vec<wire_keys::ProofFingerprint>,
     ) -> Result<(reqwest::Url, secp256k1::PublicKey)>;
+
     async fn get_keyset_info(
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
     ) -> Result<cashu::KeySetInfo>;
+
     async fn get_keyset(
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
     ) -> Result<cashu::KeySet>;
+
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
-    async fn check_htlc_proofs(
+
+    async fn verify_foreign_proofs(
         &self,
         issuer: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
+
+    async fn verify_wallet_lock(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+
+    async fn get_foreign_proofs_state(
+        &self,
+        foreign_id: secp256k1::PublicKey,
+        foreign_fps: Vec<(cashu::Id, cashu::PublicKey)>,
+    ) -> Result<Vec<cashu::nut07::State>>;
+
     async fn signal_online_exchange_event(
         &self,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::Proof>,
         path: Vec<secp256k1::PublicKey>,
     ) -> Result<Vec<cashu::Proof>>;
+
     async fn signal_offline_exchange_event(
         &self,
         inputs: Vec<wire_keys::ProofFingerprint>,
@@ -123,10 +142,6 @@ pub trait ForeignClient: Send + Sync {
         outputs: Vec<cashu::BlindedMessage>,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>>;
-
-    async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>>;
-    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
-    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
