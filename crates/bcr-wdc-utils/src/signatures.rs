@@ -20,6 +20,8 @@ pub enum ChecksError {
     P2PK(#[from] cashu::nut11::Error),
     #[error("verify_htlc: {0}")]
     HTLC(#[from] cashu::nut14::Error),
+    #[error("verify_offline_exchange_htlc: {0}")]
+    OfflineHTLC(#[from] core_signature::ECashSignatureError),
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
@@ -63,7 +65,9 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     for proof in proofs {
         match &proof.witness {
             Some(cashu::Witness::P2PKWitness(_)) => proof.verify_p2pk()?,
-            Some(cashu::Witness::HTLCWitness(_)) => proof.verify_htlc()?,
+            // Routed by the committed offline-exchange tag: tagged offline proofs use raw-bytes
+            // verifier, everything else uses cashu's `verify_htlc`.
+            Some(cashu::Witness::HTLCWitness(_)) => core_signature::verify_exchange_htlc(proof)?,
             None => (),
         }
     }

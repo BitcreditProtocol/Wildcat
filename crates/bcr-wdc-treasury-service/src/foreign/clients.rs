@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -27,34 +27,17 @@ impl foreign::KeysClient for CoreCl {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
-        now: TStamp,
     ) -> Result<cashu::KeySet> {
-        let kid = if expiration <= now.date_naive() {
-            self.core
-                .get_or_create_keyset_with_expiration(expiration)
-                .await?
-                .id
-        } else {
-            let kinfos = self.core.list_keyset_info(Default::default()).await?;
-            let kinfo = kinfos
-                .into_iter()
-                .find(|kinfo| kinfo.final_expiry.is_none())
-                .ok_or(Error::Internal(String::from(
-                    "no active default debit keyset found",
-                )))?;
-            kinfo.id
-        };
-        let keyset = self.core.keys(kid).await?;
+        let kinfo = self
+            .core
+            .get_or_create_keyset_with_expiration(expiration)
+            .await?;
+        let keyset = self.core.keys(kinfo.id).await?;
         Ok(keyset)
     }
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let signatures = self.core.sign(blinds).await?;
         Ok(signatures)
-    }
-
-    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
-        let keys = self.core.keys(kid).await?;
-        Ok(keys)
     }
 }
 
@@ -66,7 +49,7 @@ pub struct ClowderCl {
 
 #[async_trait]
 impl foreign::ClowderClient for ClowderCl {
-    async fn verify_foreign_proofs(
+    async fn check_htlc_proofs(
         &self,
         issuer: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
@@ -77,10 +60,6 @@ impl foreign::ClowderClient for ClowderCl {
                 "One or more proofs are invalid",
             )));
         }
-        Ok(())
-    }
-
-    async fn verify_wallet_lock(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         let response = self.rest.post_validate_wallet_lock(&proofs).await?;
         if !response.success {
             return Err(Error::InvalidInput(String::from(
@@ -88,17 +67,6 @@ impl foreign::ClowderClient for ClowderCl {
             )));
         }
         Ok(())
-    }
-
-    async fn get_foreign_proofs_state(
-        &self,
-        foreign_id: secp256k1::PublicKey,
-        foreign_fps: Vec<(cashu::Id, cashu::PublicKey)>,
-    ) -> Result<Vec<cashu::nut07::State>> {
-        let (ids, ys) = foreign_fps.into_iter().unzip();
-        let response = self.rest.post_checkstate(foreign_id, ids, ys).await?;
-        let states = response.states.into_iter().map(|ps| ps.state).collect();
-        Ok(states)
     }
 
     async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey> {
@@ -268,6 +236,22 @@ impl ForeignClient for MintClient {
             .swap(inputs, outputs, commitment, attestation)
             .await?;
         Ok(signatures)
+    }
+
+    async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>> {
+        let states = self.cl.check_state(ys).await?;
+        Ok(states)
+    }
+
+    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
+        let keys = self.cl.keys(kid).await?;
+        Ok(keys)
+    }
+
+    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
+        let kinfos = self.cl.list_keyset_info(Default::default()).await?;
+        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
+        Ok(map)
     }
 }
 

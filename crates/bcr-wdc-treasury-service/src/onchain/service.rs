@@ -281,7 +281,7 @@ impl Service {
         let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset)?;
         // update state
         self.wdc.burn(inputs.clone()).await?;
-        let txs = match self
+        let txid = match self
             .clowder_cl
             .melt_onchain(
                 qid,
@@ -294,7 +294,7 @@ impl Service {
             )
             .await
         {
-            Ok(txs) => txs,
+            Ok(txid) => txid,
             Err(e) => {
                 tracing::warn!(
                     "Failed to melt onchain for quote {qid}: {e}, recovering proofs {:?}",
@@ -305,15 +305,15 @@ impl Service {
             }
         };
         vault.store_proofs(fees).await?;
-        let new = onchain::MeltStatus::Paid { tx: txs.clone() };
+        let new = onchain::MeltStatus::Paid { tx: txid };
         match self.repo.update_meltop_status(qid, new).await {
             Ok(_) => {}
             Err(e) => {
-                tracing::error!("DB Failure, lost MeltStatus update for {qid} with txs {txs:?}");
+                tracing::error!("DB Failure, lost MeltStatus update for {qid} with txid {txid:?}");
                 return Err(e);
             }
         }
-        let response = wire_melt::MeltOnchainResponse { txid: txs };
+        let response = wire_melt::MeltOnchainResponse { txid };
         Ok(response)
     }
 
@@ -645,8 +645,8 @@ mod tests {
             .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
         let cloned_keyset = keyset.clone();
         wdc.expect_keyset()
-            .times(1)
-            .returning(move |_| Ok(cashu::KeySet::from(cloned_keyset.clone())));
+            .times(2)
+            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset, None)));
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
@@ -812,7 +812,13 @@ async fn generate_fee_premints(
             kid = p.keyset_id;
         }
     }
-    let pre = cashu::PreMintSecrets::random(kid, fees, &cashu::amount::SplitTarget::None)?;
+    let keyset = wdc.keyset(kid).await?;
+    let pre = cashu::PreMintSecrets::random(
+        kid,
+        fees,
+        &cashu::amount::SplitTarget::None,
+        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+    )?;
     Ok(pre)
 }
 

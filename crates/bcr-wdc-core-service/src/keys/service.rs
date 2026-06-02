@@ -50,7 +50,7 @@ impl Service {
         let fees_ppk = std::cmp::max(fees_ppk, self.min_keyset_fees_ppk.load(Ordering::Relaxed));
         let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
         let kinfo = entry.0.clone();
-        let keyset = cashu::KeySet::from(entry.1.clone());
+        let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
         self.keys.store(entry).await?;
         self.clowder.new_keyset(keyset).await?;
         Ok(kinfo)

@@ -24,8 +24,8 @@ pub async fn online_exchange(
         proofs,
         exchange_path,
     } = request;
-    let now = chrono::Utc::now();
-    let signatures = ctrl.online_exchange(proofs, exchange_path, now).await?;
+
+    let signatures = ctrl.online_exchange(proofs, exchange_path).await?;
     let response = wire_exchange::OnlineExchangeResponse { proofs: signatures };
     Ok(Json(response))
 }
@@ -35,10 +35,9 @@ pub async fn offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
-    let now = chrono::Utc::now();
     let proofs = ctrl
         .foreign
-        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk, now)
+        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;

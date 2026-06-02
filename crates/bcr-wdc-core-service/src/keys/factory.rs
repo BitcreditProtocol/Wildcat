@@ -76,6 +76,7 @@ impl Factory {
             xpriv,
             unit,
             &denominations,
+            fees_ppk,
             expire,
             KeySetVersion::Version01,
         );
@@ -93,9 +94,9 @@ impl Factory {
             final_expiry: keyset.final_expiry,
             derivation_path: path,
             derivation_path_index: None,
-            max_order: Self::MAX_ORDER,
             amounts: denominations,
             input_fee_ppk: fees_ppk,
+            issuer_version: None,
         };
         (info, keyset)
     }
