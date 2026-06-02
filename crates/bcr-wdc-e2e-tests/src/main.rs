@@ -202,7 +202,14 @@ async fn can_mint_ebill(cfg: &MainConfig) {
 
     info!(keyset_info_id = ?keyset_info.id, "Confirmed active keyset");
 
-    let cashu_amounts = cashu::Amount::from(offered_discount.to_sat()).split();
+    let discount_amount = cashu::Amount::from(offered_discount.to_sat());
+    let keys = user_service.list_keys(keyset_id).await;
+    let cashu_amounts = discount_amount
+        .split_targeted(
+            &cashu::amount::SplitTarget::None,
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&keys),
+        )
+        .expect("split");
     let blinds = generate_blinds(keyset_info.id, &cashu_amounts);
     let blinded_messages = blinds.iter().map(|b| b.0.clone()).collect::<Vec<_>>();
 
@@ -217,9 +224,6 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .sum::<u64>();
     assert_eq!(total_amount, offered_discount.to_sat());
     info!(amount = total_amount, "Mint Successful obtained signatures");
-
-    // Needed to unblind the signatures
-    let keys = user_service.list_keys(keyset_id).await;
 
     let secrets = blinds.iter().map(|b| b.1.clone()).collect::<Vec<_>>();
     let rs = blinds.iter().map(|b| b.2.clone()).collect::<Vec<_>>();

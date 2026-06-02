@@ -197,7 +197,7 @@ impl Service {
         }
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
-        let fees_premints = generate_fees_premints(&inputs, &outputs)?;
+        let fees_premints = generate_fees_premints(sign_service, &inputs, &outputs).await?;
         let (fees_signatures, fees_proofs) = sign_fees(sign_service, fees_premints).await?;
         // signal swap to clowder
         self.clowder
@@ -274,7 +274,8 @@ impl Service {
     }
 }
 
-fn generate_fees_premints(
+async fn generate_fees_premints(
+    signer: &dyn KeysService,
     inputs: &[cashu::Proof],
     outputs: &[cashu::BlindedMessage],
 ) -> Result<Vec<cashu::PreMintSecrets>> {
@@ -292,10 +293,12 @@ fn generate_fees_premints(
         if inputs_amount <= outputs_amount {
             continue;
         }
+        let keyset = signer.get_keyset(&kid).await?;
         let premint = cashu::PreMintSecrets::random(
             kid,
             inputs_amount - outputs_amount,
             &cashu::amount::SplitTarget::None,
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
         )?;
         premints.push(premint);
     }

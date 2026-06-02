@@ -1,12 +1,14 @@
 // ----- standard library imports
-use std::collections::HashMap;
 // ----- extra library imports
-use bcr_common::cashu::{self, nut10 as cdk10};
+use bcr_common::{
+    cashu::{self, nut10 as cdk10},
+    core::signature::unblind_ecash_signature,
+};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::{ClowderClient, KeysClient},
+    foreign::{ClowderClient, ForeignClient, KeysClient},
     TStamp,
 };
 
@@ -33,22 +35,45 @@ pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, 
     Ok((data, locktime))
 }
 
-// bytes secret estimate
-const ONLINE_EXCHANGE_SECRET_SIZE: u64 = 450;
+/// check that all proofs:
+/// - are unspent
+/// - have same keyset_id, same htlc hash, same locktime
+/// - perform check_htlc_foreign_proof
+pub async fn check_htlc_foreign_proofs(
+    issuer: secp256k1::PublicKey,
+    proofs: &[cashu::Proof],
+    mintcl: &dyn ForeignClient,
+    clwdcl: &dyn ClowderClient,
+) -> Result<(Sha256Hash, TStamp)> {
+    if proofs.is_empty() {
+        return Err(Error::InvalidInput(String::from("no proofs")));
+    }
+    clwdcl.check_htlc_proofs(issuer, proofs.to_vec()).await?;
 
-pub async fn generate_online_exchange_htlc_proofs(
-    inputs: &[cashu::Proof],
-    locktime: TStamp,
+    let fingerprints: Vec<cashu::PublicKey> = proofs
+        .iter()
+        .map(|p| p.y())
+        .collect::<std::result::Result<_, _>>()?;
+    let states = mintcl.check_state(fingerprints).await?;
+    let unspent = states
+        .iter()
+        .all(|s| matches!(s.state, cashu::nut07::State::Unspent));
+    if !unspent {
+        return Err(Error::InvalidInput(String::from(
+            "One or more proofs are not unspent",
+        )));
+    }
+    let (hash, locktime) = extract_hash_timelock_from_htlc(&proofs[0])?;
+    Ok((hash, locktime))
+}
+
+fn generate_htlc_conditions(
+    locktime: Option<TStamp>,
     hash: Sha256Hash,
     pk: cashu::PublicKey,
-    foreign_id: secp256k1::PublicKey,
-    clowdercl: &dyn ClowderClient,
-    keycl: &dyn KeysClient,
-    now: TStamp,
-) -> Result<Vec<cashu::Proof>> {
-    // generate premints conditions
+) -> Result<cashu::SpendingConditions> {
     let conditions = cashu::Conditions::new(
-        Some(locktime.timestamp() as u64),
+        locktime.map(|t| t.timestamp() as u64),
         Some(vec![pk]),
         None,
         None,
@@ -57,71 +82,31 @@ pub async fn generate_online_exchange_htlc_proofs(
     )?;
     let spending_conds =
         cashu::SpendingConditions::new_htlc_hash(&hash.to_string(), Some(conditions))?;
-    // estimate fees for foreign swap of htlc proofs
-    let mut foreign_kinfos: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::new();
-    let mut max_fee_rate = 0;
-    let mut totals: HashMap<cashu::Id, cashu::Amount> = HashMap::new();
-    for p in inputs {
-        if !foreign_kinfos.contains_key(&p.keyset_id) {
-            let foreign_kinfo = clowdercl.get_keyset_info(&foreign_id, &p.keyset_id).await?;
-            foreign_kinfos.insert(foreign_kinfo.id, foreign_kinfo);
-        }
-        let fee_rate = foreign_kinfos.get(&p.keyset_id).unwrap().input_fee_ppk;
-        max_fee_rate = std::cmp::max(max_fee_rate, fee_rate);
-        *totals.entry(p.keyset_id).or_insert(cashu::Amount::ZERO) += p.amount;
-    }
-    let total_fees = (inputs.len() as u64 * ONLINE_EXCHANGE_SECRET_SIZE * max_fee_rate)
-        .div_ceil(bcr_common::core::swap::FEE_RATE_PPK_MULTIPLIER);
-    let mut total_fees = cashu::Amount::from(total_fees);
-    // update the total map discounting fees from older to newer keyset
-    let mut foreign_kids = totals.keys().cloned().collect::<Vec<_>>();
-    foreign_kids.sort_by_key(|k| {
-        foreign_kinfos
-            .get(k)
-            .unwrap()
-            .final_expiry
-            .unwrap_or_default()
-    });
-    for foreign_kid in foreign_kids {
-        if totals.get(&foreign_kid).unwrap() <= &total_fees {
-            let amount = totals.remove(&foreign_kid);
-            total_fees -= amount.unwrap_or_default();
-        } else {
-            *totals.get_mut(&foreign_kid).unwrap() -= total_fees;
-            total_fees = cashu::Amount::ZERO;
-            break;
-        }
-    }
-    if total_fees > cashu::Amount::ZERO {
-        return Err(Error::InvalidInput(format!(
-            "inputs do not cover fees {total_fees}"
-        )));
-    }
-    let mut proofs = Vec::with_capacity(inputs.len());
-    for (foreign_kid, amount) in totals {
-        let foreign_kinfo = foreign_kinfos.get(&foreign_kid).unwrap();
-        let foreign_expiry = foreign_kinfo.final_expiry.unwrap_or_default();
-        let foreign_expiration = chrono::DateTime::from_timestamp(foreign_expiry as i64, 0)
-            .expect("final_expiry <--> chrono::Datetime");
-        let kinfo = keycl
-            .get_keyset_with_expiration(foreign_expiration.date_naive(), now)
-            .await?;
-        let premint = cashu::PreMintSecrets::with_conditions(
-            kinfo.id,
-            amount,
-            &cashu::amount::SplitTarget::None,
-            &spending_conds,
-        )?;
-        let keys = keycl.get_keyset(kinfo.id).await?;
-        let blinds = premint.blinded_messages();
-        let signatures = keycl.sign(&blinds).await?;
-        let (rs, secrets) = premint
-            .secrets
-            .into_iter()
-            .map(|pre| (pre.r, pre.secret))
-            .unzip();
-        let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)?;
-        proofs.extend(prfs);
+    Ok(spending_conds)
+}
+
+pub async fn generate_htlc_proofs(
+    amount: cashu::Amount,
+    locktime: Option<TStamp>,
+    hash: Sha256Hash,
+    pk: cashu::PublicKey,
+    keyset: &cashu::KeySet,
+    keycl: &dyn KeysClient,
+) -> Result<Vec<cashu::Proof>> {
+    let spending_conds = generate_htlc_conditions(locktime, hash, pk)?;
+    let premints = cashu::PreMintSecrets::with_conditions(
+        keyset.id,
+        amount,
+        &cashu::amount::SplitTarget::None,
+        &spending_conds,
+        &bcr_wdc_utils::keys::to_fee_and_amounts(keyset),
+    )?;
+    let blinds = premints.blinded_messages();
+    let signatures = keycl.sign(&blinds).await?;
+    let mut proofs = Vec::with_capacity(signatures.len());
+    for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
+        let proof = unblind_ecash_signature(keyset, pre.clone(), sig)?;
+        proofs.push(proof);
     }
     Ok(proofs)
 }
@@ -130,36 +115,49 @@ pub async fn generate_online_exchange_htlc_proofs(
 mod tests {
     use super::*;
     use bcr_common::{core, core_tests};
-    use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash};
+    use bitcoin::hashes::Hash;
+    use std::collections::HashSet;
 
     #[test]
-    fn test_online_htlc_secret_size() {
-        // this test is to check that the estimate of the secret size for online exchange HTLC proofs is sufficient
-        // the actual size of the secret can be larger than the estimate, but it should not be smaller
-        let hash = Sha256Hash::hash(b"test");
-        let pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
-        let refund_pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
-        let conditions = cashu::Conditions::new(
-            Some(chrono::Utc::now().timestamp() as u64),
-            Some(vec![pk]),
-            Some(vec![refund_pk]),
-            Some(1),
-            None,
-            Some(1),
-        )
-        .unwrap();
-        let spending_conds =
-            cashu::SpendingConditions::new_htlc_hash(&hash.to_string(), Some(conditions)).unwrap();
-        let (kinfo, _) = core_tests::generate_random_ecash_keyset();
-        let premint = cashu::PreMintSecrets::with_conditions(
-            kinfo.id,
-            cashu::Amount::from(1000),
+    fn generate_htlc_premints_have_unique_y_and_correct_hash() {
+        let hash = Sha256Hash::hash(b"test_preimage");
+        let kp = core::generate_random_keypair();
+        let pk = cashu::PublicKey::from(kp.public_key());
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amount = cashu::Amount::from(1023);
+        let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
+
+        let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
+        let premints = cashu::PreMintSecrets::with_conditions(
+            keyset.id,
+            amount,
             &cashu::amount::SplitTarget::None,
             &spending_conds,
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
+                &keyset, None,
+            )),
         )
         .unwrap();
-        let secret_size = premint.secrets.first().unwrap().secret.as_bytes().len() as u64;
-        assert!(secret_size <= ONLINE_EXCHANGE_SECRET_SIZE);
-        assert!(secret_size > ONLINE_EXCHANGE_SECRET_SIZE * 9 / 10);
+
+        assert!(premints.len() == 10);
+
+        let mut ys = HashSet::new();
+        for pm in premints.iter() {
+            let proof = cashu::Proof {
+                keyset_id: keyset.id,
+                amount: pm.amount,
+                secret: pm.secret.clone(),
+                c: cashu::PublicKey::from(kp.public_key()), // dummy
+                witness: None,
+                dleq: None,
+                p2pk_e: None,
+            };
+            let y = proof.y().unwrap();
+            assert!(ys.insert(y), "duplicate Y found");
+
+            // Verify HTLC hash
+            let (extracted_hash, _) = extract_hash_timelock_from_htlc(&proof).unwrap();
+            assert_eq!(extracted_hash, hash);
+        }
     }
 }

@@ -391,7 +391,7 @@ mod tests {
             .map(|(_, secret, _)| secret.clone())
             .collect::<Vec<_>>();
 
-        let mint_keys = cashu::KeySet::from(mint_keyset.clone()).keys;
+        let mint_keys = cashu::Keys::from(mint_keyset.keys.clone());
         let mut proofs = cashu::dhke::construct_proofs(
             signatures.clone(),
             rs.clone(),

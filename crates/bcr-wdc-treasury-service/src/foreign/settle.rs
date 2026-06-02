@@ -53,14 +53,17 @@ impl Routine for Handler {
                     .iter()
                     .map(|p| p.y().expect("Proof::y(): impossible!!"))
                     .collect();
-                let keyset = try_or_warn!(self.clowder.get_keyset(&mint_id, &kid));
+                let keyset = try_or_warn!(client.get_keyset(kid));
                 debug!(
                     "Settling proofs totaling {total} at {} with keysetID {kid}",
                     mint_url
                 );
-                let Ok(premints) =
-                    cashu::PreMintSecrets::random(kid, total, &cashu::amount::SplitTarget::None)
-                else {
+                let Ok(premints) = cashu::PreMintSecrets::random(
+                    kid,
+                    total,
+                    &cashu::amount::SplitTarget::None,
+                    &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+                ) else {
                     warn!("PreMintSecrets::random failed {}, retry later", mint_url);
                     continue;
                 };

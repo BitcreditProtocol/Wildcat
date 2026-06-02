@@ -111,7 +111,7 @@ async fn swap_p2pk() {
         .map(|(_, secret, _)| secret.clone())
         .collect::<Vec<_>>();
 
-    let mint_keys = cashu::KeySet::from(mint_keyset.clone()).keys;
+    let mint_keys = cashu::Keys::from(mint_keyset.keys.clone());
     let mut correct_proofs =
         construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &mint_keys).unwrap();
     for p in correct_proofs.iter_mut() {

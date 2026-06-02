@@ -7,6 +7,8 @@ use bcr_common::{cashu, cdk_common::mint as cdk_mint};
 
 pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cashu::MintKeySet);
 
+pub use bcr_common::core::keys::{to_fee_and_amounts, to_keyset};
+
 #[cfg(any(feature = "test-utils", test))]
 pub mod test_utils {
 
@@ -23,6 +25,7 @@ pub mod test_utils {
             &denominations,
             cashu::CurrencyUnit::Sat,
             path.clone(),
+            0,
             None,
             KeySetVersion::Version00,
         );
@@ -36,7 +39,7 @@ pub mod test_utils {
             derivation_path_index: None,
             derivation_path: path,
             input_fee_ppk: 0,
-            max_order: 10,
+            issuer_version: None,
         };
         (info, set)
     }

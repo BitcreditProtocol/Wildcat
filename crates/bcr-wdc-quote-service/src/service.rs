@@ -355,11 +355,13 @@ async fn mint_fees(
     fees_amount: cashu::Amount,
     keys: cashu::KeySet,
 ) -> Result<Vec<cashu::Proof>> {
-    let premint =
-        cashu::PreMintSecrets::random(keys.id, fees_amount, &cashu::amount::SplitTarget::None)
-            .map_err(|e| {
-                Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}"))
-            })?;
+    let premint = cashu::PreMintSecrets::random(
+        keys.id,
+        fees_amount,
+        &cashu::amount::SplitTarget::None,
+        &bcr_wdc_utils::keys::to_fee_and_amounts(&keys),
+    )
+    .map_err(|e| Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}")))?;
     let signatures = keyscl.sign(&premint.blinded_messages()).await?;
     let (rs, secrets) = premint
         .secrets
