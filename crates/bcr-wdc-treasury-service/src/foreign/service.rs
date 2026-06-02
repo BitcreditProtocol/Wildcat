@@ -156,10 +156,17 @@ impl Service {
             )));
         };
         let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
+        // charge the user for the fee the mint will pay to swap the foreign proofs
+        let fee = proof::estimate_foreign_swap_fee(inputs.len(), foreign_keyset.input_fee_ppk);
+        let Some(net) = total.checked_sub(fee) else {
+            return Err(Error::InvalidInput(format!(
+                "inputs {total} do not cover foreign swap fee {fee}"
+            )));
+        };
         let locktime = foreign_locktime - chrono::TimeDelta::minutes(15);
         let wallet_cpk = cashu::PublicKey::from(*wallet_pk);
         let outputs = proof::generate_htlc_proofs(
-            total,
+            net,
             Some(locktime),
             htlc_hash,
             wallet_cpk,
@@ -175,10 +182,9 @@ impl Service {
             .online_repo
             .store_htlc(*foreign_pk, htlc_hash, inputs)
             .await;
-        if store_response.is_err() {
+        if let Err(e) = store_response {
             tracing::error!(
-                "failed to store_htlc, for {total} from {foreign_pk} with hash {htlc_hash}: {}",
-                store_response.unwrap_err()
+                "failed to store_htlc, for {total} from {foreign_pk} with hash {htlc_hash}: {e}"
             );
         }
         Ok(proofs)

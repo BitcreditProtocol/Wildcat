@@ -85,6 +85,17 @@ fn generate_htlc_conditions(
     Ok(spending_conds)
 }
 
+// bytes secret estimate for an online-exchange HTLC proof
+const ONLINE_EXCHANGE_SECRET_SIZE: u64 = 450;
+
+// Estimate the fee the foreign mint will charge to swap `num_proofs` HTLC proofs,
+// so the user is charged for it up front instead of the mint absorbing it.
+pub fn estimate_foreign_swap_fee(num_proofs: usize, fee_rate_ppk: u64) -> cashu::Amount {
+    let fee = (num_proofs as u64 * ONLINE_EXCHANGE_SECRET_SIZE * fee_rate_ppk)
+        .div_ceil(bcr_common::core::swap::FEE_RATE_PPK_MULTIPLIER);
+    cashu::Amount::from(fee)
+}
+
 pub async fn generate_htlc_proofs(
     amount: cashu::Amount,
     locktime: Option<TStamp>,
@@ -159,5 +170,27 @@ mod tests {
             let (extracted_hash, _) = extract_hash_timelock_from_htlc(&proof).unwrap();
             assert_eq!(extracted_hash, hash);
         }
+    }
+
+    #[test]
+    fn htlc_secret_fits_fee_estimate() {
+        // the foreign-swap fee estimate assumes secrets do not exceed ONLINE_EXCHANGE_SECRET_SIZE
+        let hash = Sha256Hash::hash(b"test_preimage");
+        let pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
+        let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
+        let premints = cashu::PreMintSecrets::with_conditions(
+            keyset.id,
+            cashu::Amount::from(1000),
+            &cashu::amount::SplitTarget::None,
+            &spending_conds,
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
+                &keyset, None,
+            )),
+        )
+        .unwrap();
+        let secret_size = premints.secrets.first().unwrap().secret.as_bytes().len() as u64;
+        assert!(secret_size <= ONLINE_EXCHANGE_SECRET_SIZE);
     }
 }
