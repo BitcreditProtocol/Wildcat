@@ -117,11 +117,8 @@ impl Service {
         // unlocked fingerprints
         let pending_ops = self.retrieve_pending_meltops(now).await?;
         cross_check_locked_fps(input_ys.clone(), &pending_ops)?;
-        // amount > dust
+        // amount > dust (after fees)
         let input_total = bitcoin::Amount::from_sat(inputs.iter().map(|fp| fp.amount).sum::<u64>());
-        if input_total < self.min_melt_threshold {
-            return Err(Error::InvalidInput(String::from("melt amount too low")));
-        }
         // valid address
         let checked_address = self
             .clowder_cl
@@ -134,7 +131,7 @@ impl Service {
             .clowder_cl
             .estimate_onchain_fees(input_total - admin_fees)
             .await?;
-        if input_total < admin_fees + network_fees {
+        if input_total < admin_fees + network_fees + self.min_melt_threshold {
             return Err(Error::InvalidInput(String::from(
                 "insufficient funds to cover fees",
             )));
