@@ -16,7 +16,7 @@ use bcr_common::{
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
-        treasury as wire_treasury, wallet as wire_wallet,
+        treasury as wire_treasury,
     },
 };
 use utoipa::OpenApi;
@@ -229,8 +229,6 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_treasury::RequestToPayFromEBillRequest,
         wire_treasury::RequestToPayFromEBillResponse,
         wire_treasury::MintOperationStatus,
-        wire_wallet::ECashBalance,
-        wire_wallet::EbillPaymentComplete,
         wire_treasury::DeniedMeltOperations,
         wire_treasury::FeesTokenResponse,
     ),),

@@ -621,8 +621,6 @@ name = "bcr-common"
 version = "0.8.0"
 dependencies = [
  "async-nats",
- "async-trait",
- "bdk_wallet",
  "bip39",
  "bitcoin",
  "borsh",
@@ -632,7 +630,6 @@ dependencies = [
  "chrono",
  "ciborium",
  "infer",
- "mockall",
  "nostr",
  "rand 0.8.6",
  "reqwest",
@@ -680,15 +677,11 @@ name = "bcr-wdc-admin-aggregator"
 version = "0.5.0-alpha"
 dependencies = [
  "axum",
- "axum-test",
  "bcr-common",
  "bcr-wdc-utils",
- "bcr-wdc-webapi",
- "bitcoin",
  "chrono",
  "config",
  "futures",
- "mime",
  "secp256k1",
  "serde",
  "thiserror 2.0.18",
@@ -714,12 +707,10 @@ dependencies = [
  "bcr-wdc-utils",
  "bip39",
  "bitcoin",
- "borsh",
  "chrono",
  "config",
  "futures",
  "mockall",
- "reqwest",
  "secp256k1",
  "serde",
  "surrealdb",
@@ -737,18 +728,13 @@ version = "0.5.0-alpha"
 dependencies = [
  "anyhow",
  "bcr-common",
- "bcr-ebill-core",
  "bcr-wdc-utils",
  "bcr-wdc-webapi",
- "bdk_wallet",
  "bitcoin",
- "borsh",
  "chrono",
  "config",
- "rand 0.8.6",
  "reqwest",
  "serde",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -768,10 +754,8 @@ dependencies = [
  "bcr-wdc-webapi",
  "bip39",
  "bitcoin",
- "borsh",
  "chrono",
  "config",
- "futures",
  "mockall",
  "rand 0.8.6",
  "reqwest",
@@ -780,7 +764,6 @@ dependencies = [
  "surrealdb",
  "thiserror 2.0.18",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -796,10 +779,8 @@ dependencies = [
  "async-trait",
  "axum",
  "bcr-common",
- "bcr-ebill-core",
  "bcr-wdc-utils",
  "bcr-wdc-webapi",
- "bip39",
  "bitcoin",
  "borsh",
  "chrono",
@@ -816,7 +797,6 @@ dependencies = [
  "surrealdb",
  "thiserror 2.0.18",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -833,7 +813,6 @@ dependencies = [
  "bcr-ebill-core",
  "bcr-wdc-utils",
  "bitcoin",
- "borsh",
  "built",
  "chrono",
  "itertools 0.14.0",
@@ -841,13 +820,11 @@ dependencies = [
  "reqwest",
  "secp256k1",
  "serde",
- "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
  "url",
- "uuid",
 ]
 
 [[package]]
@@ -855,27 +832,21 @@ name = "bcr-wdc-wallet-aggregator"
 version = "0.5.0-alpha"
 dependencies = [
  "anyhow",
- "async-trait",
  "axum",
- "axum-test",
  "bcr-common",
  "bcr-wdc-utils",
- "bcr-wdc-webapi",
  "bitcoin",
  "borsh",
  "chrono",
  "config",
- "futures",
  "mockall",
  "serde",
  "surrealdb",
  "thiserror 2.0.18",
  "tokio",
- "tower-http",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
@@ -886,17 +857,11 @@ dependencies = [
  "bcr-ebill-core",
  "bcr-wdc-utils",
  "bdk_wallet",
- "bip39",
  "bitcoin",
- "borsh",
  "chrono",
  "rand 0.8.6",
  "serde",
  "serde_json",
- "strum",
- "thiserror 2.0.18",
- "url",
- "utoipa",
  "uuid",
 ]
 
@@ -2895,7 +2860,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core",
 ]
 
 [[package]]
@@ -6907,7 +6872,7 @@ version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
 dependencies = [
- "windows-core 0.57.0",
+ "windows-core",
  "windows-targets 0.52.6",
 ]
 
@@ -6917,23 +6882,10 @@ version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
 dependencies = [
- "windows-implement 0.57.0",
- "windows-interface 0.57.0",
+ "windows-implement",
+ "windows-interface",
  "windows-result 0.1.2",
  "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.62.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
-dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
- "windows-link",
- "windows-result 0.4.1",
- "windows-strings",
 ]
 
 [[package]]
@@ -6948,32 +6900,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-implement"
-version = "0.60.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "windows-interface"
 version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.59.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358"
 dependencies = [
  "proc-macro2",
  "quote",
