@@ -59,12 +59,8 @@ impl AppController {
 pub async fn routes(app: AppController) -> Result<Router> {
     let router = Router::new()
         .route("/health", get(web::health))
-        // Cashu Endpoints
         .route("/v1/info", get(web::get_mint_info))
-        .route("/v1/wildcat", get(web::get_wildcat_info))
         .route(core::web_ep::SWAP_V1, post(web::post_swap))
-        // Clowder Endpoints
-        .route(clowder::web_ep::LOCAL_COVERAGE_V1, get(web::get_coverage))
         .with_state(app);
     Ok(router)
 }

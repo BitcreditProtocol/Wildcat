@@ -4,17 +4,10 @@ use axum::extract::{Json, State};
 use bcr_common::{
     cashu::{self, MintVersion},
     client::treasury::Client as TreasuryClient,
-    wire::{
-        clowder as wire_clowder,
-        info::{VersionInfo, WildcatInfo},
-        swap as wire_swap,
-    },
+    wire::swap as wire_swap,
 };
 // ----- local imports
-use crate::{
-    error::{Error, Result},
-    AppController,
-};
+use crate::{error::Result, AppController};
 
 // ----- end imports
 
@@ -63,47 +56,6 @@ build-time = {build_time}
     Ok(Json(info))
 }
 
-pub async fn get_wildcat_info(State(ctrl): State<AppController>) -> Result<Json<WildcatInfo>> {
-    tracing::debug!("Requested /v1/wildcat");
-
-    let clowder_info = ctrl.clwdr_rest_client.get_info().await?;
-    let network = clowder_info.network;
-    let info = cashu::MintInfo::default();
-    let build_time = bcr_wdc_utils::info::get_build_time();
-    let ebill_core = bcr_wdc_utils::info::get_ebill_version()
-        .map(|v| v.to_string())
-        .unwrap_or(String::from("?"));
-    let version = bcr_wdc_utils::info::get_version().to_string();
-    let cdk_mintd = info
-        .version
-        .as_ref()
-        .map(|v| v.version.clone())
-        .unwrap_or(String::from("0.0.0"));
-
-    let versions = VersionInfo {
-        wildcat: version,
-        bcr_ebill_core: ebill_core,
-        cdk_mintd,
-        clowder: clowder_info.version,
-    };
-
-    // Convert cashu::PublicKey to bitcoin::secp256k1::PublicKey (different secp256k1 versions)
-    let node_id_bytes = clowder_info.node_id.to_bytes();
-    let clowder_node_id = bitcoin::secp256k1::PublicKey::from_slice(&node_id_bytes)
-        .map_err(|e| Error::Invalid(format!("Invalid node_id public key: {e}")))?;
-
-    let wildcat_info = WildcatInfo {
-        build_time,
-        uptime_timestamp: ctrl.time_started,
-        versions,
-        network,
-        clowder_node_id,
-        clowder_change_address: clowder_info.change_address,
-    };
-
-    Ok(Json(wildcat_info))
-}
-
 pub async fn post_swap(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_swap::SwapRequest>,
@@ -121,22 +73,6 @@ pub async fn post_swap(
         .swap(inputs, outputs, commitment, attestation)
         .await?;
     Ok(Json(wire_swap::SwapResponse { signatures }))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn get_coverage(
-    State(ctrl): State<AppController>,
-) -> Result<Json<wire_clowder::Coverage>> {
-    tracing::debug!("Requested /v1/local/coverage");
-    let supply = ctrl.clwdr_rest_client.get_mint_circulating_supply().await?;
-    let collateral = ctrl.clwdr_rest_client.get_mint_collateral().await?;
-    Ok(Json(wire_clowder::Coverage {
-        debit_circulating_supply: supply.debit,
-        credit_circulating_supply: supply.credit,
-        onchain_collateral: collateral.onchain,
-        ebill_collateral: collateral.ebill,
-        eiou_collateral: collateral.eiou,
-    }))
 }
 
 async fn test_for_htlc(proofs: &[cashu::Proof], tcl: &TreasuryClient) -> Result<cashu::Amount> {
