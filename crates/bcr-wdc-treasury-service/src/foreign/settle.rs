@@ -7,7 +7,7 @@ use std::{
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use bcr_common::cashu::{self, ProofsMethods};
-use bcr_wdc_utils::routine::{Routine, TStamp};
+use bcr_wdc_utils::{routine::Routine, TStamp};
 use tracing::{debug, error, info, warn};
 // ----- local imports
 use crate::foreign::{ClowderClient, MintClientFactory, OfflineRepository, OnlineRepository};

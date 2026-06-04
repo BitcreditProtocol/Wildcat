@@ -1,12 +1,11 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::cashu;
-use bcr_wdc_utils::routine::TStamp;
-// ----- local modules
 // ----- local imports
 use crate::{
     error::Result,
     vault::{Repository, WildcatClient},
+    TStamp,
 };
 
 // ----- end imports

@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use bcr_wdc_utils::routine::{Routine, TStamp};
+use bcr_wdc_utils::{routine::Routine, TStamp};
 // ----- local imports
 use crate::{
     error::{Error, Result},

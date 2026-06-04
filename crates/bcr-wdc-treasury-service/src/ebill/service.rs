@@ -1,12 +1,12 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::{cashu, core::BillId};
-use bcr_wdc_utils::routine::TStamp;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
     ebill::{ClowderClient, MintOperation, Repository, WildcatClient},
     error::{Error, Result},
+    TStamp,
 };
 
 // ----- end imports
