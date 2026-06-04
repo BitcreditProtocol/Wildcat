@@ -7,6 +7,7 @@ pub mod client;
 pub mod convert;
 pub mod info;
 pub mod keys;
+pub mod nut19;
 pub mod routine;
 pub mod signatures;
 pub mod surreal;
@@ -19,3 +20,4 @@ pub mod built_info {
 // ----- end imports
 
 pub use crate::keys::KeysetEntry;
+pub type TStamp = chrono::DateTime<chrono::Utc>;
