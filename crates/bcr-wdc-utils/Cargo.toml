@@ -19,6 +19,7 @@ bcr-ebill-core.workspace = true
 bitcoin = { workspace = true}
 built = {workspace = true, features = ["semver", "chrono"]}
 chrono.workspace = true
+ciborium = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true, optional  = true}
 reqwest = {workspace = true}

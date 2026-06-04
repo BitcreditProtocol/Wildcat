@@ -5,10 +5,9 @@ use async_trait::async_trait;
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 // ----- local imports
+use crate::TStamp;
 
 // ----- end imports
-
-pub type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[async_trait]
 pub trait Routine: Send + 'static {
