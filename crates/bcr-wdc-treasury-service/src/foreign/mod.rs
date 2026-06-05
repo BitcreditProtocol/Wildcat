@@ -20,8 +20,6 @@ pub use service::Service;
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
-    #[allow(dead_code)]
-    async fn list(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>>;
 
     async fn store_htlc(
         &self,

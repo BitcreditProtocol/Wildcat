@@ -16,25 +16,28 @@ use crate::{
 };
 
 // ----- end imports
+//
+
+#[derive(Clone, Debug)]
+struct ForeignProofs {
+    mint_id: secp256k1::PublicKey,
+    proofs: Vec<cashu::Proof>,
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Default, Debug)]
 pub struct OnlineRepository {
-    proofs: Arc<Mutex<Vec<(secp256k1::PublicKey, cashu::Proof)>>>,
-    htlc: Arc<Mutex<HashMap<Sha256Hash, Vec<(secp256k1::PublicKey, cashu::Proof)>>>>,
+    proofs: Arc<Mutex<Vec<ForeignProofs>>>,
+    htlc: Arc<Mutex<HashMap<Sha256Hash, Vec<ForeignProofs>>>>,
 }
 
 #[async_trait]
 impl foreign::OnlineRepository for OnlineRepository {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let entry = ForeignProofs { mint_id, proofs };
         let mut locked = self.proofs.lock().unwrap();
-        for proof in proofs {
-            locked.push((mint_id, proof));
-        }
+        locked.push(entry);
         Ok(())
-    }
-    async fn list(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
-        Ok(self.proofs.lock().unwrap().clone())
     }
 
     async fn store_htlc(
@@ -43,11 +46,10 @@ impl foreign::OnlineRepository for OnlineRepository {
         hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
+        let new = ForeignProofs { mint_id, proofs };
         let mut locked = self.htlc.lock().unwrap();
         let entry = locked.entry(hash).or_default();
-        for proof in proofs {
-            entry.push((mint_id, proof));
-        }
+        entry.push(new);
         Ok(())
     }
     async fn search_htlc(
@@ -55,13 +57,26 @@ impl foreign::OnlineRepository for OnlineRepository {
         hash: &Sha256Hash,
     ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
         let locked = self.htlc.lock().unwrap();
-        Ok(locked.get(hash).cloned().unwrap_or_default())
+        let entries = locked.get(hash).cloned().unwrap_or_default();
+        let list = entries.into_iter().flat_map(|entry| {
+            let ForeignProofs { mint_id, proofs } = entry;
+            proofs.into_iter().map(move |proof| (mint_id, proof))
+        });
+        Ok(list.collect())
     }
+
     async fn remove_htlcs(&self, y: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.htlc.lock().unwrap();
         for vals in locked.values_mut() {
-            vals.retain(|(_, p)| !y.contains(&p.y().expect("proof should have y")));
+            for val in vals.iter_mut() {
+                val.proofs.retain(|p| {
+                    let p_y = p.y().expect("proof should have y");
+                    !y.contains(&p_y)
+                });
+            }
+            vals.retain(|val| !val.proofs.is_empty());
         }
+        locked.retain(|_, v| !v.is_empty());
         Ok(())
     }
 }
