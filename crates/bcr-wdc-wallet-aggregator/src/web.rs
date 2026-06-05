@@ -33,12 +33,9 @@ network = {network}
     let build_time = bcr_wdc_utils::info::get_build_time();
     let dep_versions = bcr_wdc_utils::info::get_deps_versions()
         .into_iter()
-        .map(|(k, v)| {
-            if v.is_some() {
-                format!("{k} = {}", v.unwrap())
-            } else {
-                format!("{k} = ?")
-            }
+        .map(|(k, v)| match v {
+            Some(v) => format!("{k} = {v}"),
+            None => format!("{k} = ?"),
         })
         .collect::<Vec<_>>()
         .join("\n");
