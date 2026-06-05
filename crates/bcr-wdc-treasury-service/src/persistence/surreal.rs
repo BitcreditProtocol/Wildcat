@@ -683,25 +683,6 @@ impl foreign::OnlineRepository for DBForeignOnline {
         Ok(())
     }
 
-    async fn list(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
-        let statement = String::from("SELECT * FROM type::table($table)");
-        let entries: Vec<ForeignProofDBEntry> = self
-            .db
-            .query(statement)
-            .bind(("table", Self::FOREIGNS_TABLE))
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        let mut ret_val = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let ForeignProofDBEntry { mint_id, proof, .. } = entry;
-            let mint_id = secp256k1::PublicKey::from_str(&mint_id).expect("mint_id <--> String");
-            ret_val.push((mint_id, proof));
-        }
-        Ok(ret_val)
-    }
-
     async fn store_htlc(
         &self,
         mint_id: secp256k1::PublicKey,
