@@ -171,22 +171,19 @@ impl Service {
                     ))
                 })?;
         }
-        // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
-        let (verify_res, kinfos_res) = tokio::join!(
-            self.clowder
-                .verify_attestation(&self.alpha_id, &inputs, &attestation),
-            sign_service.list_kinfos(),
-        );
-        verify_res?;
-        let kinfos = kinfos_res?;
-        swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
-        sign_service.verify_proofs(&inputs).await?;
         // check inputs are unspent
         let ys: Vec<cashu::PublicKey> = inputs
             .iter()
             .map(|fp| fp.y())
             .collect::<std::result::Result<_, _>>()?;
-        let states = self.check_spendable(&ys).await?;
+        // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
+        let (_, kinfos, _, states) = tokio::try_join!(
+            self.clowder
+                .verify_attestation(&self.alpha_id, &inputs, &attestation),
+            sign_service.list_kinfos(),
+            sign_service.verify_proofs(&inputs),
+            self.check_spendable(&ys),
+        )?;
         let all_unspent = states
             .iter()
             .all(|s| matches!(s.state, cashu::State::Unspent));
@@ -195,6 +192,7 @@ impl Service {
                 "One or more proofs are not unspent".to_string(),
             ));
         }
+        swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
         let fees_premints = generate_fees_premints(sign_service, &inputs, &outputs).await?;
@@ -330,13 +328,15 @@ async fn sign_fees(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::dummy_attestation;
     use crate::{
         persistence::{MockCommitmentRepository, MockProofRepository},
+        swap::MockTreasuryService,
         swap::{test_utils::DummyTreasuryClient, MockClowderClient, MockKeysService},
+        test_utils::dummy_attestation,
     };
     use bcr_common::{core, core_tests, wire::attestation::AttestationError};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
+    use mockall::predicate::eq;
 
     #[tokio::test]
     async fn swap_rejects_when_attestation_invalid() {
@@ -344,7 +344,6 @@ mod tests {
         let mut commitments = MockCommitmentRepository::new();
         let proofs_repo = MockProofRepository::new();
         let mut sign_service = MockKeysService::new();
-
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
@@ -353,7 +352,6 @@ mod tests {
             .map(|b| b.0)
             .collect();
         let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
-
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
         let blind_bs: Vec<cashu::PublicKey> = blinds.iter().map(|b| b.blinded_secret).collect();
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
@@ -371,7 +369,6 @@ mod tests {
             .expect_list_kinfos()
             .returning(|| Ok(std::collections::HashMap::new()));
         sign_service.expect_sign_blinds().times(0);
-
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
             proofs: Box::new(proofs_repo),
@@ -381,7 +378,6 @@ mod tests {
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id,
         };
-
         let err = service
             .swap(
                 &sign_service,
@@ -436,5 +432,97 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn swap_1sat_no_output() {
+        let mut clowder = MockClowderClient::new();
+        let mut commitments = MockCommitmentRepository::new();
+        let mut proofs_repo = MockProofRepository::new();
+        let mut sign_service = MockKeysService::new();
+        let mut mocktreasu = MockTreasuryService::new();
+        let (mut kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        kinfo.input_fee_ppk = 1;
+        let amounts = [cashu::Amount::from(1u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
+        commitments
+            .expect_load()
+            .times(1)
+            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry)));
+        clowder
+            .expect_verify_attestation()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let cloned = cashu::KeySetInfo::from(kinfo);
+        sign_service.expect_list_kinfos().returning(move || {
+            Ok(std::collections::HashMap::from([(
+                keyset.id,
+                cloned.clone(),
+            )]))
+        });
+        sign_service
+            .expect_verify_proofs()
+            .times(1)
+            .returning(|_| Ok(()));
+        proofs_repo
+            .expect_contains()
+            .times(1)
+            .returning(|_| Ok(None));
+        sign_service
+            .expect_sign_blinds()
+            .times(1)
+            .with(eq(vec![]))
+            .returning(move |_| Ok(vec![]));
+        let cloned_set = bcr_common::core::keys::to_keyset(&keyset, Some(true));
+        sign_service
+            .expect_get_keyset()
+            .times(2)
+            .returning(move |_| Ok(cloned_set.clone()));
+        let cloned_set = keyset.clone();
+        sign_service
+            .expect_sign_blinds()
+            .times(1)
+            .returning(move |bs| {
+                let mut signs = Vec::with_capacity(bs.len());
+                for b in bs {
+                    let sign = bcr_common::core::signature::sign_ecash(&cloned_set, b).unwrap();
+                    signs.push(sign);
+                }
+                Ok(signs)
+            });
+        clowder
+            .expect_signal_swap_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        commitments.expect_delete().times(1).returning(|_| Ok(()));
+        proofs_repo.expect_insert().times(1).returning(|_| Ok(()));
+        mocktreasu
+            .expect_store_proofs()
+            .times(1)
+            .returning(|_| Ok(()));
+        let alpha_id = core::generate_random_keypair().public_key();
+        let service = Service {
+            proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments),
+            clowder: Box::new(clowder),
+            treasury: Box::new(mocktreasu),
+            max_expiry: chrono::Duration::seconds(3600),
+            alpha_id,
+        };
+        let signatures = service
+            .swap(
+                &sign_service,
+                proofs,
+                vec![],
+                commitment,
+                dummy_attestation(),
+                chrono::Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert!(signatures.is_empty());
     }
 }
