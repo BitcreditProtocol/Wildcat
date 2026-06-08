@@ -14,7 +14,7 @@ use bcr_common::{
     },
     clwdr_client::ClowderNatsClient,
 };
-use bcr_wdc_utils::{routine, surreal};
+use bcr_wdc_utils::{nut19, routine, surreal};
 // ----- local modules
 mod admin;
 mod ebill;
@@ -40,6 +40,7 @@ pub struct AppConfig {
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
     clowder_nats_url: reqwest::Url,
+    cache_expiry_seconds: u64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -75,6 +76,7 @@ pub struct AppController {
     foreign: Arc<foreign::Service>,
     vault: Arc<vault::Service>,
     clwdr_nats: Arc<ClowderNatsClient>,
+    cache: Arc<dyn nut19::Cache>,
 }
 
 pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHandle>) {
@@ -87,6 +89,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
+        cache_expiry_seconds,
     } = cfg;
 
     //clients
@@ -206,14 +209,19 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         my_url,
     };
 
+    // cache
+    let cache_expiry = chrono::Duration::seconds(cache_expiry_seconds as i64);
+    let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
     let app_ctrl = AppController {
         ebill: Arc::new(ebill),
         onchain: Arc::new(onchain),
         foreign: Arc::new(foreign),
         vault: Arc::new(vault),
         clwdr_nats: clowder_nats_client,
+        cache,
     };
 
+    // monitors
     let monitor_interval = std::time::Duration::from_secs(monitor_interval_sec as u64);
     let monitors = vec![
         routine::RoutineHandle::new(
