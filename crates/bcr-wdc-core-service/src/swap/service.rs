@@ -156,27 +156,12 @@ impl Service {
             )));
         }
         // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
-        let (verify_res, kinfos_res) = tokio::join!(
-            self.clowder
-                .verify_attestation(&self.alpha_id, &inputs, &attestation),
-            sign_service.list_kinfos(),
-        );
-        verify_res?;
-        let kinfos = kinfos_res?;
-        swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
-        sign_service.verify_proofs(&inputs).await?;
-        // check inputs are unspent
-        let ys: Vec<cashu::PublicKey> = inputs
-            .iter()
-            .map(|fp| fp.y())
-            .collect::<std::result::Result<_, _>>()?;
-        // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
         let (_, kinfos, _, states) = tokio::try_join!(
             self.clowder
                 .verify_attestation(&self.alpha_id, &inputs, &attestation),
             sign_service.list_kinfos(),
             sign_service.verify_proofs(&inputs),
-            self.check_spendable(&ys),
+            self.check_spendable(&input_ys),
         )?;
         let all_unspent = states
             .iter()
@@ -186,7 +171,7 @@ impl Service {
                 "One or more proofs are not unspent",
             )));
         }
-        swap::mint::verify_swap(&inputs, &outputs, &kinfos, swap::mint::FeePolicy::Apply)?;
+        swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
         let fees_premints = generate_fees_premints(sign_service, &inputs, &outputs).await?;

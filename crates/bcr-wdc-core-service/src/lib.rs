@@ -13,7 +13,7 @@ use bcr_common::{
     },
     clwdr_client,
 };
-use bcr_wdc_utils::surreal;
+use bcr_wdc_utils::{nut19, surreal};
 use bitcoin::bip32 as btc32;
 // ----- local modules
 mod admin;
@@ -39,12 +39,14 @@ pub struct AppConfig {
     starting_derivation_path: btc32::DerivationPath,
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
+    cache_expiry_sec: u64,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
     pub keys: Arc<keys::service::Service>,
     pub swap: Arc<swap::service::Service>,
+    pub cache: Arc<dyn nut19::Cache>,
 }
 
 impl AppController {
@@ -60,6 +62,7 @@ impl AppController {
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
+            cache_expiry_sec,
         } = cfg;
 
         let keys_repo = persistence::surreal::DBKeys::new(keys)
@@ -113,10 +116,12 @@ impl AppController {
             max_expiry,
             alpha_id,
         };
-
+        let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
+        let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
         Self {
             keys: Arc::new(keys_service),
             swap: Arc::new(swap_service),
+            cache,
         }
     }
 }
@@ -126,6 +131,7 @@ where
     Cntrlr: Send + Sync + Clone + 'static,
     Arc<keys::service::Service>: FromRef<Cntrlr>,
     Arc<swap::service::Service>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
     let web = Router::new()
         .route("/health", get(get_health))
@@ -189,6 +195,7 @@ pub mod test_utils {
         AppController {
             keys: Arc::new(keysrv),
             swap: Arc::new(swprv),
+            cache: Arc::new(nut19::Dummy),
         }
     }
 

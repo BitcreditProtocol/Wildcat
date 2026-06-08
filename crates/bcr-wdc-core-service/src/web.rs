@@ -6,6 +6,7 @@ use bcr_common::{
     cashu,
     wire::{keys as wire_keys, swap as wire_swap},
 };
+use bcr_wdc_utils::nut19;
 // ----- local imports
 use crate::{error::Result, keys, swap};
 
@@ -87,29 +88,43 @@ pub async fn restore(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(service, keys_srvc))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(keys, swap, cache))]
 pub async fn commit_to_swap(
-    State(service): State<Arc<swap::service::Service>>,
-    State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(keys): State<Arc<keys::service::Service>>,
+    State(swap): State<Arc<swap::service::Service>>,
+    State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
-    let (content, commitment) = service.commit_to_swap(&signsrvc, request, now).await?;
+    let key = nut19::swap_commitment::request_to_key(request.clone());
+    if let Some(blob) = cache.load(key).await {
+        let response = nut19::swap_commitment::blob_to_response(blob);
+        return Ok(Json(response));
+    }
+    let signsrvc = swap::KeysSignService { srvc: keys };
+    let (content, commitment) = swap.commit_to_swap(&signsrvc, request, now).await?;
     let response = wire_swap::SwapCommitmentResponse {
         content,
         commitment,
     };
+    let blob = nut19::swap_commitment::response_to_blob(&response);
+    cache.store_and_clean(key, blob, now).await;
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc, cache))]
 pub async fn swap_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
     State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
     let now = chrono::Utc::now();
+    let key = nut19::swap::request_to_key(request.clone());
+    if let Some(blob) = cache.load(key).await {
+        let response = nut19::swap::blob_to_response(blob);
+        return Ok(Json(response));
+    }
     let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let signatures = ctrl
         .swap(
@@ -122,16 +137,24 @@ pub async fn swap_tokens(
         )
         .await?;
     let response = wire_swap::SwapResponse { signatures };
+    let blob = nut19::swap::response_to_blob(&response);
+    cache.store_and_clean(key, blob, now).await;
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc, cache))]
 pub async fn signed_swap_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
     State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SignedSwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
     let now = chrono::Utc::now();
+    let key = nut19::signed_swap::request_to_key(&request);
+    if let Some(blob) = cache.load(key).await {
+        let response = nut19::signed_swap::blob_to_response(blob);
+        return Ok(Json(response));
+    }
     let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let signatures = ctrl
         .signed_swap(
@@ -145,6 +168,8 @@ pub async fn signed_swap_tokens(
         )
         .await?;
     let response = wire_swap::SwapResponse { signatures };
+    let blob = nut19::signed_swap::response_to_blob(&response);
+    cache.store_and_clean(key, blob, now).await;
     Ok(Json(response))
 }
 
