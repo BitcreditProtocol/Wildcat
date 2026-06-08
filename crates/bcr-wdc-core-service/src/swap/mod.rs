@@ -65,6 +65,9 @@ impl KeysService for KeysSignService {
         &self,
         blinds: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
+        if blinds.is_empty() {
+            return Ok(vec![]);
+        }
         let signatures = self.srvc.sign_blinds(blinds.iter()).await?;
         Ok(signatures)
     }
