@@ -14,6 +14,10 @@ pub trait Cache: Send + Sync {
     async fn store(&self, key: Sha1Hash, value: ciborium::Value, now: TStamp);
     async fn load(&self, key: Sha1Hash) -> Option<ciborium::Value>;
     async fn clean(&self, now: TStamp);
+    async fn store_and_clean(&self, key: Sha1Hash, value: ciborium::Value, now: TStamp) {
+        self.store(key, value, now).await;
+        self.clean(now).await;
+    }
 }
 
 #[derive(Debug)]
@@ -146,5 +150,84 @@ pub mod signed_swap {
         let mut bytes = Vec::new();
         ciborium::into_writer(response, &mut bytes).unwrap();
         ciborium::from_reader(bytes.as_slice()).unwrap()
+    }
+}
+
+pub mod onchain {
+    pub mod melt_quote {
+        use super::super::*;
+        use bcr_common::wire::melt::{MeltQuoteOnchainRequest, MeltQuoteOnchainResponse};
+
+        pub fn request_to_key(mut request: MeltQuoteOnchainRequest) -> Sha1Hash {
+            request.inputs.sort_by_key(|input| input.y);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&request, &mut bytes).unwrap();
+            Sha1Hash::hash(&bytes)
+        }
+
+        pub fn blob_to_response(blob: ciborium::Value) -> MeltQuoteOnchainResponse {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&blob, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
+
+        pub fn response_to_blob(response: &MeltQuoteOnchainResponse) -> ciborium::Value {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(response, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
+    }
+
+    pub mod melt {
+        use super::super::*;
+        use bcr_common::wire::melt::{MeltOnchainRequest, MeltOnchainResponse};
+
+        pub fn request_to_key(mut request: MeltOnchainRequest) -> Sha1Hash {
+            request.inputs.sort_by_key(|input| input.c);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&request, &mut bytes).unwrap();
+            Sha1Hash::hash(&bytes)
+        }
+
+        pub fn blob_to_response(blob: ciborium::Value) -> MeltOnchainResponse {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&blob, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
+
+        pub fn response_to_blob(response: &MeltOnchainResponse) -> ciborium::Value {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(response, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
+    }
+}
+
+pub mod ebill {
+    pub mod mint {
+        use super::super::*;
+        use bcr_common::cashu;
+
+        pub fn request_to_key<U>(mut request: cashu::MintRequest<U>) -> Sha1Hash
+        where
+            U: serde::ser::Serialize + serde::de::DeserializeOwned,
+        {
+            request.outputs.sort_by_key(|output| output.blinded_secret);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&request, &mut bytes).unwrap();
+            Sha1Hash::hash(&bytes)
+        }
+
+        pub fn blob_to_response(blob: ciborium::Value) -> cashu::MintResponse {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&blob, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
+
+        pub fn response_to_blob(response: &cashu::MintResponse) -> ciborium::Value {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(response, &mut bytes).unwrap();
+            ciborium::from_reader(bytes.as_slice()).unwrap()
+        }
     }
 }
