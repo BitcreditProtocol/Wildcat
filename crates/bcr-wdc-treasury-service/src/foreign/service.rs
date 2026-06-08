@@ -141,36 +141,15 @@ impl Service {
         let total = inputs
             .iter()
             .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
-        let kid = inputs[0].keyset_id;
-        let foreign_keyset = foreign_client.get_keyset(kid).await?;
-        let Some(foreign_unix_expiration) = foreign_keyset.final_expiry else {
-            return Err(Error::InvalidInput(String::from(
-                "Foreign keyset has no expiration",
-            )));
-        };
-        let foreign_date = TStamp::from_timestamp_secs(foreign_unix_expiration as i64)
-            .map(|tstamp| tstamp.date_naive());
-        let Some(foreign_date) = foreign_date else {
-            return Err(Error::InvalidInput(String::from(
-                "foreign expiry date parse",
-            )));
-        };
-        let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
-        // charge the user for the fee the mint will pay to swap the foreign proofs
-        let fee = proof::estimate_foreign_swap_fee(inputs.len(), foreign_keyset.input_fee_ppk);
-        let Some(net) = total.checked_sub(fee) else {
-            return Err(Error::InvalidInput(format!(
-                "inputs {total} do not cover foreign swap fee {fee}"
-            )));
-        };
         let locktime = foreign_locktime - chrono::TimeDelta::minutes(15);
         let wallet_cpk = cashu::PublicKey::from(*wallet_pk);
-        let outputs = proof::generate_htlc_proofs(
-            net,
-            Some(locktime),
+        let outputs = proof::generate_online_exchange_htlc_proofs(
+            &inputs,
+            locktime,
             htlc_hash,
             wallet_cpk,
-            &keyset,
+            *foreign_pk,
+            self.clowder.as_ref(),
             self.keys.as_ref(),
         )
         .await?;
@@ -365,9 +344,10 @@ mod tests {
         let myself_kp = core::generate_random_keypair();
         let wallet_kp = core::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
-        let (_, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let (mut foreign_info, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
         foreign_keyset.final_expiry = Some(expiration.timestamp() as u64);
+        foreign_info.final_expiry = Some(expiration.timestamp() as u64);
         let inputs = vec![
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset,
@@ -403,7 +383,6 @@ mod tests {
             .with(eq(foreign_pk))
             .times(1)
             .returning(move |_| Ok(cloned_url.clone()));
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset, None);
         factory
             .expect_make_client()
             .with(eq(foreign_url.clone()), always())
@@ -427,12 +406,6 @@ mod tests {
                             },
                         ])
                     });
-                let cloned_keyset = cloned_keyset.clone();
-                foreign_client
-                    .expect_get_keyset()
-                    .with(eq(cloned_keyset.id))
-                    .times(1)
-                    .returning(move |_| Ok(cloned_keyset.clone()));
                 Ok(Box::new(foreign_client))
             });
         clowder
@@ -440,6 +413,13 @@ mod tests {
             .with(eq(foreign_pk), eq(inputs.clone()))
             .times(1)
             .returning(|_, _| Ok(()));
+        let foreign_kid = foreign_keyset.id;
+        let foreign_info = cashu::KeySetInfo::from(foreign_info);
+        clowder
+            .expect_get_keyset_info()
+            .with(eq(foreign_pk), eq(foreign_kid))
+            .times(1)
+            .returning(move |_, _| Ok(foreign_info.clone()));
         let cloned_inputs = inputs.clone();
         clowder
             .expect_signal_online_exchange_event()

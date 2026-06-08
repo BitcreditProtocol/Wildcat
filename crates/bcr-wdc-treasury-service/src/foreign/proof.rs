@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::collections::HashMap;
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
@@ -118,6 +119,73 @@ pub async fn generate_htlc_proofs(
     for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
         let proof = unblind_ecash_signature(keyset, pre.clone(), sig)?;
         proofs.push(proof);
+    }
+    Ok(proofs)
+}
+
+pub async fn generate_online_exchange_htlc_proofs(
+    inputs: &[cashu::Proof],
+    locktime: TStamp,
+    hash: Sha256Hash,
+    pk: cashu::PublicKey,
+    foreign_pk: secp256k1::PublicKey,
+    clowder: &dyn ClowderClient,
+    keycl: &dyn KeysClient,
+) -> Result<Vec<cashu::Proof>> {
+    // estimate fees for foreign swap of htlc proofs
+    let mut foreign_kinfos: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::new();
+    let mut max_fee_rate = 0;
+    let mut totals: HashMap<cashu::Id, cashu::Amount> = HashMap::new();
+    for p in inputs {
+        if !foreign_kinfos.contains_key(&p.keyset_id) {
+            let foreign_kinfo = clowder.get_keyset_info(&foreign_pk, &p.keyset_id).await?;
+            foreign_kinfos.insert(foreign_kinfo.id, foreign_kinfo);
+        }
+        let fee_rate = foreign_kinfos.get(&p.keyset_id).unwrap().input_fee_ppk;
+        max_fee_rate = std::cmp::max(max_fee_rate, fee_rate);
+        *totals.entry(p.keyset_id).or_insert(cashu::Amount::ZERO) += p.amount;
+    }
+    let mut fee = estimate_foreign_swap_fee(inputs.len(), max_fee_rate);
+    // update the total map discounting fees from older to newer keyset
+    let mut foreign_kids = totals.keys().cloned().collect::<Vec<_>>();
+    foreign_kids.sort_by_key(|k| {
+        foreign_kinfos
+            .get(k)
+            .unwrap()
+            .final_expiry
+            .unwrap_or_default()
+    });
+    for foreign_kid in foreign_kids {
+        if totals.get(&foreign_kid).unwrap() <= &fee {
+            let amount = totals.remove(&foreign_kid);
+            fee -= amount.unwrap_or_default();
+        } else {
+            *totals.get_mut(&foreign_kid).unwrap() -= fee;
+            fee = cashu::Amount::ZERO;
+            break;
+        }
+    }
+    if fee > cashu::Amount::ZERO {
+        return Err(Error::InvalidInput(format!(
+            "inputs do not cover foreign swap fee {fee}"
+        )));
+    }
+    let mut proofs = Vec::with_capacity(inputs.len());
+    for (foreign_kid, amount) in totals {
+        let foreign_kinfo = foreign_kinfos.get(&foreign_kid).unwrap();
+        let Some(foreign_expiry) = foreign_kinfo.final_expiry else {
+            return Err(Error::InvalidInput(String::from(
+                "Foreign keyset has no expiration",
+            )));
+        };
+        let foreign_date = TStamp::from_timestamp_secs(foreign_expiry as i64)
+            .ok_or(Error::InvalidInput(String::from(
+                "foreign expiry date parse",
+            )))?
+            .date_naive();
+        let keyset = keycl.get_keyset_with_expiration(foreign_date).await?;
+        let group = generate_htlc_proofs(amount, Some(locktime), hash, pk, &keyset, keycl).await?;
+        proofs.extend(group);
     }
     Ok(proofs)
 }
