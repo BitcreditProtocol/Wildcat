@@ -25,18 +25,14 @@ pub enum ChecksError {
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
-    // 1. no empty blinds
-    if blinds.is_empty() {
-        return Err(ChecksError::Empty);
-    }
-    // 2. no zero amounts
+    // 1. no zero amounts
     let zero_inputs = blinds
         .iter()
         .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
         return Err(ChecksError::ZeroAmount);
     }
-    // 3. unique blinds
+    // 2. unique blinds
     let unique_blinds: Vec<_> = blinds.iter().map(|p| p.blinded_secret).unique().collect();
     if unique_blinds.len() != blinds.len() {
         return Err(ChecksError::NonUnique);
@@ -178,10 +174,7 @@ mod tests {
     #[test]
     fn basic_checks_empty_slice() {
         let blinds = vec![];
-        assert!(matches!(
-            basic_blinds_checks(&blinds),
-            Err(ChecksError::Empty)
-        ));
+        assert!(matches!(basic_blinds_checks(&blinds), Ok(())));
         let proofs = vec![];
         assert!(matches!(
             basic_proofs_checks(&proofs),
