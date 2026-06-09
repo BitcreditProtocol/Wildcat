@@ -2,7 +2,7 @@
 use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{
-    cashu,
+    cashu::{self, ProofsMethods},
     core::{signature, swap},
     wire::{attestation::IssuanceAttestation, swap as wire_swap},
 };
@@ -116,13 +116,14 @@ impl Service {
         }
     }
 
-    pub async fn swap(
+    async fn inner_swap(
         &self,
         sign_service: &dyn KeysService,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: schnorr::Signature,
         attestation: IssuanceAttestation,
+        fee_policy: swap::mint::FeePolicy,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
@@ -136,41 +137,34 @@ impl Service {
             return Err(Error::InvalidInput(String::from("commitment has expired")));
         }
         // committed and swap inputs must be equal
-        if committed_inputs.len() != inputs.len() {
-            return Err(Error::InvalidInput(String::from(
-                "inputs/committed_inputs mismatch",
+        let input_ys = inputs.ys()?;
+        let checked = cross_check_commits_swaps(&committed_inputs, &input_ys);
+        if !checked {
+            return Err(Error::InvalidInput(format!(
+                "input/committed_inputs mismatch {:?}/{:?}",
+                input_ys, committed_inputs
             )));
-        }
-        for input in inputs.iter() {
-            let y = input.y()?;
-            committed_inputs
-                .iter()
-                .find(|committed| **committed == y)
-                .ok_or_else(|| {
-                    Error::InvalidInput(format!(
-                        "input/committed_input mismatch {y}/{:?}",
-                        committed_inputs,
-                    ))
-                })?;
         }
         // committed and swap outputs must be equal
-        if committed_outputs.len() != outputs.len() {
-            return Err(Error::InvalidInput(String::from(
-                "outputs/committed_outputs mismatch",
+        let output_bs: Vec<cashu::PublicKey> =
+            outputs.iter().map(|b| b.blinded_secret).collect::<Vec<_>>();
+        let checked = cross_check_commits_swaps(&committed_outputs, &output_bs);
+        if !checked {
+            return Err(Error::InvalidInput(format!(
+                "output/committed_outputs mismatch {:?}/{:?}",
+                output_bs, committed_outputs
             )));
         }
-        for output in outputs.iter() {
-            let b = output.blinded_secret;
-            committed_outputs
-                .iter()
-                .find(|commited| **commited == b)
-                .ok_or_else(|| {
-                    Error::InvalidInput(format!(
-                        "output/committed_output mismatch {b}/{:?}",
-                        committed_outputs,
-                    ))
-                })?;
-        }
+        // commitment pins inputs by `y`; attestation pins them by `fp_digest` over the same proofs.
+        let (verify_res, kinfos_res) = tokio::join!(
+            self.clowder
+                .verify_attestation(&self.alpha_id, &inputs, &attestation),
+            sign_service.list_kinfos(),
+        );
+        verify_res?;
+        let kinfos = kinfos_res?;
+        swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
+        sign_service.verify_proofs(&inputs).await?;
         // check inputs are unspent
         let ys: Vec<cashu::PublicKey> = inputs
             .iter()
@@ -188,11 +182,11 @@ impl Service {
             .iter()
             .all(|s| matches!(s.state, cashu::State::Unspent));
         if !all_unspent {
-            return Err(Error::InvalidInput(
-                "One or more proofs are not unspent".to_string(),
-            ));
+            return Err(Error::InvalidInput(String::from(
+                "One or more proofs are not unspent",
+            )));
         }
-        swap::mint::verify_swap(&inputs, &outputs, &kinfos)?;
+        swap::mint::verify_swap(&inputs, &outputs, &kinfos, swap::mint::FeePolicy::Apply)?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
         let fees_premints = generate_fees_premints(sign_service, &inputs, &outputs).await?;
@@ -215,6 +209,27 @@ impl Service {
         Ok(signatures)
     }
 
+    pub async fn swap(
+        &self,
+        sign_service: &dyn KeysService,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+        commitment: schnorr::Signature,
+        attestation: IssuanceAttestation,
+        now: TStamp,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        self.inner_swap(
+            sign_service,
+            inputs,
+            outputs,
+            commitment,
+            attestation,
+            swap::mint::FeePolicy::Apply,
+            now,
+        )
+        .await
+    }
+
     pub async fn signed_swap(
         &self,
         sign_service: &dyn KeysService,
@@ -233,12 +248,13 @@ impl Service {
         )?;
         let payload: wire_swap::SignedSwapRequestContent =
             bcr_common::core::signature::deserialize_borsh_msg(&content)?;
-        self.swap(
+        self.inner_swap(
             sign_service,
             payload.inputs,
             payload.outputs,
             commitment,
             attestation,
+            swap::mint::FeePolicy::Ignore,
             now,
         )
         .await
@@ -307,6 +323,9 @@ async fn sign_fees(
     signer: &dyn KeysService,
     premints: Vec<cashu::PreMintSecrets>,
 ) -> Result<(Vec<cashu::BlindSignature>, Vec<cashu::Proof>)> {
+    if premints.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
     let total_len = premints.iter().map(|p| p.len()).sum();
     let mut signatures = Vec::with_capacity(total_len);
     let mut proofs = Vec::with_capacity(total_len);
@@ -323,6 +342,19 @@ async fn sign_fees(
         proofs.extend(prfs);
     }
     Ok((signatures, proofs))
+}
+
+fn cross_check_commits_swaps<T: PartialEq>(committed: &[T], swap: &[T]) -> bool {
+    if committed.len() != swap.len() {
+        return false;
+    }
+    for c in committed.iter() {
+        let present = swap.iter().any(|s| s == c);
+        if !present {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
