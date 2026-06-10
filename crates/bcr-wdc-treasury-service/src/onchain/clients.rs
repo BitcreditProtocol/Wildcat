@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
-    clwdr_client::ClowderNatsClient,
     core::signature,
     wire::{
-        attestation::IssuanceAttestation, clowder as wire_clowder, keys as wire_keys,
+        attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
         melt as wire_melt, mint as wire_mint,
     },
 };
@@ -216,7 +216,6 @@ impl ClowderClient for ClowderCl {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
-        attestation: IssuanceAttestation,
     ) -> Result<bitcoin::Txid> {
         let request = wire_clowder::MeltOnchainRequest {
             quote: qid,
@@ -225,7 +224,6 @@ impl ClowderClient for ClowderCl {
             inputs,
             commitment,
             fees,
-            attestation,
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
@@ -256,13 +254,15 @@ impl ClowderClient for ClowderCl {
         Ok(collaterals.onchain)
     }
 
-    async fn verify_attestation(
+    async fn authenticate_attestation(
         &self,
         alpha_id: &PublicKey,
-        inputs: &[cashu::Proof],
-        attestation: &IssuanceAttestation,
+        inputs: &AttestedFingerprints,
     ) -> Result<()> {
-        bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
+        let betas = self.rest.get_betas().await?;
+        inputs
+            .authenticate(alpha_id, |id| betas.mints.iter().any(|b| &b.node_id == id))
+            .map_err(bcr_wdc_utils::attestation::VerifyError::from)?;
         Ok(())
     }
 }

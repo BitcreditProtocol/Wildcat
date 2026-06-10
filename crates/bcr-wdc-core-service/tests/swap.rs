@@ -51,13 +51,11 @@ async fn swap() {
             expiry,
             wallet_kp.public_key(),
             mint_pk,
+            dummy_attestation(),
         )
         .await
         .unwrap();
-    client
-        .swap(proofs, blinds, commitment, dummy_attestation())
-        .await
-        .expect("swap");
+    client.swap(proofs, blinds, commitment).await.expect("swap");
 }
 
 #[tokio::test]
@@ -144,11 +142,12 @@ async fn swap_p2pk() {
             expiry,
             wallet_kp.public_key(),
             mint_pk,
+            dummy_attestation(),
         )
         .await
         .unwrap();
     let res = client
-        .swap(correct_proofs, blinds, commitment, dummy_attestation())
+        .swap(correct_proofs, blinds, commitment)
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));

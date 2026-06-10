@@ -26,7 +26,7 @@ pub async fn verify(
     attestation: &IssuanceAttestation,
 ) -> Result<(), VerifyError> {
     let betas = rest.get_betas().await?;
-    wire_attestation::verify_attestation_local(alpha_id, inputs, attestation, |id| {
+    wire_attestation::authenticate_attestation(alpha_id, inputs, attestation, |id| {
         betas.mints.iter().any(|b| &b.node_id == id)
     })?;
     let beta = betas

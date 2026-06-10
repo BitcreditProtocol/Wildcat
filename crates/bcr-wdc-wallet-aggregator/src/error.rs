@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use bcr_common::{
     cashu,
     cdk_common::Error as CDKError,
+    client::clowder::ClowderClientError,
     client::{admin::clowder::Error as ClowderRestError, treasury::Error as TreasuryClientError},
-    clwdr_client::ClowderClientError,
 };
 use thiserror::Error;
 // ----- local imports

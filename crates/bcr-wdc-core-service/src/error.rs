@@ -31,7 +31,7 @@ pub enum Error {
     #[error("treasury client {0}")]
     TreasuryClient(#[from] bcr_common::client::admin::treasury::Error),
     #[error("clowder client {0}")]
-    ClowderClient(#[from] bcr_common::clwdr_client::ClowderClientError),
+    ClowderClient(#[from] bcr_common::client::clowder::ClowderClientError),
     #[error("clowder rest client {0}")]
     ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
     #[error("DHKE error: {0}")]

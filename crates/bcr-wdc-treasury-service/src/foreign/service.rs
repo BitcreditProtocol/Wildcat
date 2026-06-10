@@ -264,7 +264,7 @@ async fn try_offline_htlc_swap(
         keyset_id: fp.keyset_id,
         c: fp.c,
         dleq: fp.dleq,
-        witness: fp.witness,
+        witness: None,
         secret,
         p2pk_e: None,
     };

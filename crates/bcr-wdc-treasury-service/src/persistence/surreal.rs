@@ -749,7 +749,6 @@ struct ForeignFingerprintDBEntry {
     keyset_id: cashu::Id,
     y: cashu::PublicKey,
     c: cashu::PublicKey,
-    witness: Option<cashu::Witness>,
     dleq: Option<cashu::ProofDleq>,
     mint_id: String,
 }
@@ -788,7 +787,6 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 keyset_id: fp.keyset_id,
                 y: fp.y,
                 c: fp.c,
-                witness: fp.witness,
                 dleq: fp.dleq,
                 mint_id: mint_id.to_string(),
             };
@@ -820,7 +818,6 @@ impl foreign::OfflineRepository for DBForeignOffline {
             keyset_id: entry.keyset_id,
             y: entry.y,
             c: entry.c,
-            witness: entry.witness,
             dleq: entry.dleq,
         };
         let mint_id = secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
@@ -1163,7 +1160,6 @@ mod tests {
                 keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
                 y,
                 c,
-                witness: None,
                 dleq: None,
             },
             wire_keys::ProofFingerprint {
@@ -1171,7 +1167,6 @@ mod tests {
                 keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
                 y: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 c: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
-                witness: None,
                 dleq: None,
             },
         ];
