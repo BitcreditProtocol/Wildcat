@@ -207,6 +207,24 @@ pub mod test_utils {
         }
     }
 
+    pub fn dummy_attestation_for(
+        inputs: &[bcr_common::wire::keys::ProofFingerprint],
+    ) -> bcr_common::wire::attestation::IssuanceAttestation {
+        let mut attestation = dummy_attestation();
+        attestation.fp_digest = bcr_common::wire::attestation::fp_digest(inputs);
+        attestation
+    }
+
+    pub fn attested_fingerprints(
+        inputs: Vec<bcr_common::wire::keys::ProofFingerprint>,
+    ) -> bcr_common::wire::attestation::AttestedFingerprints {
+        let attestation = dummy_attestation_for(&inputs);
+        bcr_common::wire::attestation::AttestedFingerprints {
+            inputs,
+            attestation,
+        }
+    }
+
     pub fn mint_kp() -> secp256k1::Keypair {
         let sk = secp256k1::SecretKey::from_str(
             "0000000000000000000000000000000000000000000000000000000000000001",
@@ -261,7 +279,7 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
@@ -269,13 +287,10 @@ mod tests {
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: bcr_common::wire::attestation::AttestedFingerprints {
-                inputs: proof_fps,
-                attestation: test_utils::dummy_attestation(),
-            },
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),
@@ -309,7 +324,7 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
@@ -317,13 +332,10 @@ mod tests {
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: bcr_common::wire::attestation::AttestedFingerprints {
-                inputs: proof_fps,
-                attestation: test_utils::dummy_attestation(),
-            },
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),
@@ -412,17 +424,14 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: bcr_common::wire::attestation::AttestedFingerprints {
-                inputs: proof_fps,
-                attestation: test_utils::dummy_attestation(),
-            },
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),

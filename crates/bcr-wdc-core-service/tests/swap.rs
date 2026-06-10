@@ -10,7 +10,7 @@ use bcr_common::{
     core, core_tests,
     wire::keys as wire_keys,
 };
-use bcr_wdc_core_service::test_utils::dummy_attestation;
+use bcr_wdc_core_service::test_utils::dummy_attestation_for;
 use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
 // ----- local imports
 
@@ -37,7 +37,7 @@ async fn swap() {
     let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
         .iter()
         .cloned()
-        .map(|p| wire_keys::ProofFingerprint::try_from(p))
+        .map(wire_keys::ProofFingerprint::try_from)
         .collect::<Result<_, _>>()
         .unwrap();
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
@@ -46,12 +46,12 @@ async fn swap() {
     let wallet_kp = core::generate_random_keypair();
     let (_, commitment) = client
         .commit_swap(
-            proof_fps,
+            proof_fps.clone(),
             blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
-            dummy_attestation(),
+            dummy_attestation_for(&proof_fps),
         )
         .await
         .unwrap();
@@ -125,7 +125,7 @@ async fn swap_p2pk() {
     let correct_fps: Vec<wire_keys::ProofFingerprint> = correct_proofs
         .iter()
         .cloned()
-        .map(|p| wire_keys::ProofFingerprint::try_from(p))
+        .map(wire_keys::ProofFingerprint::try_from)
         .collect::<Result<_, _>>()
         .unwrap();
     for (p, fps) in correct_proofs.iter().zip(correct_fps.iter()) {
@@ -137,12 +137,12 @@ async fn swap_p2pk() {
     let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
     let (_, commitment) = client
         .commit_swap(
-            correct_fps,
+            correct_fps.clone(),
             blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
-            dummy_attestation(),
+            dummy_attestation_for(&correct_fps),
         )
         .await
         .unwrap();

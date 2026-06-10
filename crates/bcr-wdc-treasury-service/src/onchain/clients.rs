@@ -259,10 +259,7 @@ impl ClowderClient for ClowderCl {
         alpha_id: &PublicKey,
         inputs: &AttestedFingerprints,
     ) -> Result<()> {
-        let betas = self.rest.get_betas().await?;
-        inputs
-            .authenticate(alpha_id, |id| betas.mints.iter().any(|b| &b.node_id == id))
-            .map_err(bcr_wdc_utils::attestation::VerifyError::from)?;
+        bcr_wdc_utils::attestation::authenticate_with_betas(&self.rest, alpha_id, inputs).await?;
         Ok(())
     }
 }

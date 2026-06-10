@@ -428,6 +428,7 @@ struct CommitmentDBEntry {
     outputs: Vec<cashu::PublicKey>,
     expiration: TStamp,
     wallet_key: cashu::PublicKey,
+    fp_digest: [u8; 32],
 }
 
 #[derive(Debug, Clone)]
@@ -492,6 +493,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
+        fp_digest: [u8; 32],
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
         let newentry = CommitmentDBEntry {
@@ -500,6 +502,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             outputs,
             expiration,
             wallet_key,
+            fp_digest,
         };
         let mut query = self
             .db
@@ -542,10 +545,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         }
     }
 
-    async fn load(
-        &self,
-        signature: &schnorr::Signature,
-    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
+    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
         let commitment_entry: CommitmentDBEntry = self
             .db
@@ -557,6 +557,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             commitment_entry.inputs,
             commitment_entry.outputs,
             commitment_entry.expiration,
+            commitment_entry.fp_digest,
         ))
     }
 

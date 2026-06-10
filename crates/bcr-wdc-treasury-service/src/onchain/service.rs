@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
-    wire::{melt as wire_melt, mint as wire_mint},
+    wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
@@ -183,6 +183,7 @@ impl Service {
             expiry,
             wallet_key,
             input_ys,
+            fp_digest: inputs.attestation.fp_digest,
             commitment,
             status: onchain::MeltStatus::Pending,
         };
@@ -248,7 +249,7 @@ impl Service {
         bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
         self.wdc.verify_proofs(&inputs).await?;
         // verify unspent
-        let mut p_ys = inputs.ys()?;
+        let p_ys = inputs.ys()?;
         let states = self.wdc.check_spendable(p_ys.clone()).await?;
         let all_unspent = states
             .iter()
@@ -262,13 +263,14 @@ impl Service {
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        p_ys.sort();
-        if p_ys != op.input_ys {
+        let input_fps = wire_attestation::project_to_fingerprints(&inputs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        if wire_attestation::fp_digest(&input_fps) != op.fp_digest {
             return Err(Error::InvalidInput(String::from(
                 "melt proofs != committed fingerprints",
             )));
         }
-        // attestation was authenticated at quote (commitment) time and rides on the commitment entry
+        // attestation was authenticated at quote time; op.fp_digest binds these proofs to it
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
         let fees_pre = generate_fee_premints(&self.wdc, &inputs, op.fees).await?;
@@ -337,6 +339,48 @@ fn cross_check_locked_fps(
         }
     }
     Ok(())
+}
+
+async fn generate_fee_premints(
+    wdc: &Arc<dyn WildcatClient>,
+    inputs: &[cashu::Proof],
+    fees: cashu::Amount,
+) -> Result<cashu::PreMintSecrets> {
+    assert!(!inputs.is_empty());
+    let p1 = inputs.first().unwrap();
+    let mut kid = p1.keyset_id;
+    let expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
+    for p in inputs {
+        if p.keyset_id == kid {
+            continue;
+        }
+        let info = wdc.keyset_info(p.keyset_id).await?;
+        if info.final_expiry.unwrap_or_default() > expiry {
+            kid = p.keyset_id;
+        }
+    }
+    let keyset = wdc.keyset(kid).await?;
+    let pre = cashu::PreMintSecrets::random(
+        kid,
+        fees,
+        &cashu::amount::SplitTarget::None,
+        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+    )?;
+    Ok(pre)
+}
+
+fn extract_proofs(
+    premint: cashu::PreMintSecrets,
+    signatures: Vec<cashu::BlindSignature>,
+    keys: cashu::KeySet,
+) -> Result<Vec<cashu::Proof>> {
+    let (rs, secrets) = premint
+        .secrets
+        .into_iter()
+        .map(|secret| (secret.r, secret.secret))
+        .unzip();
+    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)?;
+    Ok(prfs)
 }
 
 #[cfg(test)]
@@ -473,10 +517,10 @@ mod tests {
             .times(1)
             .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         let qid = Uuid::new_v4();
-        let cloned_qid = qid.clone();
+        let cloned_qid = qid;
         repo.expect_list_pending_meltops()
             .times(1)
-            .returning(move |_| Ok(vec![cloned_qid.clone()]));
+            .returning(move |_| Ok(vec![cloned_qid]));
         repo.expect_load_meltop()
             .times(1)
             .with(eq(qid))
@@ -490,6 +534,7 @@ mod tests {
                     fees: cashu::Amount::ZERO,
                     wallet_key: core::generate_random_keypair().public_key().into(),
                     input_ys: vec![],
+                    fp_digest: [0u8; 32],
                     commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64])
                         .unwrap(),
                     status: onchain::MeltStatus::Pending,
@@ -623,6 +668,9 @@ mod tests {
             fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
+            fp_digest: wire_attestation::fp_digest(
+                &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+            ),
             commitment: signature,
             status: onchain::MeltStatus::Pending,
         };
@@ -684,6 +732,66 @@ mod tests {
             .melt_onchain(request, chrono::Utc::now(), &vault)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn melt_onchain_rejects_on_digest_mismatch() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let clowder = MockClowderClient::new();
+        let vault = MockVaultService::new();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let input_ys = proofs.ys().unwrap();
+        let qid = Uuid::new_v4();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        // quote digest over different fingerprints than the presented proofs
+        let op = onchain::MeltOperation {
+            qid,
+            available: cashu::Amount::from(8),
+            address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
+            target: bitcoin::Amount::from_sat(8),
+            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            fees: cashu::Amount::ZERO,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys,
+            fp_digest: [1u8; 32],
+            commitment: signature,
+            status: onchain::MeltStatus::Pending,
+        };
+        wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
+        repo.expect_load_meltop()
+            .times(1)
+            .returning(move |_| Ok(op.clone()));
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
+        };
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        let err = service
+            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
     }
 
     #[tokio::test]
@@ -770,46 +878,4 @@ mod tests {
             .await
             .unwrap_err();
     }
-}
-
-async fn generate_fee_premints(
-    wdc: &Arc<dyn WildcatClient>,
-    inputs: &[cashu::Proof],
-    fees: cashu::Amount,
-) -> Result<cashu::PreMintSecrets> {
-    assert!(!inputs.is_empty());
-    let p1 = inputs.first().unwrap();
-    let mut kid = p1.keyset_id;
-    let expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
-    for p in inputs {
-        if p.keyset_id == kid {
-            continue;
-        }
-        let info = wdc.keyset_info(p.keyset_id).await?;
-        if info.final_expiry.unwrap_or_default() > expiry {
-            kid = p.keyset_id;
-        }
-    }
-    let keyset = wdc.keyset(kid).await?;
-    let pre = cashu::PreMintSecrets::random(
-        kid,
-        fees,
-        &cashu::amount::SplitTarget::None,
-        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
-    )?;
-    Ok(pre)
-}
-
-fn extract_proofs(
-    premint: cashu::PreMintSecrets,
-    signatures: Vec<cashu::BlindSignature>,
-    keys: cashu::KeySet,
-) -> Result<Vec<cashu::Proof>> {
-    let (rs, secrets) = premint
-        .secrets
-        .into_iter()
-        .map(|secret| (secret.r, secret.secret))
-        .unzip();
-    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)?;
-    Ok(prfs)
 }

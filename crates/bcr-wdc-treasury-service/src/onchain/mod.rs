@@ -150,6 +150,7 @@ pub struct MeltOperation {
     pub expiry: TStamp,
     pub wallet_key: cashu::PublicKey,
     pub input_ys: Vec<cashu::PublicKey>,
+    pub fp_digest: [u8; 32],
     pub commitment: secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }

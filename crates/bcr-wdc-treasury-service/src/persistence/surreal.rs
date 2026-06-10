@@ -215,6 +215,7 @@ struct OnChainMeltOpDbEntry {
     expiry: TStamp,
     commitment: String,
     input_ys: Vec<String>,
+    fp_digest: [u8; 32],
     status: MeltStatusDBEntry,
     wallet_key: String,
 }
@@ -237,6 +238,7 @@ impl From<OnChainMeltOpDbEntry> for onchain::MeltOperation {
                 .into_iter()
                 .map(|s| cashu::PublicKey::from_str(&s).expect("input_ys <--> String"))
                 .collect(),
+            fp_digest: entry.fp_digest,
         }
     }
 }
@@ -251,6 +253,7 @@ fn convert_to_onchainmeltop(op: onchain::MeltOperation, table: &str) -> OnChainM
         expiry: op.expiry,
         commitment: op.commitment.to_string(),
         input_ys: op.input_ys.into_iter().map(|y| y.to_string()).collect(),
+        fp_digest: op.fp_digest,
         status: op.status.into(),
         wallet_key: op.wallet_key.to_string(),
     }
@@ -1095,6 +1098,7 @@ mod tests {
             wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
             commitment: signature_tests::random_schnorr_signature(),
             expiry: now + chrono::Duration::hours(1),
+            fp_digest: [0u8; 32],
             input_ys: input_ys.clone(),
             status: onchain::MeltStatus::Pending,
         };
@@ -1112,6 +1116,7 @@ mod tests {
             wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
             commitment: signature_tests::random_schnorr_signature(),
             expiry: now + chrono::Duration::hours(1),
+            fp_digest: [0u8; 32],
             input_ys: input_ys2.clone(),
             status: onchain::MeltStatus::Paid {
                 tx: bitcoin::Txid::all_zeros(),
@@ -1132,6 +1137,7 @@ mod tests {
             wallet_key: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
             commitment: signature_tests::random_schnorr_signature(),
             expiry: now + chrono::Duration::hours(1),
+            fp_digest: [0u8; 32],
             input_ys: test_ys,
             status: onchain::MeltStatus::Pending,
         };
@@ -1174,9 +1180,7 @@ mod tests {
             Sha256Hash::from_slice(&[0u8; 32]).unwrap(),
             Sha256Hash::from_slice(&[1u8; 32]).unwrap(),
         ];
-        db.store_fps(alpha_id.clone(), fps, hash.clone())
-            .await
-            .unwrap();
+        db.store_fps(alpha_id, fps, hash.clone()).await.unwrap();
         let result = db.search_fp(&hash[0]).await.unwrap();
         assert!(result.is_some());
         let (mint, fp) = result.unwrap();
@@ -1191,12 +1195,10 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let alpha1 = core::generate_random_keypair().public_key();
         let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        db.store_proofs(alpha1.clone(), proofs.clone())
-            .await
-            .unwrap();
+        db.store_proofs(alpha1, proofs.clone()).await.unwrap();
         let alpha2 = core::generate_random_keypair().public_key();
         let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        db.store_proofs(alpha2.clone(), proofs).await.unwrap();
+        db.store_proofs(alpha2, proofs).await.unwrap();
         let result = db.list_foreign_pks().await.unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.contains(&alpha1));
@@ -1210,10 +1212,8 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let alpha = core::generate_random_keypair().public_key();
         let proofs: Vec<cashu::Proof> = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        db.store_proofs(alpha.clone(), proofs.clone())
-            .await
-            .unwrap();
-        let result = db.load_proofs(alpha.clone()).await.unwrap();
+        db.store_proofs(alpha, proofs.clone()).await.unwrap();
+        let result = db.load_proofs(alpha).await.unwrap();
         assert_eq!(result.len(), proofs.len());
         for proof in proofs {
             assert!(result.contains(&proof));

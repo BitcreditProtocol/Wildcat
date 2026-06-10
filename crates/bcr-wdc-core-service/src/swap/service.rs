@@ -2,9 +2,9 @@
 use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{
-    cashu::{self, ProofsMethods},
+    cashu,
     core::{signature, swap},
-    wire::swap as wire_swap,
+    wire::{attestation as wire_attestation, swap as wire_swap},
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use bitcoin::secp256k1::PublicKey;
@@ -106,11 +106,12 @@ impl Service {
         }
         // broadcast request to clowder, get back mint commitment
         let wallet_key = request.wallet_key;
+        let fp_digest = request.inputs.attestation.fp_digest;
         let (content, commitment) = self.clowder.commit_to_swap(request).await?;
         // store commitment
         let store_res = self
             .commitments
-            .store(ys, bs, expiry, wallet_key.into(), commitment)
+            .store(ys, bs, expiry, wallet_key.into(), commitment, fp_digest)
             .await;
         match store_res {
             Ok(_) => Ok((content, commitment)),
@@ -134,20 +135,18 @@ impl Service {
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
         // cross check with commitment
-        let (committed_inputs, committed_outputs, expiration) =
+        let (_, committed_outputs, expiration, committed_fp_digest) =
             self.commitments.load(&commitment).await?;
         // check expiration
         if expiration < now {
             return Err(Error::InvalidInput(String::from("commitment has expired")));
         }
-        // committed and swap inputs must be equal
-        let input_ys = inputs.ys()?;
-        let checked = cross_check_commits_swaps(&committed_inputs, &input_ys);
-        if !checked {
-            return Err(Error::InvalidInput(format!(
-                "input/committed_inputs mismatch {:?}/{:?}",
-                input_ys, committed_inputs
-            )));
+        // swap inputs must project to the fingerprints attested at commitment time
+        let input_fps = wire_attestation::project_to_fingerprints(&inputs)?;
+        if wire_attestation::fp_digest(&input_fps) != committed_fp_digest {
+            return Err(Error::Attestation(
+                wire_attestation::AttestationError::DigestMismatch,
+            ));
         }
         // committed and swap outputs must be equal
         let output_bs: Vec<cashu::PublicKey> =
@@ -159,12 +158,15 @@ impl Service {
                 output_bs, committed_outputs
             )));
         }
-        // check inputs are unspent. The attestation was authenticated at commitment
-        // time and rides on the commitment entry, so it is not re-checked here.
+        // check inputs are unspent
+        let ys: Vec<cashu::PublicKey> = inputs
+            .iter()
+            .map(|fp| fp.y())
+            .collect::<std::result::Result<_, _>>()?;
         let (kinfos, _, states) = tokio::try_join!(
             sign_service.list_kinfos(),
             sign_service.verify_proofs(&inputs),
-            self.check_spendable(&input_ys),
+            self.check_spendable(&ys),
         )?;
         let all_unspent = states
             .iter()
@@ -456,11 +458,14 @@ mod tests {
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let fp_digest = wire_attestation::fp_digest(
+            &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+        );
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
         commitments
             .expect_load()
             .times(1)
-            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry)));
+            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry, fp_digest)));
         let cloned = cashu::KeySetInfo::from(kinfo);
         sign_service.expect_list_kinfos().returning(move || {
             Ok(std::collections::HashMap::from([(
@@ -528,5 +533,48 @@ mod tests {
             .await
             .unwrap();
         assert!(signatures.is_empty());
+    }
+
+    #[tokio::test]
+    async fn swap_rejects_on_digest_mismatch() {
+        let clowder = MockClowderClient::new();
+        let mut commitments = MockCommitmentRepository::new();
+        let proofs_repo = MockProofRepository::new();
+        let sign_service = MockKeysService::new();
+        let mocktreasu = MockTreasuryService::new();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
+        // commitment carries a digest over different fingerprints
+        commitments
+            .expect_load()
+            .times(1)
+            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry, [1u8; 32])));
+        let alpha_id = core::generate_random_keypair().public_key();
+        let service = Service {
+            proofs: Box::new(proofs_repo),
+            commitments: Box::new(commitments),
+            clowder: Box::new(clowder),
+            treasury: Box::new(mocktreasu),
+            max_expiry: chrono::Duration::seconds(3600),
+            alpha_id,
+        };
+        let err = service
+            .swap(
+                &sign_service,
+                proofs,
+                vec![],
+                commitment,
+                chrono::Utc::now(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::Attestation(AttestationError::DigestMismatch)
+        ));
     }
 }
