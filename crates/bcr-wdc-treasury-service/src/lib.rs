@@ -40,7 +40,7 @@ pub struct AppConfig {
     ebill_url: ClientUrl,
     clowder_rest_url: reqwest::Url,
     clowder_nats_url: reqwest::Url,
-    cache_expiry_seconds: u64,
+    cache_expiry_sec: u64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -89,7 +89,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
-        cache_expiry_seconds,
+        cache_expiry_sec,
     } = cfg;
 
     //clients
@@ -210,7 +210,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // cache
-    let cache_expiry = chrono::Duration::seconds(cache_expiry_seconds as i64);
+    let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
     let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
     let app_ctrl = AppController {
         ebill: Arc::new(ebill),
