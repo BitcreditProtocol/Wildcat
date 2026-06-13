@@ -129,7 +129,7 @@ mod tests {
             id: qid,
             status: quotes::Status::Accepted {
                 discounted: bitcoin::Amount::from_sat(1000),
-                wallet_pubkey: pk.clone(),
+                wallet_pubkey: pk,
                 keyset_id: keyset.id,
             },
             submitted: chrono::DateTime::default(),

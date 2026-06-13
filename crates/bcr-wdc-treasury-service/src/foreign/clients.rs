@@ -4,8 +4,8 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
-    clwdr_client::ClowderNatsClient,
     wire::{attestation as wire_attestation, clowder as wire_clowder, keys as wire_keys},
 };
 // ----- local imports
@@ -212,29 +212,27 @@ impl ForeignClient for MintClient {
             .map(wire_keys::ProofFingerprint::try_from)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let expiry = now + chrono::Duration::minutes(1);
-        let (_, commitment) = self
-            .cl
-            .commit_swap(
-                fps.clone(),
-                outputs.clone(),
-                expiry.timestamp() as u64,
-                self.my_pk,
-                self.foreign_pk,
-            )
-            .await?;
         // Acquire an attestation from the local Clowder node (assumed Beta of
-        // the foreign Alpha) so the foreign mint accepts the spend.
+        // the foreign Alpha) so it can be bound into the commitment.
         let attestation = self
             .clwdr
             .post_attest_issuance(&wire_attestation::IssuanceAttestationRequest {
                 alpha_id: self.foreign_pk,
-                inputs: fps,
+                inputs: fps.clone(),
             })
             .await?;
-        let signatures = self
+        let (_, commitment) = self
             .cl
-            .swap(inputs, outputs, commitment, attestation)
+            .commit_swap(
+                fps,
+                outputs.clone(),
+                expiry.timestamp() as u64,
+                self.my_pk,
+                self.foreign_pk,
+                attestation,
+            )
             .await?;
+        let signatures = self.cl.swap(inputs, outputs, commitment).await?;
         Ok(signatures)
     }
 

@@ -181,6 +181,7 @@ type Commitment = (
     Vec<cashu::PublicKey>,
     TStamp,
     cashu::PublicKey,
+    [u8; 32],
 );
 #[allow(dead_code)]
 #[derive(Clone, Default)]
@@ -193,7 +194,7 @@ impl CommitmentMap {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         ys: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (inputs, _, _, _)) in locked.iter() {
+        for (_, (inputs, _, _, _, _)) in locked.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -207,7 +208,7 @@ impl CommitmentMap {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         secrets: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (_, outputs, _, _)) in locked.iter() {
+        for (_, (_, outputs, _, _, _)) in locked.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -222,7 +223,7 @@ impl CommitmentMap {
 impl persistence::CommitmentRepository for CommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.commitments.lock().unwrap();
-        locked.retain(|_, (_, _, expiration, _)| *expiration > now);
+        locked.retain(|_, (_, _, expiration, _, _)| *expiration > now);
         Ok(())
     }
 
@@ -243,6 +244,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
+        fp_digest: [u8; 32],
     ) -> Result<()> {
         inputs.sort();
         outputs.sort();
@@ -253,20 +255,25 @@ impl persistence::CommitmentRepository for CommitmentMap {
         if Self::_contains_outputs(&locked, &outputs)? {
             return Err(Error::Conflict(String::from("outputs already used")));
         }
-        locked.insert(signature, (inputs, outputs, expiration, wallet_key));
+        locked.insert(
+            signature,
+            (inputs, outputs, expiration, wallet_key, fp_digest),
+        );
         Ok(())
     }
 
-    async fn load(
-        &self,
-        signature: &schnorr::Signature,
-    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)> {
+    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
         let locked = self.commitments.lock().unwrap();
         let comm = locked
             .get(signature)
             .ok_or(Error::ResourceNotFound(signature.to_string()))?
             .clone();
-        Ok((comm.0, comm.1, comm.2))
+        Ok(persistence::StoredCommitment {
+            inputs: comm.0,
+            outputs: comm.1,
+            expiration: comm.2,
+            fp_digest: comm.4,
+        })
     }
 
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {

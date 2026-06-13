@@ -132,7 +132,6 @@ pub async fn swap_tokens(
             request.inputs,
             request.outputs,
             request.commitment,
-            request.attestation,
             now,
         )
         .await?;
@@ -163,7 +162,6 @@ pub async fn signed_swap_tokens(
             request.signature,
             request.mint_id,
             request.commitment,
-            request.attestation,
             now,
         )
         .await?;

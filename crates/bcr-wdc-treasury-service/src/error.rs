@@ -57,7 +57,7 @@ pub enum Error {
     #[error("clowder rest client {0}")]
     ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
     #[error("clowder nats client {0}")]
-    ClowderNatsClient(#[from] bcr_common::clwdr_client::ClowderClientError),
+    ClowderNatsClient(#[from] bcr_common::client::clowder::ClowderClientError),
     #[error("quote client {0}")]
     QuoteClient(#[from] bcr_common::client::quote::Error),
     #[error("ebill client {0}")]

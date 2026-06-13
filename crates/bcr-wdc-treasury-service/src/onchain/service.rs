@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
-    wire::{melt as wire_melt, mint as wire_mint},
+    wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
@@ -95,18 +95,23 @@ impl Service {
             address,
         } = request;
         // valid fingerprints
-        if inputs.is_empty() {
+        if inputs.inputs.is_empty() {
             return Err(Error::InvalidInput(String::from("missing inputs")));
         }
+        // authenticate the Beta issuance attestation bound to this commitment
+        self.clowder_cl
+            .authenticate_attestation(&self.alpha_id, &inputs)
+            .await?;
         let core_fps: Vec<_> = inputs
+            .inputs
             .iter()
             .cloned()
             .map(bcr_common::core::signature::ProofFingerprint::from)
             .collect();
         bcr_wdc_utils::signatures::basic_fingerprints_checks(&core_fps)?;
-        self.wdc.verify_fingerprints(&inputs).await?;
+        self.wdc.verify_fingerprints(&inputs.inputs).await?;
         // Unspent fingerprints
-        let mut input_ys = inputs.iter().map(|fp| fp.y).collect::<Vec<_>>();
+        let mut input_ys = inputs.inputs.iter().map(|fp| fp.y).collect::<Vec<_>>();
         let states = self.wdc.check_spendable(input_ys.clone()).await?;
         let all_unspent = states
             .iter()
@@ -118,7 +123,8 @@ impl Service {
         let pending_ops = self.retrieve_pending_meltops(now).await?;
         cross_check_locked_fps(input_ys.clone(), &pending_ops)?;
         // amount > dust (after fees)
-        let input_total = bitcoin::Amount::from_sat(inputs.iter().map(|fp| fp.amount).sum::<u64>());
+        let input_total =
+            bitcoin::Amount::from_sat(inputs.inputs.iter().map(|fp| fp.amount).sum::<u64>());
         // valid address
         let checked_address = self
             .clowder_cl
@@ -177,6 +183,7 @@ impl Service {
             expiry,
             wallet_key,
             input_ys,
+            fp_digest: inputs.attestation.fp_digest,
             commitment,
             status: onchain::MeltStatus::Pending,
         };
@@ -237,16 +244,12 @@ impl Service {
         now: TStamp,
         vault: &dyn onchain::VaultService,
     ) -> Result<wire_melt::MeltOnchainResponse> {
-        let wire_melt::MeltOnchainRequest {
-            inputs,
-            attestation,
-            ..
-        } = request;
+        let wire_melt::MeltOnchainRequest { inputs, .. } = request;
         // verify proofs
         bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
         self.wdc.verify_proofs(&inputs).await?;
         // verify unspent
-        let mut p_ys = inputs.ys()?;
+        let p_ys = inputs.ys()?;
         let states = self.wdc.check_spendable(p_ys.clone()).await?;
         let all_unspent = states
             .iter()
@@ -260,16 +263,14 @@ impl Service {
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        p_ys.sort();
-        if p_ys != op.input_ys {
+        let input_fps = wire_attestation::project_to_fingerprints(&inputs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        if wire_attestation::fp_digest(&input_fps) != op.fp_digest {
             return Err(Error::InvalidInput(String::from(
                 "melt proofs != committed fingerprints",
             )));
         }
-        // verify Beta-issued attestation before burning any proofs
-        self.clowder_cl
-            .verify_attestation(&self.alpha_id, &inputs, &attestation)
-            .await?;
+        // attestation was authenticated at quote time; op.fp_digest binds these proofs to it
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
         let fees_pre = generate_fee_premints(&self.wdc, &inputs, op.fees).await?;
@@ -287,7 +288,6 @@ impl Service {
                 inputs.clone(),
                 fees_signatures,
                 op.commitment,
-                attestation,
             )
             .await
         {
@@ -339,6 +339,48 @@ fn cross_check_locked_fps(
         }
     }
     Ok(())
+}
+
+async fn generate_fee_premints(
+    wdc: &Arc<dyn WildcatClient>,
+    inputs: &[cashu::Proof],
+    fees: cashu::Amount,
+) -> Result<cashu::PreMintSecrets> {
+    assert!(!inputs.is_empty());
+    let p1 = inputs.first().unwrap();
+    let mut kid = p1.keyset_id;
+    let expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
+    for p in inputs {
+        if p.keyset_id == kid {
+            continue;
+        }
+        let info = wdc.keyset_info(p.keyset_id).await?;
+        if info.final_expiry.unwrap_or_default() > expiry {
+            kid = p.keyset_id;
+        }
+    }
+    let keyset = wdc.keyset(kid).await?;
+    let pre = cashu::PreMintSecrets::random(
+        kid,
+        fees,
+        &cashu::amount::SplitTarget::None,
+        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+    )?;
+    Ok(pre)
+}
+
+fn extract_proofs(
+    premint: cashu::PreMintSecrets,
+    signatures: Vec<cashu::BlindSignature>,
+    keys: cashu::KeySet,
+) -> Result<Vec<cashu::Proof>> {
+    let (rs, secrets) = premint
+        .secrets
+        .into_iter()
+        .map(|secret| (secret.r, secret.secret))
+        .unzip();
+    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)?;
+    Ok(prfs)
 }
 
 #[cfg(test)]
@@ -475,10 +517,10 @@ mod tests {
             .times(1)
             .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         let qid = Uuid::new_v4();
-        let cloned_qid = qid.clone();
+        let cloned_qid = qid;
         repo.expect_list_pending_meltops()
             .times(1)
-            .returning(move |_| Ok(vec![cloned_qid.clone()]));
+            .returning(move |_| Ok(vec![cloned_qid]));
         repo.expect_load_meltop()
             .times(1)
             .with(eq(qid))
@@ -492,6 +534,7 @@ mod tests {
                     fees: cashu::Amount::ZERO,
                     wallet_key: core::generate_random_keypair().public_key().into(),
                     input_ys: vec![],
+                    fp_digest: [0u8; 32],
                     commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64])
                         .unwrap(),
                     status: onchain::MeltStatus::Pending,
@@ -500,6 +543,10 @@ mod tests {
         repo.expect_store_denied_meltop()
             .times(1)
             .returning(|_| Ok(()));
+        clowder
+            .expect_authenticate_attestation()
+            .times(1)
+            .returning(|_, _| Ok(()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
@@ -514,7 +561,10 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
-            inputs: fps,
+            inputs: bcr_common::wire::attestation::AttestedFingerprints {
+                inputs: fps,
+                attestation: dummy_attestation(),
+            },
             address,
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
@@ -567,6 +617,10 @@ mod tests {
             .times(1)
             .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         repo.expect_store_meltop().times(1).returning(|_, _| Ok(()));
+        clowder
+            .expect_authenticate_attestation()
+            .times(1)
+            .returning(|_, _| Ok(()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
@@ -581,7 +635,10 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
-            inputs: fps,
+            inputs: bcr_common::wire::attestation::AttestedFingerprints {
+                inputs: fps,
+                attestation: dummy_attestation(),
+            },
             address,
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
@@ -611,6 +668,9 @@ mod tests {
             fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
+            fp_digest: wire_attestation::fp_digest(
+                &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+            ),
             commitment: signature,
             status: onchain::MeltStatus::Pending,
         };
@@ -629,10 +689,6 @@ mod tests {
         repo.expect_load_meltop()
             .times(1)
             .returning(move |_| Ok(op.clone()));
-        clowder
-            .expect_verify_attestation()
-            .times(1)
-            .returning(|_, _, _| Ok(()));
         clowder
             .expect_verify_onchain_address()
             .times(1)
@@ -655,7 +711,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+            .returning(|_, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
         repo.expect_update_meltop_status()
             .times(1)
             .returning(|_, _| Ok(()));
@@ -671,7 +727,6 @@ mod tests {
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
             inputs: proofs,
-            attestation: dummy_attestation(),
         };
         service
             .melt_onchain(request, chrono::Utc::now(), &vault)
@@ -680,16 +735,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn melt_onchain_rejects_when_attestation_invalid() {
+    async fn melt_onchain_rejects_on_digest_mismatch() {
         let mut wdc = MockWildcatClient::new();
         let mut repo = MockRepository::new();
-        let mut clowder = MockClowderClient::new();
+        let clowder = MockClowderClient::new();
         let vault = MockVaultService::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        // quote digest over different fingerprints than the presented proofs
         let op = onchain::MeltOperation {
             qid,
             available: cashu::Amount::from(8),
@@ -699,6 +755,7 @@ mod tests {
             fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
+            fp_digest: [1u8; 32],
             commitment: signature,
             status: onchain::MeltStatus::Pending,
         };
@@ -717,15 +774,6 @@ mod tests {
         repo.expect_load_meltop()
             .times(1)
             .returning(move |_| Ok(op.clone()));
-        clowder
-            .expect_verify_attestation()
-            .times(1)
-            .returning(|_, _, _| {
-                Err(Error::Attestation(
-                    bcr_common::wire::attestation::AttestationError::DigestMismatch,
-                ))
-            });
-
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
@@ -738,10 +786,51 @@ mod tests {
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
             inputs: proofs,
-            attestation: dummy_attestation(),
         };
         let err = service
             .melt_onchain(request, chrono::Utc::now(), &vault)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn melt_quote_rejects_when_attestation_invalid() {
+        let wdc = MockWildcatClient::new();
+        let repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        // attestation is authenticated at quote (commitment) time, before any other work
+        clowder
+            .expect_authenticate_attestation()
+            .times(1)
+            .returning(|_, _| {
+                Err(Error::Attestation(
+                    bcr_common::wire::attestation::AttestationError::DigestMismatch,
+                ))
+            });
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
+        };
+        let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
+        let amounts = vec![Amount::from(512)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
+        let request = wire_melt::MeltQuoteOnchainRequest {
+            inputs: bcr_common::wire::attestation::AttestedFingerprints {
+                inputs: fps,
+                attestation: dummy_attestation(),
+            },
+            address,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+        };
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -789,46 +878,4 @@ mod tests {
             .await
             .unwrap_err();
     }
-}
-
-async fn generate_fee_premints(
-    wdc: &Arc<dyn WildcatClient>,
-    inputs: &[cashu::Proof],
-    fees: cashu::Amount,
-) -> Result<cashu::PreMintSecrets> {
-    assert!(!inputs.is_empty());
-    let p1 = inputs.first().unwrap();
-    let mut kid = p1.keyset_id;
-    let expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
-    for p in inputs {
-        if p.keyset_id == kid {
-            continue;
-        }
-        let info = wdc.keyset_info(p.keyset_id).await?;
-        if info.final_expiry.unwrap_or_default() > expiry {
-            kid = p.keyset_id;
-        }
-    }
-    let keyset = wdc.keyset(kid).await?;
-    let pre = cashu::PreMintSecrets::random(
-        kid,
-        fees,
-        &cashu::amount::SplitTarget::None,
-        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
-    )?;
-    Ok(pre)
-}
-
-fn extract_proofs(
-    premint: cashu::PreMintSecrets,
-    signatures: Vec<cashu::BlindSignature>,
-    keys: cashu::KeySet,
-) -> Result<Vec<cashu::Proof>> {
-    let (rs, secrets) = premint
-        .secrets
-        .into_iter()
-        .map(|secret| (secret.r, secret.secret))
-        .unzip();
-    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)?;
-    Ok(prfs)
 }

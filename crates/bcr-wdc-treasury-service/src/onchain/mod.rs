@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     wire::{
-        attestation::IssuanceAttestation, clowder as wire_clowder, keys as wire_keys,
+        attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
         melt as wire_melt, mint as wire_mint,
     },
 };
@@ -88,7 +88,6 @@ pub trait ClowderClient: Send + Sync {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
-        attestation: IssuanceAttestation,
     ) -> Result<bitcoin::Txid>;
     async fn fetch_mint_signatures(
         &self,
@@ -97,11 +96,10 @@ pub trait ClowderClient: Send + Sync {
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
-    async fn verify_attestation(
+    async fn authenticate_attestation(
         &self,
         alpha_id: &PublicKey,
-        inputs: &[cashu::Proof],
-        attestation: &IssuanceAttestation,
+        inputs: &AttestedFingerprints,
     ) -> Result<()>;
 }
 
@@ -152,6 +150,7 @@ pub struct MeltOperation {
     pub expiry: TStamp,
     pub wallet_key: cashu::PublicKey,
     pub input_ys: Vec<cashu::PublicKey>,
+    pub fp_digest: [u8; 32],
     pub commitment: secp256k1::schnorr::Signature,
     pub status: MeltStatus,
 }

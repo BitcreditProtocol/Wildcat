@@ -4,12 +4,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
+    client::clowder::ClowderNatsClient,
     client::{
         admin::clowder::Client as ClowderRestClient, core::Client as CoreClient,
         ebill::Client as EbillClient,
     },
     clowder::taproot,
-    clwdr_client::ClowderNatsClient,
     core::{self, BillId},
     wire::{bill as wire_bill, clowder as wire_clowder},
 };

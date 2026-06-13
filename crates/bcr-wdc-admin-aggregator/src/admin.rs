@@ -352,7 +352,7 @@ pub async fn get_ebill_file_from_request_to_mint(
         (header::CONTENT_TYPE, content_type),
         (
             header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", format!("file.{}", extension)),
+            format!("attachment; filename=\"file.{extension}\""),
         ),
     ]);
     let stream = futures::stream::once(async move { Ok::<_, std::io::Error>(raw) });

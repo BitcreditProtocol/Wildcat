@@ -8,11 +8,11 @@ use axum::{
 };
 use bcr_common::{
     cashu,
+    client::clowder::ClowderNatsClient,
     client::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
         ebill::Client as EbClient, treasury as cl_treasury, Url as ClientUrl,
     },
-    clwdr_client::ClowderNatsClient,
 };
 use bcr_wdc_utils::{nut19, routine, surreal};
 // ----- local modules

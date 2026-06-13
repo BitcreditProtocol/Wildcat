@@ -61,14 +61,10 @@ pub async fn post_swap(
         inputs,
         outputs,
         commitment,
-        attestation,
     } = request;
     let htlc_unlocked = test_for_htlc(&inputs, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
-    let signatures = ctrl
-        .core_client
-        .swap(inputs, outputs, commitment, attestation)
-        .await?;
+    let signatures = ctrl.core_client.swap(inputs, outputs, commitment).await?;
     Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 

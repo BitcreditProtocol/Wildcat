@@ -251,8 +251,15 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         .iter()
         .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
         .collect();
+    let wildcat_info = user_service.wildcat_info().await;
+    let attestation = user_service
+        .acquire_attestation(wildcat_info.clowder_node_id, &proofs)
+        .await;
     let commit_request = wire_swap::SwapCommitmentRequest {
-        inputs: fingerprints,
+        inputs: bcr_common::wire::attestation::AttestedFingerprints {
+            inputs: fingerprints,
+            attestation,
+        },
         outputs: bs.clone(),
         expiry: (chrono::Utc::now().timestamp() + 1200) as u64,
         wallet_key: wallet_kp.public_key(),
@@ -260,12 +267,8 @@ async fn can_mint_ebill(cfg: &MainConfig) {
     let commit_response = user_service.commit_swap(commit_request).await;
     info!("Commitment created");
 
-    let wildcat_info = user_service.wildcat_info().await;
-    let attestation = user_service
-        .acquire_attestation(wildcat_info.clowder_node_id, &proofs)
-        .await;
     let signatures = user_service
-        .swap(proofs, bs, commit_response.commitment, attestation)
+        .swap(proofs, bs, commit_response.commitment)
         .await;
     let total_swap = signatures.iter().map(|s| u64::from(s.amount)).sum::<u64>();
     assert_eq!(
