@@ -47,12 +47,12 @@ pub trait ProofRepository: Send + Sync {
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
-pub type StoredCommitment = (
-    Vec<cashu::PublicKey>,
-    Vec<cashu::PublicKey>,
-    TStamp,
-    [u8; 32],
-);
+pub struct StoredCommitment {
+    pub inputs: Vec<cashu::PublicKey>,
+    pub outputs: Vec<cashu::PublicKey>,
+    pub expiration: TStamp,
+    pub fp_digest: [u8; 32],
+}
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -599,12 +599,12 @@ mod tests {
         .await
         .unwrap();
         let mut result = db.load(&signature).await.unwrap();
-        result.0.sort();
+        result.inputs.sort();
         inputs.sort();
-        assert_eq!(result.0, inputs);
-        result.1.sort();
+        assert_eq!(result.inputs, inputs);
+        result.outputs.sort();
         outputs.sort();
-        assert_eq!(result.1, outputs);
-        assert_eq!(result.2, tstamp)
+        assert_eq!(result.outputs, outputs);
+        assert_eq!(result.expiration, tstamp)
     }
 }

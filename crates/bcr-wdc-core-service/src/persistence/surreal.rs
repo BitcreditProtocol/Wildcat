@@ -553,12 +553,12 @@ impl persistence::CommitmentRepository for DBCommitments {
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
             .ok_or(Error::ResourceNotFound(rid.to_string()))?;
-        Ok((
-            commitment_entry.inputs,
-            commitment_entry.outputs,
-            commitment_entry.expiration,
-            commitment_entry.fp_digest,
-        ))
+        Ok(persistence::StoredCommitment {
+            inputs: commitment_entry.inputs,
+            outputs: commitment_entry.outputs,
+            expiration: commitment_entry.expiration,
+            fp_digest: commitment_entry.fp_digest,
+        })
     }
 
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {

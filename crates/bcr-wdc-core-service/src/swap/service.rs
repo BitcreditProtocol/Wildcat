@@ -13,7 +13,7 @@ use secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{CommitmentRepository, ProofRepository},
+    persistence::{CommitmentRepository, ProofRepository, StoredCommitment},
     swap::{ClowderClient, KeysService, TreasuryService},
     TStamp,
 };
@@ -135,8 +135,12 @@ impl Service {
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
         // cross check with commitment
-        let (_, committed_outputs, expiration, committed_fp_digest) =
-            self.commitments.load(&commitment).await?;
+        let StoredCommitment {
+            outputs: committed_outputs,
+            expiration,
+            fp_digest: committed_fp_digest,
+            ..
+        } = self.commitments.load(&commitment).await?;
         // check expiration
         if expiration < now {
             return Err(Error::InvalidInput(String::from("commitment has expired")));
@@ -462,10 +466,14 @@ mod tests {
             &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
         );
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
-        commitments
-            .expect_load()
-            .times(1)
-            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry, fp_digest)));
+        commitments.expect_load().times(1).returning(move |_| {
+            Ok(StoredCommitment {
+                inputs: proof_ys.clone(),
+                outputs: vec![],
+                expiration: expiry,
+                fp_digest,
+            })
+        });
         let cloned = cashu::KeySetInfo::from(kinfo);
         sign_service.expect_list_kinfos().returning(move || {
             Ok(std::collections::HashMap::from([(
@@ -549,10 +557,14 @@ mod tests {
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
         // commitment carries a digest over different fingerprints
-        commitments
-            .expect_load()
-            .times(1)
-            .returning(move |_| Ok((proof_ys.clone(), vec![], expiry, [1u8; 32])));
+        commitments.expect_load().times(1).returning(move |_| {
+            Ok(StoredCommitment {
+                inputs: proof_ys.clone(),
+                outputs: vec![],
+                expiration: expiry,
+                fp_digest: [1u8; 32],
+            })
+        });
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
             proofs: Box::new(proofs_repo),

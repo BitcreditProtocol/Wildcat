@@ -268,7 +268,12 @@ impl persistence::CommitmentRepository for CommitmentMap {
             .get(signature)
             .ok_or(Error::ResourceNotFound(signature.to_string()))?
             .clone();
-        Ok((comm.0, comm.1, comm.2, comm.4))
+        Ok(persistence::StoredCommitment {
+            inputs: comm.0,
+            outputs: comm.1,
+            expiration: comm.2,
+            fp_digest: comm.4,
+        })
     }
 
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
