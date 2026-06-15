@@ -176,7 +176,8 @@ pub async fn check_state(
     State(ctrl): State<Arc<swap::service::Service>>,
     Json(request): Json<cashu::CheckStateRequest>,
 ) -> Result<Json<cashu::CheckStateResponse>> {
-    let states = ctrl.check_spendable(&request.ys).await?;
+    let now = chrono::Utc::now();
+    let states = ctrl.check_state(&request.ys, now).await?;
     let response = cashu::CheckStateResponse { states };
     Ok(Json(response))
 }
