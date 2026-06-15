@@ -30,20 +30,41 @@ pub struct Service {
 }
 
 impl Service {
-    pub async fn check_spendable(&self, ys: &[cashu::PublicKey]) -> Result<Vec<cashu::ProofState>> {
-        let joined = ys
+    pub async fn check_state(
+        &self,
+        ys: &[cashu::PublicKey],
+        now: TStamp,
+    ) -> Result<Vec<cashu::ProofState>> {
+        self.commitments.clean_expired(now).await?;
+        let joined_spent = ys
             .iter()
             .map(|y| self.proofs.contains(*y))
             .collect::<JoinAll<_>>();
-        let responses: Vec<_> = joined.await.into_iter().collect::<Result<_>>()?;
+        let responses: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
         let mut proof_states = Vec::with_capacity(responses.len());
         for (response, y) in responses.into_iter().zip(ys.iter()) {
-            let proof_state = response.unwrap_or(cashu::ProofState {
+            if let Some(state) = response {
+                proof_states.push(state);
+                continue;
+            }
+            let reserved = self
+                .commitments
+                .contains_inputs(std::slice::from_ref(y))
+                .await?;
+            if reserved {
+                proof_states.push(cashu::ProofState {
+                    y: *y,
+                    state: cashu::State::Reserved,
+                    witness: None,
+                });
+                continue;
+            }
+            let state = cashu::ProofState {
                 y: *y,
                 state: cashu::State::Unspent,
                 witness: None,
-            });
-            proof_states.push(proof_state);
+            };
+            proof_states.push(state);
         }
         Ok(proof_states)
     }
@@ -79,7 +100,7 @@ impl Service {
         swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
         // check inputs are unspent
         let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
-        let states = self.check_spendable(&ys).await?;
+        let states = self.check_state(&ys, now).await?;
         let all_unspent = states
             .iter()
             .all(|s| matches!(s.state, cashu::State::Unspent));
@@ -162,24 +183,10 @@ impl Service {
                 output_bs, committed_outputs
             )));
         }
-        // check inputs are unspent
-        let ys: Vec<cashu::PublicKey> = inputs
-            .iter()
-            .map(|fp| fp.y())
-            .collect::<std::result::Result<_, _>>()?;
-        let (kinfos, _, states) = tokio::try_join!(
+        let (kinfos, _) = tokio::try_join!(
             sign_service.list_kinfos(),
             sign_service.verify_proofs(&inputs),
-            self.check_spendable(&ys),
         )?;
-        let all_unspent = states
-            .iter()
-            .all(|s| matches!(s.state, cashu::State::Unspent));
-        if !all_unspent {
-            return Err(Error::InvalidInput(String::from(
-                "One or more proofs are not unspent",
-            )));
-        }
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
@@ -485,10 +492,6 @@ mod tests {
             .expect_verify_proofs()
             .times(1)
             .returning(|_| Ok(()));
-        proofs_repo
-            .expect_contains()
-            .times(1)
-            .returning(|_| Ok(None));
         sign_service
             .expect_sign_blinds()
             .times(1)
