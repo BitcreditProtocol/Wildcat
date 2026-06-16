@@ -85,7 +85,7 @@ pub mod swap_commitment {
     use bcr_common::wire::swap::{SwapCommitmentRequest, SwapCommitmentResponse};
 
     pub fn request_to_key(mut request: SwapCommitmentRequest) -> Sha1Hash {
-        request.inputs.sort_by_key(|input| input.y);
+        request.inputs.inputs.sort_by_key(|input| input.y);
         request.outputs.sort_by_key(|input| input.blinded_secret);
         let mut bytes = Vec::new();
         ciborium::into_writer(&request, &mut bytes).unwrap();
@@ -159,7 +159,7 @@ pub mod onchain {
         use bcr_common::wire::melt::{MeltQuoteOnchainRequest, MeltQuoteOnchainResponse};
 
         pub fn request_to_key(mut request: MeltQuoteOnchainRequest) -> Sha1Hash {
-            request.inputs.sort_by_key(|input| input.y);
+            request.inputs.inputs.sort_by_key(|input| input.y);
             let mut bytes = Vec::new();
             ciborium::into_writer(&request, &mut bytes).unwrap();
             Sha1Hash::hash(&bytes)

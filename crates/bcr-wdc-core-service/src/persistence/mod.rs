@@ -47,6 +47,13 @@ pub trait ProofRepository: Send + Sync {
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
+pub struct StoredCommitment {
+    pub inputs: Vec<cashu::PublicKey>,
+    pub outputs: Vec<cashu::PublicKey>,
+    pub expiration: TStamp,
+    pub fp_digest: [u8; 32],
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait CommitmentRepository: Send + Sync {
@@ -57,11 +64,9 @@ pub trait CommitmentRepository: Send + Sync {
         expiration: TStamp,
         wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
+        fp_digest: [u8; 32],
     ) -> Result<()>;
-    async fn load(
-        &self,
-        signature: &schnorr::Signature,
-    ) -> Result<(Vec<cashu::PublicKey>, Vec<cashu::PublicKey>, TStamp)>;
+    async fn load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
     async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()>;
@@ -466,6 +471,7 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
+            [0u8; 32],
         )
         .await
         .unwrap();
@@ -480,6 +486,7 @@ mod tests {
                 tstamp,
                 random_wallet_key(),
                 signature,
+                [0u8; 32],
             )
             .await;
         assert!(res.is_err());
@@ -492,6 +499,7 @@ mod tests {
                 tstamp,
                 random_wallet_key(),
                 signature,
+                [0u8; 32],
             )
             .await;
         assert!(res.is_err());
@@ -516,6 +524,7 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
+            [0u8; 32],
         )
         .await
         .unwrap();
@@ -550,6 +559,7 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
+            [0u8; 32],
         )
         .await
         .unwrap();
@@ -584,16 +594,17 @@ mod tests {
             tstamp,
             random_wallet_key(),
             signature,
+            [0u8; 32],
         )
         .await
         .unwrap();
         let mut result = db.load(&signature).await.unwrap();
-        result.0.sort();
+        result.inputs.sort();
         inputs.sort();
-        assert_eq!(result.0, inputs);
-        result.1.sort();
+        assert_eq!(result.inputs, inputs);
+        result.outputs.sort();
         outputs.sort();
-        assert_eq!(result.1, outputs);
-        assert_eq!(result.2, tstamp)
+        assert_eq!(result.outputs, outputs);
+        assert_eq!(result.expiration, tstamp)
     }
 }

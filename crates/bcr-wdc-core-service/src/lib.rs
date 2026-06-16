@@ -6,12 +6,9 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use bcr_common::{
-    client::{
-        self,
-        admin::{core, treasury::Client as TreasuryClient},
-    },
-    clwdr_client,
+use bcr_common::client::{
+    self,
+    admin::{core, treasury::Client as TreasuryClient},
 };
 use bcr_wdc_utils::{nut19, surreal};
 use bitcoin::bip32 as btc32;
@@ -33,7 +30,7 @@ pub struct AppConfig {
     signatures: surreal::DBConnConfig,
     proofs: surreal::DBConnConfig,
     commitments: surreal::DBConnConfig,
-    clowder_url: clwdr_client::Url,
+    clowder_url: client::clowder::Url,
     treasury_url: client::Url,
     clowder_rest_url: client::Url,
     starting_derivation_path: btc32::DerivationPath,
@@ -78,7 +75,7 @@ impl AppController {
             .await
             .expect("Failed to create commitments repository");
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
-        let clowder_cl = clwdr_client::ClowderNatsClient::new(clowder_url)
+        let clowder_cl = client::clowder::ClowderNatsClient::new(clowder_url)
             .await
             .expect("Failed to create clowder client");
         let clowder_cl = Arc::new(clowder_cl);
@@ -210,6 +207,24 @@ pub mod test_utils {
         }
     }
 
+    pub fn dummy_attestation_for(
+        inputs: &[bcr_common::wire::keys::ProofFingerprint],
+    ) -> bcr_common::wire::attestation::IssuanceAttestation {
+        let mut attestation = dummy_attestation();
+        attestation.fp_digest = bcr_common::wire::attestation::fp_digest(inputs);
+        attestation
+    }
+
+    pub fn attested_fingerprints(
+        inputs: Vec<bcr_common::wire::keys::ProofFingerprint>,
+    ) -> bcr_common::wire::attestation::AttestedFingerprints {
+        let attestation = dummy_attestation_for(&inputs);
+        bcr_common::wire::attestation::AttestedFingerprints {
+            inputs,
+            attestation,
+        }
+    }
+
     pub fn mint_kp() -> secp256k1::Keypair {
         let sk = secp256k1::SecretKey::from_str(
             "0000000000000000000000000000000000000000000000000000000000000001",
@@ -238,7 +253,6 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::dummy_attestation;
     use bcr_common::{
         cashu, core, core_tests,
         wire::{keys as wire_keys, swap as wire_swap},
@@ -265,7 +279,7 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
@@ -273,10 +287,10 @@ mod tests {
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: proof_fps,
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),
@@ -310,7 +324,7 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
@@ -318,10 +332,10 @@ mod tests {
         let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: proof_fps,
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),
@@ -336,14 +350,7 @@ mod tests {
 
         controller
             .swap
-            .swap(
-                &signsrvc,
-                proofs,
-                blinds,
-                commitment,
-                dummy_attestation(),
-                now,
-            )
+            .swap(&signsrvc, proofs, blinds, commitment, now)
             .await
             .unwrap();
     }
@@ -417,14 +424,14 @@ mod tests {
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
-            .map(|p| wire_keys::ProofFingerprint::try_from(p))
+            .map(wire_keys::ProofFingerprint::try_from)
             .collect::<Result<_, _>>()
             .unwrap();
         let request = wire_swap::SwapCommitmentRequest {
-            inputs: proof_fps,
+            inputs: test_utils::attested_fingerprints(proof_fps),
             outputs: blinds.clone(),
             expiry,
-            wallet_key: wallet_kp.public_key().into(),
+            wallet_key: wallet_kp.public_key(),
         };
         let signsrvc = crate::swap::KeysSignService {
             srvc: controller.keys.clone(),
@@ -437,14 +444,7 @@ mod tests {
 
         let res = controller
             .swap
-            .swap(
-                &signsrvc,
-                proofs.clone(),
-                blinds.clone(),
-                commitment,
-                dummy_attestation(),
-                now,
-            )
+            .swap(&signsrvc, proofs.clone(), blinds.clone(), commitment, now)
             .await;
         assert!(res.is_err());
         for p in proofs.iter_mut() {
@@ -452,14 +452,7 @@ mod tests {
         }
         controller
             .swap
-            .swap(
-                &signsrvc,
-                proofs.clone(),
-                blinds,
-                commitment,
-                dummy_attestation(),
-                now,
-            )
+            .swap(&signsrvc, proofs.clone(), blinds, commitment, now)
             .await
             .unwrap();
     }

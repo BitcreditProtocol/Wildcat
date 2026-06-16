@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::admin::{clowder as clwdr_rest, treasury::Client as TreasuryClient},
-    clwdr_client::ClowderNatsClient,
+    client::clowder::ClowderNatsClient,
     core::signature,
-    wire::{attestation::IssuanceAttestation, clowder as wire_clowder, swap as wire_swap},
+    wire::{attestation::AttestedFingerprints, clowder as wire_clowder, swap as wire_swap},
 };
 use bitcoin::secp256k1::{schnorr, PublicKey};
 // ----- local imports
@@ -114,15 +114,13 @@ pub trait ClowderClient: Send + Sync {
         outputs: Vec<cashu::BlindedMessage>,
         fees: Vec<cashu::BlindSignature>,
         commitment: schnorr::Signature,
-        attestation: IssuanceAttestation,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()>;
 
-    async fn verify_attestation(
+    async fn authenticate_attestation(
         &self,
         alpha_id: &PublicKey,
-        inputs: &[cashu::Proof],
-        attestation: &IssuanceAttestation,
+        inputs: &AttestedFingerprints,
     ) -> Result<()>;
 
     async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey>;
@@ -157,27 +155,24 @@ impl ClowderClient for ClowderCl {
         blinds: Vec<cashu::BlindedMessage>,
         fees: Vec<cashu::BlindSignature>,
         commitment: schnorr::Signature,
-        attestation: IssuanceAttestation,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()> {
         let request = wire_clowder::SwapRequest {
             proofs,
             blinds,
             commitment,
-            attestation,
         };
         let response = wire_clowder::SwapResponse { signatures, fees };
         self.nats.mint_swap(request, response).await?;
         Ok(())
     }
 
-    async fn verify_attestation(
+    async fn authenticate_attestation(
         &self,
         alpha_id: &PublicKey,
-        inputs: &[cashu::Proof],
-        attestation: &IssuanceAttestation,
+        inputs: &AttestedFingerprints,
     ) -> Result<()> {
-        bcr_wdc_utils::attestation::verify(&self.rest, alpha_id, inputs, attestation).await?;
+        bcr_wdc_utils::attestation::authenticate_with_betas(&self.rest, alpha_id, inputs).await?;
         Ok(())
     }
 
@@ -215,17 +210,15 @@ pub mod test_utils {
             _outputs: Vec<cashu::BlindedMessage>,
             _fees: Vec<cashu::BlindSignature>,
             _commitment: schnorr::Signature,
-            _attestation: IssuanceAttestation,
             _signatures: Vec<cashu::BlindSignature>,
         ) -> Result<()> {
             Ok(())
         }
 
-        async fn verify_attestation(
+        async fn authenticate_attestation(
             &self,
             _alpha_id: &PublicKey,
-            _inputs: &[cashu::Proof],
-            _attestation: &IssuanceAttestation,
+            _inputs: &AttestedFingerprints,
         ) -> Result<()> {
             Ok(())
         }

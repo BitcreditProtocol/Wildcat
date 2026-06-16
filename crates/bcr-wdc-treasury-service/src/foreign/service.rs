@@ -264,7 +264,7 @@ async fn try_offline_htlc_swap(
         keyset_id: fp.keyset_id,
         c: fp.c,
         dleq: fp.dleq,
-        witness: fp.witness,
+        witness: None,
         secret,
         p2pk_e: None,
     };
@@ -316,16 +316,14 @@ mod tests {
             amount,
             &cashu::amount::SplitTarget::None,
             &conditions,
-            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
-            )),
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(keyset, None)),
         )
         .unwrap();
         assert_eq!(premints.blinded_messages().len(), 1);
         let blind = premints.blinded_messages()[0].clone();
         let signature = bcr_common::core::signature::sign_ecash(keyset, &blind).unwrap();
         let proof = bcr_common::core::signature::unblind_ecash_signature(
-            &bcr_wdc_utils::keys::to_keyset(&keyset, None),
+            &bcr_wdc_utils::keys::to_keyset(keyset, None),
             premints.into_iter().next().unwrap(),
             signature,
         )
@@ -376,7 +374,7 @@ mod tests {
         clowder
             .expect_get_myself_pk()
             .times(1)
-            .returning(move || Ok(myself_pk.into()));
+            .returning(move || Ok(myself_pk));
         let cloned_url = foreign_url.clone();
         clowder
             .expect_get_mint_url_from_pk()

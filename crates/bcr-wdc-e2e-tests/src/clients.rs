@@ -198,10 +198,9 @@ impl Service<UserService> {
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: bitcoin::secp256k1::schnorr::Signature,
-        attestation: bcr_common::wire::attestation::IssuanceAttestation,
     ) -> Vec<cashu::BlindSignature> {
         self.mint_cl
-            .swap(inputs, outputs, commitment, attestation)
+            .swap(inputs, outputs, commitment)
             .await
             .unwrap()
     }
