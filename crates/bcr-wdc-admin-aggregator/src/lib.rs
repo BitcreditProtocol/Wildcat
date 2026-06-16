@@ -231,6 +231,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_treasury::MintOperationStatus,
         wire_treasury::DeniedMeltOperations,
         wire_treasury::FeesTokenResponse,
+        // utoipa unit type
+        utoipa::TupleUnit,
     ),),
     paths(
         admin::get_health,
