@@ -73,6 +73,16 @@ pub trait CommitmentRepository: Send + Sync {
     async fn clean_expired(&self, now: TStamp) -> Result<()>;
 }
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait ReservedYsRepository: Send + Sync {
+    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
+    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
+    async fn clean_expired(&self, now: TStamp) -> Result<()>;
+    // no need to delete as inputs can only end up being burnt, and they will appear as spent in
+    // ProofRepository, or they will be cleaned up after the deadline by clean_expired
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +91,13 @@ mod tests {
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{key::rand, secp256k1 as secp};
 
+    fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
+        std::iter::repeat_with(|| {
+            cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key())
+        })
+        .take(sz)
+        .collect()
+    }
     //////////////////////////////////////////////////////////////////// KeysRepository
     async fn init_surreal_keys_db() -> impl KeysRepository {
         let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
@@ -439,14 +456,6 @@ mod tests {
         inmemory::CommitmentMap::default()
     }
 
-    fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
-        std::iter::repeat_with(|| {
-            cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key())
-        })
-        .take(sz)
-        .collect()
-    }
-
     fn random_wallet_key() -> cashu::PublicKey {
         let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
         cashu::PublicKey::from(pk)
@@ -606,5 +615,64 @@ mod tests {
         outputs.sort();
         assert_eq!(result.outputs, outputs);
         assert_eq!(result.expiration, tstamp)
+    }
+
+    /////////////////////////////////////////////////////////////////// ReservedYsRepository
+    async fn init_surreal_reserved_ys_db() -> impl ReservedYsRepository {
+        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        surreal::DBReservedYs { db: sdb }
+    }
+    fn init_memmap_reserved_ys_db() -> impl ReservedYsRepository {
+        inmemory::ReservedYsMap::default()
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_contains() {
+        let db = init_memmap_reserved_ys_db();
+        reservedysrepo_contains(db).await;
+        //
+        let db = init_surreal_reserved_ys_db().await;
+        reservedysrepo_contains(db).await;
+    }
+    async fn reservedysrepo_contains(db: impl ReservedYsRepository) {
+        let inputs = random_cdk_pks(5);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        db.store(inputs.clone(), tstamp).await.unwrap();
+        let mut tester = random_cdk_pks(2);
+        let result = db.contains(&tester).await.unwrap();
+        assert!(result.iter().all(|r| !r));
+        tester.push(inputs[0]);
+        let result = db.contains(&tester).await.unwrap();
+        assert!(result[0..2].iter().all(|r| !r));
+        assert!(result[2]);
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_clean_expired() {
+        let db = init_memmap_reserved_ys_db();
+        reservedysrepo_clean_expired(db).await;
+        //
+        let db = init_surreal_reserved_ys_db().await;
+        reservedysrepo_clean_expired(db).await;
+    }
+    async fn reservedysrepo_clean_expired(db: impl ReservedYsRepository) {
+        let inputs = random_cdk_pks(5);
+        let past = TStamp::from_timestamp(100000, 0).unwrap();
+        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        db.store(inputs.clone(), past).await.unwrap();
+        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+            .await
+            .unwrap();
+        let result = db.contains(&inputs).await.unwrap();
+        assert!(result.iter().all(|r| !r));
+        db.store(inputs.clone(), future).await.unwrap();
+        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+            .await
+            .unwrap();
+        let result = db.contains(&inputs).await.unwrap();
+        assert!(result.iter().all(|r| *r));
     }
 }

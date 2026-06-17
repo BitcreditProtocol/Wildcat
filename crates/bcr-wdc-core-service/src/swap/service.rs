@@ -9,11 +9,12 @@ use bcr_common::{
 use bcr_wdc_utils::signatures as signatures_utils;
 use bitcoin::secp256k1::PublicKey;
 use futures::future::JoinAll;
+use itertools::izip;
 use secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{CommitmentRepository, ProofRepository, StoredCommitment},
+    persistence::{CommitmentRepository, ProofRepository, ReservedYsRepository, StoredCommitment},
     swap::{ClowderClient, KeysService, TreasuryService},
     TStamp,
 };
@@ -23,6 +24,7 @@ use crate::{
 pub struct Service {
     pub proofs: Box<dyn ProofRepository>,
     pub commitments: Box<dyn CommitmentRepository>,
+    pub reserved: Box<dyn ReservedYsRepository>,
     pub clowder: Box<dyn ClowderClient>,
     pub treasury: Box<dyn TreasuryService>,
     pub max_expiry: chrono::Duration,
@@ -36,35 +38,44 @@ impl Service {
         now: TStamp,
     ) -> Result<Vec<cashu::ProofState>> {
         self.commitments.clean_expired(now).await?;
+        self.reserved.clean_expired(now).await?;
         let joined_spent = ys
             .iter()
             .map(|y| self.proofs.contains(*y))
             .collect::<JoinAll<_>>();
-        let responses: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
-        let mut proof_states = Vec::with_capacity(responses.len());
-        for (response, y) in responses.into_iter().zip(ys.iter()) {
-            if let Some(state) = response {
+        let states: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
+        let reserveds = self.reserved.contains(ys).await?;
+        let mut proof_states = Vec::with_capacity(states.len());
+        for (state, reserved, y) in izip!(states.into_iter(), reserveds.into_iter(), ys.into_iter())
+        {
+            if let Some(state) = state {
                 proof_states.push(state);
-                continue;
-            }
-            let reserved = self
-                .commitments
-                .contains_inputs(std::slice::from_ref(y))
-                .await?;
-            if reserved {
+            } else if reserved {
                 proof_states.push(cashu::ProofState {
                     y: *y,
                     state: cashu::State::Reserved,
                     witness: None,
                 });
-                continue;
+            } else {
+                let committed = self
+                    .commitments
+                    .contains_inputs(std::slice::from_ref(y))
+                    .await?;
+                if committed {
+                    proof_states.push(cashu::ProofState {
+                        y: *y,
+                        state: cashu::State::Reserved,
+                        witness: None,
+                    });
+                } else {
+                    let state = cashu::ProofState {
+                        y: *y,
+                        state: cashu::State::Unspent,
+                        witness: None,
+                    };
+                    proof_states.push(state);
+                }
             }
-            let state = cashu::ProofState {
-                y: *y,
-                state: cashu::State::Unspent,
-                witness: None,
-            };
-            proof_states.push(state);
         }
         Ok(proof_states)
     }
@@ -282,6 +293,10 @@ impl Service {
         self.proofs.remove(&ys).await?;
         Ok(())
     }
+
+    pub async fn reserve(&self, ys: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        self.reserved.store(ys, deadline).await
+    }
 }
 
 async fn generate_fees_premints(
@@ -357,7 +372,7 @@ fn cross_check_commits_swaps<T: PartialEq>(committed: &[T], swap: &[T]) -> bool 
 mod tests {
     use super::*;
     use crate::{
-        persistence::{MockCommitmentRepository, MockProofRepository},
+        persistence::{MockCommitmentRepository, MockProofRepository, MockReservedYsRepository},
         swap::MockTreasuryService,
         swap::{test_utils::DummyTreasuryClient, MockClowderClient, MockKeysService},
         test_utils::dummy_attestation,
@@ -395,6 +410,7 @@ mod tests {
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),
+            reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
@@ -437,6 +453,7 @@ mod tests {
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),
+            reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
@@ -528,6 +545,7 @@ mod tests {
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),
+            reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),
@@ -572,6 +590,7 @@ mod tests {
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),
+            reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),

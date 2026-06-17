@@ -30,6 +30,7 @@ pub struct AppConfig {
     signatures: surreal::DBConnConfig,
     proofs: surreal::DBConnConfig,
     commitments: surreal::DBConnConfig,
+    reserved_ys: surreal::DBConnConfig,
     clowder_url: client::clowder::Url,
     treasury_url: client::Url,
     clowder_rest_url: client::Url,
@@ -53,6 +54,7 @@ impl AppController {
             signatures,
             proofs,
             commitments,
+            reserved_ys,
             clowder_url,
             treasury_url,
             clowder_rest_url,
@@ -74,6 +76,9 @@ impl AppController {
         let commitments_repo = persistence::surreal::DBCommitments::new(commitments)
             .await
             .expect("Failed to create commitments repository");
+        let reserved_ys_repo = persistence::surreal::DBReservedYs::new(reserved_ys)
+            .await
+            .expect("Failed to create reserved ys repository");
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl = client::clowder::ClowderNatsClient::new(clowder_url)
             .await
@@ -108,6 +113,7 @@ impl AppController {
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
+            reserved: Box::new(reserved_ys_repo),
             clowder: Box::new(clowder_for_swap),
             treasury: Box::new(treasury_for_swap),
             max_expiry,
@@ -184,6 +190,7 @@ pub mod test_utils {
         let swprv = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
+            reserved: Box::new(persistence::inmemory::ReservedYsMap::default()),
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),

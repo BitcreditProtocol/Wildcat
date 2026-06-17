@@ -24,6 +24,10 @@ use crate::{
 
 // ----- end imports
 
+fn cpk_to_record_id(main_table: &str, pk: cashu::PublicKey) -> RecordId {
+    RecordId::from_table_key(main_table, pk.to_string())
+}
+
 //////////////////////////////////////////////////////////////////////// Keys DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct KeysInfoDBEntry {
@@ -304,7 +308,7 @@ impl DBSignatures {
 #[async_trait]
 impl persistence::SignaturesRepository for DBSignatures {
     async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
-        let rid = RecordId::from_table_key(Self::TABLE, y.to_string());
+        let rid = cpk_to_record_id(Self::TABLE, y);
         let entry = SignatureDBEntry::from(signature);
         let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
         match r {
@@ -316,7 +320,7 @@ impl persistence::SignaturesRepository for DBSignatures {
         }
     }
     async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>> {
-        let rid = RecordId::from_table_key(Self::TABLE, blind.blinded_secret.to_string());
+        let rid = cpk_to_record_id(Self::TABLE, blind.blinded_secret);
         let entry: Option<SignatureDBEntry> = self
             .db
             .select(rid)
@@ -336,7 +340,7 @@ pub struct ProofDBEntry {
     witness: Option<cashu::Witness>,
 }
 fn convert_to_db(proof: cashu::Proof, table: &str) -> Result<ProofDBEntry> {
-    let rid = y_to_record_id(table, proof.y()?);
+    let rid = cpk_to_record_id(table, proof.y()?);
     let dbentry = ProofDBEntry {
         id: rid,
         kid: proof.keyset_id,
@@ -387,7 +391,7 @@ impl persistence::ProofRepository for DBProofs {
 
     async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         for tk in tokens {
-            let rid = y_to_record_id(Self::TABLE, *tk);
+            let rid = cpk_to_record_id(Self::TABLE, *tk);
             let _p: Option<cashu::Proof> = self
                 .db
                 .delete(rid)
@@ -398,7 +402,7 @@ impl persistence::ProofRepository for DBProofs {
     }
 
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
-        let rid = y_to_record_id(Self::TABLE, y);
+        let rid = cpk_to_record_id(Self::TABLE, y);
         let res: Option<ProofDBEntry> = self
             .db
             .select(rid)
@@ -414,10 +418,6 @@ impl persistence::ProofRepository for DBProofs {
         }
         Ok(None)
     }
-}
-
-fn y_to_record_id(main_table: &str, y: cashu::PublicKey) -> RecordId {
-    RecordId::from_table_key(main_table, y.to_string())
 }
 
 ////////////////////////////////////////////////////////////////////// Commitments DB
@@ -568,6 +568,81 @@ impl persistence::CommitmentRepository for DBCommitments {
             .delete(rid)
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+////////////////////////////////////////////////////////////////////////// Reserved Ys DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ReservedYsDBEntry {
+    id: RecordId,
+    deadline: TStamp,
+}
+
+#[derive(Debug, Clone)]
+pub struct DBReservedYs {
+    pub(in crate::persistence) db: Surreal<Any>,
+}
+
+impl DBReservedYs {
+    const TABLE: &'static str = "reserved_ys";
+
+    pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(cfg.connection).await?;
+        db_connection.use_ns(cfg.namespace).await?;
+        db_connection.use_db(cfg.database).await?;
+        Ok(Self { db: db_connection })
+    }
+}
+
+#[async_trait]
+impl persistence::ReservedYsRepository for DBReservedYs {
+    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        for y in inputs {
+            let rid = cpk_to_record_id(Self::TABLE, y);
+            let entry = ReservedYsDBEntry {
+                id: rid.clone(),
+                deadline,
+            };
+            let _: Option<ReservedYsDBEntry> = self
+                .db
+                .insert(rid)
+                .content(entry)
+                .await
+                .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        }
+        Ok(())
+    }
+
+    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+        let rids: Vec<RecordId> = inputs
+            .iter()
+            .map(|y| cpk_to_record_id(Self::TABLE, *y))
+            .collect();
+        let reserved: Vec<RecordId> = self
+            .db
+            .query("SELECT VALUE id FROM type::table($table) WHERE id IN $rids")
+            .bind(("table", Self::TABLE))
+            .bind(("rids", rids.clone()))
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let mut result = Vec::with_capacity(inputs.len());
+        for rid in rids {
+            result.push(reserved.iter().any(|r| r == &rid));
+        }
+        Ok(result)
+    }
+
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        self.db
+            .query("DELETE FROM type::table($table) WHERE deadline < $now")
+            .bind(("table", Self::TABLE))
+            .bind(("now", now))
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
     }
 }
