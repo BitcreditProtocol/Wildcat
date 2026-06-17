@@ -1220,7 +1220,7 @@ mod tests {
         }
     }
 
-    async fn init_credit_mem_db() -> DBEbill {
+    async fn init_ebill_mem_db() -> DBEbill {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
@@ -1229,8 +1229,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn credit_mint_store_ok() {
-        let db = init_credit_mem_db().await;
+    async fn ebill_mint_store_ok() {
+        let db = init_ebill_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core::generate_random_keypair();
@@ -1245,8 +1245,8 @@ mod tests {
         db.mint_store(op).await.unwrap();
     }
     #[tokio::test]
-    async fn credit_mint_store_twice() {
-        let db = init_credit_mem_db().await;
+    async fn ebill_mint_store_twice() {
+        let db = init_ebill_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core::generate_random_keypair();
@@ -1264,8 +1264,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn credit_mint_update_field() {
-        let db = init_credit_mem_db().await;
+    async fn ebill_mint_update_field() {
+        let db = init_ebill_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core::generate_random_keypair();
@@ -1285,7 +1285,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_minted_field() {
-        let db = init_credit_mem_db().await;
+        let db = init_ebill_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core::generate_random_keypair();
@@ -1308,7 +1308,7 @@ mod tests {
 
     #[tokio::test]
     async fn credit_mint_list() {
-        let db = init_credit_mem_db().await;
+        let db = init_ebill_mem_db().await;
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let kp = core::generate_random_keypair();
