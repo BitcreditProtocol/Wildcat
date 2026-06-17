@@ -82,8 +82,15 @@ impl Cache for Dummy {
 
 pub mod swap_commitment {
     use super::*;
-    use bcr_common::wire::swap::{SwapCommitmentRequest, SwapCommitmentResponse};
+    use bcr_common::wire::swap::{
+        SignedSwapCommitmentRequest, SwapCommitmentRequest, SwapCommitmentResponse,
+    };
 
+    pub fn signed_request_to_key(request: &SignedSwapCommitmentRequest) -> Sha1Hash {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(request, &mut bytes).unwrap();
+        Sha1Hash::hash(&bytes)
+    }
     pub fn request_to_key(mut request: SwapCommitmentRequest) -> Sha1Hash {
         request.inputs.inputs.sort_by_key(|input| input.y);
         request.outputs.sort_by_key(|input| input.blinded_secret);
@@ -114,29 +121,6 @@ pub mod swap {
         request.outputs.sort_by_key(|input| input.blinded_secret);
         let mut bytes = Vec::new();
         ciborium::into_writer(&request, &mut bytes).unwrap();
-        Sha1Hash::hash(&bytes)
-    }
-
-    pub fn blob_to_response(blob: ciborium::Value) -> SwapResponse {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&blob, &mut bytes).unwrap();
-        ciborium::from_reader(bytes.as_slice()).unwrap()
-    }
-
-    pub fn response_to_blob(response: &SwapResponse) -> ciborium::Value {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(response, &mut bytes).unwrap();
-        ciborium::from_reader(bytes.as_slice()).unwrap()
-    }
-}
-
-pub mod signed_swap {
-    use super::*;
-    use bcr_common::wire::swap::{SignedSwapRequest, SwapResponse};
-
-    pub fn request_to_key(request: &SignedSwapRequest) -> Sha1Hash {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(request, &mut bytes).unwrap();
         Sha1Hash::hash(&bytes)
     }
 
