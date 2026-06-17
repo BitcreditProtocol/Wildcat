@@ -100,6 +100,11 @@ impl KeysService for KeysSignService {
     }
 }
 
+pub enum PublicKeyOwner {
+    Alpha,
+    Beta,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
@@ -123,7 +128,7 @@ pub trait ClowderClient: Send + Sync {
         inputs: &AttestedFingerprints,
     ) -> Result<()>;
 
-    async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey>;
+    async fn verify_pk(&self, mint_pk: &PublicKey) -> Result<PublicKeyOwner>;
 }
 
 pub struct ClowderCl {
@@ -176,11 +181,17 @@ impl ClowderClient for ClowderCl {
         Ok(())
     }
 
-    async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey> {
+    async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKeyOwner> {
         let betas = self.rest.get_betas().await?;
         for beta in betas.mints {
             if beta.node_id == *beta_pk {
-                return Ok(beta.node_id);
+                return Ok(PublicKeyOwner::Beta);
+            }
+        }
+        let alphas = self.rest.get_alphas().await?;
+        for alpha in alphas.mints {
+            if alpha.node_id == *beta_pk {
+                return Ok(PublicKeyOwner::Alpha);
             }
         }
         Err(Error::InvalidInput(format!("unknown pubkey {beta_pk}")))
@@ -223,8 +234,8 @@ pub mod test_utils {
             Ok(())
         }
 
-        async fn verify_pk(&self, beta_pk: &PublicKey) -> Result<PublicKey> {
-            Ok(*beta_pk)
+        async fn verify_pk(&self, _beta_pk: &PublicKey) -> Result<PublicKeyOwner> {
+            Ok(PublicKeyOwner::Beta)
         }
     }
 

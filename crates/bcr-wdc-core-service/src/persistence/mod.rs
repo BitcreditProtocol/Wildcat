@@ -52,6 +52,7 @@ pub struct StoredCommitment {
     pub outputs: Vec<cashu::PublicKey>,
     pub expiration: TStamp,
     pub fp_digest: [u8; 32],
+    pub signed: bool,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -65,6 +66,7 @@ pub trait CommitmentRepository: Send + Sync {
         wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
         fp_digest: [u8; 32],
+        signed: bool,
     ) -> Result<()>;
     async fn load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
     async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
@@ -481,6 +483,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
+            false,
         )
         .await
         .unwrap();
@@ -496,6 +499,7 @@ mod tests {
                 random_wallet_key(),
                 signature,
                 [0u8; 32],
+                false,
             )
             .await;
         assert!(res.is_err());
@@ -509,6 +513,7 @@ mod tests {
                 random_wallet_key(),
                 signature,
                 [0u8; 32],
+                false,
             )
             .await;
         assert!(res.is_err());
@@ -534,6 +539,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
+            false,
         )
         .await
         .unwrap();
@@ -569,6 +575,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
+            false,
         )
         .await
         .unwrap();
@@ -604,6 +611,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
+            false,
         )
         .await
         .unwrap();
