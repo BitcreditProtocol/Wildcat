@@ -282,3 +282,31 @@ impl persistence::CommitmentRepository for CommitmentMap {
         Ok(())
     }
 }
+
+#[derive(Default, Clone)]
+pub struct ReservedYsMap {
+    reserved: Arc<RwLock<HashMap<cashu::PublicKey, TStamp>>>,
+}
+
+#[async_trait]
+impl persistence::ReservedYsRepository for ReservedYsMap {
+    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        let mut locked = self.reserved.write().unwrap();
+        for input in inputs {
+            locked.insert(input, deadline);
+        }
+        Ok(())
+    }
+
+    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+        let locked = self.reserved.read().unwrap();
+        let results: Vec<bool> = inputs.iter().map(|y| locked.contains_key(y)).collect();
+        Ok(results)
+    }
+
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        let mut locked = self.reserved.write().unwrap();
+        locked.retain(|_, deadline| *deadline > now);
+        Ok(())
+    }
+}
