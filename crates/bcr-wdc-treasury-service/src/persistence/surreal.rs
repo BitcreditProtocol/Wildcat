@@ -1,6 +1,5 @@
-use std::str::FromStr;
-
 // ----- standard library imports
+use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -448,16 +447,20 @@ impl onchain::Repository for DBOnChain {
         self.meltops_mark_expired(now)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        let entries: Vec<Uuid> = self
+        let entries: Vec<RecordId> = self
             .db
-            .query("SELECT qid FROM type::table($table) WHERE status.status == $status")
+            .query("SELECT id FROM type::table($table) WHERE status.status = $status")
             .bind(("table", Self::MELTS_TABLE))
             .bind(("status", onchain::MeltStatusDiscriminants::Pending))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
-            .take("qid")
+            .take("id")
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(entries)
+        let ids = entries
+            .into_iter()
+            .map(|id| Uuid::try_from(id.key().clone()).expect("key is a uuid"))
+            .collect();
+        Ok(ids)
     }
 
     async fn store_denied_meltop(&self, op: onchain::DeniedMeltOperation) -> Result<()> {
@@ -1170,11 +1173,9 @@ mod tests {
             status: onchain::MeltStatus::Pending,
         };
         db.store_meltop(meltop, now).await.unwrap();
-
         let pending = db.list_pending_meltops(now).await.unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0], qid);
-
         let loaded = db.load_meltop(qid).await.unwrap();
         assert_eq!(loaded.fp_digest, [7u8; 32]);
     }
