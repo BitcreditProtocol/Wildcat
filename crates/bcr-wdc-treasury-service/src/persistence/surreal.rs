@@ -1145,6 +1145,40 @@ mod tests {
         assert!(matches!(res, Err(Error::InvalidInput(_))));
     }
 
+    #[tokio::test]
+    async fn onchain_list_pending_meltops_roundtrip() {
+        let db = init_onchain_mem_db().await;
+        let qid = Uuid::new_v4();
+        let input_ys = vec![
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+        ];
+        let wallet_key = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let commitment = signature_tests::random_schnorr_signature();
+        let now = chrono::Utc::now();
+        let meltop = onchain::MeltOperation {
+            qid,
+            target: bitcoin::Amount::from_sat(1000),
+            available: cashu::Amount::from(2000u64),
+            fees: cashu::Amount::from(10u64),
+            address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
+            wallet_key,
+            commitment,
+            expiry: now + chrono::Duration::hours(1),
+            fp_digest: [7u8; 32],
+            input_ys,
+            status: onchain::MeltStatus::Pending,
+        };
+        db.store_meltop(meltop, now).await.unwrap();
+
+        let pending = db.list_pending_meltops(now).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0], qid);
+
+        let loaded = db.load_meltop(qid).await.unwrap();
+        assert_eq!(loaded.fp_digest, [7u8; 32]);
+    }
+
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {
         let sdb = Surreal::<Any>::init();
         sdb.connect("mem://").await.unwrap();
