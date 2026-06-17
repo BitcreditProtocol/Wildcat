@@ -710,6 +710,7 @@ dependencies = [
  "chrono",
  "config",
  "futures",
+ "itertools 0.14.0",
  "mockall",
  "secp256k1",
  "serde",

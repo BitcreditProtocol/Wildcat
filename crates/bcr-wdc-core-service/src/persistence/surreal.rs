@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -629,9 +629,10 @@ impl persistence::ReservedYsRepository for DBReservedYs {
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let reserved_set: HashSet<RecordId> = reserved.into_iter().collect();
         let mut result = Vec::with_capacity(inputs.len());
         for rid in rids {
-            result.push(reserved.iter().any(|r| r == &rid));
+            result.push(reserved_set.contains(&rid));
         }
         Ok(result)
     }

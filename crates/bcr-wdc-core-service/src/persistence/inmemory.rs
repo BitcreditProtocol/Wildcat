@@ -223,7 +223,7 @@ impl CommitmentMap {
 impl persistence::CommitmentRepository for CommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.commitments.lock().unwrap();
-        locked.retain(|_, (_, _, expiration, _, _)| *expiration > now);
+        locked.retain(|_, (_, _, expiration, _, _)| *expiration >= now);
         Ok(())
     }
 
