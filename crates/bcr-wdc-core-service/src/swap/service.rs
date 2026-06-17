@@ -79,11 +79,39 @@ impl Service {
         Ok(proof_states)
     }
 
+    pub async fn signed_commit_to_swap(
+        &self,
+        sign_service: &dyn KeysService,
+        payload: String,
+        signature: schnorr::Signature,
+        now: TStamp,
+    ) -> Result<(String, schnorr::Signature)> {
+        let content: wire_swap::SwapCommitmentRequest = signature::deserialize_borsh_msg(&payload)?;
+        signature::schnorr_verify_b64(
+            &payload,
+            &signature,
+            &content.wallet_key.x_only_public_key().0,
+        )?;
+        let _owner = self.clowder.verify_pk(&content.wallet_key).await?;
+        self._commit_to_swap(sign_service, content, now, true).await
+    }
+
     pub async fn commit_to_swap(
         &self,
         sign_service: &dyn KeysService,
         request: wire_swap::SwapCommitmentRequest,
         now: TStamp,
+    ) -> Result<(String, schnorr::Signature)> {
+        self._commit_to_swap(sign_service, request, now, false)
+            .await
+    }
+
+    async fn _commit_to_swap(
+        &self,
+        sign_service: &dyn KeysService,
+        request: wire_swap::SwapCommitmentRequest,
+        now: TStamp,
+        signed: bool,
     ) -> Result<(String, schnorr::Signature)> {
         // check expiry
         let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
@@ -142,7 +170,15 @@ impl Service {
         // store commitment
         let store_res = self
             .commitments
-            .store(ys, bs, expiry, wallet_key.into(), commitment, fp_digest)
+            .store(
+                ys,
+                bs,
+                expiry,
+                wallet_key.into(),
+                commitment,
+                fp_digest,
+                signed,
+            )
             .await;
         match store_res {
             Ok(_) => Ok((content, commitment)),
@@ -153,13 +189,12 @@ impl Service {
         }
     }
 
-    async fn inner_swap(
+    pub async fn swap(
         &self,
         sign_service: &dyn KeysService,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: schnorr::Signature,
-        fee_policy: swap::mint::FeePolicy,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
         // cheap verifications
@@ -170,6 +205,7 @@ impl Service {
             outputs: committed_outputs,
             expiration,
             fp_digest: committed_fp_digest,
+            signed,
             ..
         } = self.commitments.load(&commitment).await?;
         // check expiration
@@ -197,6 +233,10 @@ impl Service {
             sign_service.list_kinfos(),
             sign_service.verify_proofs(&inputs),
         )?;
+        let fee_policy = match signed {
+            true => swap::mint::FeePolicy::Ignore,
+            false => swap::mint::FeePolicy::Apply,
+        };
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         // generate signatures
         let signatures = sign_service.sign_blinds(&outputs).await?;
@@ -217,53 +257,6 @@ impl Service {
         self.proofs.insert(inputs).await?;
         self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
-    }
-
-    pub async fn swap(
-        &self,
-        sign_service: &dyn KeysService,
-        inputs: Vec<cashu::Proof>,
-        outputs: Vec<cashu::BlindedMessage>,
-        commitment: schnorr::Signature,
-        now: TStamp,
-    ) -> Result<Vec<cashu::BlindSignature>> {
-        self.inner_swap(
-            sign_service,
-            inputs,
-            outputs,
-            commitment,
-            swap::mint::FeePolicy::Apply,
-            now,
-        )
-        .await
-    }
-
-    pub async fn signed_swap(
-        &self,
-        sign_service: &dyn KeysService,
-        content: String,
-        signature: schnorr::Signature,
-        signer_pk: PublicKey,
-        commitment: schnorr::Signature,
-        now: TStamp,
-    ) -> Result<Vec<cashu::BlindSignature>> {
-        let beta_id = self.clowder.verify_pk(&signer_pk).await?;
-        bcr_common::core::signature::schnorr_verify_b64(
-            &content,
-            &signature,
-            &beta_id.x_only_public_key().0,
-        )?;
-        let payload: wire_swap::SignedSwapRequestContent =
-            bcr_common::core::signature::deserialize_borsh_msg(&content)?;
-        self.inner_swap(
-            sign_service,
-            payload.inputs,
-            payload.outputs,
-            commitment,
-            swap::mint::FeePolicy::Ignore,
-            now,
-        )
-        .await
     }
 
     pub async fn burn(
@@ -398,13 +391,11 @@ mod tests {
             .cloned()
             .map(|p| bcr_common::wire::keys::ProofFingerprint::try_from(p).unwrap())
             .collect();
-
         // attestation is authenticated at commitment time, before any other work
         clowder
             .expect_authenticate_attestation()
             .times(1)
             .returning(|_, _| Err(Error::Attestation(AttestationError::DigestMismatch)));
-
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
             proofs: Box::new(proofs_repo),
@@ -435,20 +426,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signed_swap_unknown_signer() {
+    async fn signed_commit_to_swap_unknown_signer() {
         let mut clowder = MockClowderClient::new();
         let commitments = MockCommitmentRepository::new();
         let proofs_repo = MockProofRepository::new();
         let sign_service = MockKeysService::new();
-        let content = "test content".to_string();
-        let signature = schnorr::Signature::from_slice(&[0; 64]).unwrap();
-        let signer_pk = core::generate_random_keypair().public_key();
-        let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        let fps: Vec<_> = proofs
+            .iter()
+            .cloned()
+            .map(|p| bcr_common::wire::keys::ProofFingerprint::try_from(p).unwrap())
+            .collect();
+        // attestation is authenticated at commitment time, before any other work
         clowder
             .expect_verify_pk()
             .times(1)
             .returning(|_| Err(Error::InvalidInput(String::new())));
-        let alpha_id = core::generate_random_keypair().public_key();
+        let alpha_kp = core::generate_random_keypair();
         let service = Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments),
@@ -456,17 +456,21 @@ mod tests {
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
-            alpha_id,
+            alpha_id: alpha_kp.public_key(),
         };
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: bcr_common::wire::attestation::AttestedFingerprints {
+                inputs: fps,
+                attestation: dummy_attestation(),
+            },
+            outputs: blinds,
+            expiry: (chrono::Utc::now() + chrono::Duration::seconds(60)).timestamp() as u64,
+            wallet_key: alpha_kp.public_key(),
+        };
+        let (content, signature) =
+            signature::serialize_n_schnorr_sign_borsh_msg(&request, &alpha_kp).unwrap();
         let err = service
-            .signed_swap(
-                &sign_service,
-                content,
-                signature,
-                signer_pk,
-                commitment,
-                chrono::Utc::now(),
-            )
+            .signed_commit_to_swap(&sign_service, content, signature, chrono::Utc::now())
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -495,6 +499,7 @@ mod tests {
                 outputs: vec![],
                 expiration: expiry,
                 fp_digest,
+                signed: false,
             })
         });
         let cloned = cashu::KeySetInfo::from(kinfo);
@@ -583,6 +588,7 @@ mod tests {
                 outputs: vec![],
                 expiration: expiry,
                 fp_digest: [1u8; 32],
+                signed: false,
             })
         });
         let alpha_id = core::generate_random_keypair().public_key();

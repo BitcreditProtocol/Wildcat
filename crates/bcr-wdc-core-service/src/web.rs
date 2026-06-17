@@ -141,32 +141,28 @@ pub async fn swap_tokens(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc, cache))]
-pub async fn signed_swap_tokens(
-    State(ctrl): State<Arc<swap::service::Service>>,
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(swap_srvc, keys_srvc, cache))]
+pub async fn signed_commit_to_swap(
+    State(swap_srvc): State<Arc<swap::service::Service>>,
     State(keys_srvc): State<Arc<keys::service::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
-    Json(request): Json<wire_swap::SignedSwapRequest>,
-) -> Result<Json<wire_swap::SwapResponse>> {
+    Json(request): Json<wire_swap::SignedSwapCommitmentRequest>,
+) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
     let now = chrono::Utc::now();
-    let key = nut19::signed_swap::request_to_key(&request);
+    let key = nut19::swap_commitment::signed_request_to_key(&request);
     if let Some(blob) = cache.load(key).await {
-        let response = nut19::signed_swap::blob_to_response(blob);
+        let response = nut19::swap_commitment::blob_to_response(blob);
         return Ok(Json(response));
     }
     let signsrvc = swap::KeysSignService { srvc: keys_srvc };
-    let signatures = ctrl
-        .signed_swap(
-            &signsrvc,
-            request.content,
-            request.signature,
-            request.mint_id,
-            request.commitment,
-            now,
-        )
+    let (content, commitment) = swap_srvc
+        .signed_commit_to_swap(&signsrvc, request.payload, request.signature, now)
         .await?;
-    let response = wire_swap::SwapResponse { signatures };
-    let blob = nut19::signed_swap::response_to_blob(&response);
+    let response = wire_swap::SwapCommitmentResponse {
+        content,
+        commitment,
+    };
+    let blob = nut19::swap_commitment::response_to_blob(&response);
     cache.store_and_clean(key, blob, now).await;
     Ok(Json(response))
 }

@@ -182,6 +182,7 @@ type Commitment = (
     TStamp,
     cashu::PublicKey,
     [u8; 32],
+    bool,
 );
 #[allow(dead_code)]
 #[derive(Clone, Default)]
@@ -194,7 +195,7 @@ impl CommitmentMap {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         ys: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (inputs, _, _, _, _)) in locked.iter() {
+        for (_, (inputs, _, _, _, _, _)) in locked.iter() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -208,7 +209,7 @@ impl CommitmentMap {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         secrets: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (_, outputs, _, _, _)) in locked.iter() {
+        for (_, (_, outputs, _, _, _, _)) in locked.iter() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
@@ -223,7 +224,7 @@ impl CommitmentMap {
 impl persistence::CommitmentRepository for CommitmentMap {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.commitments.lock().unwrap();
-        locked.retain(|_, (_, _, expiration, _, _)| *expiration >= now);
+        locked.retain(|_, (_, _, expiration, _, _, _)| *expiration >= now);
         Ok(())
     }
 
@@ -245,6 +246,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
         fp_digest: [u8; 32],
+        signed: bool,
     ) -> Result<()> {
         inputs.sort();
         outputs.sort();
@@ -257,7 +259,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
         }
         locked.insert(
             signature,
-            (inputs, outputs, expiration, wallet_key, fp_digest),
+            (inputs, outputs, expiration, wallet_key, fp_digest, signed),
         );
         Ok(())
     }
@@ -273,6 +275,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
             outputs: comm.1,
             expiration: comm.2,
             fp_digest: comm.4,
+            signed: comm.5,
         })
     }
 

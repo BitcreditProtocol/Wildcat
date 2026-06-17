@@ -429,6 +429,7 @@ struct CommitmentDBEntry {
     expiration: TStamp,
     wallet_key: cashu::PublicKey,
     fp_digest: [u8; 32],
+    signed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -494,6 +495,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
         fp_digest: [u8; 32],
+        signed: bool,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
         let newentry = CommitmentDBEntry {
@@ -503,6 +505,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             expiration,
             wallet_key,
             fp_digest,
+            signed,
         };
         let mut query = self
             .db
@@ -558,6 +561,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             outputs: commitment_entry.outputs,
             expiration: commitment_entry.expiration,
             fp_digest: commitment_entry.fp_digest,
+            signed: commitment_entry.signed,
         })
     }
 
