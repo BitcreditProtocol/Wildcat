@@ -46,8 +46,7 @@ impl Service {
         let states: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
         let reserveds = self.reserved.contains(ys).await?;
         let mut proof_states = Vec::with_capacity(states.len());
-        for (state, reserved, y) in izip!(states.into_iter(), reserveds.into_iter(), ys.into_iter())
-        {
+        for (state, reserved, y) in izip!(states.into_iter(), reserveds.into_iter(), ys.iter()) {
             if let Some(state) = state {
                 proof_states.push(state);
             } else if reserved {
