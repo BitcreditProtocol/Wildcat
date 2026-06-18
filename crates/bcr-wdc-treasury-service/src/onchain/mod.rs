@@ -37,6 +37,7 @@ pub trait WildcatClient: Send + Sync {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
+    async fn reserve_inputs(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
     async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
     async fn keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
     async fn get_active_keyset(&self) -> Result<cashu::Id>;
@@ -138,6 +139,7 @@ pub enum MeltStatus {
     Pending,
     Paid { tx: bitcoin::Txid },
     Expired,
+    Canceled,
 }
 #[derive(Debug, Clone)]
 pub struct MeltOperation {

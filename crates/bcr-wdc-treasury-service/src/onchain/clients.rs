@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     onchain::{ClowderClient, VaultService, WildcatClient},
-    vault,
+    vault, TStamp,
 };
 
 // ----- end imports
@@ -42,6 +42,11 @@ impl WildcatClient for WildcatCl {
 
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         self.core_cl.recover(proofs).await?;
+        Ok(())
+    }
+
+    async fn reserve_inputs(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        self.core_cl.reserve(inputs, deadline).await?;
         Ok(())
     }
 
