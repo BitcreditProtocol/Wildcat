@@ -14,7 +14,10 @@ use secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{CommitmentRepository, ProofRepository, ReservedYsRepository, StoredCommitment},
+    persistence::{
+        CommitmentRepository, ProofRepository, ReservedYsRepository, SignatureOwner,
+        StoredCommitment,
+    },
     swap::{ClowderClient, KeysService, TreasuryService},
     TStamp,
 };
@@ -29,6 +32,7 @@ pub struct Service {
     pub treasury: Box<dyn TreasuryService>,
     pub max_expiry: chrono::Duration,
     pub alpha_id: PublicKey,
+    pub settle_window_deadline: TStamp,
 }
 
 impl Service {
@@ -92,8 +96,13 @@ impl Service {
             &signature,
             &content.wallet_key.x_only_public_key().0,
         )?;
-        let _owner = self.clowder.verify_pk(&content.wallet_key).await?;
-        self._commit_to_swap(sign_service, content, now, true).await
+        let owner = self.clowder.verify_pk(&content.wallet_key).await?;
+        let signature_owner = SignatureOwner::from(owner);
+        if now < self.settle_window_deadline && !matches!(signature_owner, SignatureOwner::Beta) {
+            return Err(Error::ServiceUnavailable);
+        }
+        self._commit_to_swap(sign_service, content, now, signature_owner)
+            .await
     }
 
     pub async fn commit_to_swap(
@@ -102,7 +111,11 @@ impl Service {
         request: wire_swap::SwapCommitmentRequest,
         now: TStamp,
     ) -> Result<(String, schnorr::Signature)> {
-        self._commit_to_swap(sign_service, request, now, false)
+        // check settle window
+        if now < self.settle_window_deadline {
+            return Err(Error::ServiceUnavailable);
+        }
+        self._commit_to_swap(sign_service, request, now, SignatureOwner::Unsigned)
             .await
     }
 
@@ -111,7 +124,7 @@ impl Service {
         sign_service: &dyn KeysService,
         request: wire_swap::SwapCommitmentRequest,
         now: TStamp,
-        signed: bool,
+        signed: SignatureOwner,
     ) -> Result<(String, schnorr::Signature)> {
         // check expiry
         let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
@@ -203,6 +216,10 @@ impl Service {
             signed,
             ..
         } = self.commitments.load(&commitment).await?;
+        // check settle window
+        if now < self.settle_window_deadline && !matches!(signed, SignatureOwner::Beta) {
+            return Err(Error::ServiceUnavailable);
+        }
         // check expiration
         if expiration < now {
             return Err(Error::InvalidInput(String::from("commitment has expired")));
@@ -229,8 +246,8 @@ impl Service {
             sign_service.verify_proofs(&inputs),
         )?;
         let fee_policy = match signed {
-            true => swap::mint::FeePolicy::Ignore,
-            false => swap::mint::FeePolicy::Apply,
+            SignatureOwner::Alpha | SignatureOwner::Beta => swap::mint::FeePolicy::Ignore,
+            SignatureOwner::Unsigned => swap::mint::FeePolicy::Apply,
         };
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         // generate signatures
@@ -400,6 +417,7 @@ mod tests {
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id,
+            settle_window_deadline: TStamp::default(),
         };
         let request = wire_swap::SwapCommitmentRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
@@ -452,6 +470,7 @@ mod tests {
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id: alpha_kp.public_key(),
+            settle_window_deadline: TStamp::default(),
         };
         let request = wire_swap::SwapCommitmentRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
@@ -494,7 +513,7 @@ mod tests {
                 outputs: vec![],
                 expiration: expiry,
                 fp_digest,
-                signed: false,
+                signed: SignatureOwner::Unsigned,
             })
         });
         let cloned = cashu::KeySetInfo::from(kinfo);
@@ -549,6 +568,7 @@ mod tests {
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id,
+            settle_window_deadline: TStamp::default(),
         };
         let signatures = service
             .swap(
@@ -583,7 +603,7 @@ mod tests {
                 outputs: vec![],
                 expiration: expiry,
                 fp_digest: [1u8; 32],
-                signed: false,
+                signed: SignatureOwner::Unsigned,
             })
         });
         let alpha_id = core::generate_random_keypair().public_key();
@@ -595,6 +615,7 @@ mod tests {
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id,
+            settle_window_deadline: TStamp::default(),
         };
         let err = service
             .swap(

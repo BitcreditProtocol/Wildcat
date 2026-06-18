@@ -65,6 +65,8 @@ pub enum Error {
 
     #[error("internal {0}")]
     Internal(String),
+    #[error("service temporarily unavailable, retry later")]
+    ServiceUnavailable,
 }
 
 impl axum::response::IntoResponse for Error {
@@ -104,6 +106,7 @@ impl axum::response::IntoResponse for Error {
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
 
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
         };
 
         response.into_response()

@@ -47,12 +47,19 @@ pub trait ProofRepository: Send + Sync {
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SignatureOwner {
+    Unsigned,
+    Alpha,
+    Beta,
+}
+
 pub struct StoredCommitment {
     pub inputs: Vec<cashu::PublicKey>,
     pub outputs: Vec<cashu::PublicKey>,
     pub expiration: TStamp,
     pub fp_digest: [u8; 32],
-    pub signed: bool,
+    pub signed: SignatureOwner,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -66,7 +73,7 @@ pub trait CommitmentRepository: Send + Sync {
         wallet_key: cashu::PublicKey,
         commitment: schnorr::Signature,
         fp_digest: [u8; 32],
-        signed: bool,
+        signed: SignatureOwner,
     ) -> Result<()>;
     async fn load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
     async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
@@ -483,7 +490,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
-            false,
+            SignatureOwner::Unsigned,
         )
         .await
         .unwrap();
@@ -499,7 +506,7 @@ mod tests {
                 random_wallet_key(),
                 signature,
                 [0u8; 32],
-                false,
+                SignatureOwner::Unsigned,
             )
             .await;
         assert!(res.is_err());
@@ -513,7 +520,7 @@ mod tests {
                 random_wallet_key(),
                 signature,
                 [0u8; 32],
-                false,
+                SignatureOwner::Unsigned,
             )
             .await;
         assert!(res.is_err());
@@ -539,7 +546,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
-            false,
+            SignatureOwner::Unsigned,
         )
         .await
         .unwrap();
@@ -575,7 +582,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
-            false,
+            SignatureOwner::Unsigned,
         )
         .await
         .unwrap();
@@ -611,7 +618,7 @@ mod tests {
             random_wallet_key(),
             signature,
             [0u8; 32],
-            false,
+            SignatureOwner::Unsigned,
         )
         .await
         .unwrap();
