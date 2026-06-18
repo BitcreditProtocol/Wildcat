@@ -90,3 +90,11 @@ pub async fn burn_tokens(
     let ys = ctrl.burn(&signsrvc, proofs).await?;
     Ok(Json(wire_swap::BurnResponse { ys }))
 }
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(swap_srvc))]
+pub async fn reserve_ys(
+    State(swap_srvc): State<Arc<swap::service::Service>>,
+    Json(request): Json<wire_swap::ReserveRequest>,
+) -> Result<()> {
+    swap_srvc.reserve(request.ys, request.deadline).await
+}
