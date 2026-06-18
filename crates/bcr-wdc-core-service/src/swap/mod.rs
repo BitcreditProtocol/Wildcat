@@ -14,6 +14,7 @@ use bitcoin::secp256k1::{schnorr, PublicKey};
 use crate::{
     error::{Error, Result},
     keys,
+    persistence::SignatureOwner,
 };
 // ----- local modules
 pub mod service;
@@ -103,6 +104,14 @@ impl KeysService for KeysSignService {
 pub enum PublicKeyOwner {
     Alpha,
     Beta,
+}
+impl std::convert::From<PublicKeyOwner> for SignatureOwner {
+    fn from(value: PublicKeyOwner) -> Self {
+        match value {
+            PublicKeyOwner::Alpha => SignatureOwner::Alpha,
+            PublicKeyOwner::Beta => SignatureOwner::Beta,
+        }
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]

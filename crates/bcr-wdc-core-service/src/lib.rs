@@ -38,6 +38,7 @@ pub struct AppConfig {
     max_expiry_sec: u64,
     minimum_keyset_fees_ppk: u64,
     cache_expiry_sec: u64,
+    settle_window_sec: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -62,6 +63,7 @@ impl AppController {
             max_expiry_sec,
             minimum_keyset_fees_ppk,
             cache_expiry_sec,
+            settle_window_sec,
         } = cfg;
 
         let keys_repo = persistence::surreal::DBKeys::new(keys)
@@ -110,6 +112,8 @@ impl AppController {
         let treasury_for_swap = swap::TreasuryCl {
             cl: Box::new(treasury_cl),
         };
+        let settle_window_tout =
+            chrono::Utc::now() + chrono::Duration::seconds(settle_window_sec as i64);
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
@@ -118,6 +122,7 @@ impl AppController {
             treasury: Box::new(treasury_for_swap),
             max_expiry,
             alpha_id,
+            settle_window_deadline: settle_window_tout,
         };
         let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
         let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
@@ -198,6 +203,7 @@ pub mod test_utils {
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id: mint_kp().public_key(),
+            settle_window_deadline: TStamp::default(),
         };
         AppController {
             keys: Arc::new(keysrv),

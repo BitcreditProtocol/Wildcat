@@ -182,7 +182,7 @@ type Commitment = (
     TStamp,
     cashu::PublicKey,
     [u8; 32],
-    bool,
+    persistence::SignatureOwner,
 );
 #[allow(dead_code)]
 #[derive(Clone, Default)]
@@ -246,7 +246,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
         wallet_key: cashu::PublicKey,
         signature: schnorr::Signature,
         fp_digest: [u8; 32],
-        signed: bool,
+        signed: persistence::SignatureOwner,
     ) -> Result<()> {
         inputs.sort();
         outputs.sort();
@@ -271,8 +271,8 @@ impl persistence::CommitmentRepository for CommitmentMap {
             .ok_or(Error::ResourceNotFound(signature.to_string()))?
             .clone();
         Ok(persistence::StoredCommitment {
-            inputs: comm.0,
-            outputs: comm.1,
+            inputs: comm.0.clone(),
+            outputs: comm.1.clone(),
             expiration: comm.2,
             fp_digest: comm.4,
             signed: comm.5,
