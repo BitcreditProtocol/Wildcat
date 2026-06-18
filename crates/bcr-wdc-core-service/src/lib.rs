@@ -160,7 +160,8 @@ where
         )
         .route(core::admin_ep::DEACTIVATE_KEYSET, post(admin::deactivate))
         .route(core::admin_ep::BURN, post(admin::burn_tokens))
-        .route(core::admin_ep::RECOVER, post(admin::recover_tokens));
+        .route(core::admin_ep::RECOVER, post(admin::recover_tokens))
+        .route(core::admin_ep::RESERVE, post(admin::reserve_ys));
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }

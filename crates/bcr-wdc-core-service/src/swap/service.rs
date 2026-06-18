@@ -122,10 +122,6 @@ impl Service {
         let max_allowed = now + self.max_expiry;
         let expiry = expiry.min(max_allowed);
         // basic checks
-        // authenticate the Beta issuance attestation bound to this commitment
-        self.clowder
-            .authenticate_attestation(&self.alpha_id, &request.inputs)
-            .await?;
         let core_fps = request
             .inputs
             .inputs
@@ -134,6 +130,11 @@ impl Service {
             .collect::<Vec<_>>();
         signatures_utils::basic_fingerprints_checks(&core_fps)?;
         signatures_utils::basic_blinds_checks(&request.outputs)?;
+        // authenticate the Beta issuance attestation bound to this commitment
+        self.clowder
+            .authenticate_attestation(&self.alpha_id, &request.inputs)
+            .await?;
+        // verify inputs/outputs amounts
         let kinfos = sign_service.list_kinfos().await?;
         swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
         // check inputs are unspent
@@ -149,12 +150,6 @@ impl Service {
         }
         // check inputs signatures
         sign_service.verify_fingerprints(&core_fps).await?;
-        // check inputs not already committed
-        self.commitments.clean_expired(now).await?;
-        let contained = self.commitments.contains_inputs(&ys).await?;
-        if contained {
-            return Err(Error::InvalidInput(String::from("proofs committed")));
-        }
         // check outputs not already committed
         let bs: Vec<cashu::PublicKey> = request.outputs.iter().map(|b| b.blinded_secret).collect();
         let contained = self.commitments.contains_outputs(&bs).await?;
