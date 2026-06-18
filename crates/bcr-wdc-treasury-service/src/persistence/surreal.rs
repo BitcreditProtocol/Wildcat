@@ -182,6 +182,7 @@ enum MeltStatusDBEntry {
     Pending,
     Paid { tx: String },
     Expired,
+    Canceled,
 }
 impl From<onchain::MeltStatus> for MeltStatusDBEntry {
     fn from(s: onchain::MeltStatus) -> Self {
@@ -189,6 +190,7 @@ impl From<onchain::MeltStatus> for MeltStatusDBEntry {
             onchain::MeltStatus::Pending => MeltStatusDBEntry::Pending,
             onchain::MeltStatus::Paid { tx } => MeltStatusDBEntry::Paid { tx: tx.to_string() },
             onchain::MeltStatus::Expired => MeltStatusDBEntry::Expired,
+            onchain::MeltStatus::Canceled => MeltStatusDBEntry::Canceled,
         }
     }
 }
@@ -200,6 +202,7 @@ impl From<MeltStatusDBEntry> for onchain::MeltStatus {
                 tx: bitcoin::Txid::from_str(&tx).expect("tx <--> String"),
             },
             MeltStatusDBEntry::Expired => onchain::MeltStatus::Expired,
+            MeltStatusDBEntry::Canceled => onchain::MeltStatus::Canceled,
         }
     }
 }
