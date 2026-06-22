@@ -224,8 +224,6 @@ pub async fn update_quote(
 pub async fn get_identity(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_identity::Identity>> {
-    tracing::debug!("Received ebill identity request");
-
     let identity = ctrl.ebill_cl.get_identity().await?;
     Ok(Json(identity))
 }
@@ -246,8 +244,6 @@ pub async fn get_ebill(
     State(ctrl): State<AppController>,
     Path(bid): Path<BillId>,
 ) -> Result<Json<wire_bill::BitcreditBill>> {
-    tracing::debug!("Received ebill info request for {bid}");
-
     let info = ctrl.ebill_cl.get_bill(&bid).await?;
     Ok(Json(info))
 }
@@ -265,8 +261,6 @@ pub async fn get_ebill(
 pub async fn list_ebills(
     State(ctrl): State<AppController>,
 ) -> Result<Json<Vec<wire_bill::BitcreditBill>>> {
-    tracing::debug!("Received list ebill request");
-
     let infos = ctrl.ebill_cl.get_bills().await?;
     Ok(Json(infos))
 }
@@ -287,8 +281,6 @@ pub async fn get_ebill_endorsements(
     State(ctrl): State<AppController>,
     Path(bid): Path<BillId>,
 ) -> Result<Json<Vec<wire_bill::Endorsement>>> {
-    tracing::debug!("Received ebill endorsements request for {bid}");
-
     let endorsements = ctrl.ebill_cl.get_bill_endorsements(&bid).await?;
     Ok(Json(endorsements))
 }
@@ -310,8 +302,6 @@ pub async fn get_ebill_attachment(
     State(ctrl): State<AppController>,
     Path((bid, fname_req)): Path<(BillId, String)>,
 ) -> Result<impl IntoResponse> {
-    tracing::debug!("Received ebill attachment request for {bid}");
-
     let (content_type, raw) = ctrl.ebill_cl.get_bill_attachment(&bid, &fname_req).await?;
     let headers = AppendHeaders([
         (header::CONTENT_TYPE, content_type),
@@ -339,11 +329,6 @@ pub async fn get_ebill_file_from_request_to_mint(
     State(ctrl): State<AppController>,
     Query(file_url_payload): Query<wire_quotes::RequestEncryptedFileUrlPayload>,
 ) -> Result<impl IntoResponse> {
-    tracing::debug!(
-        "Received ebill file from request to mint request for {}",
-        file_url_payload.file_url
-    );
-
     let (extension, content_type, raw) = ctrl
         .ebill_cl
         .get_file_from_request_to_mint(&file_url_payload.file_url)
@@ -376,11 +361,102 @@ pub async fn get_ebill_paymentstatus(
     State(ctrl): State<AppController>,
     Path(bid): Path<BillId>,
 ) -> Result<Json<wire_bill::SimplifiedBillPaymentStatus>> {
-    tracing::debug!("Received ebill payment status request for {bid}");
-
     let response = ctrl.ebill_cl.get_payment_status(bid).await;
     match response {
         Ok(status) => Ok(Json(status)),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_EBILL_PAYMENTACTIONS,
+    params(
+        ("bid" = String, Path, description = "the ebill id"),
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = Vec<wire_bill::BillCallerPaymentAction>, content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_ebill_paymentactions(
+    State(ctrl): State<AppController>,
+    Path(bid): Path<BillId>,
+) -> Result<Json<Vec<wire_bill::BillCallerPaymentAction>>> {
+    let response = ctrl.ebill_cl.get_payment_actions(bid).await;
+    match response {
+        Ok(status) => Ok(Json(status)),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_EBILL_HISTORY,
+    params(
+        ("bid" = String, Path, description = "the ebill id"),
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = Vec<wire_bill::BillHistoryBlock>, content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_ebill_history(
+    State(ctrl): State<AppController>,
+    Path(bid): Path<BillId>,
+) -> Result<Json<Vec<wire_bill::BillHistoryBlock>>> {
+    let response = ctrl.ebill_cl.get_bill_history(bid).await;
+    match response {
+        Ok(status) => Ok(Json(status)),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_SHARED_EBILL_HISTORY,
+    params(
+        ("qid" = uuid::Uuid, Path, description = "the qid of the quote to get the bill history from")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = Vec<wire_bill::BillHistoryBlock>, content_type = "application/json"),
+        (status = 404, description = "resource id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_shared_ebill_history(
+    State(ctrl): State<AppController>,
+    Path(qid): Path<uuid::Uuid>,
+) -> Result<Json<Vec<wire_bill::BillHistoryBlock>>> {
+    let response = ctrl.quotes_cl.get_shared_ebill_history(qid).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::SYNC_EBILL_CHAIN,
+    request_body(content = wire_bill::ResyncBillPayload, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn sync_ebill_chain(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_bill::ResyncBillPayload>,
+) -> Result<()> {
+    let response = ctrl
+        .ebill_cl
+        .sync_bill_chain(req.bill_id, req.from_nostr.unwrap_or(false))
+        .await;
+    match response {
+        Ok(_) => Ok(()),
         Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
         Err(e) => Err(Error::EBillClient(e)),
     }

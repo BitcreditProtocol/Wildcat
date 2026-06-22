@@ -100,6 +100,7 @@ pub mod endpoints {
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const LIST_CREDIT_QUOTES: &str = "/v1/admin/credit/quote";
     pub const UPDATE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
+    pub const GET_SHARED_EBILL_HISTORY: &str = "/v1/admin/credit/quote/{qid}/ebill/history";
     // EBills-Client
     pub const GET_IDENTITY: &str = "/v1/admin/ebill/identity";
     pub const GET_EBILL: &str = "/v1/admin/ebill/bills/{bid}";
@@ -109,6 +110,9 @@ pub mod endpoints {
     pub const GET_EBILL_FILE_FROM_REQUEST_TO_MINT: &str =
         "/v1/admin/ebill/get_file_from_request_to_mint";
     pub const GET_EBILL_PAYMENTSTATUS: &str = "/v1/admin/ebill/payment_status/{bid}";
+    pub const GET_EBILL_PAYMENTACTIONS: &str = "/v1/admin/ebill/payment_actions/{bid}";
+    pub const GET_EBILL_HISTORY: &str = "/v1/admin/ebill/history/{bid}";
+    pub const SYNC_EBILL_CHAIN: &str = "/v1/admin/ebill/sync_bill_chain";
     // Clowder-Client
     pub const GET_CLOWDER_INFO: &str = "/v1/admin/clowder/info";
     pub const GET_CLOWDER_ALPHAS: &str = "/v1/admin/clowder/alphas";
@@ -139,6 +143,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
         .route(endpoints::LIST_CREDIT_QUOTES, get(admin::list_quotes))
         .route(endpoints::UPDATE_CREDIT_QUOTE, put(admin::update_quote))
+        .route(
+            endpoints::GET_SHARED_EBILL_HISTORY,
+            get(admin::get_shared_ebill_history),
+        )
         // ebills service
         .route(endpoints::GET_IDENTITY, get(admin::get_identity))
         .route(endpoints::GET_EBILL, get(admin::get_ebill))
@@ -159,6 +167,12 @@ pub fn routes(ctrl: AppController) -> Router {
             endpoints::GET_EBILL_PAYMENTSTATUS,
             get(admin::get_ebill_paymentstatus),
         )
+        .route(
+            endpoints::GET_EBILL_PAYMENTACTIONS,
+            get(admin::get_ebill_paymentactions),
+        )
+        .route(endpoints::GET_EBILL_HISTORY, get(admin::get_ebill_history))
+        .route(endpoints::SYNC_EBILL_CHAIN, post(admin::sync_ebill_chain))
         // clowder service
         .route(endpoints::GET_CLOWDER_INFO, get(admin::get_clowder_info))
         .route(
@@ -214,11 +228,15 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_quotes::LightInfo,
         wire_quotes::UpdateQuoteRequest,
         wire_quotes::UpdateQuoteResponse,
+        wire_bill::BillHistoryBlock,
         // ebills service
         wire_identity::Identity,
         wire_bill::BitcreditBill,
         wire_bill::Endorsement,
         wire_bill::SimplifiedBillPaymentStatus,
+        wire_bill::ResyncBillPayload,
+        wire_bill::BillHistoryBlock,
+        wire_bill::BillCallerPaymentAction,
         // clowder service
         wire_clowder::ClowderNodeInfo,
         wire_clowder::ConnectedMintsResponse,
@@ -246,6 +264,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_quote,
         admin::list_quotes,
         admin::update_quote,
+        admin::get_shared_ebill_history,
         // ebills service
         admin::get_identity,
         admin::get_ebill,
@@ -254,6 +273,9 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_ebill_attachment,
         admin::get_ebill_paymentstatus,
         admin::get_ebill_file_from_request_to_mint,
+        admin::get_ebill_paymentactions,
+        admin::get_ebill_history,
+        admin::sync_ebill_chain,
         // clowder service
         admin::get_clowder_info,
         admin::get_clowder_alphas,

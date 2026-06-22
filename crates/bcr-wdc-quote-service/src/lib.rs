@@ -112,7 +112,11 @@ where
     let admin = Router::new()
         .route(quote::admin_ep::LIST, get(admin::list_quotes))
         .route(quote::admin_ep::LOOKUP, get(admin::lookup_quote))
-        .route(quote::admin_ep::UPDATE, patch(admin::update_quote));
+        .route(quote::admin_ep::UPDATE, patch(admin::update_quote))
+        .route(
+            quote::admin_ep::SHARED_EBILL_HISTORY,
+            get(admin::get_shared_ebill_history),
+        );
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
