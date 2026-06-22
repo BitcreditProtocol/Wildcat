@@ -20,8 +20,10 @@ chrono.workspace = true
 config = {workspace = true}
 futures.workspace = true
 itertools.workspace = true
+redis = {workspace = true, features = ["connection-manager", "tokio-comp"]}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
+serde_json.workspace = true
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}
@@ -34,4 +36,5 @@ uuid.workspace = true
 bcr-common = {workspace = true, features = ["test-utils"]}
 bcr-wdc-core-service = {workspace = true, features = ["test-utils"]}
 mockall = {workspace = true}
+redis-test = {workspace = true, features = ["aio"]}
 surrealdb = {workspace = true, features = ["kv-mem"]}

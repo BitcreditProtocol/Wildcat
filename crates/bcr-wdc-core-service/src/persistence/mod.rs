@@ -8,6 +8,7 @@ use bitcoin::secp256k1::schnorr;
 use crate::{error::Result, TStamp};
 // ----- local modules
 pub mod inmemory;
+pub mod redisdb;
 pub mod surreal;
 
 // ----- end imports
@@ -92,6 +93,7 @@ mod tests {
     use bcr_common::core_tests;
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{key::rand, secp256k1 as secp};
+    use redis_test::server::RedisServer;
 
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
         std::iter::repeat_with(|| {
@@ -358,6 +360,12 @@ mod tests {
     async fn init_proofs_mem_db() -> impl ProofRepository {
         inmemory::ProofMap::default()
     }
+    async fn init_redis_proofs_db() -> (RedisServer, impl ProofRepository) {
+        let server = RedisServer::new();
+        let conn = redis::Client::open(server.connection_info()).unwrap();
+        let manager = redis::aio::ConnectionManager::new(conn).await.unwrap();
+        (server, redisdb::Proofs { conn: manager })
+    }
 
     #[tokio::test]
     async fn test_proofsrepo_insert() {
@@ -365,6 +373,9 @@ mod tests {
         proofsrepo_insert(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert(db).await;
+        //
+        let (_srv, db) = init_redis_proofs_db().await;
         proofsrepo_insert(db).await;
     }
     async fn proofsrepo_insert(db: impl ProofRepository) {
@@ -383,6 +394,9 @@ mod tests {
         proofsrepo_insert_double_spent_all(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_double_spent_all(db).await;
+        //
+        let (_srv, db) = init_redis_proofs_db().await;
         proofsrepo_insert_double_spent_all(db).await;
     }
     async fn proofsrepo_insert_double_spent_all(db: impl ProofRepository) {
@@ -403,6 +417,9 @@ mod tests {
         proofsrepo_insert_double_spent_partial(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_double_spent_partial(db).await;
+        //
+        let (_srv, db) = init_redis_proofs_db().await;
         proofsrepo_insert_double_spent_partial(db).await;
     }
     async fn proofsrepo_insert_double_spent_partial(db: impl ProofRepository) {
@@ -428,6 +445,9 @@ mod tests {
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_double_spent_partial_still_valid(db).await;
+        //
+        let (_srv, db) = init_redis_proofs_db().await;
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
     async fn proofsrepo_insert_double_spent_partial_still_valid(db: impl ProofRepository) {
