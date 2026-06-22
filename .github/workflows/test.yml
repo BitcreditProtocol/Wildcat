@@ -57,6 +57,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends protobuf-compiler
           protoc --version
 
+      - name: Install redis-server
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends redis-server
+          redis-server --version
+
       - name: install rust
         run: rustup update stable
 

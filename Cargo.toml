@@ -44,6 +44,8 @@ itertools = {version = "0.14"}
 mime = {version  = "0.3"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
+redis = {version = "1", features = ["tokio-comp", "connection-manager", "json"]}
+redis-test = {version = "1"}
 reqwest = {version = "0.12"}
 secp256k1 = {version = "0.29"}
 serde = {version = "1"}
