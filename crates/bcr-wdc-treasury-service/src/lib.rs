@@ -8,7 +8,7 @@ use axum::{
 };
 use bcr_common::{
     cashu,
-    client::clowder::ClowderNatsClient,
+    client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
         ebill::Client as EbClient, treasury as cl_treasury, Url as ClientUrl,
@@ -96,10 +96,13 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     let core_client = Arc::new(CoreClient::new(core_url));
     let ebill_client = EbClient::new(ebill_url);
     let clowder_client = Arc::new(ClowderClient::new(clowder_rest_url));
-    let nats_cl = ClowderNatsClient::new(clowder_nats_url)
+    let nats_cl = ClowderNatsClient::new(clowder_nats_url.clone())
         .await
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
+    let signer_cl = SignatoryNatsClient::new(clowder_nats_url, None)
+        .await
+        .expect("Failed to create signatory nats client");
 
     let info = clowder_client
         .get_info()
@@ -173,6 +176,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     let clowder = Arc::new(foreign::clients::ClowderCl {
         rest: clowder_client.clone(),
         stream: clowder_nats_client.clone(),
+        signatory: Box::new(signer_cl),
     });
     let factory = Arc::new(foreign::clients::MintClientFactory {
         my_pk,
