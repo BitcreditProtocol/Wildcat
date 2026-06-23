@@ -83,6 +83,18 @@ impl WdcClient for WildcatCl {
         Ok(ebill)
     }
 
+    async fn get_shared_ebill_history(
+        &self,
+        bill_id: BillId,
+        shared_bill_data: String,
+    ) -> Result<Vec<wire_bill::BillHistoryBlock>> {
+        let ebill = self
+            .ebill
+            .get_shared_bill_history(bill_id, shared_bill_data)
+            .await?;
+        Ok(ebill)
+    }
+
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill> {
         let ebill = self.ebill.get_bill(&bid).await?;
         Ok(ebill)

@@ -70,7 +70,7 @@ impl axum::response::IntoResponse for Error {
             Error::ClowderClientNoInit => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
             Error::Core(bcr_common::client::core::Error::InvalidRequest(msg)) => {
-                (StatusCode::BAD_REQUEST, msg)
+                (StatusCode::BAD_REQUEST, msg.to_string())
             }
             Error::Core(bcr_common::client::core::Error::ResourceNotFound(_)) => {
                 (StatusCode::NOT_FOUND, self.to_string())

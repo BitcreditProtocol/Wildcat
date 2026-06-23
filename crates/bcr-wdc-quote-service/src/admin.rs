@@ -2,6 +2,7 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
+use bcr_common::wire::bill as wire_bill;
 use bcr_common::wire::quotes as wire_quotes;
 // ----- local imports
 use crate::{
@@ -209,4 +210,14 @@ pub async fn update_quote(
         }
     };
     Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_shared_ebill_history(
+    State(ctrl): State<Arc<Service>>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<Vec<wire_bill::BillHistoryBlock>>> {
+    tracing::debug!("Received get shared ebill history request");
+    let bill_history_blocks = ctrl.get_shared_ebill_history(id).await?;
+    Ok(Json(bill_history_blocks))
 }

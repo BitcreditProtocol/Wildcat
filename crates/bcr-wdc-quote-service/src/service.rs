@@ -63,6 +63,11 @@ pub trait WdcClient: Send + Sync {
         &self,
         shared_bill: &wire_quotes::SharedBill,
     ) -> Result<wire_quotes::BillInfo>;
+    async fn get_shared_ebill_history(
+        &self,
+        bill_id: BillId,
+        shared_bill_data: String,
+    ) -> Result<Vec<wire_bill::BillHistoryBlock>>;
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill>;
     async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
@@ -339,6 +344,22 @@ impl Service {
             .update_status_if_accepted(quote.id, quote.status)
             .await?;
         Ok(())
+    }
+
+    pub async fn get_shared_ebill_history(
+        &self,
+        qid: uuid::Uuid,
+    ) -> Result<Vec<wire_bill::BillHistoryBlock>> {
+        let quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or(Error::ResourceNotFound(qid.to_string()))?;
+        let history_blocks = self
+            .wdc_client
+            .get_shared_ebill_history(quote.bill.id, quote.bill.shared_bill_data)
+            .await?;
+        Ok(history_blocks)
     }
 }
 
