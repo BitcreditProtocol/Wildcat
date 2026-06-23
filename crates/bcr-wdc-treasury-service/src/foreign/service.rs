@@ -1,7 +1,11 @@
 // ----- standard library imports
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
-use bcr_common::{cashu, core, wire::keys as wire_keys};
+use bcr_common::{
+    cashu::{self, ProofsMethods},
+    core,
+    wire::keys as wire_keys,
+};
 use bitcoin::{
     hashes::{sha256::Hash as Sha256Hash, Hash},
     hex::FromHex,
@@ -10,10 +14,9 @@ use bitcoin::{
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    foreign::proof,
     foreign::{
-        fingerprints_vec_to_map, to_mint_proofs_map, ClowderClient, KeysClient, MintClientFactory,
-        OfflineRepository, OnlineRepository,
+        fingerprints_vec_to_map, proof, signed_swap_with_foreign, to_mint_proofs_map,
+        ClowderClient, KeysClient, MintClientFactory, OfflineRepository, OnlineRepository,
     },
     TStamp,
 };
@@ -207,41 +210,16 @@ async fn try_online_htlc(
     for (mint_id, mut f_proofs) in foreign_proofs {
         let mint_url = clowder.get_mint_url_from_pk(&mint_id).await?;
         let foreign_client = factory.make_client(mint_url, mint_id).await?;
-        let kinfos = foreign_client.list_keyset_infos().await?;
-        let swap_plan = core::swap::wallet::prepare_swap(&f_proofs, &kinfos)?;
-        let mut outputs = Vec::with_capacity(f_proofs.len());
-        let mut secrets = Vec::with_capacity(f_proofs.len());
-        let mut keysets = HashMap::new();
-        for (kid, amount) in swap_plan {
-            let keyset = foreign_client.get_keyset(kid).await?;
-            let premint = cashu::PreMintSecrets::random(
-                kid,
-                amount,
-                &cashu::amount::SplitTarget::None,
-                &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
-            )?;
-            outputs.extend(premint.blinded_messages());
-            secrets.extend(premint.secrets);
-            keysets.insert(keyset.id, keyset);
-        }
         let mut f_fingerprints = Vec::with_capacity(f_proofs.len());
         for proof in &mut f_proofs {
             proof.add_preimage(preimage.to_string());
             f_fingerprints.push(proof.y()?);
         }
         f_proofs = clowder.sign_p2pk_proofs(&f_proofs).await?;
-        let signatures = foreign_client.swap(f_proofs, outputs, now).await?;
-        let mut proofs = Vec::with_capacity(signatures.len());
-        let mut total = cashu::Amount::ZERO;
-        for (signature, secret) in signatures.into_iter().zip(secrets.iter()) {
-            let keyset = keysets.get(&signature.keyset_id).unwrap();
-            let proof =
-                core::signature::unblind_ecash_signature(keyset, secret.clone(), signature)?;
-            total += proof.amount;
-            proofs.push(proof);
-        }
-
-        repo.store(mint_id, proofs).await?;
+        let new_proofs =
+            signed_swap_with_foreign(f_proofs, clowder, foreign_client.as_ref(), now).await?;
+        let total = new_proofs.total_amount().unwrap_or_default();
+        repo.store(mint_id, new_proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         gran_total += total;
     }
@@ -288,7 +266,14 @@ async fn try_offline_htlc_swap(
 mod tests {
 
     use super::*;
-    use bcr_common::{core, core_tests};
+    use bcr_common::{
+        core, core_tests,
+        wire::{
+            attestation::{self as wire_attestation, IssuanceAttestation},
+            swap as wire_swap,
+        },
+    };
+    use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hex::prelude::*;
     use mockall::predicate::*;
 
@@ -602,41 +587,73 @@ mod tests {
                     .for_each(|p| p.sign_p2pk(myself_sk.clone()).unwrap());
                 Ok(proofs)
             });
-        let foreign_kid = foreign_keyset.id;
-        let cloned_keyset = foreign_keyset.clone();
+        ///// expectations for signed swap with foreign
+        let mut foreign_client_mock = crate::foreign::MockForeignClient::new();
+        foreign_client_mock
+            .expect_get_foreign_pk()
+            .times(1)
+            .returning(move || foreign_kp.public_key());
+        clowder
+            .expect_get_keyset_info()
+            .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
+            .times(1)
+            .returning(move |_, _| Ok(cashu::KeySetInfo::from(foreign_kinfo.clone())));
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset, None);
+        clowder
+            .expect_get_keyset()
+            .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
+            .times(1)
+            .returning(move |_, _| Ok(cloned_keyset.clone()));
+        foreign_client_mock
+            .expect_prepare_swap_commitment_request()
+            .times(1)
+            .returning(move |inp, outp, now| {
+                let fps = inp
+                    .iter()
+                    .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+                    .collect::<Vec<_>>();
+                let attested = wire_attestation::AttestedFingerprints {
+                    inputs: fps.clone(),
+                    attestation: IssuanceAttestation {
+                        beta_id: core::generate_random_keypair().public_key(),
+                        fp_digest: Default::default(),
+                        coords_mac: Default::default(),
+                        signature: signature_tests::random_schnorr_signature(),
+                    },
+                };
+                Ok(wire_swap::SwapCommitmentRequest {
+                    inputs: attested,
+                    outputs: outp,
+                    expiry: now.timestamp() as u64,
+                    wallet_key: core::generate_random_keypair().public_key(),
+                })
+            });
+        clowder
+            .expect_sign_swap_commitment_request()
+            .times(1)
+            .returning(|_| Ok((String::new(), signature_tests::random_schnorr_signature())));
+        foreign_client_mock
+            .expect_commit_swap_with_signature()
+            .times(1)
+            .returning(|_, _| Ok((String::new(), signature_tests::random_schnorr_signature())));
+        foreign_client_mock
+            .expect_swap()
+            .times(1)
+            .returning(move |inputs, outputs, _| {
+                let mut signatures = Vec::with_capacity(inputs.len());
+                for blind in outputs {
+                    let signature =
+                        bcr_common::core::signature::sign_ecash(&foreign_keyset, &blind).unwrap();
+                    signatures.push(signature);
+                }
+                Ok(signatures)
+            });
+
         factory
             .expect_make_client()
             .with(eq(foreign_url.clone()), always())
             .times(1)
-            .returning(move |_, _| {
-                let cloned_keyset = cloned_keyset.clone();
-                let mut foreign_client = crate::foreign::MockForeignClient::new();
-                let keyset = bcr_wdc_utils::keys::to_keyset(&cloned_keyset, None);
-                let cloned_info = cashu::KeySetInfo::from(foreign_kinfo.clone());
-                foreign_client
-                    .expect_list_keyset_infos()
-                    .times(1)
-                    .returning(move || Ok(HashMap::from([(cloned_info.id, cloned_info.clone())])));
-                foreign_client
-                    .expect_get_keyset()
-                    .with(eq(foreign_kid))
-                    .times(1)
-                    .returning(move |_| Ok(keyset.clone()));
-                foreign_client
-                    .expect_swap()
-                    .times(1)
-                    .returning(move |inputs, outputs, _| {
-                        let mut signatures = Vec::with_capacity(inputs.len());
-                        for blind in outputs {
-                            let signature =
-                                bcr_common::core::signature::sign_ecash(&cloned_keyset, &blind)
-                                    .unwrap();
-                            signatures.push(signature);
-                        }
-                        Ok(signatures)
-                    });
-                Ok(Box::new(foreign_client))
-            });
+            .return_once(move |_, _| Ok(Box::new(foreign_client_mock)));
         onlinerepo.expect_store().times(1).returning(|_, _| Ok(()));
         let foreign_y = foreign_proof.y().unwrap();
         onlinerepo

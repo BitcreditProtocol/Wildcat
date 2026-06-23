@@ -4,9 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::clowder::ClowderNatsClient,
+    client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
-    wire::{attestation as wire_attestation, clowder as wire_clowder, keys as wire_keys},
+    wire::{
+        attestation as wire_attestation, clowder as wire_clowder, keys as wire_keys,
+        swap as wire_swap,
+    },
 };
 // ----- local imports
 use crate::{
@@ -45,6 +48,7 @@ impl foreign::KeysClient for CoreCl {
 pub struct ClowderCl {
     pub rest: Arc<ClowderClient>,
     pub stream: Arc<ClowderNatsClient>,
+    pub signatory: Box<SignatoryNatsClient>,
 }
 
 #[async_trait]
@@ -189,67 +193,95 @@ impl foreign::ClowderClient for ClowderCl {
             .await?;
         Ok(())
     }
+
+    async fn sign_swap_commitment_request(
+        &self,
+        payload: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        let (b64, message) = bcr_common::core::signature::serialize_borsh_msg_b64(&payload)?;
+        let signature = self.signatory.sign_schnorr_hash(message.as_ref()).await?;
+        Ok((b64, signature))
+    }
 }
 
 pub struct MintClient {
-    cl: bcr_common::client::mint::Client,
-    clwdr: Arc<ClowderClient>,
     my_pk: secp256k1::PublicKey,
+    foreign_cl: bcr_common::client::mint::Client,
+    foreign_clwdr: Arc<ClowderClient>,
     foreign_pk: secp256k1::PublicKey,
 }
 
 #[async_trait]
 impl ForeignClient for MintClient {
-    async fn swap(
+    async fn prepare_swap_commitment_request(
         &self,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         now: TStamp,
-    ) -> Result<Vec<cashu::BlindSignature>> {
+    ) -> Result<wire_swap::SwapCommitmentRequest> {
         let fps = inputs
             .iter()
             .cloned()
             .map(wire_keys::ProofFingerprint::try_from)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let expiry = now + chrono::Duration::minutes(1);
-        // Acquire an attestation from the local Clowder node (assumed Beta of
-        // the foreign Alpha) so it can be bound into the commitment.
         let attestation = self
-            .clwdr
+            .foreign_clwdr
             .post_attest_issuance(&wire_attestation::IssuanceAttestationRequest {
                 alpha_id: self.foreign_pk,
                 inputs: fps.clone(),
             })
             .await?;
-        let (_, commitment) = self
-            .cl
-            .commit_swap(
-                fps,
-                outputs.clone(),
-                expiry.timestamp() as u64,
-                self.my_pk,
-                self.foreign_pk,
-                attestation,
-            )
+        let request = bcr_common::client::mint::Client::prepare_swap_commitment_request(
+            fps,
+            outputs,
+            expiry.timestamp() as u64,
+            self.my_pk,
+            attestation,
+        );
+        Ok(request)
+    }
+
+    async fn commit_swap_with_signature(
+        &self,
+        payload: String,
+        signature: secp256k1::schnorr::Signature,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        let (content, signature) = self
+            .foreign_cl
+            .commit_swap_with_signature(payload, signature, self.my_pk)
             .await?;
-        let signatures = self.cl.swap(inputs, outputs, commitment).await?;
+        Ok((content, signature))
+    }
+
+    async fn swap(
+        &self,
+        inputs: Vec<cashu::Proof>,
+        outputs: Vec<cashu::BlindedMessage>,
+        commitment: secp256k1::schnorr::Signature,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let signatures = self.foreign_cl.swap(inputs, outputs, commitment).await?;
         Ok(signatures)
     }
 
     async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>> {
-        let states = self.cl.check_state(ys).await?;
+        let states = self.foreign_cl.check_state(ys).await?;
         Ok(states)
     }
 
     async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
-        let keys = self.cl.keys(kid).await?;
+        let keys = self.foreign_cl.keys(kid).await?;
         Ok(keys)
     }
 
     async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
-        let kinfos = self.cl.list_keyset_info(Default::default()).await?;
+        let kinfos = self.foreign_cl.list_keyset_info(Default::default()).await?;
         let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
         Ok(map)
+    }
+
+    fn get_foreign_pk(&self) -> secp256k1::PublicKey {
+        self.foreign_pk
     }
 }
 
@@ -264,10 +296,10 @@ impl foreign::MintClientFactory for MintClientFactory {
         mint_url: reqwest::Url,
         mint_pk: secp256k1::PublicKey,
     ) -> Result<Box<dyn ForeignClient>> {
-        let cl = bcr_common::client::mint::Client::new(mint_url);
+        let foreign_cl = bcr_common::client::mint::Client::new(mint_url);
         Ok(Box::new(MintClient {
-            cl,
-            clwdr: self.clwdr.clone(),
+            foreign_cl,
+            foreign_clwdr: self.clwdr.clone(),
             my_pk: self.my_pk,
             foreign_pk: mint_pk,
         }))
