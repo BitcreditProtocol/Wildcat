@@ -142,7 +142,7 @@ impl ClowderClient for ClowderCl {
         &self,
         request: wire_swap::SwapCommitmentRequest,
     ) -> Result<(String, schnorr::Signature)> {
-        let content = signature::serialize_borsh_msg_b64(&request)
+        let (content, _) = signature::serialize_borsh_msg_b64(&request)
             .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
         let request = wire_clowder::SwapCommitmentRequest {
             inputs: request.inputs,

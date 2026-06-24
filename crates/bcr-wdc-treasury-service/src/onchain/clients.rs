@@ -180,7 +180,7 @@ impl ClowderClient for ClowderCl {
             wallet_key: msg.wallet_key,
         };
         let response = self.nats.mint_quote_onchain(request).await?;
-        let content = signature::serialize_borsh_msg_b64(msg)?;
+        let (content, _) = signature::serialize_borsh_msg_b64(msg)?;
         Ok((content, response.commitment))
     }
 
@@ -200,7 +200,7 @@ impl ClowderClient for ClowderCl {
             wallet_key: msg.wallet_key,
         };
         let response = self.nats.melt_quote_onchain(request).await?;
-        let content = signature::serialize_borsh_msg_b64(msg)?;
+        let (content, _) = signature::serialize_borsh_msg_b64(msg)?;
         Ok((content, response.commitment))
     }
 
