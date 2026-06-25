@@ -83,6 +83,21 @@ impl Repository for QuotesIDMap {
         Ok(())
     }
 
+    async fn update_status_if_failedebillvalidation(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::Status,
+    ) -> Result<()> {
+        let mut m = self.quotes.write().unwrap();
+        let result = m.get_mut(&qid);
+        if let Some(old) = result {
+            if matches!(old.status, quotes::Status::FailedEbillValidation { .. }) {
+                old.status = new;
+            }
+        }
+        Ok(())
+    }
+
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
         let a = self
             .quotes

@@ -299,6 +299,35 @@ impl Repository for DBQuotes {
             ))),
         }
     }
+    async fn update_status_if_failedebillvalidation(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::Status,
+    ) -> Result<()> {
+        let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, qid);
+        let before: Option<QuoteDBEntry> = self
+            .db
+            .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
+            .bind(("rid", recordid))
+            .bind(("new", new))
+            .bind(("status", quotes::StatusDiscriminants::FailedEbillValidation))
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
+        match before {
+            Some(QuoteDBEntry {
+                status: quotes::Status::FailedEbillValidation { .. },
+                ..
+            }) => Ok(()),
+            Some(_) => Err(Error::QuotesRepository(anyhow!(
+                "Quote not failedebillvalidation"
+            ))),
+            None => Err(Error::QuotesRepository(anyhow!(
+                "Quote not found or not failedebillvalidation"
+            ))),
+        }
+    }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
         self.list_by_status(quotes::StatusDiscriminants::Pending, since)
@@ -345,7 +374,7 @@ impl Repository for DBQuotes {
 mod tests {
     use super::*;
     use crate::{quotes, service};
-    use bcr_common::{core_tests, wire_tests::random_identity_public_data};
+    use bcr_common::{cashu, core_tests, wire_tests::random_identity_public_data};
     use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test};
     use surrealdb::RecordId;
@@ -478,6 +507,74 @@ mod tests {
             wallet_pubkey: keys_test::publics()[0],
         };
         let res = db.update_status_if_offered(quote.id, quote.status).await;
+        assert!(res.is_err());
+
+        let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();
+        assert!(content.is_some());
+        let content = content.unwrap();
+        assert!(matches!(content.status, quotes::Status::Denied { .. }));
+    }
+
+    #[tokio::test]
+    async fn update_status_if_failedebillvalidation_ok() {
+        let db = init_mem_db().await;
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::random(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::Status::FailedEbillValidation {
+                keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+                discounted: bitcoin::Amount::default(),
+                wallet_pubkey: keys_test::publics()[0],
+            },
+        };
+        let dbquote = QuoteDBEntry::from(quote.clone());
+        let rid = RecordId::from_table_key(DBQuotes::TABLE, quote.id);
+        let _inserted: QuoteDBEntry = db.db.insert(rid).content(dbquote).await.unwrap().unwrap();
+
+        quote.status = quotes::Status::MintingEnabled {
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            discounted: bitcoin::Amount::default(),
+            wallet_pubkey: keys_test::publics()[0],
+            fee: cashu::Amount::from(10),
+        };
+        let res = db
+            .update_status_if_failedebillvalidation(quote.id, quote.status)
+            .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn update_status_if_failedebillvalidation_ko() {
+        let db = init_mem_db().await;
+        let now = TStamp::from_timestamp(10000, 0).unwrap();
+
+        let mut quote = quotes::Quote {
+            bill: quotes::BillInfo::random(),
+            id: Uuid::new_v4(),
+            submitted: TStamp::default(),
+            status: quotes::Status::Denied { tstamp: now },
+        };
+        let dbquote = QuoteDBEntry::from(quote.clone());
+        let rid = RecordId::from_table_key(DBQuotes::TABLE, quote.id);
+        let _inserted: QuoteDBEntry = db
+            .db
+            .insert(rid.clone())
+            .content(dbquote)
+            .await
+            .unwrap()
+            .unwrap();
+
+        quote.status = quotes::Status::MintingEnabled {
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            discounted: quote.bill.sum,
+            wallet_pubkey: keys_test::publics()[0],
+            fee: cashu::Amount::from(10),
+        };
+        let res = db
+            .update_status_if_failedebillvalidation(quote.id, quote.status)
+            .await;
         assert!(res.is_err());
 
         let content: Option<QuoteDBEntry> = db.db.select(rid).await.unwrap();

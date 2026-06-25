@@ -130,6 +130,11 @@ pub enum Status {
         discounted: bitcoin::Amount,
         fee: cashu::Amount,
     },
+    FailedEbillValidation {
+        discounted: bitcoin::Amount,
+        keyset_id: cashu::Id,
+        wallet_pubkey: cashu::PublicKey,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -261,6 +266,31 @@ impl Quote {
         Ok(())
     }
 
+    pub fn override_failed_ebill_validation(&mut self, fee: cashu::Amount) -> Result<()> {
+        match self.status {
+            Status::FailedEbillValidation {
+                keyset_id,
+                wallet_pubkey,
+                discounted,
+            } => {
+                self.status = Status::MintingEnabled {
+                    keyset_id,
+                    wallet_pubkey,
+                    discounted,
+                    fee,
+                }
+            }
+            _ => {
+                return Err(Error::InvalidQuoteStatus(
+                    self.id,
+                    StatusDiscriminants::FailedEbillValidation,
+                    StatusDiscriminants::from(self.status.clone()),
+                ))
+            }
+        };
+        Ok(())
+    }
+
     pub fn start_minting(&mut self, fee: cashu::Amount) -> Result<()> {
         match self.status {
             Status::Accepted {
@@ -273,6 +303,30 @@ impl Quote {
                     wallet_pubkey,
                     discounted,
                     fee,
+                }
+            }
+            _ => {
+                return Err(Error::InvalidQuoteStatus(
+                    self.id,
+                    StatusDiscriminants::Accepted,
+                    StatusDiscriminants::from(self.status.clone()),
+                ))
+            }
+        };
+        Ok(())
+    }
+
+    pub fn set_failed_ebill_validation(&mut self) -> Result<()> {
+        match self.status {
+            Status::Accepted {
+                keyset_id,
+                wallet_pubkey,
+                discounted,
+            } => {
+                self.status = Status::FailedEbillValidation {
+                    keyset_id,
+                    wallet_pubkey,
+                    discounted,
                 }
             }
             _ => {

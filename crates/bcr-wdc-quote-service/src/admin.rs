@@ -26,6 +26,9 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo
         quotes::StatusDiscriminants::MintingEnabled => {
             wire_quotes::InfoReplyDiscriminants::MintingEnabled
         }
+        quotes::StatusDiscriminants::FailedEbillValidation => {
+            wire_quotes::InfoReplyDiscriminants::FailedEbillValidation
+        }
     };
     wire_quotes::LightInfo {
         id: quote.id,
@@ -71,6 +74,9 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
         }
         Some(wire_quotes::InfoReplyDiscriminants::MintingEnabled) => {
             Some(quotes::StatusDiscriminants::MintingEnabled)
+        }
+        Some(wire_quotes::InfoReplyDiscriminants::FailedEbillValidation) => {
+            Some(quotes::StatusDiscriminants::FailedEbillValidation)
         }
     };
     let sort = match sort {
@@ -174,6 +180,16 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
             discounted,
             fee,
         },
+        quotes::Status::FailedEbillValidation {
+            keyset_id,
+            discounted,
+            ..
+        } => wire_quotes::InfoReply::FailedEbillValidation {
+            id: quote.id,
+            bill: wire_quotes::BillInfo::from(quote.bill),
+            discounted,
+            keyset_id,
+        },
     }
 }
 
@@ -209,6 +225,18 @@ pub async fn update_quote(
             wire_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
         }
     };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn enable_minting(
+    State(ctrl): State<Arc<Service>>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<wire_quotes::EnableMintingRequest>,
+) -> Result<Json<wire_quotes::EnableMintingResponse>> {
+    tracing::debug!("Received enable mint for quote request");
+    ctrl.enable_minting_manual_override(id).await?;
+    let response = wire_quotes::EnableMintingResponse {};
     Ok(Json(response))
 }
 

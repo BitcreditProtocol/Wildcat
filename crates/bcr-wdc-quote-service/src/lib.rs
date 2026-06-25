@@ -114,6 +114,10 @@ where
         .route(quote::admin_ep::LOOKUP, get(admin::lookup_quote))
         .route(quote::admin_ep::UPDATE, patch(admin::update_quote))
         .route(
+            quote::admin_ep::ENABLE_MINTING,
+            patch(admin::enable_minting),
+        )
+        .route(
             quote::admin_ep::SHARED_EBILL_HISTORY,
             get(admin::get_shared_ebill_history),
         );
