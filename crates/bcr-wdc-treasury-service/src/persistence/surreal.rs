@@ -549,7 +549,7 @@ impl std::convert::From<EbillMintOpDBEntry> for ebill::MintOperation {
 
 #[derive(Debug, Clone)]
 pub struct DBEbill {
-    pub(in crate::persistence) db: Surreal<surrealdb::engine::any::Any>,
+    pub(super) db: Surreal<surrealdb::engine::any::Any>,
 }
 
 impl DBEbill {

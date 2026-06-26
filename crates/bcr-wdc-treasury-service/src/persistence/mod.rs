@@ -3,6 +3,7 @@
 // ----- local imports
 // ----- local modules
 pub mod inmemory;
+pub mod sqlx;
 pub mod surreal;
 
 // ----- end imports
@@ -34,6 +35,12 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_store(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_store(db).await;
+    }
     async fn ebill_mint_store(db: impl EbillRepo) {
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
@@ -54,6 +61,12 @@ mod tests {
         let db = init_inmemory_ebill_db();
         ebill_mint_store_twice(db).await;
         let db = init_surreal_ebill_db().await;
+        ebill_mint_store_twice(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_twice_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
         ebill_mint_store_twice(db).await;
     }
     async fn ebill_mint_store_twice(db: impl EbillRepo) {
@@ -80,6 +93,12 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_load(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_load_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_load(db).await;
+    }
     async fn ebill_mint_load(db: impl EbillRepo) {
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
@@ -103,6 +122,12 @@ mod tests {
         let db = init_inmemory_ebill_db();
         ebill_mint_update_field(db).await;
         let db = init_surreal_ebill_db().await;
+        ebill_mint_update_field(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_update_field_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
         ebill_mint_update_field(db).await;
     }
     async fn ebill_mint_update_field(db: impl EbillRepo) {
@@ -131,6 +156,12 @@ mod tests {
         let db = init_inmemory_ebill_db();
         ebill_mint_list(db).await;
         let db = init_surreal_ebill_db().await;
+        ebill_mint_list(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_list_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
         ebill_mint_list(db).await;
     }
     async fn ebill_mint_list(db: impl EbillRepo) {
