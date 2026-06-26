@@ -266,13 +266,13 @@ impl Service {
         // verify proofs
         bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
         self.wdc.verify_proofs(&inputs).await?;
-        // verify unspent
+        // verify not spent
         let p_ys = inputs.ys()?;
         let states = self.wdc.check_spendable(p_ys.clone()).await?;
-        let all_unspent = states
+        let any_spent = states
             .iter()
-            .all(|s| matches!(s.state, cashu::State::Unspent));
-        if !all_unspent {
+            .any(|s| matches!(s.state, cashu::State::Spent));
+        if any_spent {
             return Err(Error::InvalidInput(String::from("proofs already spent")));
         }
         // load melt operation
@@ -367,14 +367,19 @@ async fn generate_fee_premints(
     assert!(!inputs.is_empty());
     let p1 = inputs.first().unwrap();
     let mut kid = p1.keyset_id;
-    let expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
+    let mut expiry = wdc.keyset_info(kid).await?.final_expiry.unwrap_or_default();
     for p in inputs {
         if p.keyset_id == kid {
             continue;
         }
-        let info = wdc.keyset_info(p.keyset_id).await?;
-        if info.final_expiry.unwrap_or_default() > expiry {
+        let new_expiry = wdc
+            .keyset_info(p.keyset_id)
+            .await?
+            .final_expiry
+            .unwrap_or_default();
+        if new_expiry > expiry {
             kid = p.keyset_id;
+            expiry = new_expiry;
         }
     }
     let keyset = wdc.keyset(kid).await?;
@@ -409,7 +414,7 @@ mod tests {
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::hashes::Hash;
     use cashu::Amount;
-    use mockall::predicate::eq;
+    use mockall::predicate::*;
     use std::str::FromStr;
 
     fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
@@ -898,5 +903,102 @@ mod tests {
             .create_onchain_mint_quote(request, chrono::Utc::now())
             .await
             .unwrap_err();
+    }
+
+    #[tokio::test]
+    // test that melt_onchain succeeds when proofs are reserved
+    async fn melt_onchain_proofs_reserved() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        let mut vault = MockVaultService::new();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let input_ys = proofs.ys().unwrap();
+        let qid = Uuid::new_v4();
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        let op = onchain::MeltOperation {
+            qid,
+            available: cashu::Amount::from(8),
+            address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
+            target: bitcoin::Amount::from_sat(8),
+            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            fees: cashu::Amount::ZERO,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys,
+            fp_digest: wire_attestation::fp_digest(
+                &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+            ),
+            commitment: signature,
+            status: onchain::MeltStatus::Pending,
+        };
+        wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
+        wdc.expect_check_spendable().times(1).returning(|ys| {
+            let mut states = Vec::with_capacity(ys.len());
+            for y in ys {
+                states.push(cashu::ProofState {
+                    y,
+                    state: cashu::State::Reserved,
+                    witness: None,
+                });
+            }
+            Ok(states)
+        });
+        repo.expect_load_meltop()
+            .times(1)
+            .returning(move |_| Ok(op.clone()));
+        clowder
+            .expect_verify_onchain_address()
+            .times(1)
+            .returning(|addr| Ok(addr.assume_checked()));
+        wdc.expect_keyset_info()
+            .times(1)
+            .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset, Some(true));
+        wdc.expect_keyset()
+            .times(2)
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        wdc.expect_sign().times(1).returning(move |blinds| {
+            let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
+            let signatures = signatures_test::generate_signatures(&keyset, &amounts);
+            Ok(signatures)
+        });
+        wdc.expect_burn()
+            .with(eq(proofs.clone()))
+            .times(1)
+            .returning(|_| Ok(()));
+        clowder
+            .expect_melt_onchain()
+            .times(1)
+            .with(
+                always(),
+                always(),
+                always(),
+                eq(proofs.clone()),
+                always(),
+                always(),
+            )
+            .returning(|_, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+        vault.expect_store_proofs().times(1).returning(|_| Ok(()));
+        repo.expect_update_meltop_status()
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let service = Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            min_melt_threshold: bitcoin::Amount::ZERO,
+            alpha_id: core::generate_random_keypair().public_key(),
+        };
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        service
+            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .await
+            .unwrap();
     }
 }
