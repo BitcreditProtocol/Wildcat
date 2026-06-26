@@ -284,12 +284,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "SurrealDB issue #6405"]
     async fn test_keysrepo_infos_for_expiration_date() {
         let db = init_memmap_keys_db();
-        keysrepo_infos_for_expiration_date_test(db).await;
-        //
-        let db = init_surreal_keys_db().await;
         keysrepo_infos_for_expiration_date_test(db).await;
     }
     async fn keysrepo_infos_for_expiration_date_test(db: impl KeysRepository) {

@@ -88,7 +88,7 @@ impl persistence::KeysRepository for KeyMap {
     }
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
-        let infos = rlocked
+        let mut infos: Vec<_> = rlocked
             .values()
             .filter_map(|(info, _)| {
                 if info.final_expiry.unwrap_or_default() >= expire {
@@ -99,6 +99,7 @@ impl persistence::KeysRepository for KeyMap {
             })
             .cloned()
             .collect();
+        infos.sort_by_key(|info| info.final_expiry.unwrap_or_default());
         Ok(infos)
     }
 }
