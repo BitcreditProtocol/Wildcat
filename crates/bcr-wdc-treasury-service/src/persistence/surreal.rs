@@ -549,7 +549,7 @@ impl std::convert::From<EbillMintOpDBEntry> for ebill::MintOperation {
 
 #[derive(Debug, Clone)]
 pub struct DBEbill {
-    db: Surreal<surrealdb::engine::any::Any>,
+    pub(in crate::persistence) db: Surreal<surrealdb::engine::any::Any>,
 }
 
 impl DBEbill {
@@ -1020,8 +1020,8 @@ impl vault::Repository for DBVault {
 mod tests {
     use super::*;
     use crate::{
-        ebill::Repository as CreditRepo, foreign::OfflineRepository,
-        onchain::Repository as DebitRepo, vault::Repository as VaultRepo,
+        foreign::OfflineRepository, onchain::Repository as OnchainORepo,
+        vault::Repository as VaultRepo,
     };
     use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
@@ -1256,123 +1256,6 @@ mod tests {
         for proof in proofs {
             assert!(result.contains(&proof));
         }
-    }
-
-    async fn init_ebill_mem_db() -> DBEbill {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBEbill { db: sdb }
-    }
-
-    #[tokio::test]
-    async fn ebill_mint_store_ok() {
-        let db = init_ebill_mem_db().await;
-        let keys = core_tests::generate_random_ecash_keyset();
-        let kid = keys.0.id;
-        let kp = core::generate_random_keypair();
-        let op = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op).await.unwrap();
-    }
-    #[tokio::test]
-    async fn ebill_mint_store_twice() {
-        let db = init_ebill_mem_db().await;
-        let keys = core_tests::generate_random_ecash_keyset();
-        let kid = keys.0.id;
-        let kp = core::generate_random_keypair();
-        let op = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op.clone()).await.unwrap();
-        let res = db.mint_store(op).await;
-        assert!(matches!(res, Err(Error::InvalidInput(_))));
-    }
-
-    #[tokio::test]
-    async fn ebill_mint_update_field() {
-        let db = init_ebill_mem_db().await;
-        let keys = core_tests::generate_random_ecash_keyset();
-        let kid = keys.0.id;
-        let kp = core::generate_random_keypair();
-        let op = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op.clone()).await.unwrap();
-        let res = db.mint_load(op.uid).await.unwrap();
-        assert_eq!(res.kid, kid);
-        assert_eq!(res.pub_key, kp.public_key().into());
-    }
-
-    #[tokio::test]
-    async fn update_minted_field() {
-        let db = init_ebill_mem_db().await;
-        let keys = core_tests::generate_random_ecash_keyset();
-        let kid = keys.0.id;
-        let kp = core::generate_random_keypair();
-        let op = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op.clone()).await.unwrap();
-        db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
-            .await
-            .unwrap();
-        let res = db.mint_load(op.uid).await.unwrap();
-        assert_eq!(res.kid, kid);
-        assert_eq!(res.minted, cashu::Amount::from(100u64));
-    }
-
-    #[tokio::test]
-    async fn credit_mint_list() {
-        let db = init_ebill_mem_db().await;
-        let keys = core_tests::generate_random_ecash_keyset();
-        let kid = keys.0.id;
-        let kp = core::generate_random_keypair();
-        let op1 = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op1.clone()).await.unwrap();
-        let op2 = ebill::MintOperation {
-            uid: Uuid::new_v4(),
-            kid,
-            pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
-            bill_id: bcr_common::core_tests::random_bill_id(),
-        };
-        db.mint_store(op2.clone()).await.unwrap();
-        let res = db.mint_list(kid).await.unwrap();
-        assert_eq!(res.len(), 2);
-        let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
-        assert!(rids.contains(&op1.uid));
-        assert!(rids.contains(&op2.uid));
     }
 
     async fn init_vault_mem_db() -> DBVault {
