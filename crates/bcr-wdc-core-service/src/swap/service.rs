@@ -3,6 +3,7 @@ use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{
     cashu,
+    client::admin::core::BRError,
     core::{signature, swap},
     wire::{attestation as wire_attestation, swap as wire_swap},
 };
@@ -127,10 +128,14 @@ impl Service {
         signed: SignatureOwner,
     ) -> Result<(String, schnorr::Signature)> {
         // check expiry
-        let expiry = chrono::DateTime::from_timestamp(request.expiry as i64, 0)
-            .ok_or_else(|| Error::InvalidInput("invalid expiry timestamp".into()))?;
+        let expiry =
+            chrono::DateTime::from_timestamp(request.expiry as i64, 0).ok_or_else(|| {
+                Error::InvalidInput(BRError::Generic(String::from("invalid expiry timestamp")))
+            })?;
         if expiry < now {
-            return Err(Error::InvalidInput("commitment already expired".into()));
+            return Err(Error::InvalidInput(BRError::Generic(String::from(
+                "commitment already expired",
+            ))));
         }
         let max_allowed = now + self.max_expiry;
         let expiry = expiry.min(max_allowed);
@@ -157,9 +162,9 @@ impl Service {
             .iter()
             .all(|s| matches!(s.state, cashu::State::Unspent));
         if !all_unspent {
-            return Err(Error::InvalidInput(
-                "One or more proofs are not unspent".to_string(),
-            ));
+            return Err(Error::InvalidInput(BRError::Generic(String::from(
+                "One or more proofs are not unspent",
+            ))));
         }
         // check inputs signatures
         sign_service.verify_fingerprints(&core_fps).await?;
@@ -167,9 +172,9 @@ impl Service {
         let bs: Vec<cashu::PublicKey> = request.outputs.iter().map(|b| b.blinded_secret).collect();
         let contained = self.commitments.contains_outputs(&bs).await?;
         if contained {
-            return Err(Error::InvalidInput(String::from(
+            return Err(Error::InvalidInput(BRError::Generic(String::from(
                 "blinded messages committed",
-            )));
+            ))));
         }
         // broadcast request to clowder, get back mint commitment
         let wallet_key = request.wallet_key;
@@ -222,7 +227,9 @@ impl Service {
         }
         // check expiration
         if expiration < now {
-            return Err(Error::InvalidInput(String::from("commitment has expired")));
+            return Err(Error::InvalidInput(BRError::Generic(String::from(
+                "commitment has expired",
+            ))));
         }
         // swap inputs must project to the fingerprints attested at commitment time
         let input_fps = wire_attestation::project_to_fingerprints(&inputs)?;
@@ -236,10 +243,10 @@ impl Service {
             outputs.iter().map(|b| b.blinded_secret).collect::<Vec<_>>();
         let checked = cross_check_commits_swaps(&committed_outputs, &output_bs);
         if !checked {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::InvalidInput(BRError::Generic(format!(
                 "output/committed_outputs mismatch {:?}/{:?}",
-                output_bs, committed_outputs
-            )));
+                output_bs, committed_outputs,
+            ))));
         }
         let (kinfos, _) = tokio::try_join!(
             sign_service.list_kinfos(),
@@ -460,7 +467,7 @@ mod tests {
         clowder
             .expect_verify_pk()
             .times(1)
-            .returning(|_| Err(Error::InvalidInput(String::new())));
+            .returning(|_| Err(Error::InvalidInput(BRError::Generic(String::new()))));
         let alpha_kp = core::generate_random_keypair();
         let service = Service {
             proofs: Box::new(proofs_repo),

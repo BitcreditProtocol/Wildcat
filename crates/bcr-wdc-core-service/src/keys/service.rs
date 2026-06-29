@@ -7,6 +7,7 @@ use std::{
 use bcr_common::{
     cashu,
     cdk_common::mint::MintKeySetInfo,
+    client::admin::core::RNFError,
     core::signature::{sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint},
 };
 // ----- local imports
@@ -60,14 +61,14 @@ impl Service {
         self.keys
             .info(kid)
             .await?
-            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))
+            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
 
     pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
             .keyset(kid)
             .await?
-            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))
+            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
 
     pub async fn verify_proofs(&self, proofs: &[cashu::Proof]) -> Result<()> {
@@ -121,7 +122,7 @@ impl Service {
             .keys
             .info(kid)
             .await?
-            .ok_or(Error::ResourceNotFound(format!("keyset {}", kid)))?;
+            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))?;
         info.active = false;
         self.keys.update_info(info.clone()).await?;
         self.clowder.keyset_deactivated(kid).await?;
