@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::admin::{clowder as clwdr_rest, treasury::Client as TreasuryClient},
+    client::admin::{clowder as clwdr_rest, core::BRError, treasury::Client as TreasuryClient},
     client::clowder::ClowderNatsClient,
     core::signature,
     wire::{attestation::AttestedFingerprints, clowder as wire_clowder, swap as wire_swap},
@@ -203,7 +203,8 @@ impl ClowderClient for ClowderCl {
                 return Ok(PublicKeyOwner::Alpha);
             }
         }
-        Err(Error::InvalidInput(format!("unknown pubkey {beta_pk}")))
+        tracing::warn!("unknown pubkey {beta_pk}");
+        Err(Error::InvalidInput(BRError::Unknown))
     }
 }
 

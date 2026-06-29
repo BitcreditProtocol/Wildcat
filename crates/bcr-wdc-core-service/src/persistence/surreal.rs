@@ -9,6 +9,7 @@ use bcr_common::{
         nut01::{MintKeyPair, MintKeys},
     },
     cdk_common::mint::MintKeySetInfo,
+    client::admin::core::{BRError, RNFError},
 };
 use bcr_wdc_utils::{keys::KeysetEntry, surreal};
 use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
@@ -238,7 +239,7 @@ impl persistence::KeysRepository for DBKeys {
         if entry.is_some() {
             Ok(())
         } else {
-            Err(Error::ResourceNotFound(format!("keyset {}", kid)))
+            Err(Error::ResourceNotFound(RNFError::KeysetId(kid)))
         }
     }
 
@@ -382,7 +383,7 @@ impl persistence::ProofRepository for DBProofs {
                 .await
                 .map_err(|e| match e {
                     surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
-                        Error::InvalidInput(String::from("proofs already spent"))
+                        Error::InvalidInput(BRError::Generic(String::from("proofs already spent")))
                     }
                     _ => Error::ProofRepository(anyhow!(e)),
                 })?;
@@ -580,7 +581,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             .select(rid.clone())
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
-            .ok_or(Error::ResourceNotFound(rid.to_string()))?;
+            .ok_or(Error::ResourceNotFound(RNFError::Generic(rid.to_string())))?;
         Ok(persistence::StoredCommitment {
             inputs: commitment_entry.inputs,
             outputs: commitment_entry.outputs,

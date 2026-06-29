@@ -3,6 +3,7 @@
 use axum::http::StatusCode;
 use bcr_common::{
     cashu::{self, nut00 as cdk00, nut02 as cdk02, nut12 as cdk12},
+    client::admin::core::{BRError, RNFError},
     core::signature,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
@@ -52,9 +53,9 @@ pub enum Error {
     AttestationVerify(#[from] bcr_wdc_utils::attestation::VerifyError),
     // domain errors
     #[error("invalid inputs {0}")]
-    InvalidInput(String),
+    InvalidInput(BRError),
     #[error("resource not found {0}")]
-    ResourceNotFound(String),
+    ResourceNotFound(RNFError),
     #[error("conflict {0}")]
     Conflict(String),
 
@@ -79,34 +80,73 @@ impl axum::response::IntoResponse for Error {
             Error::CommitmentRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ReservedYsRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
 
-            Error::SignVerifyEcash(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::BorshVerify(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::SignVerifyEcash(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::BorshVerify(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CdkDhke(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::CdkDhke(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::CDKNUT00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDKNUT12(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BasicChecks(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            Error::Verify(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            Error::Attestation(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::BasicChecks(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::Verify(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::Attestation(e) => {
+                let v = BRError::Generic(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::AttestationVerify(e) => match e {
                 bcr_wdc_utils::attestation::VerifyError::Attestation(a) => {
-                    (StatusCode::BAD_REQUEST, a.to_string())
+                    let v = BRError::Generic(a.to_string());
+                    let j = serde_json::to_string(&v).unwrap_or_default();
+                    (StatusCode::BAD_REQUEST, j)
                 }
                 bcr_wdc_utils::attestation::VerifyError::Rest(_) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, String::new())
                 }
             },
-
-            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::InvalidInput(brerror) => {
+                let v = serde_json::to_string(&brerror).unwrap_or(brerror.to_string());
+                (StatusCode::BAD_REQUEST, v)
+            }
             Error::Conflict(e) => (StatusCode::CONFLICT, e.to_string()),
-            Error::ResourceNotFound(e) => (StatusCode::NOT_FOUND, e.to_string()),
-            Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Active keyset")),
-            Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
+            Error::ResourceNotFound(e) => {
+                let v = serde_json::to_string(&e).unwrap_or(e.to_string());
+                (StatusCode::NOT_FOUND, v)
+            }
+            Error::ActiveKeyset(id) => {
+                let v = BRError::Generic(format!("Active keyset: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::InactiveKeyset(id) => {
+                let v = BRError::Generic(format!("Inactive keyset: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
 
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
+            Error::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, String::new()),
         };
 
         response.into_response()
