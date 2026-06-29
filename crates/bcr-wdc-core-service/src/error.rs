@@ -3,6 +3,7 @@
 use axum::http::StatusCode;
 use bcr_common::{
     cashu::{self, nut00 as cdk00, nut02 as cdk02, nut12 as cdk12},
+    client::admin::core::{BRError, RNFError},
     core::signature,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
@@ -52,9 +53,9 @@ pub enum Error {
     AttestationVerify(#[from] bcr_wdc_utils::attestation::VerifyError),
     // domain errors
     #[error("invalid inputs {0}")]
-    InvalidInput(String),
+    InvalidInput(BRError),
     #[error("resource not found {0}")]
-    ResourceNotFound(String),
+    ResourceNotFound(RNFError),
     #[error("conflict {0}")]
     Conflict(String),
 
@@ -99,9 +100,15 @@ impl axum::response::IntoResponse for Error {
                 }
             },
 
-            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::InvalidInput(e) => (
+                StatusCode::BAD_REQUEST,
+                serde_json::to_string(&e).unwrap_or_default(),
+            ),
             Error::Conflict(e) => (StatusCode::CONFLICT, e.to_string()),
-            Error::ResourceNotFound(e) => (StatusCode::NOT_FOUND, e.to_string()),
+            Error::ResourceNotFound(e) => (
+                StatusCode::NOT_FOUND,
+                serde_json::to_string(&e).unwrap_or_default(),
+            ),
             Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Active keyset")),
             Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, String::from("Inactive keyset")),
 

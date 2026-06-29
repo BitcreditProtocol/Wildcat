@@ -5,7 +5,11 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
+use bcr_common::{
+    cashu,
+    cdk_common::mint::MintKeySetInfo,
+    client::admin::core::{BRError, RNFError},
+};
 use bcr_wdc_utils::keys::KeysetEntry;
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
@@ -82,7 +86,7 @@ impl persistence::KeysRepository for KeyMap {
         let mut wlocked = self.keys.write().unwrap();
         let (info, _) = wlocked
             .get_mut(&new.id)
-            .ok_or(Error::ResourceNotFound(format!("keyset {}", new.id)))?;
+            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(new.id)))?;
         *info = new;
         Ok(())
     }
@@ -146,7 +150,9 @@ impl persistence::ProofRepository for ProofMap {
         let mut locked = self.proofs.write().unwrap();
         for (y, _) in &items {
             if locked.contains_key(y) {
-                return Err(Error::InvalidInput(String::from("proofs already spent")));
+                return Err(Error::InvalidInput(BRError::Generic(String::from(
+                    "proofs already spent",
+                ))));
             }
         }
         for (y, token) in items.into_iter() {
@@ -269,7 +275,9 @@ impl persistence::CommitmentRepository for CommitmentMap {
         let locked = self.commitments.lock().unwrap();
         let comm = locked
             .get(signature)
-            .ok_or(Error::ResourceNotFound(signature.to_string()))?
+            .ok_or(Error::ResourceNotFound(RNFError::Generic(
+                signature.to_string(),
+            )))?
             .clone();
         Ok(persistence::StoredCommitment {
             inputs: comm.0.clone(),
