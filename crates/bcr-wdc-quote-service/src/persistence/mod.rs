@@ -23,6 +23,11 @@ pub trait Repository {
     async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_accepted(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
+    async fn update_status_if_failedebillvalidation(
+        &self,
+        id: uuid::Uuid,
+        quote: Status,
+    ) -> Result<()>;
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>>;
     async fn list_light(
         &self,

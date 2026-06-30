@@ -56,12 +56,20 @@ impl EbillMonitor {
                 StatusDiscriminants::from(&quote.status),
             ));
         }
-        let bid = quote.bill.id;
+        let bid = quote.bill.id.clone();
         let Ok(_billinfo) = self.srvc.wdc_client.get_ebill(bid.clone()).await else {
             tracing::info!("ebill {bid} from quote {qid} not found yet, skipping");
             return Ok(());
         };
-        self.srvc.enable_minting(qid).await
+        if !self
+            .srvc
+            .check_if_endorsed_bill_is_valid(bid, quote)
+            .await?
+        {
+            self.srvc.set_failed_ebill_validation(qid).await
+        } else {
+            self.srvc.enable_minting(qid).await
+        }
     }
 }
 
@@ -161,6 +169,10 @@ mod tests {
             status: wire_bill::BillStatus::default(),
             current_waiting_state: None,
         };
+        wdc.expect_validate_endorsed_bill_matches_shared_bill()
+            .times(1)
+            .with(eq(bid.clone()), always())
+            .returning(|_, _| Ok(true));
         wdc.expect_get_ebill()
             .times(1)
             .with(eq(bid.clone()))

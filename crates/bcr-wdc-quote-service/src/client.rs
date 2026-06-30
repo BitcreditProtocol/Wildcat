@@ -83,6 +83,17 @@ impl WdcClient for WildcatCl {
         Ok(ebill)
     }
 
+    async fn validate_endorsed_bill_matches_shared_bill(
+        &self,
+        bill_id: BillId,
+        shared_bill_data: String,
+    ) -> Result<bool> {
+        self.ebill
+            .validate_endorsed_bill_matches_shared_bill(bill_id, shared_bill_data)
+            .await?;
+        Ok(true)
+    }
+
     async fn get_shared_ebill_history(
         &self,
         bill_id: BillId,

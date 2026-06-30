@@ -79,6 +79,15 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
             wallet_pubkey,
             minted_amount: bcr_common::cashu::Amount::ZERO,
         },
+        quotes::Status::FailedEbillValidation {
+            keyset_id,
+            discounted,
+            wallet_pubkey,
+        } => wire_quotes::StatusReply::FailedEbillValidation {
+            keyset_id,
+            discounted,
+            wallet_pubkey,
+        },
     }
 }
 

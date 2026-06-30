@@ -212,6 +212,29 @@ pub async fn update_quote(
 }
 
 #[utoipa::path(
+    patch,
+    path = endpoints::ENABLE_QUOTE_MINTING,
+    params(
+        ("qid" = String, Path, description = "The quote id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_quotes::EnableMintingResponse , content_type = "application/json"),
+        (status = 404, description = "quote id not found"),
+        (status = 400, description = "invalid quote state"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn patch_enable_quote_minting(
+    State(ctrl): State<AppController>,
+    Path(qid): Path<uuid::Uuid>,
+) -> Result<Json<wire_quotes::EnableMintingResponse>> {
+    tracing::debug!("Received enable quote minting request");
+
+    let response = ctrl.quotes_cl.enable_minting(qid).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
     get,
     path = endpoints::GET_IDENTITY,
     params(
