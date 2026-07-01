@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
+    vault,
 };
 
 // ----- end imports
@@ -170,6 +171,117 @@ impl ebill::Repository for DBEbill {
                 old = old_minted
             )));
         }
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned proof blob
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ProofBlob {
+    V1(cashu::Proof),
+}
+
+// ///////////////////////////////////////////////////////////////////////// DBVault
+
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    pool: PgPool,
+}
+
+impl DBVault {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        for proof in proofs {
+            let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            let blob = ProofBlob::V1(proof);
+            let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            sqlx::query!(
+                r#"
+                INSERT INTO vault_proofs (y, blob)
+                VALUES ($1, $2)
+                ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
+                "#,
+                y.to_string(),
+                blob_value
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let y_strs: Vec<String> = ys.into_iter().map(|y| y.to_string()).collect();
+        let results = sqlx::query!(
+            r#"
+            SELECT blob as "blob: Json<ProofBlob>"
+            FROM vault_proofs
+            WHERE y = ANY($1)
+            "#,
+            &y_strs[..]
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = results
+            .into_iter()
+            .map(|row| match row.blob.0 {
+                ProofBlob::V1(proof) => proof,
+            })
+            .collect();
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let results = sqlx::query!(
+            r#"
+            SELECT y FROM vault_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(results.len());
+        for row in results {
+            let y = cashu::PublicKey::from_str(&row.y).map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM vault_proofs WHERE y = ANY($1)
+            "#,
+            &y_strs[..]
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 }
