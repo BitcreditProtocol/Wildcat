@@ -8,6 +8,7 @@ use bcr_common::{cashu, core::BillId};
 use bcr_wdc_utils::postgres;
 use sqlx::types::Json;
 use sqlx::PgPool;
+use sqlx::Row;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -212,43 +213,48 @@ impl DBVault {
 #[async_trait]
 impl vault::Repository for DBVault {
     async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut y_strs = Vec::with_capacity(proofs.len());
+        let mut blob_values = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
             let blob = ProofBlob::V1(proof);
             let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
-            sqlx::query!(
-                r#"
-                INSERT INTO vault_proofs (y, blob)
-                VALUES ($1, $2)
-                ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
-                "#,
-                y.to_string(),
-                blob_value
-            )
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
+            y_strs.push(y.to_string());
+            blob_values.push(blob_value);
         }
+        sqlx::query!(
+            r#"
+            INSERT INTO vault_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
+            "#,
+            &y_strs,
+            &blob_values
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
     async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
         let y_strs: Vec<String> = ys.into_iter().map(|y| y.to_string()).collect();
-        let results = sqlx::query!(
+        let results = sqlx::query(
             r#"
-            SELECT blob as "blob: Json<ProofBlob>"
-            FROM vault_proofs
-            WHERE y = ANY($1)
+            SELECT blob FROM vault_proofs WHERE y = ANY($1::text[])
             "#,
-            &y_strs[..]
         )
+        .bind(&y_strs)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
         let proofs = results
             .into_iter()
-            .map(|row| match row.blob.0 {
-                ProofBlob::V1(proof) => proof,
+            .map(|row| {
+                let blob: sqlx::types::Json<ProofBlob> = row.get("blob");
+                match blob.0 {
+                    ProofBlob::V1(proof) => proof,
+                }
             })
             .collect();
         Ok(proofs)
@@ -273,12 +279,12 @@ impl vault::Repository for DBVault {
 
     async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
-        sqlx::query!(
+        sqlx::query(
             r#"
-            DELETE FROM vault_proofs WHERE y = ANY($1)
+            DELETE FROM vault_proofs WHERE y = ANY($1::text[])
             "#,
-            &y_strs[..]
         )
+        .bind(&y_strs)
         .execute(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
