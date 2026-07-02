@@ -725,6 +725,7 @@ dependencies = [
  "mockall",
  "secp256k1",
  "serde",
+ "serde_json",
  "surrealdb",
  "thiserror 2.0.18",
  "tokio",
