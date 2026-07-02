@@ -935,7 +935,7 @@ impl std::convert::From<VaultProofDBEntry> for cashu::Proof {
 
 #[derive(Debug, Clone)]
 pub struct DBVault {
-    db: Surreal<Any>,
+    pub(super) db: Surreal<Any>,
 }
 
 impl DBVault {
@@ -1019,10 +1019,7 @@ impl vault::Repository for DBVault {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        foreign::OfflineRepository, onchain::Repository as OnchainORepo,
-        vault::Repository as VaultRepo,
-    };
+    use crate::{foreign::OfflineRepository, onchain::Repository as OnchainORepo};
     use bcr_common::{core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
@@ -1256,74 +1253,5 @@ mod tests {
         for proof in proofs {
             assert!(result.contains(&proof));
         }
-    }
-
-    async fn init_vault_mem_db() -> DBVault {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        DBVault { db: sdb }
-    }
-
-    fn generate_test_proofs(n: usize) -> Vec<cashu::Proof> {
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let amounts = vec![cashu::Amount::from(8u64); n];
-        core_tests::generate_random_ecash_proofs(&keyset, &amounts)
-    }
-
-    #[tokio::test]
-    async fn vault_store_load_proofs() {
-        let db = init_vault_mem_db().await;
-        let proofs = generate_test_proofs(3);
-        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
-        db.store_proofs(proofs.clone()).await.unwrap();
-        let loaded = db.load_proofs(vec![]).await.unwrap();
-        assert!(loaded.is_empty());
-        let loaded = db.load_proofs(ys).await.unwrap();
-        assert_eq!(loaded.len(), 3);
-        for proof in &proofs {
-            assert!(loaded.contains(proof));
-        }
-    }
-
-    #[tokio::test]
-    async fn vault_load_proofs_partial() {
-        let db = init_vault_mem_db().await;
-        let proofs = generate_test_proofs(3);
-        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
-        db.store_proofs(proofs.clone()).await.unwrap();
-        let mut all_ys = ys.clone();
-        let extra_y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
-        all_ys.push(extra_y);
-        let loaded = db.load_proofs(all_ys).await.unwrap();
-        assert_eq!(loaded.len(), 3);
-    }
-
-    #[tokio::test]
-    async fn vault_list_ys() {
-        let db = init_vault_mem_db().await;
-        let ys = db.list_ys().await.unwrap();
-        assert!(ys.is_empty());
-        let proofs = generate_test_proofs(2);
-        db.store_proofs(proofs.clone()).await.unwrap();
-        let ys = db.list_ys().await.unwrap();
-        assert_eq!(ys.len(), 2);
-        for proof in &proofs {
-            assert!(ys.contains(&proof.y().unwrap()));
-        }
-    }
-
-    #[tokio::test]
-    async fn vault_delete_proofs() {
-        let db = init_vault_mem_db().await;
-        let proofs = generate_test_proofs(3);
-        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
-        db.store_proofs(proofs.clone()).await.unwrap();
-        let to_delete = &ys[..2];
-        db.delete_proofs(to_delete).await.unwrap();
-        let remaining_ys = db.list_ys().await.unwrap();
-        assert_eq!(remaining_ys.len(), 1);
-        assert!(remaining_ys.contains(&ys[2]));
     }
 }

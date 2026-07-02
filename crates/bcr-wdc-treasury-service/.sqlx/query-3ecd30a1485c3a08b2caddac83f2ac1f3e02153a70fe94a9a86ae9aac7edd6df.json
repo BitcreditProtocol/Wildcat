@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT y FROM vault_proofs\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "y",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3ecd30a1485c3a08b2caddac83f2ac1f3e02153a70fe94a9a86ae9aac7edd6df"
+}
