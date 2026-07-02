@@ -11,17 +11,18 @@ use bcr_common::{
     client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
-        ebill::Client as EbClient, treasury as cl_treasury, Url as ClientUrl,
+        ebill::Client as EbClient, treasury as cl_treasury,
     },
 };
-use bcr_wdc_utils::{nut19, routine, surreal};
+use bcr_wdc_utils::{nut19, routine};
 // ----- local modules
 mod admin;
-mod ebill;
+pub mod config;
+pub mod ebill;
 mod error;
 mod foreign;
 mod onchain;
-mod persistence;
+pub mod persistence;
 mod vault;
 mod web;
 // ----- local imports
@@ -29,46 +30,6 @@ mod web;
 // ----- end imports
 
 type TStamp = chrono::DateTime<chrono::Utc>;
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct AppConfig {
-    onchain: OnchainConfig,
-    foreign: ForeignConfig,
-    ebill: EbillConfig,
-    vault: VaultConfig,
-    core_url: ClientUrl,
-    ebill_url: ClientUrl,
-    clowder_rest_url: reqwest::Url,
-    clowder_nats_url: reqwest::Url,
-    cache_expiry_sec: u64,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct OnchainConfig {
-    db: surreal::DBConnConfig,
-    monitor_interval_sec: u32,
-    quote_expiry_seconds: u32,
-    min_confirmations: u32,
-    min_melt_threshold: bitcoin::Amount,
-    min_mint_threshold: bitcoin::Amount,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct ForeignConfig {
-    online_repo: surreal::DBConnConfig,
-    offline_repo: surreal::DBConnConfig,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct EbillConfig {
-    db: surreal::DBConnConfig,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct VaultConfig {
-    db: surreal::DBConnConfig,
-}
-
 #[derive(Clone, FromRef)]
 pub struct AppController {
     ebill: Arc<ebill::Service>,
@@ -79,8 +40,8 @@ pub struct AppController {
     cache: Arc<dyn nut19::Cache>,
 }
 
-pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHandle>) {
-    let AppConfig {
+pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineHandle>) {
+    let config::App {
         onchain,
         foreign,
         ebill,
@@ -112,7 +73,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         .expect("secp256k1::PublicKey == cashu::PublicKey");
 
     // onChain
-    let OnchainConfig {
+    let config::Onchain {
         db: onchain_repo,
         monitor_interval_sec,
         quote_expiry_seconds,
@@ -142,7 +103,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // eBill
-    let EbillConfig { db: mintops } = ebill;
+    let config::Ebill { db: mintops, .. } = ebill;
     let ebill_repo = persistence::surreal::DBEbill::new(mintops)
         .await
         .expect("Failed to create ebill repository");
@@ -161,7 +122,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // foreign
-    let ForeignConfig {
+    let config::Foreign {
         online_repo,
         offline_repo,
     } = foreign;
@@ -194,7 +155,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     };
 
     // vault
-    let VaultConfig { db } = vault;
+    let config::Vault { db } = vault;
     let vault_repo = persistence::surreal::DBVault::new(db)
         .await
         .expect("Failed to create vault repository");
