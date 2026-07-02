@@ -562,6 +562,19 @@ impl DBEbill {
         db_connection.use_db(cfg.database).await?;
         Ok(Self { db: db_connection })
     }
+
+    pub async fn mint_list_all(&self) -> Result<Vec<ebill::MintOperation>> {
+        let ops: Vec<EbillMintOpDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::MINT_OPS))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let ops = ops.into_iter().map(ebill::MintOperation::from).collect();
+        Ok(ops)
+    }
 }
 
 #[async_trait]

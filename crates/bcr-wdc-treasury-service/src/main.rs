@@ -5,7 +5,7 @@ use tracing_subscriber::{filter::LevelFilter, prelude::*};
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
-    appcfg: bcr_wdc_treasury_service::AppConfig,
+    appcfg: bcr_wdc_treasury_service::config::App,
     log_level: String,
 }
 
