@@ -47,7 +47,8 @@ pub struct AppConfig {
 pub struct OnchainConfig {
     db: surreal::DBConnConfig,
     monitor_interval_sec: u32,
-    quote_expiry_seconds: u32,
+    melt_quote_expiry_seconds: u32,
+    mint_quote_expiry_seconds: u32,
     min_confirmations: u32,
     min_melt_threshold: bitcoin::Amount,
     min_mint_threshold: bitcoin::Amount,
@@ -115,7 +116,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
     let OnchainConfig {
         db: onchain_repo,
         monitor_interval_sec,
-        quote_expiry_seconds,
+        mint_quote_expiry_seconds,
+        melt_quote_expiry_seconds,
         min_confirmations,
         min_melt_threshold,
         min_mint_threshold,
@@ -132,7 +134,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, Vec<routine::RoutineHan
         core_cl: core_client.clone(),
     };
     let onchain = onchain::Service {
-        quote_expiry: chrono::Duration::seconds(quote_expiry_seconds as i64),
+        melt_quote_expiry: chrono::Duration::seconds(melt_quote_expiry_seconds as i64),
+        mint_quote_expiry: chrono::Duration::seconds(mint_quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
         repo: Arc::new(onchain_repo),
         clowder_cl: Arc::new(clowder_cl),

@@ -23,7 +23,8 @@ pub struct Service {
     pub wdc: Arc<dyn WildcatClient>,
     pub repo: Arc<dyn Repository>,
     pub clowder_cl: Arc<dyn ClowderClient>,
-    pub quote_expiry: chrono::Duration,
+    pub melt_quote_expiry: chrono::Duration,
+    pub mint_quote_expiry: chrono::Duration,
     pub min_mint_threshold: bitcoin::Amount,
     pub min_melt_threshold: bitcoin::Amount,
     pub alpha_id: PublicKey,
@@ -55,7 +56,7 @@ impl Service {
             .clowder_cl
             .request_onchain_mint_address(qid, kid)
             .await?;
-        let expiry = now + self.quote_expiry;
+        let expiry = now + self.mint_quote_expiry;
         let mintop = MintOperation {
             qid,
             kid,
@@ -159,7 +160,7 @@ impl Service {
         }
         // all ok, proceed
         let target = input_total - admin_fees - network_fees;
-        let expiry = now + self.quote_expiry;
+        let expiry = now + self.melt_quote_expiry;
         let qid = Uuid::new_v4();
         let body = wire_melt::MeltQuoteOnchainResponseBody {
             quote: qid,
@@ -460,7 +461,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -488,7 +490,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::from_sat(1000),
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -574,7 +577,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -651,7 +655,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -745,7 +750,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -804,7 +810,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -838,7 +845,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -879,7 +887,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -987,7 +996,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             min_melt_threshold: bitcoin::Amount::ZERO,
             alpha_id: core::generate_random_keypair().public_key(),
