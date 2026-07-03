@@ -3,6 +3,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
+    client::admin::treasury::SUError,
     wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
@@ -155,8 +156,10 @@ impl Service {
                 created: now,
             };
             self.repo.store_denied_meltop(op).await?;
-            return Err(Error::Unavailable(String::from(
-                "melt operation temporarily suspended, insufficient on-chain reserve, try again later")));
+            let suerror = SUError::MeltOpSuspended(String::from(
+                "insufficient on-chain reserve, try again later",
+            ));
+            return Err(Error::ServiceUnavailable(suerror));
         }
         // all ok, proceed
         let target = input_total - admin_fees - network_fees;
@@ -598,7 +601,7 @@ mod tests {
         let response = service
             .create_onchain_melt_quote(request, chrono::Utc::now())
             .await;
-        assert!(matches!(response, Err(Error::Unavailable(_))));
+        assert!(matches!(response, Err(Error::ServiceUnavailable(_))));
     }
 
     #[tokio::test]

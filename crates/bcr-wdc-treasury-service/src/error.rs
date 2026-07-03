@@ -2,10 +2,13 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::cashu::{
-    self, nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
-    nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut14::Error as CDK14Error,
-    nut20::Error as CDK20Error,
+use bcr_common::{
+    cashu::{
+        self, nut00::Error as CDK00Error, nut10::Error as CDK10Error, nut11::Error as CDK11Error,
+        nut12::Error as CDK12Error, nut13::Error as CDK13Error, nut14::Error as CDK14Error,
+        nut20::Error as CDK20Error,
+    },
+    client::admin::treasury::SUError,
 };
 use bcr_wdc_utils::signatures as signatures_utils;
 use thiserror::Error;
@@ -70,7 +73,7 @@ pub enum Error {
     AttestationVerify(#[from] bcr_wdc_utils::attestation::VerifyError),
     // internal errors
     #[error("Unavailable: {0}")]
-    Unavailable(String),
+    ServiceUnavailable(SUError),
     #[error("invalid inputs {0}")]
     InvalidInput(String),
     #[error("invalid outputs {0}")]
@@ -102,12 +105,20 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
-            Error::BcrSignatures(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::BcrSignatures(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::BcrSwapWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BtcParse(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::BtcParse(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::CDK00(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK10(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK11(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -115,7 +126,11 @@ impl axum::response::IntoResponse for Error {
             Error::CDK13(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK14(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CDK20(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::CDKSecret(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::CDKSecret(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::CDKdhke(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Secp256k1(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -126,29 +141,70 @@ impl axum::response::IntoResponse for Error {
             Error::QuoteClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::MintClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
-            Error::Attestation(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::Attestation(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::AttestationVerify(e) => match e {
                 bcr_wdc_utils::attestation::VerifyError::Attestation(a) => {
-                    (StatusCode::BAD_REQUEST, a.to_string())
+                    let v = serde_json::Value::String(a.to_string());
+                    let j = serde_json::to_string(&v).unwrap_or_default();
+                    (StatusCode::BAD_REQUEST, j)
                 }
                 bcr_wdc_utils::attestation::VerifyError::Rest(_) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, String::new())
                 }
             },
 
-            Error::Unavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
-            Error::InvalidInput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            Error::InvalidOutput(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            Error::InactiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            Error::ActiveKeyset(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            Error::UnmatchingAmount(..) => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::ServiceUnavailable(suerror) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                serde_json::to_string(&suerror).unwrap_or_default(),
+            ),
+            Error::InvalidInput(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::InvalidOutput(e) => {
+                let v = serde_json::Value::String(e.to_string());
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::InactiveKeyset(id) => {
+                let v = serde_json::Value::String(format!("Inactive keyset: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::ActiveKeyset(id) => {
+                let v = serde_json::Value::String(format!("Active keyset: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::UnmatchingAmount(a, b) => {
+                let v = serde_json::Value::String(format!("Unmatching amount: {a} {b}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
             Error::UnblindSignatures(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
             Error::InsufficientOnchainMeltAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
             Error::InsufficientOnchainMintAmount(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::MeltAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
-            Error::MintAmountMismatch(_) => (StatusCode::BAD_REQUEST, String::new()),
+            Error::MeltAmountMismatch(a) => {
+                let v = serde_json::Value::String(format!("Melt amount mismatch: {a}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::MintAmountMismatch(a) => {
+                let v = serde_json::Value::String(format!("Mint amount mismatch: {a}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
 
-            Error::ResourceNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::ResourceNotFound(v) => {
+                let v = serde_json::Value::String(v);
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::NOT_FOUND, j)
+            }
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
         };
         resp.into_response()
