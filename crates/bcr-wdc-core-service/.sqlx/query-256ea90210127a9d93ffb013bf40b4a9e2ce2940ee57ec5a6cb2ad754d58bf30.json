@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO signatures (y, blob)\n            VALUES ($1, $2)\n            ON CONFLICT (y) DO NOTHING\n            RETURNING y\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "y",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "256ea90210127a9d93ffb013bf40b4a9e2ce2940ee57ec5a6cb2ad754d58bf30"
+}
