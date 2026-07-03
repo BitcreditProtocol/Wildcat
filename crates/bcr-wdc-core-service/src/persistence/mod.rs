@@ -8,6 +8,7 @@ use bitcoin::secp256k1::schnorr;
 use crate::{error::Result, TStamp};
 // ----- local modules
 pub mod inmemory;
+pub mod sqlx;
 pub mod surreal;
 
 // ----- end imports
@@ -324,6 +325,12 @@ mod tests {
         let db = init_surreal_signatures_db().await;
         signsrepo_store(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_signsrepo_store_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBSignatures::from_pool(pool);
+        signsrepo_store(db).await;
+    }
     async fn signsrepo_store(db: impl SignaturesRepository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
@@ -338,6 +345,12 @@ mod tests {
         signsrepo_store_same_signature_twice(db).await;
         //
         let db = init_surreal_signatures_db().await;
+        signsrepo_store_same_signature_twice(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_signsrepo_store_same_signature_twice_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBSignatures::from_pool(pool);
         signsrepo_store_same_signature_twice(db).await;
     }
     async fn signsrepo_store_same_signature_twice(db: impl SignaturesRepository) {
@@ -370,6 +383,12 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_proofsrepo_insert_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBProofs::from_pool(pool);
+        proofsrepo_insert(db).await;
+    }
     async fn proofsrepo_insert(db: impl ProofRepository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
@@ -386,6 +405,12 @@ mod tests {
         proofsrepo_insert_double_spent_all(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_double_spent_all(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_proofsrepo_insert_double_spent_all_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBProofs::from_pool(pool);
         proofsrepo_insert_double_spent_all(db).await;
     }
     async fn proofsrepo_insert_double_spent_all(db: impl ProofRepository) {
@@ -408,6 +433,12 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert_double_spent_partial(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_proofsrepo_insert_double_spent_partial_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBProofs::from_pool(pool);
+        proofsrepo_insert_double_spent_partial(db).await;
+    }
     async fn proofsrepo_insert_double_spent_partial(db: impl ProofRepository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
@@ -419,7 +450,6 @@ mod tests {
             ],
         );
         db.insert(proofs[0..2].to_vec()).await.unwrap();
-
         let res = db.insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
@@ -431,6 +461,12 @@ mod tests {
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
         //
         let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_double_spent_partial_still_valid(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_proofsrepo_insert_double_spent_partial_still_valid_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBProofs::from_pool(pool);
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
     async fn proofsrepo_insert_double_spent_partial_still_valid(db: impl ProofRepository) {

@@ -22,7 +22,8 @@ futures.workspace = true
 itertools.workspace = true
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
-serde_json.workspace = true
+serde_json = {workspace = true}
+sqlx = {workspace = true, default-features = false, features = ["runtime-tokio", "uuid", "postgres", "macros", "json", "migrate"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}
