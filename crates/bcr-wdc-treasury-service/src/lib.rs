@@ -23,7 +23,7 @@ mod error;
 mod foreign;
 mod onchain;
 pub mod persistence;
-mod vault;
+pub mod vault;
 mod web;
 // ----- local imports
 
@@ -158,7 +158,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
 
     // vault
-    let config::Vault { db } = vault;
+    let config::Vault { db, .. } = vault;
     let vault_repo = persistence::surreal::DBVault::new(db)
         .await
         .expect("Failed to create vault repository");
