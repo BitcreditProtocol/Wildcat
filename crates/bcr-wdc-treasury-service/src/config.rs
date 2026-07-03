@@ -45,4 +45,5 @@ pub struct Ebill {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Vault {
     pub db: surreal::DBConnConfig,
+    pub new: postgres::DBConnConfig,
 }

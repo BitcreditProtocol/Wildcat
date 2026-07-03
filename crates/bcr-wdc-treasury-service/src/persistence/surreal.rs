@@ -563,7 +563,7 @@ impl DBEbill {
         Ok(Self { db: db_connection })
     }
 
-    pub async fn mint_list_all(&self) -> Result<Vec<ebill::MintOperation>> {
+    pub async fn dump(&self) -> Result<Vec<ebill::MintOperation>> {
         let ops: Vec<EbillMintOpDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table)")
@@ -960,6 +960,19 @@ impl DBVault {
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
         Ok(Self { db: db_connection })
+    }
+
+    pub async fn dump(&self) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<VaultProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = entries.into_iter().map(Into::into).collect();
+        Ok(proofs)
     }
 }
 
