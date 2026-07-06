@@ -9,12 +9,13 @@ use bcr_wdc_utils::postgres;
 use sqlx::types::Json;
 use sqlx::PgPool;
 use sqlx::Row;
+use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
     ebill,
     error::{Error, Result},
-    vault,
+    onchain, vault, TStamp,
 };
 
 // ----- end imports
@@ -288,6 +289,552 @@ impl vault::Repository for DBVault {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned onchain blobs
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum OnChainMintOpBlob {
+    V1(OnChainMintOpBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainMintOpBlobV1 {
+    blinds: Option<Vec<cashu::BlindedMessage>>,
+    signatures: Option<Vec<cashu::BlindSignature>>,
+    recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    kid: cashu::Id,
+    target: bitcoin::Amount,
+}
+
+fn onchain_mintop_to_row(
+    op: onchain::MintOperation,
+) -> Result<(
+    Uuid,
+    onchain::MintStatusDiscriminants,
+    TStamp,
+    serde_json::Value,
+)> {
+    let mut blob_v1 = OnChainMintOpBlobV1 {
+        blinds: None,
+        signatures: None,
+        recipient: op.recipient,
+        kid: op.kid,
+        target: op.target,
+    };
+    let status = op.status.discriminant();
+    match op.status {
+        onchain::MintStatus::Pending { blinds } => {
+            blob_v1.blinds = Some(blinds);
+        }
+        onchain::MintStatus::Paid { signatures } => {
+            blob_v1.signatures = Some(signatures);
+        }
+        _ => {}
+    };
+    let blob = OnChainMintOpBlob::V1(blob_v1);
+    let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok((op.qid, status, op.expiry, blob_value))
+}
+
+fn onchain_mintop_from_row(
+    qid: Uuid,
+    op_status: onchain::MintStatusDiscriminants,
+    expiry: TStamp,
+    blob: OnChainMintOpBlob,
+) -> Result<onchain::MintOperation> {
+    let (recipient, kid, target, blinds, signatures) = match blob {
+        OnChainMintOpBlob::V1(blob) => (
+            blob.recipient,
+            blob.kid,
+            blob.target,
+            blob.blinds,
+            blob.signatures,
+        ),
+    };
+    let status = match op_status {
+        onchain::MintStatusDiscriminants::Pending => {
+            let blinds = blinds
+                .ok_or_else(|| Error::DB(anyhow!("Missing blinds in Pending mintop blob")))?;
+            onchain::MintStatus::Pending { blinds }
+        }
+        onchain::MintStatusDiscriminants::Paid => {
+            let signatures = signatures
+                .ok_or_else(|| Error::DB(anyhow!("Missing signatures in Paid mintop blob")))?;
+            onchain::MintStatus::Paid { signatures }
+        }
+        onchain::MintStatusDiscriminants::Expired => onchain::MintStatus::Expired,
+    };
+    let op = onchain::MintOperation {
+        qid,
+        expiry,
+        status,
+        recipient,
+        kid,
+        target,
+    };
+    Ok(op)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum OnChainMeltOpBlob {
+    V1(OnChainMeltOpBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainMeltOpBlobV1 {
+    pub address: String,
+    pub target: bitcoin::Amount,
+    pub available: cashu::Amount,
+    pub fees: cashu::Amount,
+    // network fees = available - target - fees
+    pub wallet_key: cashu::PublicKey,
+    pub fp_digest: [u8; 32],
+    pub commitment: secp256k1::schnorr::Signature,
+    pub tx: Option<bitcoin::Txid>,
+}
+
+fn onchain_meltop_to_row(
+    op: onchain::MeltOperation,
+) -> Result<(
+    Uuid,
+    onchain::MeltStatusDiscriminants,
+    TStamp,
+    Vec<String>,
+    serde_json::Value,
+)> {
+    let mut blob_v1 = OnChainMeltOpBlobV1 {
+        address: op.address,
+        available: op.available,
+        target: op.target,
+        commitment: op.commitment,
+        fees: op.fees,
+        wallet_key: op.wallet_key,
+        fp_digest: op.fp_digest,
+        tx: None,
+    };
+    let status = op.status.discriminant();
+    if let onchain::MeltStatus::Paid { tx } = op.status {
+        blob_v1.tx = Some(tx);
+    }
+    let ys = op.input_ys.iter().map(|y| y.to_string()).collect();
+    let blob = OnChainMeltOpBlob::V1(blob_v1);
+    let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok((op.qid, status, op.expiry, ys, blob_value))
+}
+
+fn onchain_meltop_from_row(
+    qid: Uuid,
+    op_status: onchain::MeltStatusDiscriminants,
+    expiry: TStamp,
+    ys: Vec<String>,
+    blob: OnChainMeltOpBlob,
+) -> Result<onchain::MeltOperation> {
+    let input_ys: Vec<cashu::PublicKey> = ys
+        .into_iter()
+        .map(|y_str| cashu::PublicKey::from_str(&y_str).map_err(|e| Error::DB(anyhow!(e))))
+        .collect::<Result<_>>()?;
+    let (address, target, available, fees, wallet_key, fp_digest, commitment, tx) = match blob {
+        OnChainMeltOpBlob::V1(blob) => (
+            blob.address,
+            blob.target,
+            blob.available,
+            blob.fees,
+            blob.wallet_key,
+            blob.fp_digest,
+            blob.commitment,
+            blob.tx,
+        ),
+    };
+    let status = match op_status {
+        onchain::MeltStatusDiscriminants::Pending => onchain::MeltStatus::Pending,
+        onchain::MeltStatusDiscriminants::Paid => {
+            if tx.is_none() {
+                return Err(Error::DB(anyhow!("Missing tx in Paid meltop blob")));
+            }
+            onchain::MeltStatus::Paid { tx: tx.unwrap() }
+        }
+        onchain::MeltStatusDiscriminants::Expired => onchain::MeltStatus::Expired,
+        onchain::MeltStatusDiscriminants::Canceled => onchain::MeltStatus::Canceled,
+    };
+    let op = onchain::MeltOperation {
+        qid,
+        address,
+        target,
+        available,
+        fees,
+        wallet_key,
+        commitment,
+        fp_digest,
+        expiry,
+        input_ys,
+        status,
+    };
+    Ok(op)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum OnChainDeniedMeltOpBlob {
+    V1(OnChainDeniedMeltOpBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OnChainDeniedMeltOpBlobV1 {
+    pub inputs: bitcoin::Amount,
+    pub created: TStamp,
+}
+
+// ///////////////////////////////////////////////////////////////////////// DBOnChain
+
+#[derive(Debug, Clone)]
+pub struct DBOnChain {
+    pool: PgPool,
+}
+
+impl DBOnChain {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    async fn mintops_mark_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE onchain_mint_ops
+            SET status = $2
+            WHERE status != $2 AND expiry < $1
+            "#,
+            now,
+            onchain::MintStatusDiscriminants::Expired.to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn meltops_mark_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE onchain_melt_ops
+            SET status = $2
+            WHERE status != $2 AND expiry < $1
+            "#,
+            now,
+            onchain::MeltStatusDiscriminants::Expired.to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl onchain::Repository for DBOnChain {
+    async fn store_mintop(&self, op: onchain::MintOperation) -> Result<()> {
+        let (qid, status, expiry, blob) = onchain_mintop_to_row(op)?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO onchain_mint_ops (qid, expiry, status, blob)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (qid) DO NOTHING
+            RETURNING qid
+            "#,
+            qid,
+            expiry,
+            status.to_string(),
+            blob
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::InvalidInput(format!(
+                "mintop already exists {}",
+                qid
+            )));
+        }
+        Ok(())
+    }
+
+    async fn load_mintop(&self, qid: Uuid) -> Result<onchain::MintOperation> {
+        let result = sqlx::query!(
+            r#"
+            SELECT qid, expiry, status, blob as "blob: Json<OnChainMintOpBlob>"
+            FROM onchain_mint_ops
+            WHERE qid = $1
+            "#,
+            qid
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        };
+        let status = onchain::MintStatusDiscriminants::from_str(&row.status)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let op = onchain_mintop_from_row(row.qid, status, row.expiry, row.blob.0)?;
+        Ok(op)
+    }
+
+    async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        self.mintops_mark_expired(now).await?;
+        let results = sqlx::query!(
+            r#"
+            SELECT qid FROM onchain_mint_ops WHERE status = $1
+            "#,
+            onchain::MintStatusDiscriminants::Pending.to_string(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(results.into_iter().map(|r| r.qid).collect())
+    }
+
+    async fn update_mintop_status(&self, qid: Uuid, op_status: onchain::MintStatus) -> Result<()> {
+        let rows_affected = match op_status {
+            onchain::MintStatus::Pending { .. } => {
+                return Err(Error::InvalidInput(format!(
+                    "Cannot update mintop {qid} to Pending status"
+                )));
+            }
+            onchain::MintStatus::Paid { signatures } => {
+                let sigs_val =
+                    serde_json::to_value(&signatures).map_err(|e| Error::DB(anyhow!(e)))?;
+                sqlx::query!(
+                    r#"
+                    UPDATE onchain_mint_ops
+                    SET status = $3,
+                        blob = jsonb_set(blob, '{data,signatures}', to_jsonb($2::jsonb), true)
+                    WHERE qid = $1 AND blob->>'version' = 'V1'
+                    "#,
+                    qid,
+                    sigs_val,
+                    onchain::MintStatusDiscriminants::Paid.to_string(),
+                )
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?
+                .rows_affected()
+            }
+            onchain::MintStatus::Expired => sqlx::query!(
+                r#"
+                    UPDATE onchain_mint_ops
+                    SET status = $2
+                    WHERE qid = $1 AND blob->>'version' = 'V1'
+                    "#,
+                qid,
+                onchain::MintStatusDiscriminants::Expired.to_string(),
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .rows_affected(),
+        };
+        if rows_affected == 0 {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        }
+        Ok(())
+    }
+
+    async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
+        self.meltops_mark_expired(now).await?;
+        let (qid, status, expiry, ys, blob) = onchain_meltop_to_row(op)?;
+        let result = sqlx::query(
+            r#"
+            INSERT INTO onchain_melt_ops (qid, expiry, status, input_ys, blob)
+            VALUES( $1, $2, $3, $4, $5)
+            RETURNING qid
+            "#,
+        )
+        .bind(qid)
+        .bind(expiry)
+        .bind(status.to_string())
+        .bind(&ys)
+        .bind(&blob)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::InvalidInput(String::from(
+                "meltop: inputs already locked in",
+            )));
+        }
+        Ok(())
+    }
+
+    async fn load_meltop(&self, qid: Uuid) -> Result<onchain::MeltOperation> {
+        let result = sqlx::query!(
+            r#"
+            SELECT qid, expiry, status, input_ys, blob as "blob: Json<OnChainMeltOpBlob>"
+            FROM onchain_melt_ops
+            WHERE qid = $1
+            "#,
+            qid
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        };
+        let status = onchain::MeltStatusDiscriminants::from_str(&row.status)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let op = onchain_meltop_from_row(row.qid, status, row.expiry, row.input_ys, row.blob.0)?;
+        Ok(op)
+    }
+
+    async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
+        let rows_affected = match status {
+            onchain::MeltStatus::Pending => {
+                return Err(Error::InvalidInput(format!(
+                    "Cannot update meltop {qid} to Pending status"
+                )));
+            }
+            onchain::MeltStatus::Paid { tx } => sqlx::query!(
+                r#"
+                UPDATE onchain_melt_ops
+                SET status = $3,
+                    blob = jsonb_set(blob, '{data,tx}', to_jsonb($2::text), true)
+                WHERE qid = $1 AND blob->>'version' = 'V1'
+                "#,
+                qid,
+                tx.to_string(),
+                onchain::MeltStatusDiscriminants::Paid.to_string()
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .rows_affected(),
+            onchain::MeltStatus::Expired => sqlx::query!(
+                r#"
+                UPDATE onchain_melt_ops
+                SET status = $2
+                WHERE qid = $1 AND blob->>'version' = 'V1'
+                "#,
+                qid,
+                onchain::MeltStatusDiscriminants::Expired.to_string(),
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .rows_affected(),
+            onchain::MeltStatus::Canceled => sqlx::query!(
+                r#"
+                UPDATE onchain_melt_ops
+                SET status = $2
+                WHERE qid = $1 AND blob->>'version' = 'V1'
+                "#,
+                qid,
+                onchain::MeltStatusDiscriminants::Canceled.to_string()
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .rows_affected(),
+        };
+        if rows_affected == 0 {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        }
+        Ok(())
+    }
+
+    async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        self.meltops_mark_expired(now).await?;
+        let results = sqlx::query!(
+            r#"
+            SELECT qid FROM onchain_melt_ops WHERE status = $1
+            "#,
+            onchain::MeltStatusDiscriminants::Pending.to_string(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(results.into_iter().map(|r| r.qid).collect())
+    }
+
+    async fn store_denied_meltop(&self, op: onchain::DeniedMeltOperation) -> Result<()> {
+        let blob = OnChainDeniedMeltOpBlob::V1(OnChainDeniedMeltOpBlobV1 {
+            inputs: op.inputs,
+            created: op.created,
+        });
+        let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO onchain_denied_melt_ops (qid, blob)
+            VALUES ($1, $2)
+            ON CONFLICT (qid) DO NOTHING
+            RETURNING qid
+            "#,
+            op.qid,
+            blob_value
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::InvalidInput(format!(
+                "denied meltop already exists {}",
+                op.qid
+            )));
+        }
+        Ok(())
+    }
+
+    async fn list_denied_meltops(&self) -> Result<Vec<onchain::DeniedMeltOperation>> {
+        let results = sqlx::query!(
+            r#"
+            SELECT qid, blob as "blob: Json<OnChainDeniedMeltOpBlob>"
+            FROM onchain_denied_melt_ops
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ops = Vec::with_capacity(results.len());
+        for row in results {
+            let OnChainDeniedMeltOpBlob::V1(blob) = row.blob.0;
+            ops.push(onchain::DeniedMeltOperation {
+                qid: row.qid,
+                inputs: blob.inputs,
+                created: blob.created,
+            });
+        }
+        Ok(ops)
+    }
+
+    async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM onchain_denied_melt_ops WHERE qid = $1
+            "#,
+            qid
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.rows_affected() == 0 {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        }
         Ok(())
     }
 }

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE onchain_mint_ops\n                    SET status = $3,\n                        blob = jsonb_set(blob, '{data,signatures}', to_jsonb($2::jsonb), true)\n                    WHERE qid = $1 AND blob->>'version' = 'V1'\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "630e2701df4b7e0da37251518c1ece138e8bf7f7f1e2284f57a68e62af568aea"
+}

@@ -111,7 +111,15 @@ pub trait VaultService: Send + Sync {
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
+#[strum_discriminants(
+    derive(
+        serde::Serialize,
+        serde::Deserialize,
+        strum::Display,
+        strum::EnumString
+    ),
+    strum(serialize_all = "lowercase")
+)]
 #[serde(tag = "status")]
 pub enum MintStatus {
     Pending {
@@ -134,7 +142,15 @@ pub struct MintOperation {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::EnumDiscriminants)]
 #[serde(tag = "status")]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
+#[strum_discriminants(
+    derive(
+        serde::Serialize,
+        serde::Deserialize,
+        strum::Display,
+        strum::EnumString
+    ),
+    strum(serialize_all = "lowercase")
+)]
 pub enum MeltStatus {
     Pending,
     Paid { tx: bitcoin::Txid },
@@ -170,6 +186,7 @@ pub trait Repository: Send + Sync {
     async fn store_mintop(&self, op: MintOperation) -> Result<()>;
     async fn load_mintop(&self, qid: Uuid) -> Result<MintOperation>;
     async fn update_mintop_status(&self, qid: Uuid, status: MintStatus) -> Result<()>;
+    // automatic update of status to `Expired` using `now` timestamp
     async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>>;
     async fn store_meltop(&self, op: MeltOperation, now: TStamp) -> Result<()>;
     async fn load_meltop(&self, qid: Uuid) -> Result<MeltOperation>;
