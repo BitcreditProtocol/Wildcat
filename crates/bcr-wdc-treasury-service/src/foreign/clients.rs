@@ -249,7 +249,7 @@ impl ForeignClient for MintClient {
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
         let (content, signature) = self
             .foreign_cl
-            .commit_swap_with_signature(payload, signature, self.my_pk)
+            .commit_swap_with_signature(payload, signature, self.foreign_pk)
             .await?;
         Ok((content, signature))
     }
