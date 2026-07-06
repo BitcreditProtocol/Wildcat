@@ -52,32 +52,56 @@ impl axum::response::IntoResponse for Error {
         let resp = match self {
             Error::Convert(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()),
             Error::InternalServer(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            Error::InvalidKeysetId(_) => {
-                (StatusCode::BAD_REQUEST, String::from("Invalid Kyset ID"))
+            Error::InvalidKeysetId(id) => {
+                let v = serde_json::Value::String(format!("Invalid keysetID: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
             }
-
-            Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, String::from("Invalid input")),
-            Error::InvalidAmount(_) => (StatusCode::BAD_REQUEST, String::from("Invalid amount")),
-            Error::ResourceNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::InvalidInput(msg) => {
+                let v = serde_json::Value::String(format!("Invalid input: {msg}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::InvalidAmount(amount) => {
+                let v = serde_json::Value::String(format!("Invalid amount: {amount}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::ResourceNotFound(id) => {
+                let v = serde_json::Value::String(format!("Resource not found: {id}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::NOT_FOUND, j)
+            }
             Error::InvalidQuoteStatus(_, _, _) => {
                 (StatusCode::CONFLICT, String::from("Quote invalid status"))
             }
 
-            Error::Chrono(_) => (StatusCode::BAD_REQUEST, String::from("Malformed datetime")),
+            Error::Chrono(e) => {
+                let v = serde_json::Value::String(format!("Malformed datetime: {e}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
 
             Error::SignWithKeys(ECashSignatureError::NoKeyForAmount(amount)) => {
-                (StatusCode::NOT_FOUND, format!("No key for amount {amount}"))
+                let v = serde_json::Value::String(format!("No key for amount {amount}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::NOT_FOUND, j)
             }
-            Error::SignWithKeys(e) => (StatusCode::BAD_REQUEST, format!("Signature error: {e}")),
+            Error::SignWithKeys(e) => {
+                let v = serde_json::Value::String(format!("Signature error: {e}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
 
             Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::BcrCommonBorsh(_) => (
-                StatusCode::BAD_REQUEST,
-                String::from("Invalid signature or public key"),
-            ),
+            Error::BcrCommonBorsh(e) => {
+                let v = serde_json::Value::String(format!("Invalid signature or public key: {e}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
         };
         resp.into_response()
     }
