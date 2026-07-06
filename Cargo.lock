@@ -773,6 +773,7 @@ dependencies = [
  "rand 0.8.6",
  "reqwest",
  "serde",
+ "serde_json",
  "strum",
  "surrealdb",
  "thiserror 2.0.18",
