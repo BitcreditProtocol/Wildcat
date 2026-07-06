@@ -11,8 +11,11 @@ pub mod surreal;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ebill, error::Error, vault};
+    use crate::{ebill, error::Error, onchain, vault};
     use bcr_common::{cashu, core, core_tests};
+    use bcr_wdc_utils::signatures::test_utils as signature_tests;
+    use bitcoin::hashes::Hash;
+    use std::str::FromStr;
     use uuid::Uuid;
 
     //////////////////////////////////////////////////////////////////// ebill::Repository
@@ -307,5 +310,125 @@ mod tests {
         let remaining_ys = db.list_ys().await.unwrap();
         assert_eq!(remaining_ys.len(), 1);
         assert!(remaining_ys.contains(&ys[2]));
+    }
+
+    //////////////////////////////////////////////////////////////////// onchain::Repository
+    async fn init_surreal_onchain_db() -> impl onchain::Repository {
+        let cfg = bcr_wdc_utils::surreal::DBConnConfig {
+            connection: "mem://".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        };
+        surreal::DBOnChain::new(cfg).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_onchain_update_mintop_status() {
+        let db = init_surreal_onchain_db().await;
+        onchain_update_mintop_status(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_onchain_update_mintop_status_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBOnChain::from_pool(pool);
+        onchain_update_mintop_status(db).await;
+    }
+    async fn onchain_update_mintop_status(db: impl onchain::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let amounts = vec![cashu::Amount::from(100u64)];
+        let blinds = signature_tests::generate_blinds(kid, &amounts)
+            .into_iter()
+            .map(|(blind, _, _)| blind)
+            .collect();
+        let op = onchain::MintOperation {
+            qid: Uuid::new_v4(),
+            kid,
+            target: bitcoin::Amount::ZERO,
+            recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
+            expiry: chrono::Utc::now() + chrono::Duration::hours(1),
+            status: onchain::MintStatus::Pending { blinds },
+        };
+        db.store_mintop(op.clone()).await.unwrap();
+        let signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
+        let status = onchain::MintStatus::Paid { signatures };
+        db.update_mintop_status(op.qid, status).await.unwrap();
+        let res = db.load_mintop(op.qid).await.unwrap();
+        assert!(matches!(res.status, onchain::MintStatus::Paid { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_onchain_list_pending_mintops() {
+        let db = init_surreal_onchain_db().await;
+        onchain_list_pending_mintops(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_onchain_list_pending_mintops_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBOnChain::from_pool(pool);
+        onchain_list_pending_mintops(db).await;
+    }
+    async fn onchain_list_pending_mintops(db: impl onchain::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let amounts = vec![cashu::Amount::from(100u64)];
+        let now = chrono::Utc::now();
+        let blinds = signature_tests::generate_blinds(kid, &amounts)
+            .into_iter()
+            .map(|(blind, _, _)| blind)
+            .collect();
+        let op = onchain::MintOperation {
+            qid: Uuid::new_v4(),
+            kid,
+            target: bitcoin::Amount::ZERO,
+            recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
+            expiry: now + chrono::Duration::hours(1),
+            status: onchain::MintStatus::Pending { blinds },
+        };
+        db.store_mintop(op.clone()).await.unwrap();
+        let pending = db.list_pending_mintops(now).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0], op.qid);
+    }
+
+    #[tokio::test]
+    async fn test_onchain_list_pending_meltops_roundtrip() {
+        let db = init_surreal_onchain_db().await;
+        onchain_list_pending_meltops_roundtrip(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_onchain_list_pending_meltops_roundtrip_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBOnChain::from_pool(pool);
+        onchain_list_pending_meltops_roundtrip(db).await;
+    }
+    async fn onchain_list_pending_meltops_roundtrip(db: impl onchain::Repository) {
+        let qid = Uuid::new_v4();
+        let input_ys = vec![
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+        ];
+        let wallet_key = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let commitment = signature_tests::random_schnorr_signature();
+        let now = chrono::Utc::now();
+        let meltop = onchain::MeltOperation {
+            qid,
+            target: bitcoin::Amount::from_sat(1000),
+            available: cashu::Amount::from(2000u64),
+            fees: cashu::Amount::from(10u64),
+            address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
+            wallet_key,
+            commitment,
+            expiry: now + chrono::Duration::hours(1),
+            fp_digest: [7u8; 32],
+            input_ys,
+            status: onchain::MeltStatus::Pending,
+        };
+        db.store_meltop(meltop, now).await.unwrap();
+        let pending = db.list_pending_meltops(now).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0], qid);
+        let loaded = db.load_meltop(qid).await.unwrap();
+        assert_eq!(loaded.fp_digest, [7u8; 32]);
     }
 }

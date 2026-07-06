@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE onchain_melt_ops\n                SET status = $2\n                WHERE qid = $1 AND blob->>'version' = 'V1'\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "818e9d2f819c1836ac3b290c1f1f3e55d9e96fba5976df82c607b33ecacc60f8"
+}

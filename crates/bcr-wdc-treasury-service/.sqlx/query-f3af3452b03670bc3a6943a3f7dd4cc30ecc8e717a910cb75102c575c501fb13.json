@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT qid, expiry, status, input_ys, blob as \"blob: Json<OnChainMeltOpBlob>\"\n            FROM onchain_melt_ops\n            WHERE qid = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "expiry",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "input_ys",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "blob: Json<OnChainMeltOpBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f3af3452b03670bc3a6943a3f7dd4cc30ecc8e717a910cb75102c575c501fb13"
+}

@@ -193,23 +193,8 @@ impl Service {
         };
         let inputs = op.input_ys.clone();
         let expiry = op.expiry;
+        self.wdc.reserve_inputs(inputs, expiry).await?;
         self.repo.store_meltop(op, now).await?;
-        match self.wdc.reserve_inputs(inputs, expiry).await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!("reserve_inputs failed with {e}");
-                let rs = self
-                    .repo
-                    .update_meltop_status(qid, onchain::MeltStatus::Canceled)
-                    .await;
-                if let Err(e2) = rs {
-                    tracing::error!(
-                        "DB Failure, lost MeltStatus update for canceled MeltOp {qid}: {e2}"
-                    );
-                }
-                return Err(e);
-            }
-        };
         Ok(wire_melt::MeltQuoteOnchainResponse {
             content,
             commitment,
