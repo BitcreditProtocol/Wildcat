@@ -93,7 +93,15 @@ impl BillInfo {
 }
 
 #[derive(Debug, Clone, strum::EnumDiscriminants, serde::Serialize, serde::Deserialize)]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize, strum::Display))]
+#[strum_discriminants(
+    derive(
+        serde::Serialize,
+        serde::Deserialize,
+        strum::Display,
+        strum::EnumString
+    ),
+    strum(serialize_all = "lowercase")
+)]
 #[serde(tag = "status")]
 pub enum Status {
     Pending {

@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 // ----- extra library imports
+use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
 use strum::IntoDiscriminant;
@@ -9,7 +10,7 @@ use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::{
-    error::Result,
+    error::{Error, Result},
     persistence::Repository,
     quotes,
     service::{ListFilters, SortOrder},
@@ -56,9 +57,12 @@ impl Repository for QuotesIDMap {
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::Pending { .. }) {
                 old.status = new;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::QuotesRepository(anyhow!(
+            "quote {qid} not found or not pending"
+        )))
     }
 
     async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
@@ -67,9 +71,12 @@ impl Repository for QuotesIDMap {
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::Offered { .. }) {
                 old.status = new;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::QuotesRepository(anyhow!(
+            "quote {qid} not found or not offered"
+        )))
     }
 
     async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
@@ -78,9 +85,12 @@ impl Repository for QuotesIDMap {
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::Accepted { .. }) {
                 old.status = new;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::QuotesRepository(anyhow!(
+            "quote {qid} not found or not accepted"
+        )))
     }
 
     async fn update_status_if_failedebillvalidation(
@@ -93,9 +103,12 @@ impl Repository for QuotesIDMap {
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::FailedEbillValidation { .. }) {
                 old.status = new;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::QuotesRepository(anyhow!(
+            "quote {qid} not found or not failedebillvalidation"
+        )))
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
