@@ -18,6 +18,7 @@ config.workspace = true
 reqwest = {workspace = true}
 serde.workspace = true
 serde_json.workspace = true
+sqlx = {workspace = true, features = ["chrono", "json", "macros", "migrate", "postgres", "runtime-tokio-rustls", "uuid"]}
 strum = {workspace = true, features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true
