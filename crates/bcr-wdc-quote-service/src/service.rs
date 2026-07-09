@@ -6,7 +6,7 @@ use bcr_common::{
     core::{BillId, NodeId},
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
-use bitcoin::Amount;
+use bitcoin as btc;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -102,7 +102,7 @@ impl Service {
         Ok(quote)
     }
 
-    pub async fn new_quote(
+    async fn new_quote(
         &self,
         bill: BillInfo,
         minting_pub_key: cashu::PublicKey,
@@ -129,6 +129,7 @@ impl Service {
         pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
+        validate_basic_ebill_rules(&bill)?;
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
         let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
@@ -291,10 +292,10 @@ impl Service {
     pub async fn offer(
         &self,
         qid: uuid::Uuid,
-        discounted: Amount,
+        discounted: btc::Amount,
         submitted: TStamp,
         ttl: Option<TStamp>,
-    ) -> Result<(Amount, TStamp)> {
+    ) -> Result<(btc::Amount, TStamp)> {
         let mut quote = self._lookup(qid, submitted).await?;
         let Status::Pending { .. } = quote.status else {
             return Err(Error::InvalidQuoteStatus(
@@ -414,7 +415,7 @@ impl Service {
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
         fees_amount: cashu::Amount,
-        discounted: Amount,
+        discounted: btc::Amount,
         bill_id: BillId,
     ) -> Result<()> {
         let keys = self.wdc_client.get_keys(keyset_id).await?;
@@ -487,6 +488,20 @@ async fn mint_fees(
     Ok(prfs)
 }
 
+fn validate_basic_ebill_rules(bill: &BillInfo) -> Result<()> {
+    if bill.maturity_date <= chrono::Utc::now().date_naive() {
+        return Err(Error::InvalidInput(String::from("maturity date > today")));
+    }
+    if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
+        return Err(Error::InvalidInput(format!(
+            "{} < bill_amount < {}",
+            btc::Amount::ONE_SAT,
+            btc::Amount::MAX_MONEY
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,7 +533,7 @@ mod tests {
             payee: BillParticipant::Ident(holder.clone()),
             current_holder: BillParticipant::Ident(holder),
             endorsees: Default::default(),
-            sum: Amount::from_sat(rng.gen_range(1000..100000)),
+            sum: btc::Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: (chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)))
                 .date_naive(),
             file_urls: Vec::default(),
@@ -817,7 +832,7 @@ mod tests {
         let keyset_id = keyset.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let fee = cashu::Amount::from(10);
-        let discounted = quote.bill.sum - Amount::from_sat(10);
+        let discounted = quote.bill.sum - btc::Amount::from_sat(10);
         let bill_id = quote.bill.id.clone();
         quote.status = Status::FailedEbillValidation {
             keyset_id,

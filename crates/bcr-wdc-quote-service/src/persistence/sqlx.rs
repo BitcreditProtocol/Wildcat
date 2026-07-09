@@ -213,7 +213,8 @@ impl persistence::Repository for DBQuotes {
         id: uuid::Uuid,
         new_status: quotes::Status,
     ) -> Result<()> {
-        self.update_status_if(id, quotes::StatusDiscriminants::Pending, new_status).await
+        self.update_status_if(id, quotes::StatusDiscriminants::Pending, new_status)
+            .await
     }
 
     async fn update_status_if_offered(
@@ -221,7 +222,8 @@ impl persistence::Repository for DBQuotes {
         id: uuid::Uuid,
         new_status: quotes::Status,
     ) -> Result<()> {
-        self.update_status_if(id, quotes::StatusDiscriminants::Offered, new_status).await
+        self.update_status_if(id, quotes::StatusDiscriminants::Offered, new_status)
+            .await
     }
 
     async fn update_status_if_accepted(
@@ -229,7 +231,8 @@ impl persistence::Repository for DBQuotes {
         id: uuid::Uuid,
         new_status: quotes::Status,
     ) -> Result<()> {
-        self.update_status_if(id, quotes::StatusDiscriminants::Accepted, new_status).await
+        self.update_status_if(id, quotes::StatusDiscriminants::Accepted, new_status)
+            .await
     }
 
     async fn update_status_if_failedebillvalidation(
@@ -237,8 +240,12 @@ impl persistence::Repository for DBQuotes {
         id: uuid::Uuid,
         new_status: quotes::Status,
     ) -> Result<()> {
-        self.update_status_if(id, quotes::StatusDiscriminants::FailedEbillValidation, new_status)
-            .await
+        self.update_status_if(
+            id,
+            quotes::StatusDiscriminants::FailedEbillValidation,
+            new_status,
+        )
+        .await
     }
 
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
@@ -343,7 +350,8 @@ impl persistence::Repository for DBQuotes {
     async fn store(&self, quote: quotes::Quote) -> Result<()> {
         let row = quote_to_row(quote);
         let blob = row.blob.0;
-        let json_blob = serde_json::to_value(&blob).map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
+        let json_blob =
+            serde_json::to_value(&blob).map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
             INSERT INTO quotes (qid, status, submitted, maturity_date, bill_id, bill_sum,
@@ -351,18 +359,18 @@ impl persistence::Repository for DBQuotes {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (qid) DO NOTHING
             "#,
-        row.qid,
-        row.status,
-        row.submitted,
-        row.maturity_date,
-        row.bill_id,
-        row.bill_sum,
-        row.bill_drawee_id,
-        row.bill_drawer_id,
-        row.bill_payer_id,
-        row.bill_holder_id,
-        json_blob,
-    )
+            row.qid,
+            row.status,
+            row.submitted,
+            row.maturity_date,
+            row.bill_id,
+            row.bill_sum,
+            row.bill_drawee_id,
+            row.bill_drawer_id,
+            row.bill_payer_id,
+            row.bill_holder_id,
+            json_blob,
+        )
         .execute(&self.pool)
         .await
         .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;

@@ -760,6 +760,7 @@ name = "bcr-wdc-quote-service"
 version = "0.5.0-alpha"
 dependencies = [
  "anyhow",
+ "arbitrary",
  "async-trait",
  "axum",
  "bcr-common",
@@ -982,6 +983,7 @@ version = "0.32.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1a121ccf1177a09084bd6ce97c52119919aac08ea3649967958eae41beceebf"
 dependencies = [
+ "arbitrary",
  "base58ck",
  "base64 0.21.7",
  "bech32",
@@ -1006,6 +1008,7 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c202276cab20ab02cf6cc9d4df0d4284f7c784031619d3842236de8bc2bd5c6c"
 dependencies = [
+ "arbitrary",
  "serde",
 ]
 
