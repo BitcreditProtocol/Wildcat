@@ -1,5 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
+#[cfg(test)]
+use arbitrary::Arbitrary;
 use bcr_common::{cashu, core::BillId, wire::quotes as wire_quotes};
 #[cfg(test)]
 use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
@@ -71,6 +73,8 @@ impl From<BillInfo> for wire_quotes::BillInfo {
 #[cfg(test)]
 impl BillInfo {
     pub fn random() -> Self {
+        let seed: [u8; 4] = rand::random();
+        let mut seed = arbitrary::Unstructured::new(&seed);
         Self {
             id: random_bill_id(),
             drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
@@ -84,7 +88,7 @@ impl BillInfo {
             current_holder: BillParticipant::Ident(
                 convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
             ),
-            sum: bitcoin::Amount::default(),
+            sum: bitcoin::Amount::arbitrary(&mut seed).unwrap(),
             maturity_date: chrono::NaiveDate::default(),
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
