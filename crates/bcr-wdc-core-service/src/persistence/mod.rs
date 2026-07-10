@@ -26,7 +26,7 @@ pub trait KeysRepository: Send + Sync {
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<MintKeySetInfo>>;
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
-    async fn update_info(&self, info: MintKeySetInfo) -> Result<()>;
+    async fn deactivate(&self, id: cashu::Id) -> Result<cashu::Id>;
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
 }
 
@@ -128,6 +128,12 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_info(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_info_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
+        keysrepo_info(db).await;
+    }
     async fn keysrepo_info(db: impl KeysRepository) {
         let entry = core_tests::generate_random_ecash_keyset();
         let kinfo = entry.0.clone();
@@ -144,80 +150,43 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_list_info(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_listinfo_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
+        keysrepo_list_info(db).await;
+    }
     async fn keysrepo_list_info(db: impl KeysRepository) {
-        let entry1 = core_tests::generate_random_ecash_keyset();
-        db.store(entry1).await.unwrap();
-        let entry2 = core_tests::generate_random_ecash_keyset();
-        db.store(entry2).await.unwrap();
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_keysrepo_listinfo_with_unit() {
-        let db = init_memmap_keys_db();
-        keysrepo_list_info_with_unit(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_list_info_with_unit(db).await;
-    }
-    async fn keysrepo_list_info_with_unit(db: impl KeysRepository) {
         let mut entry1 = core_tests::generate_random_ecash_keyset();
         entry1.0.unit = cashu::CurrencyUnit::Sat;
         entry1.0.final_expiry = Some(10);
         db.store(entry1).await.unwrap();
         let mut entry2 = core_tests::generate_random_ecash_keyset();
         entry2.0.unit = cashu::CurrencyUnit::Usd;
+        entry2.0.final_expiry = Some(20);
         db.store(entry2).await.unwrap();
+        let mut entry3 = core_tests::generate_random_ecash_keyset();
+        entry3.0.unit = cashu::CurrencyUnit::Usd;
+        entry3.0.final_expiry = Some(30);
+        db.store(entry3).await.unwrap();
+
+        let rinfos = db.list_info(None, None, None).await.unwrap();
+        assert_eq!(rinfos.len(), 3);
+
         let rinfos = db
             .list_info(Some(cashu::CurrencyUnit::Sat), None, None)
             .await
             .unwrap();
         assert_eq!(rinfos.len(), 1);
         assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Sat);
-    }
-    #[tokio::test]
-    async fn test_keysrepo_listinfo_with_expiration() {
-        let db = init_memmap_keys_db();
-        keysrepo_list_info_with_min_expiration(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_list_info_with_min_expiration(db).await;
-    }
-    async fn keysrepo_list_info_with_min_expiration(db: impl KeysRepository) {
-        let mut entry1 = core_tests::generate_random_ecash_keyset();
-        entry1.0.final_expiry = Some(10);
-        db.store(entry1).await.unwrap();
-        let mut entry2 = core_tests::generate_random_ecash_keyset();
-        entry2.0.final_expiry = Some(20);
-        db.store(entry2).await.unwrap();
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-        let rinfos = db.list_info(None, Some(15), None).await.unwrap();
+
+        let rinfos = db
+            .list_info(Some(cashu::CurrencyUnit::Usd), Some(15), Some(25))
+            .await
+            .unwrap();
         assert_eq!(rinfos.len(), 1);
         assert_eq!(rinfos[0].final_expiry, Some(20));
-    }
-
-    #[tokio::test]
-    async fn test_keysrepo_listinfo_with_max_expiration() {
-        let db = init_memmap_keys_db();
-        keysrepo_list_info_with_max_expiration(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_list_info_with_max_expiration(db).await;
-    }
-    async fn keysrepo_list_info_with_max_expiration(db: impl KeysRepository) {
-        let mut entry1 = core_tests::generate_random_ecash_keyset();
-        entry1.0.final_expiry = Some(10);
-        db.store(entry1).await.unwrap();
-        let mut entry2 = core_tests::generate_random_ecash_keyset();
-        entry2.0.final_expiry = Some(20);
-        db.store(entry2).await.unwrap();
-        let rinfos = db.list_info(None, None, None).await.unwrap();
-        assert_eq!(rinfos.len(), 2);
-        let rinfos = db.list_info(None, None, Some(15)).await.unwrap();
-        assert_eq!(rinfos.len(), 1);
-        assert_eq!(rinfos[0].final_expiry, Some(10));
+        assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Usd);
     }
 
     #[tokio::test]
@@ -226,6 +195,12 @@ mod tests {
         keysrepo_keyset_test(db).await;
         //
         let db = init_surreal_keys_db().await;
+        keysrepo_keyset_test(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_keyset_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
         keysrepo_keyset_test(db).await;
     }
     async fn keysrepo_keyset_test(db: impl KeysRepository) {
@@ -243,6 +218,12 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_list_keyset_test(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_list_keyset_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
+        keysrepo_list_keyset_test(db).await;
+    }
     async fn keysrepo_list_keyset_test(db: impl KeysRepository) {
         let entry1 = core_tests::generate_random_ecash_keyset();
         db.store(entry1).await.unwrap();
@@ -253,40 +234,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_keysrepo_update_info() {
+    async fn test_keysrepo_deactivate() {
         let db = init_memmap_keys_db();
-        keysrepo_update_info_test(db).await;
+        keysrepo_deactivate_test(db).await;
         //
         let db = init_surreal_keys_db().await;
-        keysrepo_update_info_test(db).await;
+        keysrepo_deactivate_test(db).await;
     }
-    async fn keysrepo_update_info_test(db: impl KeysRepository) {
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_deactivate_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
+        keysrepo_deactivate_test(db).await;
+    }
+    async fn keysrepo_deactivate_test(db: impl KeysRepository) {
         let entry = core_tests::generate_random_ecash_keyset();
-        let (mut info, _) = entry.clone();
+        let (info, _) = entry.clone();
         db.store(entry).await.unwrap();
-        info.active = false;
-        db.update_info(info.clone()).await.unwrap();
+        let deactivated = db.deactivate(info.id).await.unwrap();
+        assert_eq!(deactivated, info.id);
         let updated_info = db.info(info.id).await.unwrap().unwrap();
         assert!(!updated_info.active);
     }
 
     #[tokio::test]
-    async fn test_keysrepo_update_info_kid_not_present() {
+    async fn test_keysrepo_deactivate_kid_not_present() {
         let db = init_memmap_keys_db();
-        keysrepo_update_info_kid_not_present_test(db).await;
+        keysrepo_deactivate_kid_not_present_test(db).await;
         //
         let db = init_surreal_keys_db().await;
-        keysrepo_update_info_kid_not_present_test(db).await;
+        keysrepo_deactivate_kid_not_present_test(db).await;
     }
-    async fn keysrepo_update_info_kid_not_present_test(db: impl KeysRepository) {
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_deactivate_kid_not_present_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
+        keysrepo_deactivate_kid_not_present_test(db).await;
+    }
+    async fn keysrepo_deactivate_kid_not_present_test(db: impl KeysRepository) {
         let (info, _) = core_tests::generate_random_ecash_keyset();
-        let res = db.update_info(info).await;
+        let res = db.deactivate(info.id).await;
         assert!(res.is_err());
     }
 
     #[tokio::test]
     async fn test_keysrepo_infos_for_expiration_date() {
         let db = init_memmap_keys_db();
+        keysrepo_infos_for_expiration_date_test(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_keysrepo_infos_for_expiration_date_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBKeys::from_pool(pool);
         keysrepo_infos_for_expiration_date_test(db).await;
     }
     async fn keysrepo_infos_for_expiration_date_test(db: impl KeysRepository) {
