@@ -223,21 +223,18 @@ impl persistence::KeysRepository for DBKeys {
         Ok(sets)
     }
 
-    async fn update_info(&self, info: MintKeySetInfo) -> Result<()> {
-        let info = KeysInfoDBEntry::from(info);
-        let kid = info.kid;
+    async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
         let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let entry: Option<KeysDBEntry> = self
             .db
-            .query("UPDATE $rid SET info = $info RETURN BEFORE")
+            .query("UPDATE $rid SET info.active = false RETURN BEFORE")
             .bind(("rid", rid))
-            .bind(("info", info))
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         if entry.is_some() {
-            Ok(())
+            Ok(kid)
         } else {
             Err(Error::ResourceNotFound(RNFError::KeysetId(kid)))
         }

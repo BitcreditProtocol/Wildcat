@@ -118,15 +118,9 @@ impl Service {
     }
 
     pub async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
-        let mut info = self
-            .keys
-            .info(kid)
-            .await?
-            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))?;
-        info.active = false;
-        self.keys.update_info(info.clone()).await?;
+        let kid = self.keys.deactivate(kid).await?;
         self.clowder.keyset_deactivated(kid).await?;
-        Ok(info.id)
+        Ok(kid)
     }
 
     pub async fn search_signature(
@@ -193,18 +187,11 @@ mod tests {
         let mut clowder_cl = MockClowderClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
-        let mut updated_info = kinfo.clone();
-        updated_info.active = false;
         keys_repo
-            .expect_info()
+            .expect_deactivate()
             .times(1)
             .with(eq(kid))
-            .returning(move |_| Ok(Some(kinfo.clone())));
-        keys_repo
-            .expect_update_info()
-            .times(1)
-            .with(eq(updated_info.clone()))
-            .returning(|_| Ok(()));
+            .returning(move |_| Ok(kid));
         clowder_cl
             .expect_keyset_deactivated()
             .times(1)
@@ -229,10 +216,10 @@ mod tests {
         let clowder_cl = MockClowderClient::new();
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         keys_repo
-            .expect_info()
+            .expect_deactivate()
             .times(1)
             .with(eq(kid))
-            .returning(|_| Ok(None));
+            .returning(move |_| Err(Error::ResourceNotFound(RNFError::KeysetId(kid))));
         let service = Service {
             keys: Box::new(keys_repo),
             signatures: Box::new(signatures_repo),
