@@ -484,6 +484,32 @@ mod tests {
         db.insert(proofs[2..].to_vec()).await.unwrap();
     }
 
+    #[tokio::test]
+    async fn test_proofsrepo_insert_duplicate_in_batch() {
+        let db = init_proofs_mem_db().await;
+        proofsrepo_insert_duplicate_in_batch(db).await;
+        //
+        let db = init_surreal_proofs_db().await;
+        proofsrepo_insert_duplicate_in_batch(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_proofsrepo_insert_duplicate_in_batch_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBProofs::from_pool(pool);
+        proofsrepo_insert_duplicate_in_batch(db).await;
+    }
+    async fn proofsrepo_insert_duplicate_in_batch(db: impl ProofRepository) {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proof =
+            core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
+                .pop()
+                .unwrap();
+        let y = proof.y().unwrap();
+        let result = db.insert(vec![proof.clone(), proof]).await;
+        assert!(matches!(result, Err(Error::InvalidInput(_))));
+        assert!(db.contains(y).await.unwrap().is_none());
+    }
+
     /////////////////////////////////////////////////////////////////// CommitmentRepository
     async fn init_surreal_commitments_db() -> impl CommitmentRepository {
         let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();

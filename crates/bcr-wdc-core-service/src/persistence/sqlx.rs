@@ -424,9 +424,6 @@ pub struct DBProofs {
 }
 
 impl DBProofs {
-    //https://www.postgresql.org/docs/current/errcodes-appendix.html
-    const PG_UNIQUE_VIOLATION: &str = "23505";
-
     pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(cfg.max_connections)
@@ -466,23 +463,21 @@ impl persistence::ProofRepository for DBProofs {
             .begin()
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        let result = sqlx::query(
-            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[])",
+        let result = sqlx::query!(
+            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+        &y_strs,
+        &blob_values,
         )
-        .bind(&y_strs[..])
-        .bind(&blob_values[..])
         .execute(&mut *tx)
         .await;
-        if let Err(e) = result {
-            if let Some(db_err) = e.as_database_error() {
-                let unique_violation = Some(Self::PG_UNIQUE_VIOLATION.into());
-                if db_err.code() == unique_violation {
-                    return Err(Error::InvalidInput(BRError::Generic(String::from(
-                        "proofs are already spent",
-                    ))));
-                }
-            }
-            return Err(Error::ProofRepository(anyhow!(e)));
+        let result = result.map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if result.rows_affected() != y_strs.len() as u64 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            return Err(Error::InvalidInput(BRError::Generic(String::from(
+                "proofs already spent",
+            ))));
         }
         tx.commit()
             .await

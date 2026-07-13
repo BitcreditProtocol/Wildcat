@@ -369,7 +369,14 @@ impl DBProofs {
 impl persistence::ProofRepository for DBProofs {
     async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
+        let mut ys = HashSet::with_capacity(tokens.len());
         for tk in tokens {
+            let y = tk.y()?;
+            if !ys.insert(y) {
+                return Err(Error::InvalidInput(BRError::Generic(String::from(
+                    "proofs already spent",
+                ))));
+            }
             let db_entry = convert_to_db(tk, Self::TABLE)?;
             entries.push(db_entry);
         }

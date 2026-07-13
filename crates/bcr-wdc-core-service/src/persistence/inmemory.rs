@@ -1,6 +1,6 @@
 // ----- standard library imports
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 // ----- extra library imports
@@ -143,8 +143,14 @@ pub struct ProofMap {
 impl persistence::ProofRepository for ProofMap {
     async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut items = Vec::with_capacity(tokens.len());
+        let mut ys = HashSet::with_capacity(tokens.len());
         for token in tokens {
             let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
+            if !ys.insert(y) {
+                return Err(Error::InvalidInput(BRError::Generic(String::from(
+                    "proofs already spent",
+                ))));
+            }
             items.push((y, token.clone()));
         }
         let mut locked = self.proofs.write().unwrap();
