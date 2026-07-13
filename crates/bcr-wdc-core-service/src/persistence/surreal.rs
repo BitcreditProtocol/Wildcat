@@ -1,5 +1,8 @@
 // ----- standard library imports
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    str::FromStr,
+};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -131,6 +134,18 @@ impl DBKeys {
         db_connection.use_db(cfg.database).await?;
         Ok(Self { db: db_connection })
     }
+
+    pub async fn dump(&self) -> Result<Vec<KeysetEntry>> {
+        let entries: Vec<KeysDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::TABLE))
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        Ok(entries.into_iter().map(KeysetEntry::from).collect())
+    }
 }
 
 #[async_trait]
@@ -260,19 +275,19 @@ impl persistence::KeysRepository for DBKeys {
 ////////////////////////////////////////////////////////////////// Signatures DB
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SignatureDBEntry {
+    pub id: RecordId,
     pub amount: cashu::Amount,
     pub keyset_id: cashu::Id,
     pub c: cashu::PublicKey,
     pub dleq: Option<cashu::BlindSignatureDleq>,
 }
-impl std::convert::From<cashu::BlindSignature> for SignatureDBEntry {
-    fn from(sig: cashu::BlindSignature) -> Self {
-        Self {
-            amount: sig.amount,
-            keyset_id: sig.keyset_id,
-            c: sig.c,
-            dleq: sig.dleq,
-        }
+fn convert_to_entry(rid: RecordId, sig: cashu::BlindSignature) -> SignatureDBEntry {
+    SignatureDBEntry {
+        id: rid,
+        amount: sig.amount,
+        keyset_id: sig.keyset_id,
+        c: sig.c,
+        dleq: sig.dleq,
     }
 }
 impl std::convert::From<SignatureDBEntry> for cashu::BlindSignature {
@@ -301,13 +316,33 @@ impl DBSignatures {
         db_connection.use_db(cfg.database).await?;
         Ok(Self { db: db_connection })
     }
+
+    pub async fn dump(&self) -> Result<Vec<(cashu::PublicKey, cashu::BlindSignature)>> {
+        let entries: Vec<SignatureDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::TABLE))
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        let result = entries
+            .into_iter()
+            .map(|entry| {
+                let y = cashu::PublicKey::from_str(&entry.id.key().to_string())
+                    .expect("RecordKey is y");
+                (y, cashu::BlindSignature::from(entry))
+            })
+            .collect::<Vec<(cashu::PublicKey, cashu::BlindSignature)>>();
+        Ok(result)
+    }
 }
 
 #[async_trait]
 impl persistence::SignaturesRepository for DBSignatures {
     async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
         let rid = cpk_to_record_id(Self::TABLE, y);
-        let entry = SignatureDBEntry::from(signature);
+        let entry = convert_to_entry(rid.clone(), signature);
         let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
         match r {
             Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
@@ -331,11 +366,11 @@ impl persistence::SignaturesRepository for DBSignatures {
 ////////////////////////////////////////////////////////////////////// Proofs DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProofDBEntry {
-    id: RecordId,
-    kid: cashu::Id,
-    secret: cashu::secret::Secret,
-    c: cashu::PublicKey,
-    witness: Option<cashu::Witness>,
+    pub id: RecordId,
+    pub kid: cashu::Id,
+    pub secret: cashu::secret::Secret,
+    pub c: cashu::PublicKey,
+    pub witness: Option<cashu::Witness>,
 }
 fn convert_to_db(proof: cashu::Proof, table: &str) -> Result<ProofDBEntry> {
     let rid = cpk_to_record_id(table, proof.y()?);
@@ -362,6 +397,18 @@ impl DBProofs {
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
         Ok(Self { db: db_connection })
+    }
+
+    pub async fn dump(&self) -> Result<Vec<ProofDBEntry>> {
+        let entries: Vec<ProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::TABLE))
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        Ok(entries)
     }
 }
 
