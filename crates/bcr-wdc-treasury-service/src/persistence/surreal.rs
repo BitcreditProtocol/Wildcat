@@ -311,6 +311,38 @@ impl DBOnChain {
             .await?;
         Ok(())
     }
+
+    pub async fn dump_mintops(&self) -> Result<Vec<onchain::MintOperation>> {
+        let entries: Vec<OnChainMintOperationDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::MINTS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let ops = entries
+            .into_iter()
+            .map(onchain::MintOperation::from)
+            .collect();
+        Ok(ops)
+    }
+
+    pub async fn dump_meltops(&self) -> Result<Vec<onchain::MeltOperation>> {
+        let entries: Vec<OnChainMeltOpDbEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::MELTS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let ops = entries
+            .into_iter()
+            .map(onchain::MeltOperation::from)
+            .collect();
+        Ok(ops)
+    }
 }
 
 #[async_trait]

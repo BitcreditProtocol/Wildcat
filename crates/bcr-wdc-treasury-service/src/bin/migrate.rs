@@ -2,6 +2,7 @@
 // ----- extra library imports
 use bcr_wdc_treasury_service::{
     ebill::Repository as _,
+    onchain::Repository as _,
     persistence::{sqlx, surreal},
     vault::Repository as _,
 };
@@ -33,8 +34,11 @@ async fn main() {
     let surreal_vault = surreal::DBVault::new(cfg.appcfg.vault.db)
         .await
         .expect("Failed to connect to vault SurrealDB");
+    let surreal_onchain = surreal::DBOnChain::new(cfg.appcfg.onchain.db)
+        .await
+        .expect("Failed to connect to onchain SurrealDB");
     // Read all
-    let ops = surreal_ebill
+    let ebill_ops = surreal_ebill
         .dump()
         .await
         .expect("Failed to list ebill mint_ops from SurrealDB");
@@ -42,12 +46,30 @@ async fn main() {
         .dump()
         .await
         .expect("Failed to list vault proofs from SurrealDB");
-    println!("Found {} ebill mint_ops in SurrealDB", ops.len());
+    let onchain_mintops = surreal_onchain
+        .dump_mintops()
+        .await
+        .expect("Failed to list onchain mintops from SurrealDB");
+    let onchain_meltops = surreal_onchain
+        .dump_meltops()
+        .await
+        .expect("Failed to list onchain meltops from SurrealDB");
+    println!("Found {} ebill mint_ops in SurrealDB", ebill_ops.len());
     println!("Found {} vault proofs in SurrealDB", pfs.len());
+    println!(
+        "Found {} onchain mintops in SurrealDB",
+        onchain_mintops.len()
+    );
+    println!(
+        "Found {} onchain meltops in SurrealDB",
+        onchain_meltops.len()
+    );
     if dry_run {
         println!("DRY RUN: Would migrate");
-        println!("   {} ebill mint_ops to PostgreSQL", ops.len());
+        println!("   {} ebill mint_ops to PostgreSQL", ebill_ops.len());
         println!("   {} vault proofs to PostgreSQL", pfs.len());
+        println!("   {} onchain mintops to PostgreSQL", onchain_mintops.len());
+        println!("   {} onchain meltops to PostgreSQL", onchain_meltops.len());
         return;
     }
     // Connect to PostgreSQL (destination)
@@ -57,7 +79,10 @@ async fn main() {
     let sqlx_vault = sqlx::DBVault::new(cfg.appcfg.vault.new)
         .await
         .expect("Failed to connect to PostgreSQL");
-    for op in ops {
+    let sqlx_onchain = sqlx::DBOnChain::new(cfg.appcfg.onchain.new)
+        .await
+        .expect("Failed to connect to PostgreSQL");
+    for op in ebill_ops {
         let uid = op.uid;
         if let Err(e) = sqlx_ebill.mint_store(op).await {
             println!("Skipping mint_op {uid}: failed with {e}");
@@ -69,4 +94,20 @@ async fn main() {
         .await
         .expect("VaultDB::store_proofs failed");
     println!("Migration for vault complete");
+
+    for op in onchain_mintops {
+        sqlx_onchain
+            .store_mintop(op)
+            .await
+            .expect("Failed to store onchain mintop");
+    }
+    println!("Migration for onchain mintops complete");
+    let now = chrono::Utc::now();
+    for op in onchain_meltops {
+        sqlx_onchain
+            .store_meltop(op, now)
+            .await
+            .expect("Failed to store onchain meltop");
+    }
+    println!("Migration for onchain meltops complete");
 }

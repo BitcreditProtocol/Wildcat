@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT uid, kid, minted, blob as \"blob: Json<MintOperationBlob>\"\n            FROM mint_ops\n            WHERE uid = $1\n            ",
+  "query": "\n            SELECT uid, kid, minted, blob as \"blob: Json<EbillMintOperationBlob>\"\n            FROM mint_ops\n            WHERE kid = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -20,13 +20,13 @@
       },
       {
         "ordinal": 3,
-        "name": "blob: Json<MintOperationBlob>",
+        "name": "blob: Json<EbillMintOperationBlob>",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "354f6c7c6fb3e36baba0eebb0976e44659e031455bb397ded968d4ca0a6765e5"
+  "hash": "88f64107fe6ef4d4ca86d6d11f2ba59edea4e94897728cb98e8f617b5466ca11"
 }

@@ -13,6 +13,7 @@ RUN apt-get update \
 WORKDIR /treasury-service
 COPY --from=rust-builder /wildcat/target/release/bcr-wdc-treasury-service .
 COPY --from=rust-builder /wildcat/crates/bcr-wdc-treasury-service/migrations ./migrations
+COPY --from=rust-builder /wildcat/target/release/migrate .
 
 # Expose web server port
 EXPOSE 3338

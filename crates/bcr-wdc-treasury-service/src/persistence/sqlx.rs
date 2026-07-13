@@ -23,12 +23,12 @@ use crate::{
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
-enum MintOperationBlob {
-    V1(MintOpBlobV1),
+enum EbillMintOperationBlob {
+    V1(EbillMintOpBlobV1),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct MintOpBlobV1 {
+struct EbillMintOpBlobV1 {
     bill_id: BillId,
     target: cashu::Amount,
     pub_key: cashu::PublicKey,
@@ -64,7 +64,7 @@ impl DBEbill {
 impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
-        let blob = MintOperationBlob::V1(MintOpBlobV1 {
+        let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
             bill_id: mint_op.bill_id,
             target: mint_op.target,
             pub_key: mint_op.pub_key,
@@ -94,7 +94,7 @@ impl ebill::Repository for DBEbill {
     async fn mint_load(&self, uid: Uuid) -> Result<ebill::MintOperation> {
         let result = sqlx::query!(
             r#"
-            SELECT uid, kid, minted, blob as "blob: Json<MintOperationBlob>"
+            SELECT uid, kid, minted, blob as "blob: Json<EbillMintOperationBlob>"
             FROM mint_ops
             WHERE uid = $1
             "#,
@@ -107,7 +107,7 @@ impl ebill::Repository for DBEbill {
             return Err(Error::ResourceNotFound(uid.to_string()));
         };
         let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-        let MintOperationBlob::V1(v1) = row.blob.0;
+        let EbillMintOperationBlob::V1(v1) = row.blob.0;
         Ok(ebill::MintOperation {
             uid: row.uid,
             kid,
@@ -121,7 +121,7 @@ impl ebill::Repository for DBEbill {
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
         let results = sqlx::query!(
             r#"
-            SELECT uid, kid, minted, blob as "blob: Json<MintOperationBlob>"
+            SELECT uid, kid, minted, blob as "blob: Json<EbillMintOperationBlob>"
             FROM mint_ops
             WHERE kid = $1
             "#,
@@ -133,7 +133,7 @@ impl ebill::Repository for DBEbill {
         let mut ops = Vec::with_capacity(results.len());
         for row in results {
             let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-            let MintOperationBlob::V1(v1) = row.blob.0;
+            let EbillMintOperationBlob::V1(v1) = row.blob.0;
             ops.push(ebill::MintOperation {
                 uid: row.uid,
                 kid,
