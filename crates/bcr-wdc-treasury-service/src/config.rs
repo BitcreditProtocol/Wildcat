@@ -22,6 +22,7 @@ pub struct App {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Onchain {
     pub db: surreal::DBConnConfig,
+    pub new: postgres::DBConnConfig,
     pub monitor_interval_sec: u32,
     pub melt_quote_expiry_seconds: u32,
     pub mint_quote_expiry_seconds: u32,

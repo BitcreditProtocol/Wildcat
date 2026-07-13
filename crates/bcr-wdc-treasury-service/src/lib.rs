@@ -21,7 +21,7 @@ pub mod config;
 pub mod ebill;
 mod error;
 mod foreign;
-mod onchain;
+pub mod onchain;
 pub mod persistence;
 pub mod vault;
 mod web;
@@ -82,6 +82,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         min_confirmations,
         min_melt_threshold,
         min_mint_threshold,
+        ..
     } = onchain;
     let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
         .await
