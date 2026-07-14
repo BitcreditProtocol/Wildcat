@@ -705,6 +705,20 @@ impl foreign::OnlineRepository for DBForeignOnline {
         Ok(())
     }
 
+    async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<ForeignProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE mint_id == $mint_id")
+            .bind(("table", Self::FOREIGNS_TABLE))
+            .bind(("mint_id", mint_id.to_string()))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = entries.into_iter().map(|entry| entry.proof).collect();
+        Ok(proofs)
+    }
+
     async fn store_htlc(
         &self,
         mint_id: secp256k1::PublicKey,
@@ -1047,9 +1061,7 @@ mod tests {
     use super::*;
     use crate::foreign::OfflineRepository;
     use bcr_common::{core, core_tests};
-    use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
-    use std::str::FromStr;
 
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {
         let sdb = Surreal::<Any>::init();

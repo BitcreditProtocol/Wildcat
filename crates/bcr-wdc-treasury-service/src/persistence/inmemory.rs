@@ -28,7 +28,7 @@ struct ForeignProofs {
 #[derive(Clone, Default, Debug)]
 pub struct OnlineRepository {
     proofs: Arc<Mutex<Vec<ForeignProofs>>>,
-    htlc: Arc<Mutex<HashMap<Sha256Hash, Vec<ForeignProofs>>>>,
+    htlc: Arc<Mutex<HashMap<Sha256Hash, ForeignProofs>>>,
 }
 
 #[async_trait]
@@ -40,6 +40,15 @@ impl foreign::OnlineRepository for OnlineRepository {
         Ok(())
     }
 
+    async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
+        let locked = self.proofs.lock().unwrap();
+        let list = locked
+            .iter()
+            .filter(|entry| entry.mint_id == mint_id)
+            .flat_map(|entry| entry.proofs.clone());
+        Ok(list.collect())
+    }
+
     async fn store_htlc(
         &self,
         mint_id: secp256k1::PublicKey,
@@ -48,8 +57,7 @@ impl foreign::OnlineRepository for OnlineRepository {
     ) -> Result<()> {
         let new = ForeignProofs { mint_id, proofs };
         let mut locked = self.htlc.lock().unwrap();
-        let entry = locked.entry(hash).or_default();
-        entry.push(new);
+        locked.insert(hash, new);
         Ok(())
     }
     async fn search_htlc(
@@ -57,26 +65,25 @@ impl foreign::OnlineRepository for OnlineRepository {
         hash: &Sha256Hash,
     ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
         let locked = self.htlc.lock().unwrap();
-        let entries = locked.get(hash).cloned().unwrap_or_default();
-        let list = entries.into_iter().flat_map(|entry| {
-            let ForeignProofs { mint_id, proofs } = entry;
-            proofs.into_iter().map(move |proof| (mint_id, proof))
-        });
+        let Some(foreigns) = locked.get(hash) else {
+            return Ok(Vec::new());
+        };
+        let list = foreigns
+            .proofs
+            .iter()
+            .map(|p| (foreigns.mint_id, p.clone()));
         Ok(list.collect())
     }
 
     async fn remove_htlcs(&self, y: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.htlc.lock().unwrap();
-        for vals in locked.values_mut() {
-            for val in vals.iter_mut() {
-                val.proofs.retain(|p| {
-                    let p_y = p.y().expect("proof should have y");
-                    !y.contains(&p_y)
-                });
-            }
-            vals.retain(|val| !val.proofs.is_empty());
+        for foreigns in locked.values_mut() {
+            foreigns.proofs.retain(|p| {
+                let p_y = p.y().expect("proof should have y");
+                !y.contains(&p_y)
+            });
         }
-        locked.retain(|_, v| !v.is_empty());
+        locked.retain(|_, v| !v.proofs.is_empty());
         Ok(())
     }
 }

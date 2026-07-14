@@ -128,6 +128,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     let config::Foreign {
         online_repo,
         offline_repo,
+        ..
     } = foreign;
     let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
         .await

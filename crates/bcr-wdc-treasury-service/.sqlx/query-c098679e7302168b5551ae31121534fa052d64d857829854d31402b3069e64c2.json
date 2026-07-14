@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO foreign_proofs (mint_id, blobs)\n            VALUES ($1, $2)\n            ON CONFLICT (mint_id) DO UPDATE\n            SET blobs = array_cat(foreign_proofs.blobs, EXCLUDED.blobs)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c098679e7302168b5551ae31121534fa052d64d857829854d31402b3069e64c2"
+}
