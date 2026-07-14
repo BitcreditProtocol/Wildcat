@@ -33,6 +33,7 @@ pub struct Onchain {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Foreign {
     pub online_repo: surreal::DBConnConfig,
+    pub new_online_repo: postgres::DBConnConfig,
     pub offline_repo: surreal::DBConnConfig,
 }
 

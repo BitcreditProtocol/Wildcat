@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
@@ -15,7 +14,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    onchain, vault, TStamp,
+    foreign, onchain, vault, TStamp,
 };
 
 // ----- end imports
@@ -177,14 +176,198 @@ impl ebill::Repository for DBEbill {
     }
 }
 
-// ///////////////////////////////////////////////////////////////////////// Versioned proof blob
-
+// ///////////////////////////////////////////////////////////////////////// Versioned foreign proof blob
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
-enum ProofBlob {
+enum ForeignProofBlob {
     V1(cashu::Proof),
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ForeignHtlcProofBlob {
+    V1(cashu::Proof),
+}
+
+/////////////////////////////////////////////////////////////////////////// DBForeignOnline
+
+#[derive(sqlx::FromRow, Debug, Clone)]
+struct ForeignHtlcProofRow {
+    mint_id: String,
+    blob: Json<ForeignHtlcProofBlob>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DBForeignOnline {
+    pool: PgPool,
+}
+
+impl DBForeignOnline {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl foreign::OnlineRepository for DBForeignOnline {
+    async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()> {
+        if proofs.is_empty() {
+            return Ok(());
+        }
+        let mint_id = mint_id.to_string();
+        let mut blobs = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let blob = ForeignProofBlob::V1(proof);
+            let jason = serde_json::to_string(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            blobs.push(jason);
+        }
+        sqlx::query!(
+            r#"
+            INSERT INTO foreign_proofs (mint_id, blobs)
+            VALUES ($1, $2)
+            ON CONFLICT (mint_id) DO UPDATE
+            SET blobs = array_cat(foreign_proofs.blobs, EXCLUDED.blobs)
+            "#,
+            mint_id,
+            &blobs,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT blobs
+            FROM foreign_proofs
+            WHERE mint_id = $1
+            "#,
+            mint_id.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Ok(Vec::new());
+        };
+        let mut proofs = Vec::with_capacity(row.blobs.len());
+        for blob in &row.blobs {
+            let blob: ForeignProofBlob =
+                serde_json::from_str(blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            match blob {
+                ForeignProofBlob::V1(proof) => {
+                    proofs.push(proof);
+                }
+            }
+        }
+        Ok(proofs)
+    }
+
+    async fn store_htlc(
+        &self,
+        mint_id: secp256k1::PublicKey,
+        hash: foreign::Sha256Hash,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mint_id = mint_id.to_string();
+        let hash = hash.to_string();
+        let mut ys = Vec::with_capacity(proofs.len());
+        let mut blobs = Vec::with_capacity(proofs.len());
+        for p in proofs {
+            let y = p.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y.to_string());
+            let blob = ForeignHtlcProofBlob::V1(p);
+            let jason = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            blobs.push(jason);
+        }
+        let mint_ids = vec![mint_id; ys.len()];
+        let hashes = vec![hash; ys.len()];
+        let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO foreign_online_htlc_proofs ( y, hash, mint_id, blob)
+            SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::jsonb[])
+            ON CONFLICT (y) DO NOTHING
+            "#,
+            &ys,
+            &hashes,
+            &mint_ids,
+            &blobs,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.rows_affected() != ys.len() as u64 {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Err(Error::InvalidInput(String::from("proofs already spent")));
+        }
+        tx.commit().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn search_htlc(
+        &self,
+        hash: &foreign::Sha256Hash,
+    ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
+        let results = sqlx::query_as!(
+            ForeignHtlcProofRow,
+            r#"
+            SELECT mint_id, blob as "blob: Json<ForeignHtlcProofBlob>"
+            FROM foreign_online_htlc_proofs
+            WHERE hash = $1
+            "#,
+            hash.to_string()
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut proofs = Vec::with_capacity(results.len());
+        for row in results {
+            let mint_id =
+                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
+            let ForeignHtlcProofBlob::V1(proof) = row.blob.0;
+            proofs.push((mint_id, proof))
+        }
+        Ok(proofs)
+    }
+
+    async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM foreign_online_htlc_proofs WHERE y = ANY($1::text[])
+            "#,
+            &y_strs
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned vault proof blob
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum VaultProofBlob {
+    V1(cashu::Proof),
+}
 // ///////////////////////////////////////////////////////////////////////// DBVault
 
 #[derive(Debug, Clone)]
@@ -218,7 +401,7 @@ impl vault::Repository for DBVault {
         let mut blob_values = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
-            let blob = ProofBlob::V1(proof);
+            let blob = VaultProofBlob::V1(proof);
             let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             y_strs.push(y.to_string());
             blob_values.push(blob_value);
@@ -252,9 +435,9 @@ impl vault::Repository for DBVault {
         let proofs = results
             .into_iter()
             .map(|row| {
-                let blob: sqlx::types::Json<ProofBlob> = row.get("blob");
+                let blob: sqlx::types::Json<VaultProofBlob> = row.get("blob");
                 match blob.0 {
-                    ProofBlob::V1(proof) => proof,
+                    VaultProofBlob::V1(proof) => proof,
                 }
             })
             .collect();

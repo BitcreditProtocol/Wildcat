@@ -11,11 +11,102 @@ pub mod surreal;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ebill, error::Error, onchain, vault};
+    use crate::{ebill, error::Error, foreign, onchain, vault};
     use bcr_common::{cashu, core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use std::str::FromStr;
     use uuid::Uuid;
+
+    //////////////////////////////////////////////////////////////////// foreign::OnlineRepository
+    async fn init_surreal_foreign_online_db() -> impl foreign::OnlineRepository {
+        let cfg = bcr_wdc_utils::surreal::DBConnConfig {
+            connection: "mem://".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        };
+        surreal::DBForeignOnline::new(cfg).await.unwrap()
+    }
+    fn init_inmemory_foreign_online_db() -> impl foreign::OnlineRepository {
+        inmemory::OnlineRepository::default()
+    }
+
+    #[tokio::test]
+    async fn test_foreign_online_store() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_store(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_store(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_store_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_store(db).await;
+    }
+    async fn foreign_online_store(db: impl foreign::OnlineRepository) {
+        let mint_id = core::generate_random_keypair().public_key();
+        let proofs = generate_test_proofs(2);
+        db.store(mint_id, proofs).await.unwrap();
+        let proofs = generate_test_proofs(2);
+        db.store(mint_id, proofs).await.unwrap();
+        let pfs = db.list(mint_id).await.unwrap();
+        assert_eq!(pfs.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_foreign_online_store_search_htlc() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_store_search_htlc(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_store_search_htlc(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_store_search_htlc_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_store_search_htlc(db).await;
+    }
+    async fn foreign_online_store_search_htlc(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::hash(b"online-htlc");
+        let first_mint = core::generate_random_keypair().public_key();
+        let second_mint = core::generate_random_keypair().public_key();
+        let proofs = generate_test_proofs(2);
+        db.store_htlc(first_mint, hash, proofs.clone())
+            .await
+            .unwrap();
+        let stored = db.search_htlc(&hash).await.unwrap();
+        assert_eq!(stored.len(), proofs.len());
+        for proof in &proofs {
+            assert!(stored.contains(&(first_mint, proof.clone())));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_foreign_online_remove_htlcs() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_remove_htlcs(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_remove_htlcs(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_remove_htlcs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_remove_htlcs(db).await;
+    }
+    async fn foreign_online_remove_htlcs(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::hash(b"remove-online-htlcs");
+        let mint_id = core::generate_random_keypair().public_key();
+        let proofs = generate_test_proofs(2);
+        let y = proofs[0].y().unwrap();
+        db.store_htlc(mint_id, hash, proofs.clone()).await.unwrap();
+        db.remove_htlcs(&[]).await.unwrap();
+        assert_eq!(db.search_htlc(&hash).await.unwrap().len(), 2);
+        db.remove_htlcs(&[y]).await.unwrap();
+        let remaining = db.search_htlc(&hash).await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0], (mint_id, proofs[1].clone()));
+    }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository
     async fn init_surreal_ebill_db() -> impl ebill::Repository {

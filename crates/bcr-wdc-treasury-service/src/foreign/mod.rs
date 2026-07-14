@@ -24,6 +24,7 @@ pub use service::Service;
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
+    async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
 
     async fn store_htlc(
         &self,
@@ -31,10 +32,12 @@ pub trait OnlineRepository: Send + Sync {
         hash: Sha256Hash,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()>;
+
     async fn search_htlc(
         &self,
         hash: &Sha256Hash,
     ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>>;
+
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 

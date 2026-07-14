@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM foreign_online_htlc_proofs WHERE y = ANY($1::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5db14a025c5e4f77d3f593865cb4a9b8f0aa6c8e78ce6b55b7bee91e1265a046"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO foreign_online_htlc_proofs ( y, hash, mint_id, blob)\n            SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::jsonb[])\n            ON CONFLICT (y) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f5d0ab4a38e681e2111616453e342e272fb68d54f8ec761ec21f94c6325754d"
+}
