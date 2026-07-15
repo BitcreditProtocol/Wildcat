@@ -765,7 +765,6 @@ dependencies = [
  "bcr-common",
  "bcr-ebill-core",
  "bcr-wdc-utils",
- "bcr-wdc-webapi",
  "bip39",
  "bitcoin",
  "chrono",
@@ -795,7 +794,6 @@ dependencies = [
  "axum",
  "bcr-common",
  "bcr-wdc-utils",
- "bcr-wdc-webapi",
  "bitcoin",
  "borsh",
  "chrono",
@@ -852,7 +850,6 @@ dependencies = [
  "axum",
  "bcr-common",
  "bcr-wdc-utils",
- "bitcoin",
  "borsh",
  "chrono",
  "config",
@@ -873,7 +870,6 @@ dependencies = [
  "bcr-common",
  "bcr-ebill-core",
  "bcr-wdc-utils",
- "bdk_wallet",
  "bitcoin",
  "chrono",
  "rand 0.8.6",
@@ -893,43 +889,6 @@ dependencies = [
  "getrandom 0.2.17",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "bdk_chain"
-version = "0.23.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c290eff038799a8ac0c5a82b6160a9ca456baa299a6f22b262c771342d2846c0"
-dependencies = [
- "bdk_core",
- "bitcoin",
- "miniscript",
- "serde",
-]
-
-[[package]]
-name = "bdk_core"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb3028782f6bf14a6df987244333d34e6b272b5a40a53e4879ec2dfd82275a3a"
-dependencies = [
- "bitcoin",
- "hashbrown 0.14.5",
- "serde",
-]
-
-[[package]]
-name = "bdk_wallet"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c99821af39c7df004bd411ece2ef22d9fba5a631b4489f3d9a0ac0d19637e2d0"
-dependencies = [
- "bdk_chain",
- "bitcoin",
- "miniscript",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -2776,7 +2735,6 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash 0.8.12",
  "allocator-api2",
- "serde",
 ]
 
 [[package]]
@@ -3661,7 +3619,6 @@ checksum = "b8343cc1ef1408bd9bdbf69f7aef47017dfab7e6349ec26fddf62e0e9fb5a4cf"
 dependencies = [
  "bech32",
  "bitcoin",
- "serde",
 ]
 
 [[package]]
