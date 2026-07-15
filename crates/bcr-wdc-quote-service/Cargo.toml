@@ -32,7 +32,6 @@ uuid.workspace = true
 [dev-dependencies]
 arbitrary = {version = "1.0"}
 bcr-wdc-utils = { workspace = true, features = ["test-utils"] }
-bcr-wdc-webapi = { workspace = true, features = ["test-utils"] }
 bip39 = {workspace = true}
 bitcoin = {workspace = true, features = ["arbitrary"]}
 mockall.workspace = true

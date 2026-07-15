@@ -4,7 +4,6 @@ use bcr_common::{
     core::signature::serialize_n_schnorr_sign_borsh_msg, wire::quotes as wire_quotes,
 };
 use bcr_wdc_webapi::test_utils::generate_random_bill_enquire_request;
-use bdk_wallet::serde_json;
 // ----- local imports
 
 // ----- end imports

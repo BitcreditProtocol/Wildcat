@@ -29,9 +29,6 @@ bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
-bdk_core = {version = "0.6"}
-bdk_electrum = {version = "0.23"}
-bdk_wallet = {version = "2.3"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}

@@ -18,7 +18,6 @@ required-features = ["test-utils"]
 bcr-common = {workspace = true}
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
-bdk_wallet = {workspace = true}
 bitcoin.workspace = true
 chrono.workspace = true
 rand = {workspace = true}
