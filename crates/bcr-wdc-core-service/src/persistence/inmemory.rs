@@ -264,6 +264,11 @@ impl persistence::CommitmentRepository for CommitmentMap {
         inputs.sort();
         outputs.sort();
         let mut locked = self.commitments.lock().unwrap();
+        if locked.contains_key(&signature) {
+            return Err(Error::Conflict(format!(
+                "commitment already exists: {signature}"
+            )));
+        }
         if Self::_contains_inputs(&locked, &inputs)? {
             return Err(Error::Conflict(String::from("inputs already used")));
         }

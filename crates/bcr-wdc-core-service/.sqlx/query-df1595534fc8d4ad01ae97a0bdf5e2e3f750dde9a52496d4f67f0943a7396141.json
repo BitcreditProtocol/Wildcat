@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM commitments\n            WHERE signature = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df1595534fc8d4ad01ae97a0bdf5e2e3f750dde9a52496d4f67f0943a7396141"
+}

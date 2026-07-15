@@ -575,6 +575,16 @@ impl persistence::CommitmentRepository for DBCommitments {
         signed: persistence::SignatureOwner,
     ) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
+        let existing: Option<CommitmentDBEntry> = self
+            .db
+            .select(rid.clone())
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if existing.is_some() {
+            return Err(Error::Conflict(format!(
+                "commitment already exists: {signature}"
+            )));
+        }
         let newentry = CommitmentDBEntry {
             id: rid,
             inputs,

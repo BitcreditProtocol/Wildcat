@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM commitments\n            WHERE expiration < $1::timestamptz\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9d516f34ebc3f8300a1acb593f52f55a16d3729c8341cbd8fa1c11f2ff95656"
+}
