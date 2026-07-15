@@ -52,8 +52,8 @@ impl Service {
         let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
         let kinfo = entry.0.clone();
         let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
-        self.keys.store(entry).await?;
         self.clowder.new_keyset(keyset).await?;
+        self.keys.store(entry).await?;
         Ok(kinfo)
     }
 

@@ -58,6 +58,16 @@ impl Service {
             .request_onchain_mint_address(qid, kid)
             .await?;
         let expiry = now + self.mint_quote_expiry;
+        let body = wire_mint::OnchainMintQuoteResponseBody {
+            quote: qid,
+            address: address.to_string(),
+            payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
+            blinded_messages: request.blinded_messages.clone(),
+            expiry: expiry.timestamp().max(0) as u64,
+            wallet_key: request.wallet_key,
+        };
+        // acquire clowder's commitment before persisting the quote locally
+        let (content, commitment) = self.clowder_cl.sign_onchain_mint_response(&body).await?;
         let mintop = MintOperation {
             qid,
             kid,
@@ -65,20 +75,10 @@ impl Service {
             recipient: address.as_unchecked().clone(),
             expiry,
             status: MintStatus::Pending {
-                blinds: request.blinded_messages.clone(),
+                blinds: request.blinded_messages,
             },
         };
         self.repo.store_mintop(mintop).await?;
-        let body = wire_mint::OnchainMintQuoteResponseBody {
-            quote: qid,
-            address: address.to_string(),
-            payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
-            blinded_messages: request.blinded_messages,
-            expiry: expiry.timestamp().max(0) as u64,
-            wallet_key: request.wallet_key,
-        };
-
-        let (content, commitment) = self.clowder_cl.sign_onchain_mint_response(&body).await?;
         let response = wire_mint::OnchainMintQuoteResponse {
             commitment,
             content,
@@ -284,9 +284,7 @@ impl Service {
         let fees_signatures = self.wdc.sign(fees_pre.blinded_messages()).await?;
         let keyset = self.wdc.keyset(fees_pre.keyset_id).await?;
         let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset)?;
-        // update state
-        self.wdc.burn(inputs.clone()).await?;
-        let txid = match self
+        let txid = self
             .clowder_cl
             .melt_onchain(
                 qid,
@@ -296,26 +294,16 @@ impl Service {
                 fees_signatures,
                 op.commitment,
             )
-            .await
-        {
-            Ok(txid) => txid,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to melt onchain for quote {qid}: {e}, recovering proofs {:?}",
-                    op.input_ys,
-                );
-                self.wdc.recover(inputs.clone()).await?;
-                return Err(Error::Internal(format!("Failed to melt onchain: {e}")));
-            }
-        };
-        vault.store_proofs(fees).await?;
+            .await?;
+        if let Err(e) = self.wdc.burn(inputs).await {
+            tracing::warn!("failed to mirror burn after settling melt {qid}: {e}");
+        }
+        if let Err(e) = vault.store_proofs(fees).await {
+            tracing::warn!("failed to store fee proofs after settling melt {qid}: {e}");
+        }
         let new = onchain::MeltStatus::Paid { tx: txid };
-        match self.repo.update_meltop_status(qid, new).await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("DB Failure, lost MeltStatus update for {qid} with txid {txid:?}");
-                return Err(e);
-            }
+        if let Err(e) = self.repo.update_meltop_status(qid, new).await {
+            tracing::error!("lost MeltStatus update for {qid} with txid {txid:?}: {e}");
         }
         let response = wire_melt::MeltOnchainResponse { txid };
         Ok(response)

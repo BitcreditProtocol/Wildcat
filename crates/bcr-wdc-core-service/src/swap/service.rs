@@ -195,6 +195,7 @@ impl Service {
             .await;
         match store_res {
             Ok(_) => Ok((content, commitment)),
+            Err(Error::Conflict(_)) => Ok((content, commitment)),
             Err(e) => {
                 tracing::error!("failed to store commitment: {e}");
                 Err(e)
@@ -261,7 +262,7 @@ impl Service {
         let signatures = sign_service.sign_blinds(&outputs).await?;
         let fees_premints = generate_fees_premints(sign_service, &inputs, &outputs).await?;
         let (fees_signatures, fees_proofs) = sign_fees(sign_service, fees_premints).await?;
-        // signal swap to clowder
+        // signal swap to clowder; the ack is authoritative
         self.clowder
             .signal_swap_event(
                 inputs.clone(),
@@ -271,9 +272,13 @@ impl Service {
                 signatures.clone(),
             )
             .await?;
-        // update state
+        if let Err(e) = self.proofs.insert(inputs).await {
+            if matches!(e, Error::InvalidInput(_)) {
+                return Ok(signatures);
+            }
+            return Err(e);
+        }
         self.commitments.delete(commitment).await?;
-        self.proofs.insert(inputs).await?;
         self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
     }

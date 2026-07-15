@@ -90,6 +90,26 @@ impl axum::response::IntoResponse for Error {
                 let j = serde_json::to_string(&v).unwrap_or_default();
                 (StatusCode::BAD_REQUEST, j)
             }
+            Error::ClowderClient(bcr_common::client::clowder::ClowderClientError::Rejected(r)) => {
+                use bcr_common::wire::clowder::ClowderRejection as Rej;
+                let msg = r.to_string();
+                match r {
+                    Rej::CommitmentNotFound => {
+                        let j = serde_json::to_string(&RNFError::Generic(msg)).unwrap_or_default();
+                        (StatusCode::NOT_FOUND, j)
+                    }
+                    Rej::CommitmentMismatch => {
+                        let j =
+                            serde_json::to_string(&BRError::CommitmentMismatch).unwrap_or_default();
+                        (StatusCode::BAD_REQUEST, j)
+                    }
+                    Rej::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+                    _ => {
+                        let j = serde_json::to_string(&BRError::Generic(msg)).unwrap_or_default();
+                        (StatusCode::BAD_REQUEST, j)
+                    }
+                }
+            }
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),

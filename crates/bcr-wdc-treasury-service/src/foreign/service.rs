@@ -97,13 +97,9 @@ impl Service {
             }
             retv.extend(proofs);
         }
-        let result = self
-            .clowder
+        self.clowder
             .signal_offline_exchange_event(inputs.clone(), hashes.clone(), wpk, retv.clone())
-            .await;
-        if let Err(e) = result {
-            tracing::error!("clowder.signal_offline_exchange_event: {e}");
-        }
+            .await?;
         self.offline_repo
             .store_fps(foreign_mint_id, inputs, hashes)
             .await?;
@@ -141,9 +137,6 @@ impl Service {
             self.clowder.as_ref(),
         )
         .await?;
-        let total = inputs
-            .iter()
-            .fold(cashu::Amount::ZERO, |total, p| total + p.amount);
         let locktime = foreign_locktime - chrono::TimeDelta::minutes(15);
         let wallet_cpk = cashu::PublicKey::from(*wallet_pk);
         let outputs = proof::generate_online_exchange_htlc_proofs(
@@ -160,15 +153,9 @@ impl Service {
             .clowder
             .signal_online_exchange_event(inputs.clone(), outputs.clone(), path.clone())
             .await?;
-        let store_response = self
-            .online_repo
+        self.online_repo
             .store_htlc(*foreign_pk, htlc_hash, inputs)
-            .await;
-        if let Err(e) = store_response {
-            tracing::error!(
-                "failed to store_htlc, for {total} from {foreign_pk} with hash {htlc_hash}: {e}"
-            );
-        }
+            .await?;
         Ok(proofs)
     }
 
