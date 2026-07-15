@@ -15,13 +15,13 @@ use bcr_common::{
     client::admin::core::{BRError, RNFError},
 };
 use bcr_wdc_utils::{keys::KeysetEntry, postgres};
-use bitcoin::bip32::DerivationPath;
+use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence,
+    persistence, TStamp,
 };
 
 // ----- end imports
@@ -531,12 +531,12 @@ impl persistence::ProofRepository for DBProofs {
 
     async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
-        sqlx::query(
+        sqlx::query!(
             r#"
             DELETE FROM proofs WHERE y = ANY($1::text[])
             "#,
+            &y_strs
         )
-        .bind(&y_strs[..])
         .execute(&self.pool)
         .await
         .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
@@ -576,5 +576,302 @@ impl persistence::ProofRepository for DBProofs {
                 Ok(Some(state))
             }
         }
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for commitments
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum CommitmentBlob {
+    V1(CommitmentBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CommitmentBlobV1 {
+    wallet_key: cashu::PublicKey,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+}
+
+#[derive(sqlx::FromRow)]
+struct CommitmentRow {
+    signature: String,
+    expiration: TStamp,
+    blob: Json<CommitmentBlob>,
+}
+
+fn commitment_to_row(
+    expiration: TStamp,
+    wallet_key: cashu::PublicKey,
+    signature: schnorr::Signature,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+) -> CommitmentRow {
+    CommitmentRow {
+        signature: signature.to_string(),
+        expiration,
+        blob: Json(CommitmentBlob::V1(CommitmentBlobV1 {
+            wallet_key,
+            fp_digest,
+            signed,
+        })),
+    }
+}
+
+fn commitment_from_row(
+    row: CommitmentRow,
+    inputs: Vec<cashu::PublicKey>,
+    outputs: Vec<cashu::PublicKey>,
+) -> Result<persistence::StoredCommitment> {
+    let CommitmentBlob::V1(blob) = row.blob.0;
+    Ok(persistence::StoredCommitment {
+        inputs,
+        outputs,
+        expiration: row.expiration,
+        fp_digest: blob.fp_digest,
+        signed: blob.signed,
+    })
+}
+
+fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKey>> {
+    keys.into_iter()
+        .map(|key| {
+            cashu::PublicKey::from_str(&key).map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+        })
+        .collect()
+}
+
+// ///////////////////////////////////////////////////////////////////////// DBCommitments
+
+#[derive(Debug, Clone)]
+pub struct DBCommitments {
+    pool: PgPool,
+}
+
+impl DBCommitments {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl persistence::CommitmentRepository for DBCommitments {
+    async fn store(
+        &self,
+        inputs: Vec<cashu::PublicKey>,
+        outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        signature: schnorr::Signature,
+        fp_digest: [u8; 32],
+        signed: persistence::SignatureOwner,
+    ) -> Result<()> {
+        let row = commitment_to_row(expiration, wallet_key, signature, fp_digest, signed);
+        let signature = row.signature.clone();
+        let input_keys: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let output_keys: Vec<String> = outputs.iter().map(ToString::to_string).collect();
+        let blob_value =
+            serde_json::to_value(&row.blob).map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let inserted = sqlx::query_scalar!(
+            r#"
+            INSERT INTO commitments (signature, expiration, blob)
+            VALUES ($1, $2::timestamptz, $3)
+            ON CONFLICT (signature) DO NOTHING
+            RETURNING signature
+            "#,
+            &row.signature,
+            &row.expiration,
+            blob_value
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if inserted.is_none() {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            return Err(Error::Conflict(format!(
+                "commitment already exists: {signature}"
+            )));
+        }
+        if !input_keys.is_empty() {
+            let signatures = vec![row.signature.clone(); input_keys.len()];
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO commitment_inputs (y, signature)
+                SELECT * FROM UNNEST($1::text[], $2::text[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &input_keys,
+                &signatures
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            if result.rows_affected() != input_keys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("inputs already used")));
+            }
+        }
+        if !output_keys.is_empty() {
+            let signatures = vec![row.signature.clone(); output_keys.len()];
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO commitment_outputs (y, signature)
+                SELECT * FROM UNNEST($1::text[], $2::text[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &output_keys,
+                &signatures
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            if result.rows_affected() != output_keys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("outputs already used")));
+            }
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
+        let signature = signature.to_string();
+        let row = sqlx::query_as!(
+            CommitmentRow,
+            r#"
+            SELECT signature, expiration, blob as "blob: Json<CommitmentBlob>"
+            FROM commitments
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
+        .ok_or_else(|| Error::ResourceNotFound(RNFError::Generic(signature.clone())))?;
+        let input_keys = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM commitment_inputs
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let output_keys = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM commitment_outputs
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        commitment_from_row(
+            row,
+            parse_commitment_public_keys(input_keys)?,
+            parse_commitment_public_keys(output_keys)?,
+        )
+    }
+
+    async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {
+        if inputs.is_empty() {
+            return Ok(false);
+        }
+        let input_keys: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let contains = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM commitment_inputs
+                WHERE y = ANY($1::text[])
+            )
+            "#,
+            &input_keys
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(contains.unwrap_or_default())
+    }
+
+    async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool> {
+        if outputs.is_empty() {
+            return Ok(false);
+        }
+        let output_keys: Vec<String> = outputs.iter().map(ToString::to_string).collect();
+        let contains = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM commitment_outputs
+                WHERE y = ANY($1::text[])
+            )
+            "#,
+            &output_keys
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(contains.unwrap_or_default())
+    }
+
+    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM commitments
+            WHERE signature = $1
+            "#,
+            commitment.to_string()
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM commitments
+            WHERE expiration < $1::timestamptz
+            "#,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
     }
 }

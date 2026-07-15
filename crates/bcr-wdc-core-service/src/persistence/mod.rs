@@ -48,7 +48,7 @@ pub trait ProofRepository: Send + Sync {
     async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SignatureOwner {
     Unsigned,
     Alpha,
@@ -535,6 +535,12 @@ mod tests {
         let db = init_surreal_commitments_db().await;
         commitmentsrepo_store_duplicates(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_store_duplicates_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_store_duplicates(db).await;
+    }
     async fn commitmentsrepo_store_duplicates(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
@@ -591,6 +597,12 @@ mod tests {
         let db = init_surreal_commitments_db().await;
         commitmentsrepo_contains_inputs(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_contains_inputs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_contains_inputs(db).await;
+    }
     async fn commitmentsrepo_contains_inputs(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
@@ -625,6 +637,12 @@ mod tests {
         commitmentsrepo_contains_outputs(db).await;
         //
         let db = init_surreal_commitments_db().await;
+        commitmentsrepo_contains_outputs(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_contains_outputs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
         commitmentsrepo_contains_outputs(db).await;
     }
     async fn commitmentsrepo_contains_outputs(db: impl CommitmentRepository) {
@@ -663,9 +681,100 @@ mod tests {
         let db = init_surreal_commitments_db().await;
         commitmentsrepo_load(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_load_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_load(db).await;
+    }
     async fn commitmentsrepo_load(db: impl CommitmentRepository) {
         let mut inputs = random_cdk_pks(5);
         let mut outputs = random_cdk_pks(3);
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = signatures_test::random_schnorr_signature();
+        let fp_digest = [7u8; 32];
+        db.store(
+            inputs.clone(),
+            outputs.clone(),
+            tstamp,
+            random_wallet_key(),
+            signature,
+            fp_digest,
+            SignatureOwner::Beta,
+        )
+        .await
+        .unwrap();
+        let mut result = db.load(&signature).await.unwrap();
+        result.inputs.sort();
+        inputs.sort();
+        assert_eq!(result.inputs, inputs);
+        result.outputs.sort();
+        outputs.sort();
+        assert_eq!(result.outputs, outputs);
+        assert_eq!(result.expiration, tstamp);
+        assert_eq!(result.fp_digest, fp_digest);
+        assert_eq!(result.signed, SignatureOwner::Beta);
+    }
+
+    #[tokio::test]
+    async fn test_commitmentsrepo_store_duplicate_signature() {
+        let db = init_memmap_commitments_db();
+        commitmentsrepo_store_duplicate_signature(db).await;
+        //
+        let db = init_surreal_commitments_db().await;
+        commitmentsrepo_store_duplicate_signature(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_store_duplicate_signature_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_store_duplicate_signature(db).await;
+    }
+    async fn commitmentsrepo_store_duplicate_signature(db: impl CommitmentRepository) {
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = signatures_test::random_schnorr_signature();
+        db.store(
+            random_cdk_pks(5),
+            random_cdk_pks(3),
+            tstamp,
+            random_wallet_key(),
+            signature,
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+        let result = db
+            .store(
+                random_cdk_pks(5),
+                random_cdk_pks(3),
+                tstamp,
+                random_wallet_key(),
+                signature,
+                [1u8; 32],
+                SignatureOwner::Alpha,
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn test_commitmentsrepo_delete_releases_inputs_outputs() {
+        let db = init_memmap_commitments_db();
+        commitmentsrepo_delete_releases_inputs_outputs(db).await;
+        //
+        let db = init_surreal_commitments_db().await;
+        commitmentsrepo_delete_releases_inputs_outputs(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_delete_releases_inputs_outputs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_delete_releases_inputs_outputs(db).await;
+    }
+    async fn commitmentsrepo_delete_releases_inputs_outputs(db: impl CommitmentRepository) {
+        let inputs = random_cdk_pks(5);
+        let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
@@ -679,14 +788,72 @@ mod tests {
         )
         .await
         .unwrap();
-        let mut result = db.load(&signature).await.unwrap();
-        result.inputs.sort();
-        inputs.sort();
-        assert_eq!(result.inputs, inputs);
-        result.outputs.sort();
-        outputs.sort();
-        assert_eq!(result.outputs, outputs);
-        assert_eq!(result.expiration, tstamp)
+        db.delete(signature).await.unwrap();
+        assert!(!db.contains_inputs(&inputs).await.unwrap());
+        assert!(!db.contains_outputs(&outputs).await.unwrap());
+        db.store(
+            inputs,
+            outputs,
+            tstamp,
+            random_wallet_key(),
+            signatures_test::random_schnorr_signature(),
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_commitmentsrepo_clean_expired() {
+        let db = init_memmap_commitments_db();
+        commitmentsrepo_clean_expired(db).await;
+        //
+        let db = init_surreal_commitments_db().await;
+        commitmentsrepo_clean_expired(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitmentsrepo_clean_expired_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBCommitments::from_pool(pool);
+        commitmentsrepo_clean_expired(db).await;
+    }
+    async fn commitmentsrepo_clean_expired(db: impl CommitmentRepository) {
+        let past_inputs = random_cdk_pks(5);
+        let past_outputs = random_cdk_pks(3);
+        let future_inputs = random_cdk_pks(5);
+        let future_outputs = random_cdk_pks(3);
+        let past = TStamp::from_timestamp(100000, 0).unwrap();
+        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        db.store(
+            past_inputs.clone(),
+            past_outputs.clone(),
+            past,
+            random_wallet_key(),
+            signatures_test::random_schnorr_signature(),
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+        db.store(
+            future_inputs.clone(),
+            future_outputs.clone(),
+            future,
+            random_wallet_key(),
+            signatures_test::random_schnorr_signature(),
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+            .await
+            .unwrap();
+        assert!(!db.contains_inputs(&past_inputs).await.unwrap());
+        assert!(!db.contains_outputs(&past_outputs).await.unwrap());
+        assert!(db.contains_inputs(&future_inputs).await.unwrap());
+        assert!(db.contains_outputs(&future_outputs).await.unwrap());
     }
 
     /////////////////////////////////////////////////////////////////// ReservedYsRepository

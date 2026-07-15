@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO commitment_inputs (y, signature)\n                SELECT * FROM UNNEST($1::text[], $2::text[])\n                ON CONFLICT (y) DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5496a156494398d218805280f53b27ced31e751a80043782e8ea1ddbe1b1be8e"
+}

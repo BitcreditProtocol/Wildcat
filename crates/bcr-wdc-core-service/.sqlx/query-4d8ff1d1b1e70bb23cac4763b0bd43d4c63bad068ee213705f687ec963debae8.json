@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO commitments (signature, expiration, blob)\n            VALUES ($1, $2::timestamptz, $3)\n            ON CONFLICT (signature) DO NOTHING\n            RETURNING signature\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "signature",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4d8ff1d1b1e70bb23cac4763b0bd43d4c63bad068ee213705f687ec963debae8"
+}
