@@ -86,7 +86,7 @@ impl ebill::Repository for DBEbill {
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
         if result.is_none() {
-            return Err(Error::InvalidInput(format!("mintop already exists {uid}")));
+            return Err(Error::AlreadyExists(format!("mintop {uid}")));
         }
         Ok(())
     }
@@ -116,6 +116,34 @@ impl ebill::Repository for DBEbill {
             target: v1.target,
             pub_key: v1.pub_key,
         })
+    }
+
+    async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<ebill::MintOperation>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT uid, kid, minted, blob as "blob: Json<MintOperationBlob>"
+            FROM mint_ops
+            WHERE blob->>'version' = 'V1' AND blob->'data'->>'bill_id' = $1
+            LIMIT 1
+            "#,
+            bill_id.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Ok(None);
+        };
+        let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+        let MintOperationBlob::V1(v1) = row.blob.0;
+        Ok(Some(ebill::MintOperation {
+            uid: row.uid,
+            kid,
+            minted: cashu::Amount::from(row.minted as u64),
+            bill_id: v1.bill_id,
+            target: v1.target,
+            pub_key: v1.pub_key,
+        }))
     }
 
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {

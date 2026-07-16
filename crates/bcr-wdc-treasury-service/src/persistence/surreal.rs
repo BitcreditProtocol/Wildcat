@@ -619,7 +619,7 @@ impl ebill::Repository for DBEbill {
         match res {
             Ok(..) => Ok(()),
             Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) => {
-                Err(Error::InvalidInput(format!("mintop already exist {uid}")))
+                Err(Error::AlreadyExists(format!("mintop {uid}")))
             }
             Err(e) => Err(Error::DB(anyhow!(e))),
         }
@@ -633,6 +633,22 @@ impl ebill::Repository for DBEbill {
             Ok(None) => Err(Error::ResourceNotFound(uid.to_string())),
             Err(e) => Err(Error::DB(anyhow!(e))),
         }
+    }
+
+    async fn mint_lookup_by_bill(
+        &self,
+        bill_id: core::BillId,
+    ) -> Result<Option<ebill::MintOperation>> {
+        let ops: Vec<EbillMintOpDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE bill_id == $bill_id LIMIT 1")
+            .bind(("table", Self::MINT_OPS))
+            .bind(("bill_id", bill_id))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(ops.into_iter().next().map(ebill::MintOperation::from))
     }
 
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {

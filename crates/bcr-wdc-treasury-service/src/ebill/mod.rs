@@ -29,6 +29,7 @@ pub struct MintOperation {
 pub trait Repository: Send + Sync {
     async fn mint_store(&self, mint_operation: MintOperation) -> Result<()>;
     async fn mint_load(&self, uid: Uuid) -> Result<MintOperation>;
+    async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<MintOperation>>;
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
     async fn mint_update_field(
         &self,

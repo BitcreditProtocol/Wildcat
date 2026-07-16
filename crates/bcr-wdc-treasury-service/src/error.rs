@@ -97,6 +97,8 @@ pub enum Error {
 
     #[error("resource not found: {0}")]
     ResourceNotFound(String),
+    #[error("resource already exists: {0}")]
+    AlreadyExists(String),
     #[error("internal {0}")]
     Internal(String),
 }
@@ -216,6 +218,11 @@ impl axum::response::IntoResponse for Error {
                 let v = serde_json::Value::String(v);
                 let j = serde_json::to_string(&v).unwrap_or_default();
                 (StatusCode::NOT_FOUND, j)
+            }
+            Error::AlreadyExists(v) => {
+                let v = serde_json::Value::String(v);
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::CONFLICT, j)
             }
             Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::from("")),
         };
