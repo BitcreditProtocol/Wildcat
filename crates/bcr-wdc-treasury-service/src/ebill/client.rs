@@ -31,6 +31,16 @@ pub struct ClwdrCl {
 
 #[async_trait]
 impl ebill::ClowderClient for ClwdrCl {
+    async fn register_ebill(&self, bid: BillId, amount: cashu::Amount) -> Result<()> {
+        let request = wire_clowder::RegisterEbillRequest {
+            bill_id: bid,
+            amount,
+        };
+        let response = wire_clowder::RegisterEbillResponse {};
+        let _resp = self.nats.register_ebill(request, response).await?;
+        Ok(())
+    }
+
     async fn minting_ebill(
         &self,
         keyset_id: cashu::Id,

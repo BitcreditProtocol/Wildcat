@@ -64,6 +64,8 @@ pub trait WildcatClient: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
+    async fn register_ebill(&self, bid: BillId, amount: cashu::Amount) -> Result<()>;
+
     async fn minting_ebill(
         &self,
         kid: cashu::Id,

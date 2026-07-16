@@ -31,6 +31,9 @@ impl Service {
         if kinfo.final_expiry.unwrap_or(u64::MAX) < now.timestamp() as u64 {
             return Err(Error::InvalidInput(String::from("keyset expired")));
         }
+        self.clowdercl
+            .register_ebill(bill_id.clone(), amount)
+            .await?;
         let new = MintOperation {
             uid,
             kid,
@@ -175,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn new_minting_operation_ok() {
         let mut repo = MockRepository::new();
-        let clowder_cl = MockClowderClient::new();
+        let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
@@ -190,6 +193,11 @@ mod tests {
             .times(1)
             .with(eq(kid))
             .returning(move |_| Ok(kinfo.clone().into()));
+        clowder_cl
+            .expect_register_ebill()
+            .times(1)
+            .with(eq(bill_id.clone()), eq(amount))
+            .returning(|_, _| Ok(()));
         let mintop = MintOperation {
             uid,
             kid,
