@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT blob as \"blob: Json<SignatureBlob>\"\n            FROM core_signatures\n            WHERE y = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blob: Json<SignatureBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b596c61e7bfb608444efbbba0c1ad7b05c53a68cd8f3db7c8985c5761db6bdb6"
+}

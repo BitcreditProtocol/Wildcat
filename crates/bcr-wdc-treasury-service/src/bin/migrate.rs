@@ -51,9 +51,11 @@ async fn main() {
         return;
     }
     // Connect to PostgreSQL (destination)
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.ebill.new).await;
     let sqlx_ebill = sqlx::DBEbill::new(cfg.appcfg.ebill.new)
         .await
         .expect("Failed to connect to PostgreSQL");
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.vault.new).await;
     let sqlx_vault = sqlx::DBVault::new(cfg.appcfg.vault.new)
         .await
         .expect("Failed to connect to PostgreSQL");

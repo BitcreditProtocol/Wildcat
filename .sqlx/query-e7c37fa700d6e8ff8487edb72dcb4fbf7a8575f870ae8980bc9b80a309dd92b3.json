@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE core_keys\n            SET active = false\n            WHERE kid = $1\n            RETURNING kid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kid",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e7c37fa700d6e8ff8487edb72dcb4fbf7a8575f870ae8980bc9b80a309dd92b3"
+}

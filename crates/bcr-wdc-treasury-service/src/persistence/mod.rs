@@ -37,7 +37,7 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_store(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_ebill_mint_store_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBEbill::from_pool(pool);
@@ -65,7 +65,7 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_store_twice(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_ebill_mint_store_twice_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBEbill::from_pool(pool);
@@ -95,7 +95,7 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_load(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_ebill_mint_load_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBEbill::from_pool(pool);
@@ -126,7 +126,7 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_update_field(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_ebill_mint_update_field_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBEbill::from_pool(pool);
@@ -160,7 +160,7 @@ mod tests {
         let db = init_surreal_ebill_db().await;
         ebill_mint_list(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_ebill_mint_list_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBEbill::from_pool(pool);
@@ -220,7 +220,7 @@ mod tests {
         let db = init_surreal_vault_db().await;
         vault_store_load_proofs(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_vault_store_load_proofs_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBVault::from_pool(pool);
@@ -246,7 +246,7 @@ mod tests {
         let db = init_surreal_vault_db().await;
         vault_load_proofs_partial(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_vault_load_proofs_partial_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBVault::from_pool(pool);
@@ -270,7 +270,7 @@ mod tests {
         let db = init_surreal_vault_db().await;
         vault_list_ys(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_vault_list_ys_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBVault::from_pool(pool);
@@ -295,7 +295,7 @@ mod tests {
         let db = init_surreal_vault_db().await;
         vault_delete_proofs(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_vault_delete_proofs_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBVault::from_pool(pool);
@@ -327,7 +327,7 @@ mod tests {
         let db = init_surreal_onchain_db().await;
         onchain_update_mintop_status(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_onchain_update_mintop_status_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBOnChain::from_pool(pool);
@@ -362,7 +362,7 @@ mod tests {
         let db = init_surreal_onchain_db().await;
         onchain_list_pending_mintops(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_onchain_list_pending_mintops_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBOnChain::from_pool(pool);
@@ -396,7 +396,7 @@ mod tests {
         let db = init_surreal_onchain_db().await;
         onchain_list_pending_meltops_roundtrip(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_onchain_list_pending_meltops_roundtrip_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBOnChain::from_pool(pool);

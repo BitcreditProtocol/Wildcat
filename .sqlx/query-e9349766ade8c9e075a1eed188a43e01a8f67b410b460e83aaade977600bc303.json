@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT qid, status, submitted, maturity_date, bill_id, bill_sum,\n                   bill_drawee_id, bill_drawer_id, bill_payer_id, bill_holder_id, blob as \"blob: Json<QuoteBlob>\"\n            FROM quote_quotes\n            WHERE qid = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "submitted",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "maturity_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "bill_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "bill_sum",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "bill_drawee_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "bill_drawer_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "bill_payer_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "bill_holder_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "blob: Json<QuoteBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e9349766ade8c9e075a1eed188a43e01a8f67b410b460e83aaade977600bc303"
+}

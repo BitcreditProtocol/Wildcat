@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_ebill_mint_ops (uid, kid, minted, blob)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (uid) DO NOTHING\n            RETURNING uid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d9da0e52a801b94b69e0ef1e21820003ca2d3cbc551625561bf89fa993123b99"
+}

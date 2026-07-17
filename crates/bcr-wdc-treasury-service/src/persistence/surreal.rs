@@ -1047,9 +1047,7 @@ mod tests {
     use super::*;
     use crate::foreign::OfflineRepository;
     use bcr_common::{core, core_tests};
-    use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use bitcoin::hashes::Hash;
-    use std::str::FromStr;
 
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {
         let sdb = Surreal::<Any>::init();

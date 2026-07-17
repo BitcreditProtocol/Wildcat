@@ -140,10 +140,6 @@ impl DBQuotes {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -162,7 +158,7 @@ impl DBQuotes {
             serde_json::to_value(&new_status).map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         let rows = sqlx::query!(
             r#"
-            UPDATE quotes
+            UPDATE quote_quotes
             SET status = $2,
                 blob = jsonb_set(blob, '{data,status}', $3, true)
             WHERE qid = $1 AND status = $4 AND blob->>'version' = 'V1'
@@ -193,7 +189,7 @@ impl persistence::Repository for DBQuotes {
             r#"
             SELECT qid, status, submitted, maturity_date, bill_id, bill_sum,
                    bill_drawee_id, bill_drawer_id, bill_payer_id, bill_holder_id, blob as "blob: Json<QuoteBlob>"
-            FROM quotes
+            FROM quote_quotes
             WHERE qid = $1
             "#,
             id,
@@ -251,7 +247,7 @@ impl persistence::Repository for DBQuotes {
     async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
         let results = sqlx::query!(
             r#"
-            SELECT qid FROM quotes
+            SELECT qid FROM quote_quotes
             WHERE status = $2 AND ($1::timestamptz IS NULL OR submitted >= $1)
             ORDER BY submitted DESC
             "#,
@@ -270,7 +266,7 @@ impl persistence::Repository for DBQuotes {
         sort: Option<service::SortOrder>,
     ) -> Result<Vec<quotes::LightQuote>> {
         let mut qb: QueryBuilder<'_, sqlx::Postgres> =
-            QueryBuilder::new("SELECT qid, status, bill_sum, maturity_date FROM quotes");
+            QueryBuilder::new("SELECT qid, status, bill_sum, maturity_date FROM quote_quotes");
 
         let first = add_filter_statement(
             &mut qb,
@@ -334,7 +330,7 @@ impl persistence::Repository for DBQuotes {
             r#"
             SELECT qid, status, submitted, maturity_date, bill_id, bill_sum,
                    bill_drawee_id, bill_drawer_id, bill_payer_id, bill_holder_id, blob as "blob: Json<QuoteBlob>"
-            FROM quotes
+            FROM quote_quotes
             WHERE bill_id = $1 AND bill_holder_id = $2
             ORDER BY submitted DESC
             "#,
@@ -354,7 +350,7 @@ impl persistence::Repository for DBQuotes {
             serde_json::to_value(&blob).map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO quotes (qid, status, submitted, maturity_date, bill_id, bill_sum,
+            INSERT INTO quote_quotes (qid, status, submitted, maturity_date, bill_id, bill_sum,
                                 bill_drawee_id, bill_drawer_id, bill_payer_id, bill_holder_id, blob)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (qid) DO NOTHING
