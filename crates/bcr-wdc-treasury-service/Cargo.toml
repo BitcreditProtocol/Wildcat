@@ -33,7 +33,6 @@ uuid.workspace = true
 [dev-dependencies]
 bcr-common = {workspace = true, features = ["test-utils"] }
 bcr-wdc-utils = { workspace = true , features = ["test-utils"] }
-itertools.workspace = true
 mockall.workspace = true
 rand.workspace = true
 secp256k1 = {workspace = true, features = ["global-context"]}

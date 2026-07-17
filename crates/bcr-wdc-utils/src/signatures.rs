@@ -1,7 +1,7 @@
 // ----- standard library imports
+use std::collections::HashSet;
 // ----- extra library imports
 use bcr_common::{cashu, core::signature as core_signature, wire::keys as wire_keys};
-use itertools::Itertools;
 use thiserror::Error;
 // ----- local imports
 
@@ -33,7 +33,7 @@ pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()>
         return Err(ChecksError::ZeroAmount);
     }
     // 2. unique blinds
-    let unique_blinds: Vec<_> = blinds.iter().map(|p| p.blinded_secret).unique().collect();
+    let unique_blinds: HashSet<_> = blinds.iter().map(|p| p.blinded_secret).collect();
     if unique_blinds.len() != blinds.len() {
         return Err(ChecksError::NonUnique);
     }
@@ -53,7 +53,7 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
         return Err(ChecksError::ZeroAmount);
     }
     // 3. unique proofs
-    let unique_proofs: Vec<_> = proofs.iter().map(|p| p.secret.clone()).unique().collect();
+    let unique_proofs: HashSet<_> = proofs.iter().map(|p| p.secret.clone()).collect();
     if unique_proofs.len() != proofs.len() {
         return Err(ChecksError::NonUnique);
     }
@@ -83,7 +83,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
         return Err(ChecksError::ZeroAmount);
     }
     // 3. unique fingerprints
-    let unique_fps: Vec<_> = fps.iter().map(|p| p.y).unique().collect();
+    let unique_fps: HashSet<_> = fps.iter().map(|p| p.y).collect();
     if unique_fps.len() != fps.len() {
         return Err(ChecksError::NonUnique);
     }
