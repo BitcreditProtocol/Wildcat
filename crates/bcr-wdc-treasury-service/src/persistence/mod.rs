@@ -180,6 +180,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ebill_mint_store_bill_conflict() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_store_bill_conflict(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_bill_conflict_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_store_bill_conflict(db).await;
+    }
+    async fn ebill_mint_store_bill_conflict(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid,
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::from(64),
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op.clone()).await.unwrap();
+        let other = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            ..op
+        };
+        let res = db.mint_store(other).await;
+        assert!(matches!(res, Err(Error::AlreadyExists(_))));
+    }
+
+    #[tokio::test]
     async fn test_ebill_mint_lookup_by_bill() {
         let db = init_inmemory_ebill_db();
         ebill_mint_lookup_by_bill(db).await;

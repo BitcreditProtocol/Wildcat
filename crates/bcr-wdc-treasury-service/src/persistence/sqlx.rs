@@ -84,7 +84,12 @@ impl ebill::Repository for DBEbill {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::DB(anyhow!(e)))?;
+        .map_err(|e| match e.as_database_error() {
+            Some(db) if db.is_unique_violation() => {
+                Error::AlreadyExists(format!("mintop {uid}"))
+            }
+            _ => Error::DB(anyhow!(e)),
+        })?;
         if result.is_none() {
             return Err(Error::AlreadyExists(format!("mintop {uid}")));
         }

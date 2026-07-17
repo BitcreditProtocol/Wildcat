@@ -169,6 +169,12 @@ impl ebill::Repository for EbillMintOpMap {
         if cs.contains_key(&mint_op.uid) {
             return Err(Error::AlreadyExists(format!("mint_op {}", mint_op.uid)));
         }
+        if cs.values().any(|op| op.bill_id == mint_op.bill_id) {
+            return Err(Error::AlreadyExists(format!(
+                "mint_op for bill {}",
+                mint_op.bill_id
+            )));
+        }
         let uid = mint_op.uid;
         let kid = mint_op.kid;
         cs.insert(mint_op.uid, mint_op);
