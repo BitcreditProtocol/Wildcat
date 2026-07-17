@@ -1,4 +1,0 @@
-CREATE TABLE proofs (
-    y TEXT PRIMARY KEY,
-    blob JSONB NOT NULL
-);

@@ -94,7 +94,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_pending_ok(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_pending_ok_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -118,7 +118,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_pending_ko(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_pending_ko_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -146,7 +146,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_offered_ok(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_offered_ok_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -171,7 +171,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_offered_ko(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_offered_ko_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -198,7 +198,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_failedebillvalidation_ok(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_failedebillvalidation_ok_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -238,7 +238,7 @@ mod tests {
         let db = init_surreal_db().await;
         update_status_if_failedebillvalidation_ko(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_failedebillvalidation_ko_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -273,7 +273,7 @@ mod tests {
         let db = init_surreal_db().await;
         list_light_filter(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_list_light_filter_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -341,7 +341,7 @@ mod tests {
         let db = init_surreal_db().await;
         list_light_sort(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_list_light_sort_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
@@ -432,7 +432,7 @@ mod tests {
         let db = init_surreal_db().await;
         search_by_bill(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_search_by_bill_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);

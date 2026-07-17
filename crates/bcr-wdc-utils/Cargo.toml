@@ -24,6 +24,7 @@ rand = {workspace = true, optional  = true}
 reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde = {workspace = true, features = ["derive"]}
+sqlx = {workspace = true, features = [ "migrate"]}
 thiserror.workspace = true
 tokio = {workspace = true, features = ["time", "rt"]}
 tokio-util = {workspace = true}

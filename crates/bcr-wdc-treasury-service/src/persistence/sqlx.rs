@@ -47,10 +47,6 @@ impl DBEbill {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -70,7 +66,7 @@ impl ebill::Repository for DBEbill {
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO mint_ops (uid, kid, minted, bill_id, blob)
+            INSERT INTO treasury_ebill_mint_ops (uid, kid, minted, bill_id, blob)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (uid) DO NOTHING
             RETURNING uid
@@ -97,7 +93,7 @@ impl ebill::Repository for DBEbill {
         let result = sqlx::query!(
             r#"
             SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
-            FROM mint_ops
+            FROM treasury_ebill_mint_ops
             WHERE uid = $1
             "#,
             uid
@@ -125,7 +121,7 @@ impl ebill::Repository for DBEbill {
         let result = sqlx::query!(
             r#"
             SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
-            FROM mint_ops
+            FROM treasury_ebill_mint_ops
             WHERE bill_id = $1
             "#,
             bill_id.to_string()
@@ -153,7 +149,7 @@ impl ebill::Repository for DBEbill {
         let results = sqlx::query!(
             r#"
             SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
-            FROM mint_ops
+            FROM treasury_ebill_mint_ops
             WHERE kid = $1
             "#,
             kid.to_string()
@@ -186,7 +182,7 @@ impl ebill::Repository for DBEbill {
     ) -> Result<()> {
         let result = sqlx::query!(
             r#"
-            UPDATE mint_ops
+            UPDATE treasury_ebill_mint_ops
             SET minted = $3
             WHERE uid = $1 AND minted = $2
             RETURNING uid
@@ -241,10 +237,6 @@ impl DBForeignOnline {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -268,10 +260,10 @@ impl foreign::OnlineRepository for DBForeignOnline {
         }
         sqlx::query!(
             r#"
-            INSERT INTO foreign_proofs (mint_id, blobs)
+            INSERT INTO treasury_foreign_proofs (mint_id, blobs)
             VALUES ($1, $2)
             ON CONFLICT (mint_id) DO UPDATE
-            SET blobs = array_cat(foreign_proofs.blobs, EXCLUDED.blobs)
+            SET blobs = array_cat(treasury_foreign_proofs.blobs, EXCLUDED.blobs)
             "#,
             mint_id,
             &blobs,
@@ -286,7 +278,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         let result = sqlx::query!(
             r#"
             SELECT blobs
-            FROM foreign_proofs
+            FROM treasury_foreign_proofs
             WHERE mint_id = $1
             "#,
             mint_id.to_string()
@@ -332,7 +324,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO foreign_online_htlc_proofs ( y, hash, mint_id, blob)
+            INSERT INTO treasury_foreign_online_htlc_proofs ( y, hash, mint_id, blob)
             SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::jsonb[])
             ON CONFLICT (y) DO NOTHING
             "#,
@@ -360,7 +352,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             ForeignHtlcProofRow,
             r#"
             SELECT mint_id, blob as "blob: Json<ForeignHtlcProofBlob>"
-            FROM foreign_online_htlc_proofs
+            FROM treasury_foreign_online_htlc_proofs
             WHERE hash = $1
             "#,
             hash.to_string()
@@ -382,7 +374,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
         sqlx::query!(
             r#"
-            DELETE FROM foreign_online_htlc_proofs WHERE y = ANY($1::text[])
+            DELETE FROM treasury_foreign_online_htlc_proofs WHERE y = ANY($1::text[])
             "#,
             &y_strs
         )
@@ -414,10 +406,6 @@ impl DBVault {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -440,7 +428,7 @@ impl vault::Repository for DBVault {
         }
         sqlx::query!(
             r#"
-            INSERT INTO vault_proofs (y, blob)
+            INSERT INTO treasury_vault_proofs (y, blob)
             SELECT * FROM UNNEST($1::text[], $2::jsonb[])
             ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
             "#,
@@ -457,7 +445,7 @@ impl vault::Repository for DBVault {
         let y_strs: Vec<String> = ys.into_iter().map(|y| y.to_string()).collect();
         let results = sqlx::query(
             r#"
-            SELECT blob FROM vault_proofs WHERE y = ANY($1::text[])
+            SELECT blob FROM treasury_vault_proofs WHERE y = ANY($1::text[])
             "#,
         )
         .bind(&y_strs)
@@ -479,7 +467,7 @@ impl vault::Repository for DBVault {
     async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
         let results = sqlx::query!(
             r#"
-            SELECT y FROM vault_proofs
+            SELECT y FROM treasury_vault_proofs
             "#
         )
         .fetch_all(&self.pool)
@@ -497,7 +485,7 @@ impl vault::Repository for DBVault {
         let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
         sqlx::query(
             r#"
-            DELETE FROM vault_proofs WHERE y = ANY($1::text[])
+            DELETE FROM treasury_vault_proofs WHERE y = ANY($1::text[])
             "#,
         )
         .bind(&y_strs)
@@ -718,10 +706,6 @@ impl DBOnChain {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -732,7 +716,7 @@ impl DBOnChain {
     async fn mintops_mark_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
-            UPDATE onchain_mint_ops
+            UPDATE treasury_onchain_mint_ops
             SET status = $2
             WHERE status != $2 AND expiry < $1
             "#,
@@ -748,7 +732,7 @@ impl DBOnChain {
     async fn meltops_mark_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
-            UPDATE onchain_melt_ops
+            UPDATE treasury_onchain_melt_ops
             SET status = $2
             WHERE status != $2 AND expiry < $1
             "#,
@@ -768,7 +752,7 @@ impl onchain::Repository for DBOnChain {
         let (qid, status, expiry, blob) = onchain_mintop_to_row(op)?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO onchain_mint_ops (qid, expiry, status, blob)
+            INSERT INTO treasury_onchain_mint_ops (qid, expiry, status, blob)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (qid) DO NOTHING
             RETURNING qid
@@ -794,7 +778,7 @@ impl onchain::Repository for DBOnChain {
         let result = sqlx::query!(
             r#"
             SELECT qid, expiry, status, blob as "blob: Json<OnChainMintOpBlob>"
-            FROM onchain_mint_ops
+            FROM treasury_onchain_mint_ops
             WHERE qid = $1
             "#,
             qid
@@ -815,7 +799,7 @@ impl onchain::Repository for DBOnChain {
         self.mintops_mark_expired(now).await?;
         let results = sqlx::query!(
             r#"
-            SELECT qid FROM onchain_mint_ops WHERE status = $1
+            SELECT qid FROM treasury_onchain_mint_ops WHERE status = $1
             "#,
             onchain::MintStatusDiscriminants::Pending.to_string(),
         )
@@ -837,7 +821,7 @@ impl onchain::Repository for DBOnChain {
                     serde_json::to_value(&signatures).map_err(|e| Error::DB(anyhow!(e)))?;
                 sqlx::query!(
                     r#"
-                    UPDATE onchain_mint_ops
+                    UPDATE treasury_onchain_mint_ops
                     SET status = $3,
                         blob = jsonb_set(blob, '{data,signatures}', to_jsonb($2::jsonb), true)
                     WHERE qid = $1 AND blob->>'version' = 'V1'
@@ -853,7 +837,7 @@ impl onchain::Repository for DBOnChain {
             }
             onchain::MintStatus::Expired => sqlx::query!(
                 r#"
-                    UPDATE onchain_mint_ops
+                    UPDATE treasury_onchain_mint_ops
                     SET status = $2
                     WHERE qid = $1 AND blob->>'version' = 'V1'
                     "#,
@@ -876,7 +860,7 @@ impl onchain::Repository for DBOnChain {
         let (qid, status, expiry, ys, blob) = onchain_meltop_to_row(op)?;
         let result = sqlx::query(
             r#"
-            INSERT INTO onchain_melt_ops (qid, expiry, status, input_ys, blob)
+            INSERT INTO treasury_onchain_melt_ops (qid, expiry, status, input_ys, blob)
             VALUES( $1, $2, $3, $4, $5)
             RETURNING qid
             "#,
@@ -901,7 +885,7 @@ impl onchain::Repository for DBOnChain {
         let result = sqlx::query!(
             r#"
             SELECT qid, expiry, status, input_ys, blob as "blob: Json<OnChainMeltOpBlob>"
-            FROM onchain_melt_ops
+            FROM treasury_onchain_melt_ops
             WHERE qid = $1
             "#,
             qid
@@ -927,7 +911,7 @@ impl onchain::Repository for DBOnChain {
             }
             onchain::MeltStatus::Paid { tx } => sqlx::query!(
                 r#"
-                UPDATE onchain_melt_ops
+                UPDATE treasury_onchain_melt_ops
                 SET status = $3,
                     blob = jsonb_set(blob, '{data,tx}', to_jsonb($2::text), true)
                 WHERE qid = $1 AND blob->>'version' = 'V1'
@@ -942,7 +926,7 @@ impl onchain::Repository for DBOnChain {
             .rows_affected(),
             onchain::MeltStatus::Expired => sqlx::query!(
                 r#"
-                UPDATE onchain_melt_ops
+                UPDATE treasury_onchain_melt_ops
                 SET status = $2
                 WHERE qid = $1 AND blob->>'version' = 'V1'
                 "#,
@@ -955,7 +939,7 @@ impl onchain::Repository for DBOnChain {
             .rows_affected(),
             onchain::MeltStatus::Canceled => sqlx::query!(
                 r#"
-                UPDATE onchain_melt_ops
+                UPDATE treasury_onchain_melt_ops
                 SET status = $2
                 WHERE qid = $1 AND blob->>'version' = 'V1'
                 "#,
@@ -977,7 +961,7 @@ impl onchain::Repository for DBOnChain {
         self.meltops_mark_expired(now).await?;
         let results = sqlx::query!(
             r#"
-            SELECT qid FROM onchain_melt_ops WHERE status = $1
+            SELECT qid FROM treasury_onchain_melt_ops WHERE status = $1
             "#,
             onchain::MeltStatusDiscriminants::Pending.to_string(),
         )
@@ -995,7 +979,7 @@ impl onchain::Repository for DBOnChain {
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO onchain_denied_melt_ops (qid, blob)
+            INSERT INTO treasury_onchain_denied_melt_ops (qid, blob)
             VALUES ($1, $2)
             ON CONFLICT (qid) DO NOTHING
             RETURNING qid
@@ -1019,7 +1003,7 @@ impl onchain::Repository for DBOnChain {
         let results = sqlx::query!(
             r#"
             SELECT qid, blob as "blob: Json<OnChainDeniedMeltOpBlob>"
-            FROM onchain_denied_melt_ops
+            FROM treasury_onchain_denied_melt_ops
             "#
         )
         .fetch_all(&self.pool)
@@ -1040,7 +1024,7 @@ impl onchain::Repository for DBOnChain {
     async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
         let result = sqlx::query!(
             r#"
-            DELETE FROM onchain_denied_melt_ops WHERE qid = $1
+            DELETE FROM treasury_onchain_denied_melt_ops WHERE qid = $1
             "#,
             qid
         )
