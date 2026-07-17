@@ -138,10 +138,6 @@ impl DBKeys {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -159,7 +155,7 @@ impl persistence::KeysRepository for DBKeys {
             serde_json::to_value(&row.blob).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO keys (kid, unit, active, final_expiry, blob)
+            INSERT INTO core_keys (kid, unit, active, final_expiry, blob)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (kid) DO NOTHING
             RETURNING kid
@@ -184,7 +180,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE kid = $1
             "#,
             kid.to_string()
@@ -202,7 +198,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE kid = $1
             "#,
             kid.to_string()
@@ -230,7 +226,7 @@ impl persistence::KeysRepository for DBKeys {
             .transpose()
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let mut qb: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new("SELECT kid, unit, active, final_expiry, blob FROM keys");
+            QueryBuilder::new("SELECT kid, unit, active, final_expiry, blob FROM core_keys");
         let any_filter =
             unit.is_some() || min_expiration_tstamp.is_some() || max_expiration_tstamp.is_some();
         if any_filter {
@@ -268,7 +264,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             "#,
         )
         .fetch_all(&self.pool)
@@ -286,7 +282,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE final_expiry >= $1
             ORDER BY final_expiry ASC
             "#,
@@ -324,10 +320,6 @@ impl DBSignatures {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -344,7 +336,7 @@ impl persistence::SignaturesRepository for DBSignatures {
             serde_json::to_value(&blob).map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO signatures (y, blob)
+            INSERT INTO core_signatures (y, blob)
             VALUES ($1, $2)
             ON CONFLICT (y) DO NOTHING
             RETURNING y
@@ -365,7 +357,7 @@ impl persistence::SignaturesRepository for DBSignatures {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<SignatureBlob>"
-            FROM signatures
+            FROM core_signatures
             WHERE y = $1
             "#,
             blind.blinded_secret.to_string()
@@ -410,10 +402,6 @@ impl DBProofs {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -445,7 +433,7 @@ impl DBProofs {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let result = sqlx::query!(
-            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
         &y_strs,
         &blob_values,
         )
@@ -488,7 +476,7 @@ impl persistence::ProofRepository for DBProofs {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let result = sqlx::query!(
-            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
         &y_strs,
         &blob_values,
         )
@@ -513,7 +501,7 @@ impl persistence::ProofRepository for DBProofs {
         let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
         sqlx::query!(
             r#"
-            DELETE FROM proofs WHERE y = ANY($1::text[])
+            DELETE FROM core_proofs WHERE y = ANY($1::text[])
             "#,
             &y_strs
         )
@@ -527,7 +515,7 @@ impl persistence::ProofRepository for DBProofs {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<ProofBlob>"
-            FROM proofs
+            FROM core_proofs
             WHERE y = $1
             "#,
             y.to_string()
@@ -636,10 +624,6 @@ impl DBCommitments {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -673,7 +657,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         let inserted = sqlx::query_scalar!(
             r#"
-            INSERT INTO commitments (signature, expiration, blob)
+            INSERT INTO core_commitments (signature, expiration, blob)
             VALUES ($1, $2::timestamptz, $3)
             ON CONFLICT (signature) DO NOTHING
             RETURNING signature
@@ -697,7 +681,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             let signatures = vec![row.signature.clone(); input_keys.len()];
             let result = sqlx::query!(
                 r#"
-                INSERT INTO commitment_inputs (y, signature)
+                INSERT INTO core_commitment_inputs (y, signature)
                 SELECT * FROM UNNEST($1::text[], $2::text[])
                 ON CONFLICT (y) DO NOTHING
                 "#,
@@ -718,7 +702,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             let signatures = vec![row.signature.clone(); output_keys.len()];
             let result = sqlx::query!(
                 r#"
-                INSERT INTO commitment_outputs (y, signature)
+                INSERT INTO core_commitment_outputs (y, signature)
                 SELECT * FROM UNNEST($1::text[], $2::text[])
                 ON CONFLICT (y) DO NOTHING
                 "#,
@@ -747,7 +731,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             CommitmentRow,
             r#"
             SELECT signature, expiration, blob as "blob: Json<CommitmentBlob>"
-            FROM commitments
+            FROM core_commitments
             WHERE signature = $1
             "#,
             &signature
@@ -759,7 +743,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         let input_keys = sqlx::query_scalar!(
             r#"
             SELECT y
-            FROM commitment_inputs
+            FROM core_commitment_inputs
             WHERE signature = $1
             "#,
             &signature
@@ -770,7 +754,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         let output_keys = sqlx::query_scalar!(
             r#"
             SELECT y
-            FROM commitment_outputs
+            FROM core_commitment_outputs
             WHERE signature = $1
             "#,
             &signature
@@ -794,7 +778,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             r#"
             SELECT EXISTS (
                 SELECT 1
-                FROM commitment_inputs
+                FROM core_commitment_inputs
                 WHERE y = ANY($1::text[])
             )
             "#,
@@ -815,7 +799,7 @@ impl persistence::CommitmentRepository for DBCommitments {
             r#"
             SELECT EXISTS (
                 SELECT 1
-                FROM commitment_outputs
+                FROM core_commitment_outputs
                 WHERE y = ANY($1::text[])
             )
             "#,
@@ -830,7 +814,7 @@ impl persistence::CommitmentRepository for DBCommitments {
     async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
         sqlx::query!(
             r#"
-            DELETE FROM commitments
+            DELETE FROM core_commitments
             WHERE signature = $1
             "#,
             commitment.to_string()
@@ -844,7 +828,7 @@ impl persistence::CommitmentRepository for DBCommitments {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
-            DELETE FROM commitments
+            DELETE FROM core_commitments
             WHERE expiration < $1::timestamptz
             "#,
             now
@@ -870,10 +854,6 @@ impl DBReservedYs {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -897,7 +877,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO reserved_ys (y, deadline)
+            INSERT INTO core_reserved_ys (y, deadline)
             SELECT * FROM UNNEST($1::text[], $2::timestamptz[])
             ON CONFLICT (y) DO NOTHING
             "#,
@@ -927,7 +907,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
         let reserved: Vec<String> = sqlx::query_scalar!(
             r#"
             SELECT y
-            FROM reserved_ys
+            FROM core_reserved_ys
             WHERE y = ANY($1::text[])
             "#,
             &y_strs
@@ -945,7 +925,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
-            DELETE FROM reserved_ys
+            DELETE FROM core_reserved_ys
             WHERE deadline < $1::timestamptz
             "#,
             now

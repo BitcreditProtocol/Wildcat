@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM treasury_onchain_denied_melt_ops WHERE qid = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ae1fad94c536452d3d8bb1d0575b357c8de9acea989188cbf76af9b85cff1c7"
+}

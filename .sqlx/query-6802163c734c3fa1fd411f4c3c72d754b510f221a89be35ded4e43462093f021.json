@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT signature, expiration, blob as \"blob: Json<CommitmentBlob>\"\n            FROM core_commitments\n            WHERE signature = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "expiration",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "blob: Json<CommitmentBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6802163c734c3fa1fd411f4c3c72d754b510f221a89be35ded4e43462093f021"
+}

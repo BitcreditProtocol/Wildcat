@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT kid, unit, active, final_expiry, blob as \"blob: Json<KeysetBlob>\"\n            FROM core_keys\n            WHERE kid = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "unit",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "final_expiry",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "blob: Json<KeysetBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ac454f098e0bc7094e73732062e469667c5ee3091acc58208ae1e3bdb752f4d5"
+}

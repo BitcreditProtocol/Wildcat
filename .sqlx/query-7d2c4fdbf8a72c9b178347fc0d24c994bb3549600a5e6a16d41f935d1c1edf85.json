@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM core_proofs WHERE y = ANY($1::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d2c4fdbf8a72c9b178347fc0d24c994bb3549600a5e6a16d41f935d1c1edf85"
+}

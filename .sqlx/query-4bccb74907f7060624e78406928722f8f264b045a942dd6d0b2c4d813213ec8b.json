@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_vault_proofs (y, blob)\n            SELECT * FROM UNNEST($1::text[], $2::jsonb[])\n            ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4bccb74907f7060624e78406928722f8f264b045a942dd6d0b2c4d813213ec8b"
+}

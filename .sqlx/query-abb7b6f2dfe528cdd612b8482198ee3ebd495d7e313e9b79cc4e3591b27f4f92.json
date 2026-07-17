@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT blobs\n            FROM treasury_foreign_proofs\n            WHERE mint_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blobs",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "abb7b6f2dfe528cdd612b8482198ee3ebd495d7e313e9b79cc4e3591b27f4f92"
+}

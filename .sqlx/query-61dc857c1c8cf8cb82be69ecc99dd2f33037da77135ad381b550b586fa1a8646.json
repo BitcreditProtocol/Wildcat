@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mint_id, blob as \"blob: Json<ForeignHtlcProofBlob>\"\n            FROM treasury_foreign_online_htlc_proofs\n            WHERE hash = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mint_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "blob: Json<ForeignHtlcProofBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "61dc857c1c8cf8cb82be69ecc99dd2f33037da77135ad381b550b586fa1a8646"
+}

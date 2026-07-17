@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT y\n            FROM core_commitment_inputs\n            WHERE signature = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "y",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "79d3292fb4952d4bb95f534b85c4ad7a6ddc49fd18d9bf1f93c78fc91f0a89cb"
+}
