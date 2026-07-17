@@ -26,7 +26,6 @@ bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag =
 bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", tag = "v0.5.13"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
-bcr-wdc-swap-service = {path = "./crates/bcr-wdc-swap-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
 bip39 = {version = "2"}
@@ -38,7 +37,6 @@ ciborium = {version = "0.2"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
 itertools = {version = "0.14"}
-mime = {version  = "0.3"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
 reqwest = {version = "0.12"}
