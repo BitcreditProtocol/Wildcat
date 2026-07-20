@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_onchain_mint_ops (qid, expiry, status, blob)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (qid) DO NOTHING\n            RETURNING qid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "89292a7220df430e2746d23cd725f9109fc16f58426c85576737f3e6beebe127"
+}

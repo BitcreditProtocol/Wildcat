@@ -68,12 +68,15 @@ async fn main() {
         return;
     }
     // Connect to PostgreSQL
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.keys_new).await;
     let sqlx_keys = sqlx::DBKeys::new(cfg.appcfg.keys_new)
         .await
         .expect("Failed to connect to keys PostgreSQL");
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.signatures_new).await;
     let sqlx_signatures = sqlx::DBSignatures::new(cfg.appcfg.signatures_new)
         .await
         .expect("Failed to connect to signatures PostgreSQL");
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.proofs_new).await;
     let sqlx_proofs = sqlx::DBProofs::new(cfg.appcfg.proofs_new)
         .await
         .expect("Failed to connect to proofs PostgreSQL");

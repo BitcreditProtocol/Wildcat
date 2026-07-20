@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO core_keys (kid, unit, active, final_expiry, blob)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (kid) DO NOTHING\n            RETURNING kid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kid",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cbeb14f82459cd258e08d8ead0d7a66ac1967740fa0a18e52ae03c12861bc229"
+}

@@ -138,10 +138,6 @@ impl DBKeys {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -159,7 +155,7 @@ impl persistence::KeysRepository for DBKeys {
             serde_json::to_value(&row.blob).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO keys (kid, unit, active, final_expiry, blob)
+            INSERT INTO core_keys (kid, unit, active, final_expiry, blob)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (kid) DO NOTHING
             RETURNING kid
@@ -184,7 +180,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE kid = $1
             "#,
             kid.to_string()
@@ -202,7 +198,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE kid = $1
             "#,
             kid.to_string()
@@ -230,7 +226,7 @@ impl persistence::KeysRepository for DBKeys {
             .transpose()
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let mut qb: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new("SELECT kid, unit, active, final_expiry, blob FROM keys");
+            QueryBuilder::new("SELECT kid, unit, active, final_expiry, blob FROM core_keys");
         let any_filter =
             unit.is_some() || min_expiration_tstamp.is_some() || max_expiration_tstamp.is_some();
         if any_filter {
@@ -268,7 +264,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             "#,
         )
         .fetch_all(&self.pool)
@@ -283,7 +279,7 @@ impl persistence::KeysRepository for DBKeys {
     async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
         let result = sqlx::query!(
             r#"
-            UPDATE keys
+            UPDATE core_keys
             SET active = false
             WHERE kid = $1
             RETURNING kid
@@ -306,7 +302,7 @@ impl persistence::KeysRepository for DBKeys {
             KeysetRow,
             r#"
             SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM keys
+            FROM core_keys
             WHERE final_expiry >= $1
             ORDER BY final_expiry ASC
             "#,
@@ -344,10 +340,6 @@ impl DBSignatures {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -364,7 +356,7 @@ impl persistence::SignaturesRepository for DBSignatures {
             serde_json::to_value(&blob).map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO signatures (y, blob)
+            INSERT INTO core_signatures (y, blob)
             VALUES ($1, $2)
             ON CONFLICT (y) DO NOTHING
             RETURNING y
@@ -385,7 +377,7 @@ impl persistence::SignaturesRepository for DBSignatures {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<SignatureBlob>"
-            FROM signatures
+            FROM core_signatures
             WHERE y = $1
             "#,
             blind.blinded_secret.to_string()
@@ -430,10 +422,6 @@ impl DBProofs {
             .connect(&cfg.connection)
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         Ok(Self { pool })
     }
 
@@ -465,7 +453,7 @@ impl DBProofs {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let result = sqlx::query!(
-            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
         &y_strs,
         &blob_values,
         )
@@ -508,7 +496,7 @@ impl persistence::ProofRepository for DBProofs {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let result = sqlx::query!(
-            "INSERT INTO proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
         &y_strs,
         &blob_values,
         )
@@ -533,7 +521,7 @@ impl persistence::ProofRepository for DBProofs {
         let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
         sqlx::query!(
             r#"
-            DELETE FROM proofs WHERE y = ANY($1::text[])
+            DELETE FROM core_proofs WHERE y = ANY($1::text[])
             "#,
             &y_strs
         )
@@ -547,7 +535,7 @@ impl persistence::ProofRepository for DBProofs {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<ProofBlob>"
-            FROM proofs
+            FROM core_proofs
             WHERE y = $1
             "#,
             y.to_string()

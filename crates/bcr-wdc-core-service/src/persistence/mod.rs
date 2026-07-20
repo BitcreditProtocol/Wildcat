@@ -128,7 +128,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_info(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_info_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -150,7 +150,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_list_info(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_listinfo_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -197,7 +197,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_keyset_test(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_keyset_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -218,7 +218,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_list_keyset_test(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_list_keyset_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -241,7 +241,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_deactivate_test(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_deactivate_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -265,7 +265,7 @@ mod tests {
         let db = init_surreal_keys_db().await;
         keysrepo_deactivate_kid_not_present_test(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_deactivate_kid_not_present_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -282,7 +282,7 @@ mod tests {
         let db = init_memmap_keys_db();
         keysrepo_infos_for_expiration_date_test(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_infos_for_expiration_date_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBKeys::from_pool(pool);
@@ -324,7 +324,7 @@ mod tests {
         let db = init_surreal_signatures_db().await;
         signsrepo_store(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_signsrepo_store_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBSignatures::from_pool(pool);
@@ -346,7 +346,7 @@ mod tests {
         let db = init_surreal_signatures_db().await;
         signsrepo_store_same_signature_twice(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_signsrepo_store_same_signature_twice_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBSignatures::from_pool(pool);
@@ -382,7 +382,7 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBProofs::from_pool(pool);
@@ -406,7 +406,7 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert_double_spent_all(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_all_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBProofs::from_pool(pool);
@@ -432,7 +432,7 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert_double_spent_partial(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_partial_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBProofs::from_pool(pool);
@@ -462,7 +462,7 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_partial_still_valid_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBProofs::from_pool(pool);
@@ -492,7 +492,7 @@ mod tests {
         let db = init_surreal_proofs_db().await;
         proofsrepo_insert_duplicate_in_batch(db).await;
     }
-    #[::sqlx::test]
+    #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_duplicate_in_batch_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBProofs::from_pool(pool);

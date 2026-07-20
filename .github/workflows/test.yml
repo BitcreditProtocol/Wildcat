@@ -9,8 +9,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  DATABASE_URL: "postgres://postgres:postgres@localhost:5432"
-  SQLX_OFFLINE: true
+  DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
 
 jobs:
   test:
@@ -79,8 +78,12 @@ jobs:
         with:
           prefix-key: "wildcat-01"
 
-      - name: Install grcov
-        run: cargo install grcov
+      - name: Install cargo tools
+        run: cargo install grcov sqlx-cli
+
+      - name: reset pre-existing db
+        run: |
+          cargo sqlx database reset -y --source migrations
 
       - name: run tests
         run: cargo test --workspace -- --include-ignored

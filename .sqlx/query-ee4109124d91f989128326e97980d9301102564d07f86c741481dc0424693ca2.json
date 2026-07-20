@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT qid FROM quote_quotes\n            WHERE status = $2 AND ($1::timestamptz IS NULL OR submitted >= $1)\n            ORDER BY submitted DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ee4109124d91f989128326e97980d9301102564d07f86c741481dc0424693ca2"
+}

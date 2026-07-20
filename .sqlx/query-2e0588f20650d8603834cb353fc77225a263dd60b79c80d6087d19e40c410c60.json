@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_onchain_denied_melt_ops (qid, blob)\n            VALUES ($1, $2)\n            ON CONFLICT (qid) DO NOTHING\n            RETURNING qid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2e0588f20650d8603834cb353fc77225a263dd60b79c80d6087d19e40c410c60"
+}

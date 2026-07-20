@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE treasury_onchain_melt_ops\n            SET status = $2\n            WHERE status != $2 AND expiry < $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "44db1fc6163799c2f27936a4843297f26670a9035d275af26aa5202a5a7b658b"
+}
