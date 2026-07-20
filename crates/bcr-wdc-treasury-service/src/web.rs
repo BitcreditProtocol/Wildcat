@@ -117,8 +117,8 @@ pub async fn mint_onchain(
 pub async fn mint_ebill(
     State(ctrl): State<Arc<ebill::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
-    Json(request): Json<cashu::MintRequest<Uuid>>,
-) -> Result<Json<cashu::MintResponse>> {
+    Json(request): Json<wire_mint::EbillMintRequest>,
+) -> Result<Json<wire_mint::EbillMintResponse>> {
     let now = chrono::Utc::now();
     let key = nut19::ebill::mint::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {

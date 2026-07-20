@@ -13,6 +13,7 @@ use bcr_common::{
         admin::clowder::Client as ClowderClient, core::Client as CoreClient,
         ebill::Client as EbClient, treasury as cl_treasury,
     },
+    wire::mint as wire_mint,
 };
 use bcr_wdc_utils::{nut19, routine};
 // ----- local modules
@@ -26,6 +27,7 @@ pub mod persistence;
 pub mod vault;
 mod web;
 // ----- local imports
+use crate::error::{Error, Result};
 
 // ----- end imports
 
