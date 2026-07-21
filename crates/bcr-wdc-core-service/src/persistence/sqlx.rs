@@ -1,6 +1,6 @@
 // ----- standard library imports
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     str::FromStr,
 };
 // ----- extra library imports
@@ -872,6 +872,107 @@ impl persistence::CommitmentRepository for DBCommitments {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// DBReservedYs
+
+#[derive(Debug, Clone)]
+pub struct DBReservedYs {
+    pool: PgPool,
+}
+
+impl DBReservedYs {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl persistence::ReservedYsRepository for DBReservedYs {
+    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        let y_strs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let deadlines = vec![deadline; y_strs.len()];
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO reserved_ys (y, deadline)
+            SELECT * FROM UNNEST($1::text[], $2::timestamptz[])
+            ON CONFLICT (y) DO NOTHING
+            "#,
+            &y_strs,
+            &deadlines
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        if result.rows_affected() != y_strs.len() as u64 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+            return Err(Error::Conflict(String::from("ys already reserved")));
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let y_strs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let reserved: Vec<String> = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM reserved_ys
+            WHERE y = ANY($1::text[])
+            "#,
+            &y_strs
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let reserved_set: HashSet<String> = reserved.into_iter().collect();
+        Ok(y_strs
+            .into_iter()
+            .map(|y| reserved_set.contains(&y))
+            .collect())
+    }
+
+    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM reserved_ys
+            WHERE deadline < $1::timestamptz
+            "#,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
     }
 }

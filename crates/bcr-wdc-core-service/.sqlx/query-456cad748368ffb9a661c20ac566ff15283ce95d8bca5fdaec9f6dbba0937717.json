@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO reserved_ys (y, deadline)\n            SELECT * FROM UNNEST($1::text[], $2::timestamptz[])\n            ON CONFLICT (y) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "456cad748368ffb9a661c20ac566ff15283ce95d8bca5fdaec9f6dbba0937717"
+}

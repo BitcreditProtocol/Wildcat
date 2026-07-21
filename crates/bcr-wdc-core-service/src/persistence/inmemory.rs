@@ -314,7 +314,18 @@ pub struct ReservedYsMap {
 #[async_trait]
 impl persistence::ReservedYsRepository for ReservedYsMap {
     async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        let duplicate_check = inputs.iter().collect::<HashSet<_>>();
+        if duplicate_check.len() != inputs.len() {
+            let err_msg = String::from("ys already reserved");
+            return Err(Error::Conflict(err_msg));
+        }
         let mut locked = self.reserved.write().unwrap();
+        for input in &inputs {
+            if locked.contains_key(input) {
+                let err_msg = String::from("ys already reserved");
+                return Err(Error::Conflict(err_msg));
+            }
+        }
         for input in inputs {
             locked.insert(input, deadline);
         }
@@ -329,7 +340,7 @@ impl persistence::ReservedYsRepository for ReservedYsMap {
 
     async fn clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.reserved.write().unwrap();
-        locked.retain(|_, deadline| *deadline > now);
+        locked.retain(|_, deadline| *deadline >= now);
         Ok(())
     }
 }

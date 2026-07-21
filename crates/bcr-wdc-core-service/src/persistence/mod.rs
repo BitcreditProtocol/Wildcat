@@ -876,6 +876,12 @@ mod tests {
         let db = init_surreal_reserved_ys_db().await;
         reservedysrepo_contains(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_contains_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBReservedYs::from_pool(pool);
+        reservedysrepo_contains(db).await;
+    }
     async fn reservedysrepo_contains(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(5);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -897,6 +903,12 @@ mod tests {
         let db = init_surreal_reserved_ys_db().await;
         reservedysrepo_clean_expired(db).await;
     }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_clean_expired_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBReservedYs::from_pool(pool);
+        reservedysrepo_clean_expired(db).await;
+    }
     async fn reservedysrepo_clean_expired(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(5);
         let past = TStamp::from_timestamp(100000, 0).unwrap();
@@ -913,5 +925,85 @@ mod tests {
             .unwrap();
         let result = db.contains(&inputs).await.unwrap();
         assert!(result.iter().all(|r| *r));
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_store_conflict() {
+        let db = init_memmap_reserved_ys_db();
+        reservedysrepo_store_conflict(db).await;
+        //
+        let db = init_surreal_reserved_ys_db().await;
+        reservedysrepo_store_conflict(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_store_conflict_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBReservedYs::from_pool(pool);
+        reservedysrepo_store_conflict(db).await;
+    }
+    async fn reservedysrepo_store_conflict(db: impl ReservedYsRepository) {
+        let inputs = random_cdk_pks(2);
+        let fresh_input = random_cdk_pks(1).pop().unwrap();
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        db.store(inputs.clone(), tstamp).await.unwrap();
+        let result = db.store(vec![inputs[0], fresh_input], tstamp).await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        let result = db
+            .contains(&[inputs[0], inputs[1], fresh_input])
+            .await
+            .unwrap();
+        assert_eq!(result, vec![true, true, false]);
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_store_duplicate_batch() {
+        let db = init_memmap_reserved_ys_db();
+        reservedysrepo_store_duplicate_batch(db).await;
+        //
+        let db = init_surreal_reserved_ys_db().await;
+        reservedysrepo_store_duplicate_batch(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_store_duplicate_batch_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBReservedYs::from_pool(pool);
+        reservedysrepo_store_duplicate_batch(db).await;
+    }
+    async fn reservedysrepo_store_duplicate_batch(db: impl ReservedYsRepository) {
+        let input = random_cdk_pks(1).pop().unwrap();
+        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let result = db.store(vec![input, input], tstamp).await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        let result = db.contains(&[input]).await.unwrap();
+        assert_eq!(result, vec![false]);
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_store_after_clean_expired() {
+        let db = init_memmap_reserved_ys_db();
+        reservedysrepo_store_after_clean_expired(db).await;
+        //
+        let db = init_surreal_reserved_ys_db().await;
+        reservedysrepo_store_after_clean_expired(db).await;
+    }
+    #[::sqlx::test]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_store_after_clean_expired_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBReservedYs::from_pool(pool);
+        reservedysrepo_store_after_clean_expired(db).await;
+    }
+    async fn reservedysrepo_store_after_clean_expired(db: impl ReservedYsRepository) {
+        let input = random_cdk_pks(1).pop().unwrap();
+        let past = TStamp::from_timestamp(100000, 0).unwrap();
+        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        db.store(vec![input], past).await.unwrap();
+        let result = db.store(vec![input], future).await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+            .await
+            .unwrap();
+        db.store(vec![input], future).await.unwrap();
+        let result = db.contains(&[input]).await.unwrap();
+        assert_eq!(result, vec![true]);
     }
 }
