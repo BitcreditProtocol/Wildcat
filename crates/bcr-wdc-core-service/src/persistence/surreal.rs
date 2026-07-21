@@ -690,19 +690,23 @@ impl DBReservedYs {
 #[async_trait]
 impl persistence::ReservedYsRepository for DBReservedYs {
     async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        let mut entries = Vec::with_capacity(inputs.len());
         for y in inputs {
             let rid = cpk_to_record_id(Self::TABLE, y);
-            let entry = ReservedYsDBEntry {
-                id: rid.clone(),
-                deadline,
-            };
-            let _: Option<ReservedYsDBEntry> = self
-                .db
-                .insert(rid)
-                .content(entry)
-                .await
-                .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+            let entry = ReservedYsDBEntry { id: rid, deadline };
+            entries.push(entry);
         }
+        let _: Vec<ReservedYsDBEntry> = self
+            .db
+            .insert(Self::TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| match e {
+                surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
+                    Error::Conflict(String::from("ys already reserved"))
+                }
+                _ => Error::ReservedYsRepository(anyhow!(e)),
+            })?;
         Ok(())
     }
 

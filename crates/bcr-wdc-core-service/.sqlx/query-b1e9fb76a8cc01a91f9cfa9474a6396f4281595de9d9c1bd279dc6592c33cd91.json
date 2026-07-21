@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM reserved_ys\n            WHERE deadline < $1::timestamptz\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1e9fb76a8cc01a91f9cfa9474a6396f4281595de9d9c1bd279dc6592c33cd91"
+}
