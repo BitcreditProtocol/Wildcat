@@ -238,23 +238,6 @@ impl persistence::KeysRepository for DBKeys {
         Ok(sets)
     }
 
-    async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
-        let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
-        let entry: Option<KeysDBEntry> = self
-            .db
-            .query("UPDATE $rid SET info.active = false RETURN BEFORE")
-            .bind(("rid", rid))
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        if entry.is_some() {
-            Ok(kid)
-        } else {
-            Err(Error::ResourceNotFound(RNFError::KeysetId(kid)))
-        }
-    }
-
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let infos: Vec<KeysInfoDBEntry> = self
             .db

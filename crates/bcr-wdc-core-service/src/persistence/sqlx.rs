@@ -280,26 +280,6 @@ impl persistence::KeysRepository for DBKeys {
             .collect()
     }
 
-    async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
-        let result = sqlx::query!(
-            r#"
-            UPDATE keys
-            SET active = false
-            WHERE kid = $1
-            RETURNING kid
-            "#,
-            kid.to_string()
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        if result.is_some() {
-            Ok(kid)
-        } else {
-            Err(Error::ResourceNotFound(RNFError::KeysetId(kid)))
-        }
-    }
-
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let expire = i64::try_from(expire).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let rows = sqlx::query_as!(

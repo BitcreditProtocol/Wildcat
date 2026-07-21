@@ -59,18 +59,6 @@ pub async fn verify_fingerprint(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn deactivate(
-    State(ctrl): State<Arc<keys::service::Service>>,
-    Json(request): Json<wire_keys::DeactivateKeysetRequest>,
-) -> Result<Json<wire_keys::DeactivateKeysetResponse>> {
-    tracing::debug!("Received deactivate request");
-
-    let kid = ctrl.deactivate(request.kid).await?;
-    let response = wire_keys::DeactivateKeysetResponse { kid };
-    Ok(Json(response))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn recover_tokens(
     State(ctrl): State<Arc<swap::service::Service>>,
     Json(request): Json<wire_swap::RecoverRequest>,

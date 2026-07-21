@@ -82,14 +82,6 @@ impl persistence::KeysRepository for KeyMap {
             .collect();
         Ok(a)
     }
-    async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
-        let mut wlocked = self.keys.write().unwrap();
-        let (info, _) = wlocked
-            .get_mut(&kid)
-            .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))?;
-        info.active = false;
-        Ok(kid)
-    }
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
         let mut infos: Vec<_> = rlocked

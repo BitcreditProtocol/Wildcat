@@ -26,7 +26,6 @@ pub trait KeysRepository: Send + Sync {
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<MintKeySetInfo>>;
     async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
-    async fn deactivate(&self, id: cashu::Id) -> Result<cashu::Id>;
     async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
 }
 
@@ -231,50 +230,6 @@ mod tests {
         db.store(entry2).await.unwrap();
         let rkeys = db.list_keyset().await.unwrap();
         assert_eq!(rkeys.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_keysrepo_deactivate() {
-        let db = init_memmap_keys_db();
-        keysrepo_deactivate_test(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_deactivate_test(db).await;
-    }
-    #[::sqlx::test]
-    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_keysrepo_deactivate_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
-        keysrepo_deactivate_test(db).await;
-    }
-    async fn keysrepo_deactivate_test(db: impl KeysRepository) {
-        let entry = core_tests::generate_random_ecash_keyset();
-        let (info, _) = entry.clone();
-        db.store(entry).await.unwrap();
-        let deactivated = db.deactivate(info.id).await.unwrap();
-        assert_eq!(deactivated, info.id);
-        let updated_info = db.info(info.id).await.unwrap().unwrap();
-        assert!(!updated_info.active);
-    }
-
-    #[tokio::test]
-    async fn test_keysrepo_deactivate_kid_not_present() {
-        let db = init_memmap_keys_db();
-        keysrepo_deactivate_kid_not_present_test(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_deactivate_kid_not_present_test(db).await;
-    }
-    #[::sqlx::test]
-    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_keysrepo_deactivate_kid_not_present_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
-        keysrepo_deactivate_kid_not_present_test(db).await;
-    }
-    async fn keysrepo_deactivate_kid_not_present_test(db: impl KeysRepository) {
-        let (info, _) = core_tests::generate_random_ecash_keyset();
-        let res = db.deactivate(info.id).await;
-        assert!(res.is_err());
     }
 
     #[tokio::test]

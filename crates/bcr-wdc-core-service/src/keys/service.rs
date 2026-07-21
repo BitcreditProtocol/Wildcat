@@ -117,12 +117,6 @@ impl Service {
         self.keys.list_keyset().await
     }
 
-    pub async fn deactivate(&self, kid: cashu::Id) -> Result<cashu::Id> {
-        let kid = self.keys.deactivate(kid).await?;
-        self.clowder.keyset_deactivated(kid).await?;
-        Ok(kid)
-    }
-
     pub async fn search_signature(
         &self,
         blind: &cashu::BlindedMessage,
@@ -177,58 +171,6 @@ mod tests {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
         )
         .unwrap().to_seed("")
-    }
-
-    #[tokio::test]
-    async fn deactivate_ok() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let mut clowder_cl = MockClowderClient::new();
-        let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
-        let kid = kinfo.id;
-        keys_repo
-            .expect_deactivate()
-            .times(1)
-            .with(eq(kid))
-            .returning(move |_| Ok(kid));
-        clowder_cl
-            .expect_keyset_deactivated()
-            .times(1)
-            .with(eq(kid))
-            .returning(|_| Ok(()));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            min_keyset_fees_ppk: Default::default(),
-        };
-        let deactivated = service.deactivate(kid).await.unwrap();
-        assert_eq!(deactivated, kid);
-    }
-
-    #[tokio::test]
-    async fn deactivate_no_keysetid() {
-        let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let signatures_repo = MockSignaturesRepository::new();
-        let clowder_cl = MockClowderClient::new();
-        let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
-        keys_repo
-            .expect_deactivate()
-            .times(1)
-            .with(eq(kid))
-            .returning(move |_| Err(Error::ResourceNotFound(RNFError::KeysetId(kid))));
-        let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
-            keygen: factory,
-            clowder: Box::new(clowder_cl),
-            min_keyset_fees_ppk: Default::default(),
-        };
-        let err = service.deactivate(kid).await.unwrap_err();
-        assert!(matches!(err, Error::ResourceNotFound(_)));
     }
 
     #[tokio::test]
