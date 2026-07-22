@@ -67,9 +67,9 @@ mod tests {
         foreign_online_store_search_htlc(db).await;
     }
     async fn foreign_online_store_search_htlc(db: impl foreign::OnlineRepository) {
-        let hash = bitcoin::hashes::sha256::Hash::hash(b"online-htlc");
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"online-htlc");
         let first_mint = core::generate_random_keypair().public_key();
-        let second_mint = core::generate_random_keypair().public_key();
+        let _second_mint = core::generate_random_keypair().public_key();
         let proofs = generate_test_proofs(2);
         db.store_htlc(first_mint, hash, proofs.clone())
             .await
@@ -95,7 +95,7 @@ mod tests {
         foreign_online_remove_htlcs(db).await;
     }
     async fn foreign_online_remove_htlcs(db: impl foreign::OnlineRepository) {
-        let hash = bitcoin::hashes::sha256::Hash::hash(b"remove-online-htlcs");
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"remove-online-htlcs");
         let mint_id = core::generate_random_keypair().public_key();
         let proofs = generate_test_proofs(2);
         let y = proofs[0].y().unwrap();
