@@ -25,7 +25,6 @@ pub trait ClowderClient: Send + Sync {
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()>;
-    async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()>;
 }
 
 pub struct ClowderCl {
@@ -47,13 +46,6 @@ impl ClowderClient for ClowderCl {
             unit: keyset.unit,
         };
         self.nats.new_keyset(req, resp).await?;
-        Ok(())
-    }
-
-    async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()> {
-        self.nats
-            .deactivate_keyset(wire_clowder::KeysetDeactivationRequest { id: kid })
-            .await?;
         Ok(())
     }
 
@@ -87,11 +79,6 @@ pub struct DummyClowderClient;
 impl ClowderClient for DummyClowderClient {
     async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()> {
         tracing::debug!("DummyClowderClient::new_keyset for kid {}", keyset.id);
-
-        Ok(())
-    }
-    async fn keyset_deactivated(&self, kid: cashu::Id) -> Result<()> {
-        tracing::debug!("DummyClowderClient::keyset_deactivated for kid {}", kid);
 
         Ok(())
     }
