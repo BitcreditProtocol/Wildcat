@@ -167,9 +167,12 @@ impl ebill::Repository for EbillMintOpMap {
         let mut wlocked = self.mintops.write().unwrap();
         let (cs, cs_kid) = &mut *wlocked;
         if cs.contains_key(&mint_op.uid) {
-            return Err(Error::InvalidInput(format!(
-                "mint_op {}, already exists",
-                mint_op.uid
+            return Err(Error::AlreadyExists(format!("mint_op {}", mint_op.uid)));
+        }
+        if cs.values().any(|op| op.bill_id == mint_op.bill_id) {
+            return Err(Error::AlreadyExists(format!(
+                "mint_op for bill {}",
+                mint_op.bill_id
             )));
         }
         let uid = mint_op.uid;
@@ -188,6 +191,14 @@ impl ebill::Repository for EbillMintOpMap {
             .get(&uid)
             .ok_or(Error::InvalidInput(format!("mint_op {uid} not found")))?;
         Ok(op.clone())
+    }
+    async fn mint_lookup_by_bill(
+        &self,
+        bill_id: bcr_common::core::BillId,
+    ) -> Result<Option<ebill::MintOperation>> {
+        let rlocked = self.mintops.read().unwrap();
+        let (cs, _) = &*rlocked;
+        Ok(cs.values().find(|op| op.bill_id == bill_id).cloned())
     }
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
         let rlocked = self.mintops.read().unwrap();

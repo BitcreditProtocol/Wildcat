@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT uid, kid, minted, bill_id, blob as \"blob: Json<EbillMintOperationBlob>\"\n            FROM mint_ops\n            WHERE uid = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "kid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "minted",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "bill_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "blob: Json<EbillMintOperationBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "453265f65152b41856e9a72e8f187b3cfc47ffa2411de667b01e694e5b04f442"
+}

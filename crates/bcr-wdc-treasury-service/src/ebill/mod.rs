@@ -29,6 +29,7 @@ pub struct MintOperation {
 pub trait Repository: Send + Sync {
     async fn mint_store(&self, mint_operation: MintOperation) -> Result<()>;
     async fn mint_load(&self, uid: Uuid) -> Result<MintOperation>;
+    async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<MintOperation>>;
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
     async fn mint_update_field(
         &self,
@@ -64,6 +65,8 @@ pub trait WildcatClient: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
+    async fn register_ebill(&self, bid: BillId, amount: cashu::Amount) -> Result<()>;
+
     async fn minting_ebill(
         &self,
         kid: cashu::Id,

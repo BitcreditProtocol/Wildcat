@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO mint_ops (uid, kid, minted, blob)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (uid) DO NOTHING\n            RETURNING uid\n            ",
+  "query": "\n            INSERT INTO mint_ops (uid, kid, minted, bill_id, blob)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (uid) DO NOTHING\n            RETURNING uid\n            ",
   "describe": {
     "columns": [
       {
@@ -14,6 +14,7 @@
         "Uuid",
         "Text",
         "Int8",
+        "Text",
         "Jsonb"
       ]
     },
@@ -21,5 +22,5 @@
       false
     ]
   },
-  "hash": "fded2487a8da242a64d44bb3daeb54b4a5e3d4e6f0048f719a4b6c8793353623"
+  "hash": "8995a12719bae432e909fc1aeca784ec213042e8e1b7f2288b7f80501e734bcd"
 }
