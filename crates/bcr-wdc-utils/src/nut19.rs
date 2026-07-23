@@ -190,25 +190,22 @@ pub mod onchain {
 pub mod ebill {
     pub mod mint {
         use super::super::*;
-        use bcr_common::cashu;
+        use bcr_common::wire::mint as wire_mint;
 
-        pub fn request_to_key<U>(mut request: cashu::MintRequest<U>) -> Sha1Hash
-        where
-            U: serde::ser::Serialize + serde::de::DeserializeOwned,
-        {
+        pub fn request_to_key(mut request: wire_mint::EbillMintRequest) -> Sha1Hash {
             request.outputs.sort_by_key(|output| output.blinded_secret);
             let mut bytes = Vec::new();
             ciborium::into_writer(&request, &mut bytes).unwrap();
             Sha1Hash::hash(&bytes)
         }
 
-        pub fn blob_to_response(blob: ciborium::Value) -> cashu::MintResponse {
+        pub fn blob_to_response(blob: ciborium::Value) -> wire_mint::EbillMintResponse {
             let mut bytes = Vec::new();
             ciborium::into_writer(&blob, &mut bytes).unwrap();
             ciborium::from_reader(bytes.as_slice()).unwrap()
         }
 
-        pub fn response_to_blob(response: &cashu::MintResponse) -> ciborium::Value {
+        pub fn response_to_blob(response: &wire_mint::EbillMintResponse) -> ciborium::Value {
             let mut bytes = Vec::new();
             ciborium::into_writer(response, &mut bytes).unwrap();
             ciborium::from_reader(bytes.as_slice()).unwrap()

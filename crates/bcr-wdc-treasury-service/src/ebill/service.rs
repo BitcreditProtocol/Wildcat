@@ -1,6 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::clowder::ClowderClientError, core::BillId};
+use bcr_common::{
+    cashu, client::clowder::ClowderClientError, core::BillId, wire::mint as wire_mint,
+};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -82,11 +84,11 @@ impl Service {
         self.repo.mint_list(kid).await
     }
 
-    pub async fn mint(&self, request: cashu::MintRequest<Uuid>) -> Result<cashu::MintResponse> {
+    pub async fn mint(
+        &self,
+        request: wire_mint::EbillMintRequest,
+    ) -> Result<wire_mint::EbillMintResponse> {
         // basic checks
-        if request.signature.is_none() {
-            return Err(Error::InvalidInput(String::from("signature missing")));
-        }
         bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let output_amount = request
@@ -94,8 +96,8 @@ impl Service {
             .iter()
             .fold(cashu::Amount::ZERO, |acc, blind| acc + blind.amount);
         let operation = self.repo.mint_load(request.quote).await?;
-        let signature_verification = request.verify_signature(operation.pub_key);
-        if signature_verification.is_err() {
+        let signature_is_ok = request.verify_signature(&operation.pub_key);
+        if !signature_is_ok {
             return Err(Error::InvalidInput(String::from("invalid signature")));
         }
         let same_kid = request
@@ -144,7 +146,7 @@ impl Service {
                 Err(e) => return Err(e),
             }
         };
-        Ok(cashu::MintResponse { signatures })
+        Ok(wire_mint::EbillMintResponse { signatures })
     }
 
     pub async fn request_to_pay_ebill(
@@ -610,12 +612,7 @@ mod tests {
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
+        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let response = service.mint(request).await.unwrap();
         assert_eq!(response.signatures.len(), amounts.len());
     }
@@ -641,12 +638,7 @@ mod tests {
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
+        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let err = service.mint(request).await.unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
     }
@@ -659,7 +651,7 @@ mod tests {
 
     fn mint_retry_service(
         clowder_cl: MockClowderClient,
-    ) -> (Service, cashu::MintRequest<Uuid>, usize) {
+    ) -> (Service, wire_mint::EbillMintRequest, usize) {
         let mut mintop_repo = MockRepository::new();
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
@@ -702,12 +694,7 @@ mod tests {
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
+        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         (service, request, amounts.len())
     }
 

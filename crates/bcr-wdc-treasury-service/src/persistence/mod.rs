@@ -14,7 +14,6 @@ mod tests {
     use crate::{ebill, error::Error, foreign, onchain, vault};
     use bcr_common::{cashu, core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
-    use bitcoin::hashes::Hash;
     use std::str::FromStr;
     use uuid::Uuid;
 
@@ -70,7 +69,6 @@ mod tests {
     async fn foreign_online_store_search_htlc(db: impl foreign::OnlineRepository) {
         let hash = bitcoin::hashes::sha256::Hash::const_hash(b"online-htlc");
         let first_mint = core::generate_random_keypair().public_key();
-        let _second_mint = core::generate_random_keypair().public_key();
         let proofs = generate_test_proofs(2);
         db.store_htlc(first_mint, hash, proofs.clone())
             .await
