@@ -651,7 +651,7 @@ mod tests {
 
     fn mint_retry_service(
         clowder_cl: MockClowderClient,
-    ) -> (Service, cashu::MintRequest<Uuid>, usize) {
+    ) -> (Service, wire_mint::EbillMintRequest, usize) {
         let mut mintop_repo = MockRepository::new();
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
@@ -694,12 +694,7 @@ mod tests {
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let mut request = cashu::MintRequest {
-            quote: uid,
-            outputs: blinds,
-            signature: None,
-        };
-        request.sign(kp.secret_key().into()).unwrap();
+        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         (service, request, amounts.len())
     }
 

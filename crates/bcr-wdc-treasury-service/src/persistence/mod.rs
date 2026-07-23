@@ -14,7 +14,6 @@ mod tests {
     use crate::{ebill, error::Error, foreign, onchain, vault};
     use bcr_common::{cashu, core, core_tests};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
-    use bitcoin::hashes::Hash;
     use std::str::FromStr;
     use uuid::Uuid;
 
