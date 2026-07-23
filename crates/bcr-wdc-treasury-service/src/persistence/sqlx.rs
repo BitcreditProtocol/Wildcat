@@ -29,7 +29,6 @@ enum EbillMintOperationBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV1 {
-    bill_id: BillId,
     target: cashu::Amount,
     pub_key: cashu::PublicKey,
 }
@@ -65,29 +64,27 @@ impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
         let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
-            bill_id: mint_op.bill_id,
             target: mint_op.target,
             pub_key: mint_op.pub_key,
         });
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO mint_ops (uid, kid, minted, blob)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO mint_ops (uid, kid, minted, bill_id, blob)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (uid) DO NOTHING
             RETURNING uid
             "#,
             uid,
             mint_op.kid.to_string(),
             mint_op.minted.to_u64() as i64,
+            mint_op.bill_id.to_string(),
             blob_value
         )
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| match e.as_database_error() {
-            Some(db) if db.is_unique_violation() => {
-                Error::AlreadyExists(format!("mintop {uid}"))
-            }
+            Some(db) if db.is_unique_violation() => Error::AlreadyExists(format!("mintop {uid}")),
             _ => Error::DB(anyhow!(e)),
         })?;
         if result.is_none() {
@@ -99,7 +96,7 @@ impl ebill::Repository for DBEbill {
     async fn mint_load(&self, uid: Uuid) -> Result<ebill::MintOperation> {
         let result = sqlx::query!(
             r#"
-            SELECT uid, kid, minted, blob as "blob: Json<EbillMintOperationBlob>"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
             FROM mint_ops
             WHERE uid = $1
             "#,
@@ -112,12 +109,13 @@ impl ebill::Repository for DBEbill {
             return Err(Error::ResourceNotFound(uid.to_string()));
         };
         let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
         let EbillMintOperationBlob::V1(v1) = row.blob.0;
         Ok(ebill::MintOperation {
             uid: row.uid,
             kid,
             minted: cashu::Amount::from(row.minted as u64),
-            bill_id: v1.bill_id,
+            bill_id,
             target: v1.target,
             pub_key: v1.pub_key,
         })
@@ -126,10 +124,9 @@ impl ebill::Repository for DBEbill {
     async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<ebill::MintOperation>> {
         let result = sqlx::query!(
             r#"
-            SELECT uid, kid, minted, blob as "blob: Json<MintOperationBlob>"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
             FROM mint_ops
-            WHERE blob->>'version' = 'V1' AND blob->'data'->>'bill_id' = $1
-            LIMIT 1
+            WHERE bill_id = $1
             "#,
             bill_id.to_string()
         )
@@ -140,12 +137,13 @@ impl ebill::Repository for DBEbill {
             return Ok(None);
         };
         let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-        let MintOperationBlob::V1(v1) = row.blob.0;
+        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
+        let EbillMintOperationBlob::V1(v1) = row.blob.0;
         Ok(Some(ebill::MintOperation {
             uid: row.uid,
             kid,
             minted: cashu::Amount::from(row.minted as u64),
-            bill_id: v1.bill_id,
+            bill_id,
             target: v1.target,
             pub_key: v1.pub_key,
         }))
@@ -154,7 +152,7 @@ impl ebill::Repository for DBEbill {
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
         let results = sqlx::query!(
             r#"
-            SELECT uid, kid, minted, blob as "blob: Json<EbillMintOperationBlob>"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
             FROM mint_ops
             WHERE kid = $1
             "#,
@@ -166,12 +164,13 @@ impl ebill::Repository for DBEbill {
         let mut ops = Vec::with_capacity(results.len());
         for row in results {
             let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+            let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
             let EbillMintOperationBlob::V1(v1) = row.blob.0;
             ops.push(ebill::MintOperation {
                 uid: row.uid,
                 kid,
                 minted: cashu::Amount::from(row.minted as u64),
-                bill_id: v1.bill_id,
+                bill_id,
                 target: v1.target,
                 pub_key: v1.pub_key,
             });

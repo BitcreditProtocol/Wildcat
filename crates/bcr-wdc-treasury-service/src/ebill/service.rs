@@ -51,26 +51,26 @@ impl Service {
             bill_id,
         };
         if let Some(existing) = self.repo.mint_lookup_by_bill(new.bill_id.clone()).await? {
-            if is_same_op(&existing, &new) {
-                return Ok(());
+            if !is_same_op(&existing, &new) {
+                return Err(Error::AlreadyExists(format!(
+                    "bill {} already bound to mint operation {}",
+                    new.bill_id, existing.uid
+                )));
             }
-            return Err(Error::AlreadyExists(format!(
-                "bill {} already bound to mint operation {}",
-                new.bill_id, existing.uid
-            )));
+        } else if let Err(e) = self.repo.mint_store(new.clone()).await {
+            match e {
+                Error::AlreadyExists(_) => {
+                    match self.repo.mint_lookup_by_bill(new.bill_id.clone()).await? {
+                        Some(existing) if is_same_op(&existing, &new) => {}
+                        _ => return Err(e),
+                    }
+                }
+                _ => return Err(e),
+            }
         }
         self.clowdercl
             .register_ebill(new.bill_id.clone(), amount)
-            .await?;
-        match self.repo.mint_store(new.clone()).await {
-            Err(Error::AlreadyExists(e)) => {
-                match self.repo.mint_lookup_by_bill(new.bill_id.clone()).await? {
-                    Some(existing) if is_same_op(&existing, &new) => Ok(()),
-                    _ => Err(Error::AlreadyExists(e)),
-                }
-            }
-            other => other,
-        }
+            .await
     }
 
     pub async fn mintop_status(&self, uid: Uuid) -> Result<MintOperation> {
@@ -262,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn new_minting_operation_refire_same_uid_is_idempotent() {
         let mut repo = MockRepository::new();
-        let clowder_cl = MockClowderClient::new();
+        let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
@@ -289,6 +289,11 @@ mod tests {
             .times(1)
             .with(eq(bill_id.clone()))
             .returning(move |_| Ok(Some(existing.clone())));
+        clowder_cl
+            .expect_register_ebill()
+            .times(1)
+            .with(eq(bill_id.clone()), eq(amount))
+            .returning(|_, _| Ok(()));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
@@ -387,6 +392,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_minting_operation_register_failure_heals_on_refire() {
+        let mut repo = MockRepository::new();
+        let mut clowder_cl = MockClowderClient::new();
+        let mut core_cl = MockWildcatClient::new();
+        let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
+        let kid = kinfo.id;
+        let uid = Uuid::new_v4();
+        let pub_key = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let amount = cashu::Amount::from(64);
+        let bill_id = core_tests::random_bill_id();
+        core_cl
+            .expect_info()
+            .times(2)
+            .with(eq(kid))
+            .returning(move |_| Ok(kinfo.clone().into()));
+        repo.expect_mint_lookup_by_bill()
+            .times(1)
+            .with(eq(bill_id.clone()))
+            .returning(|_| Ok(None));
+        let stored = MintOperation {
+            uid,
+            kid,
+            pub_key,
+            target: amount,
+            minted: cashu::Amount::ZERO,
+            bill_id: bill_id.clone(),
+        };
+        repo.expect_mint_store()
+            .times(1)
+            .with(eq(stored.clone()))
+            .returning(|_| Ok(()));
+        clowder_cl
+            .expect_register_ebill()
+            .times(1)
+            .with(eq(bill_id.clone()), eq(amount))
+            .returning(|_, _| Err(clowder_transport_error()));
+        repo.expect_mint_lookup_by_bill()
+            .times(1)
+            .with(eq(bill_id.clone()))
+            .returning(move |_| Ok(Some(stored.clone())));
+        clowder_cl
+            .expect_register_ebill()
+            .times(1)
+            .with(eq(bill_id.clone()), eq(amount))
+            .returning(|_, _| Ok(()));
+        let service = Service {
+            clowdercl: Box::new(clowder_cl),
+            wildcatcl: Box::new(core_cl),
+            repo: Box::new(repo),
+        };
+        let now = chrono::Utc::now();
+        let err = service
+            .new_minting_operation(uid, kid, pub_key, amount, bill_id.clone(), now)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::ClowderNatsClient(_)));
+        service
+            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn new_minting_operation_store_race_is_idempotent() {
         let mut repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
@@ -443,7 +513,7 @@ mod tests {
     #[tokio::test]
     async fn new_minting_operation_store_race_other_op_rejected() {
         let mut repo = MockRepository::new();
-        let mut clowder_cl = MockClowderClient::new();
+        let clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
@@ -462,11 +532,6 @@ mod tests {
             .times(1)
             .with(eq(bill_id.clone()))
             .returning(|_| Ok(None));
-        clowder_cl
-            .expect_register_ebill()
-            .times(1)
-            .with(eq(bill_id.clone()), eq(amount))
-            .returning(|_, _| Ok(()));
         repo.expect_mint_store()
             .times(1)
             .returning(|op| Err(Error::AlreadyExists(op.uid.to_string())));
