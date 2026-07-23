@@ -1,6 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::clowder::ClowderClientError, core::BillId, wire::mint as wire_mint};
+use bcr_common::{
+    cashu, client::clowder::ClowderClientError, core::BillId, wire::mint as wire_mint,
+};
 use uuid::Uuid;
 // ----- local imports
 use crate::{

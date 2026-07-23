@@ -10,7 +10,6 @@ use bcr_common::{
 };
 use bcr_wdc_utils::nut19;
 use bitcoin::base64::prelude::*;
-use uuid::Uuid;
 // ----- local imports
 use crate::{ebill, error::Result, foreign, onchain, vault, AppController};
 
