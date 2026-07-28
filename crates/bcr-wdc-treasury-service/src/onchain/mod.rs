@@ -100,6 +100,7 @@ pub trait ClowderClient: Send + Sync {
     async fn estimate_onchain_tx(
         &self,
         amount: bitcoin::Amount,
+        address: Option<bitcoin::Address<bitcoin::address::NetworkUnchecked>>,
     ) -> Result<wire_clowder::OnchainTxEstimateResponse>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
     async fn authenticate_attestation(

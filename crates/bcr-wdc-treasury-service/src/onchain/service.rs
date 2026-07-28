@@ -242,8 +242,10 @@ impl Service {
         request: wire_melt::MeltOnchainEstimateRequest,
     ) -> Result<wire_melt::MeltOnchainEstimateResponse> {
         let wire_melt::MeltOnchainEstimateRequest { amount, address } = request;
-        self.clowder_cl.verify_onchain_address(address).await?;
-        let estimate = self.clowder_cl.estimate_onchain_tx(amount).await?;
+        if let Some(address) = address.clone() {
+            self.clowder_cl.verify_onchain_address(address).await?;
+        }
+        let estimate = self.clowder_cl.estimate_onchain_tx(amount, address).await?;
         Ok(wire_melt::MeltOnchainEstimateResponse {
             tx_vsize: estimate.tx_vsize,
             feerates: estimate.feerates,

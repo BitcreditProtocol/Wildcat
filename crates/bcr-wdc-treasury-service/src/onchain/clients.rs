@@ -254,8 +254,9 @@ impl ClowderClient for ClowderCl {
     async fn estimate_onchain_tx(
         &self,
         amount: bitcoin::Amount,
+        address: Option<bitcoin::Address<bitcoin::address::NetworkUnchecked>>,
     ) -> Result<wire_clowder::OnchainTxEstimateResponse> {
-        let response = self.rest.onchain_tx_estimate(amount).await?;
+        let response = self.rest.onchain_tx_estimate(amount, address).await?;
         Ok(response)
     }
 
