@@ -4,7 +4,10 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 use bcr_common::{
     cashu::{self, ProofsMethods},
     client::admin::treasury::SUError,
-    wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
+    wire::{
+        attestation as wire_attestation, clowder as wire_clowder, melt as wire_melt,
+        mint as wire_mint,
+    },
 };
 use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
@@ -134,22 +137,52 @@ impl Service {
             .clowder_cl
             .verify_onchain_address(address.clone())
             .await?;
-        // the user declares the payout amount and the network fee; the mint
-        // charges melt_fee. inputs must cover exactly amount + network_fee + melt_fee
-        let admin_fees = self.melt_fee(amount);
-        let network_fees = network_fee;
-        if input_total != amount + network_fees + admin_fees {
-            return Err(Error::InvalidInput(String::from(
-                "inputs must equal amount + network_fee + melt_fee",
+        let admin_fees = self.melt_fee(amount)?;
+        let outflow = amount
+            .checked_add(network_fee)
+            .ok_or_else(|| Error::InvalidInput(String::from("amount overflow")))?;
+        let expected = outflow
+            .checked_add(admin_fees)
+            .ok_or_else(|| Error::InvalidInput(String::from("amount overflow")))?;
+        if input_total != expected {
+            return Err(Error::InvalidInput(format!(
+                "inputs {} != amount {} + network_fee {} + melt_fee {} sats",
+                input_total.to_sat(),
+                amount.to_sat(),
+                network_fee.to_sat(),
+                admin_fees.to_sat(),
+            )));
+        }
+        let dust = checked_address.script_pubkey().minimal_non_dust();
+        if amount < dust {
+            return Err(Error::InvalidInput(format!(
+                "amount {} below dust limit {} sats",
+                amount.to_sat(),
+                dust.to_sat(),
+            )));
+        }
+        let estimate = self
+            .clowder_cl
+            .estimate_onchain_tx(amount, Some(address.clone()))
+            .await?;
+        let min_fee = min_network_fee(&estimate)?;
+        if network_fee < min_fee {
+            return Err(Error::InvalidInput(format!(
+                "network_fee {} below minimum {} sats",
+                network_fee.to_sat(),
+                min_fee.to_sat(),
             )));
         }
         // insufficient funds in clowder
         let reserve = self.clowder_cl.get_onchain_reserve().await?;
-        let pending_amount = pending_ops
+        let pending_outflow = pending_ops
             .iter()
-            .map(|op| op.target)
+            .map(|op| op.outflow())
             .sum::<bitcoin::Amount>();
-        if input_total > reserve - pending_amount {
+        let unreserved = reserve
+            .checked_sub(pending_outflow)
+            .unwrap_or(bitcoin::Amount::ZERO);
+        if outflow > unreserved {
             let op = DeniedMeltOperation {
                 qid: Uuid::new_v4(),
                 inputs: input_total,
@@ -170,15 +203,12 @@ impl Service {
             inputs: inputs.clone(),
             address: address.clone(),
             amount: target,
-            network_fee: network_fees,
+            network_fee,
             melt_fee: admin_fees,
             expiry: expiry.timestamp().max(0) as u64,
             wallet_key,
         };
-        let (content, commitment) = self
-            .clowder_cl
-            .sign_onchain_melt_response(&body, admin_fees, network_fees)
-            .await?;
+        let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
         input_ys.sort();
         let op = onchain::MeltOperation {
             qid,
@@ -229,12 +259,12 @@ impl Service {
         Ok(ops)
     }
 
-    fn melt_fee(&self, amount: bitcoin::Amount) -> bitcoin::Amount {
-        let fees_sat = amount
+    fn melt_fee(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount> {
+        amount
             .to_sat()
-            .saturating_mul(self.melt_fee_ppk)
-            .div_ceil(1000);
-        bitcoin::Amount::from_sat(fees_sat)
+            .checked_mul(self.melt_fee_ppk)
+            .map(|fees_sat| bitcoin::Amount::from_sat(fees_sat.div_ceil(1000)))
+            .ok_or_else(|| Error::InvalidInput(String::from("amount overflow")))
     }
 
     pub async fn estimate_onchain_melt(
@@ -249,7 +279,7 @@ impl Service {
         Ok(wire_melt::MeltOnchainEstimateResponse {
             tx_vsize: estimate.tx_vsize,
             feerates: estimate.feerates,
-            melt_fee: self.melt_fee(amount),
+            melt_fee: self.melt_fee(amount)?,
             melt_fee_ppk: self.melt_fee_ppk,
         })
     }
@@ -301,22 +331,19 @@ impl Service {
         let fees_signatures = self.wdc.sign(fees_pre.blinded_messages()).await?;
         let keyset = self.wdc.keyset(fees_pre.keyset_id).await?;
         let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset)?;
-        // network_fee = available - target - melt_fee (derivable for pre-deploy quotes too)
-        let network_fee = bitcoin::Amount::from_sat(u64::from(op.available))
-            - op.target
-            - bitcoin::Amount::from_sat(u64::from(op.fees));
-        let txid = self
-            .clowder_cl
-            .melt_onchain(
-                qid,
-                op.target,
-                recipient,
-                inputs.clone(),
-                fees_signatures,
-                op.commitment,
-                network_fee,
-            )
-            .await?;
+        let network_fee = op
+            .network_fee()
+            .ok_or_else(|| Error::Internal(format!("meltop {qid} has inconsistent amounts")))?;
+        let order = onchain::MeltOnchainOrder {
+            qid,
+            target: op.target,
+            network_fee,
+            address: recipient,
+            inputs: inputs.clone(),
+            fees: fees_signatures,
+            commitment: op.commitment,
+        };
+        let txid = self.clowder_cl.melt_onchain(order).await?;
         if let Err(e) = self.wdc.burn(inputs).await {
             tracing::warn!("failed to mirror burn after settling melt {qid}: {e}");
         }
@@ -339,6 +366,22 @@ impl Service {
         let signatures = self.clowder_cl.fetch_mint_signatures(qid, mint_id).await?;
         Ok(signatures)
     }
+}
+
+fn min_network_fee(estimate: &wire_clowder::OnchainTxEstimateResponse) -> Result<bitcoin::Amount> {
+    let sat_per_vb = estimate
+        .feerates
+        .iter()
+        .map(|rate| rate.sat_per_vb)
+        .fold(f32::INFINITY, f32::min);
+    if !sat_per_vb.is_finite() || sat_per_vb <= 0.0 {
+        let suerror = SUError::MeltOpSuspended(String::from(
+            "on-chain fee estimate unavailable, try again later",
+        ));
+        return Err(Error::ServiceUnavailable(suerror));
+    }
+    let fees_sat = (estimate.tx_vsize as f64 * sat_per_vb as f64).ceil() as u64;
+    Ok(bitcoin::Amount::from_sat(fees_sat))
 }
 
 fn cross_check_locked_fps(
@@ -415,6 +458,16 @@ mod tests {
     use cashu::Amount;
     use mockall::predicate::*;
     use std::str::FromStr;
+
+    fn dummy_estimate(tx_vsize: u64, sat_per_vb: f32) -> wire_clowder::OnchainTxEstimateResponse {
+        wire_clowder::OnchainTxEstimateResponse {
+            tx_vsize,
+            feerates: vec![wire_melt::FeeRateEstimate {
+                target_blocks: 6,
+                sat_per_vb,
+            }],
+        }
+    }
 
     fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
         let kp = core::generate_random_keypair();
@@ -536,6 +589,10 @@ mod tests {
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_estimate_onchain_tx()
+            .times(1)
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
         let qid = Uuid::new_v4();
         let cloned_qid = qid;
         repo.expect_list_pending_meltops()
@@ -587,8 +644,8 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             address,
-            amount: bitcoin::Amount::from_sat(1000),
-            network_fee: bitcoin::Amount::from_sat(14),
+            amount: bitcoin::Amount::from_sat(800),
+            network_fee: bitcoin::Amount::from_sat(216),
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         let response = service
@@ -627,13 +684,17 @@ mod tests {
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_estimate_onchain_tx()
+            .times(1)
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
         repo.expect_list_pending_meltops()
             .times(1)
             .returning(|_| Ok(vec![]));
         clowder
             .expect_sign_onchain_melt_response()
             .times(1)
-            .returning(|_, _, _| {
+            .returning(|_| {
                 let signature =
                     bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
                 Ok((String::new(), signature))
@@ -663,8 +724,8 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             address,
-            amount: bitcoin::Amount::from_sat(1000),
-            network_fee: bitcoin::Amount::from_sat(14),
+            amount: bitcoin::Amount::from_sat(800),
+            network_fee: bitcoin::Amount::from_sat(216),
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
@@ -736,7 +797,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+            .returning(|_| Ok(bitcoin::Txid::all_zeros()));
         repo.expect_update_meltop_status()
             .times(1)
             .returning(|_, _| Ok(()));
@@ -926,9 +987,9 @@ mod tests {
             qid,
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
-            target: bitcoin::Amount::from_sat(8),
+            target: bitcoin::Amount::from_sat(5),
             expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
-            fees: cashu::Amount::ZERO,
+            fees: cashu::Amount::from(2),
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: wire_attestation::fp_digest(
@@ -972,19 +1033,16 @@ mod tests {
             .with(eq(proofs.clone()))
             .times(1)
             .returning(|_| Ok(()));
+        let expected_inputs = proofs.clone();
         clowder
             .expect_melt_onchain()
             .times(1)
-            .with(
-                always(),
-                always(),
-                always(),
-                eq(proofs.clone()),
-                always(),
-                always(),
-                always(),
-            )
-            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+            .withf(move |order| {
+                order.inputs == expected_inputs
+                    && order.target == bitcoin::Amount::from_sat(5)
+                    && order.network_fee == bitcoin::Amount::from_sat(1)
+            })
+            .returning(|_| Ok(bitcoin::Txid::all_zeros()));
         vault.expect_store_proofs().times(1).returning(|_| Ok(()));
         repo.expect_update_meltop_status()
             .times(1)
@@ -1007,5 +1065,244 @@ mod tests {
             .melt_onchain(request, chrono::Utc::now(), &vault)
             .await
             .unwrap();
+    }
+
+    fn melt_quote_mocks() -> (MockWildcatClient, MockRepository, MockClowderClient) {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder
+            .expect_verify_onchain_address()
+            .returning(|addr| Ok(addr.assume_checked()));
+        wdc.expect_verify_fingerprints().returning(|_| Ok(()));
+        wdc.expect_check_spendable().returning(|ys| {
+            Ok(ys.into_iter()
+                .map(|y| cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                })
+                .collect())
+        });
+        repo.expect_list_pending_meltops().returning(|_| Ok(vec![]));
+        (wdc, repo, clowder)
+    }
+
+    fn melt_service(
+        wdc: MockWildcatClient,
+        repo: MockRepository,
+        clowder: MockClowderClient,
+    ) -> Service {
+        Service {
+            wdc: Arc::new(wdc),
+            repo: Arc::new(repo),
+            clowder_cl: Arc::new(clowder),
+            melt_quote_expiry: chrono::Duration::seconds(3600),
+            mint_quote_expiry: chrono::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
+            alpha_id: core::generate_random_keypair().public_key(),
+        }
+    }
+
+    fn melt_quote_request(
+        inputs: &[u64],
+        amount: u64,
+        network_fee: u64,
+    ) -> wire_melt::MeltQuoteOnchainRequest {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts: Vec<_> = inputs.iter().copied().map(Amount::from).collect();
+        wire_melt::MeltQuoteOnchainRequest {
+            inputs: bcr_common::wire::attestation::AttestedFingerprints {
+                inputs: signatures_test::generate_fingerprints(&keyset, &amounts),
+                attestation: dummy_attestation(),
+            },
+            address: bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap(),
+            amount: bitcoin::Amount::from_sat(amount),
+            network_fee: bitcoin::Amount::from_sat(network_fee),
+            wallet_key: core::generate_random_keypair().public_key().into(),
+        }
+    }
+
+    #[test]
+    fn melt_fee_rounds_up() {
+        let (wdc, repo, clowder) = melt_quote_mocks();
+        let service = melt_service(wdc, repo, clowder);
+        assert_eq!(
+            service.melt_fee(bitcoin::Amount::ZERO).unwrap(),
+            bitcoin::Amount::ZERO
+        );
+        assert_eq!(
+            service.melt_fee(bitcoin::Amount::from_sat(100)).unwrap(),
+            bitcoin::Amount::from_sat(1)
+        );
+        assert_eq!(
+            service.melt_fee(bitcoin::Amount::from_sat(101)).unwrap(),
+            bitcoin::Amount::from_sat(2)
+        );
+        assert!(matches!(
+            service.melt_fee(bitcoin::Amount::MAX),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn min_network_fee_needs_a_feerate() {
+        assert_eq!(
+            min_network_fee(&dummy_estimate(216, 1.5)).unwrap(),
+            bitcoin::Amount::from_sat(324)
+        );
+        let empty = wire_clowder::OnchainTxEstimateResponse {
+            tx_vsize: 216,
+            feerates: vec![],
+        };
+        assert!(matches!(
+            min_network_fee(&empty),
+            Err(Error::ServiceUnavailable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn melt_quote_rejects_input_mismatch() {
+        let (wdc, repo, clowder) = melt_quote_mocks();
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 200);
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        let Error::InvalidInput(msg) = err else {
+            panic!("expected InvalidInput");
+        };
+        assert!(msg.contains("1024"), "{msg}");
+        assert!(msg.contains("800"), "{msg}");
+        assert!(msg.contains("200"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn melt_quote_rejects_amount_overflow() {
+        let (wdc, repo, clowder) = melt_quote_mocks();
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512], u64::MAX, u64::MAX);
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn melt_quote_rejects_dust_amount() {
+        let (wdc, repo, clowder) = melt_quote_mocks();
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[128, 16], 100, 43);
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        let Error::InvalidInput(msg) = err else {
+            panic!("expected InvalidInput");
+        };
+        assert!(msg.contains("dust"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn melt_quote_rejects_network_fee_below_estimate() {
+        let (wdc, repo, mut clowder) = melt_quote_mocks();
+        clowder
+            .expect_estimate_onchain_tx()
+            .times(1)
+            .returning(|_, _| Ok(dummy_estimate(216, 2.0)));
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        let Error::InvalidInput(msg) = err else {
+            panic!("expected InvalidInput");
+        };
+        assert!(msg.contains("432"), "{msg}");
+    }
+
+    #[tokio::test]
+    // pending ops commit target + network fees, not just target
+    async fn melt_quote_denies_on_pending_network_fees() {
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder
+            .expect_verify_onchain_address()
+            .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_estimate_onchain_tx()
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
+        clowder
+            .expect_get_onchain_reserve()
+            .times(1)
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        wdc.expect_verify_fingerprints().returning(|_| Ok(()));
+        wdc.expect_check_spendable().returning(|ys| {
+            Ok(ys.into_iter()
+                .map(|y| cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                })
+                .collect())
+        });
+        let pending = Uuid::new_v4();
+        repo.expect_list_pending_meltops()
+            .returning(move |_| Ok(vec![pending]));
+        repo.expect_load_meltop().returning(move |_| {
+            Ok(onchain::MeltOperation {
+                qid: pending,
+                available: cashu::Amount::from(99_000),
+                address: String::new(),
+                target: bitcoin::Amount::from_sat(50_000),
+                expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+                fees: cashu::Amount::ZERO,
+                wallet_key: core::generate_random_keypair().public_key().into(),
+                input_ys: vec![],
+                fp_digest: [0u8; 32],
+                commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap(),
+                status: onchain::MeltStatus::Pending,
+            })
+        });
+        repo.expect_store_denied_meltop()
+            .times(1)
+            .returning(|_| Ok(()));
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        let err = service
+            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::ServiceUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn estimate_onchain_melt_reports_fees() {
+        let (wdc, repo, mut clowder) = melt_quote_mocks();
+        clowder
+            .expect_estimate_onchain_tx()
+            .times(1)
+            .returning(|_, _| Ok(dummy_estimate(216, 1.5)));
+        let service = melt_service(wdc, repo, clowder);
+        let request = wire_melt::MeltOnchainEstimateRequest {
+            amount: bitcoin::Amount::from_sat(101),
+            address: None,
+        };
+        let response = service.estimate_onchain_melt(request).await.unwrap();
+        assert_eq!(response.tx_vsize, 216);
+        assert_eq!(response.feerates, dummy_estimate(216, 1.5).feerates);
+        assert_eq!(response.melt_fee, bitcoin::Amount::from_sat(2));
+        assert_eq!(response.melt_fee_ppk, 10);
     }
 }

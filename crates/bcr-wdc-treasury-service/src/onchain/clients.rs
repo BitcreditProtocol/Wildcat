@@ -17,7 +17,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    onchain::{ClowderClient, VaultService, WildcatClient},
+    onchain::{ClowderClient, MeltOnchainOrder, VaultService, WildcatClient},
     vault, TStamp,
 };
 
@@ -187,15 +187,13 @@ impl ClowderClient for ClowderCl {
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
-        admin_fees: bitcoin::Amount,
-        network_fees: bitcoin::Amount,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
         let request = wire_clowder::MeltQuoteOnchainRequest {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
-            admin_fees: cashu::Amount::from(admin_fees.to_sat()),
-            network_fees,
+            admin_fees: cashu::Amount::from(msg.melt_fee.to_sat()),
+            network_fees: msg.network_fee,
             expiry: msg.expiry,
             wallet_key: msg.wallet_key,
         };
@@ -213,24 +211,15 @@ impl ClowderClient for ClowderCl {
         Ok(address)
     }
 
-    async fn melt_onchain(
-        &self,
-        qid: Uuid,
-        amount: bitcoin::Amount,
-        address: bitcoin::Address,
-        inputs: Vec<cashu::Proof>,
-        fees: Vec<cashu::BlindSignature>,
-        commitment: secp256k1::schnorr::Signature,
-        network_fee: bitcoin::Amount,
-    ) -> Result<bitcoin::Txid> {
+    async fn melt_onchain(&self, req: MeltOnchainOrder) -> Result<bitcoin::Txid> {
         let request = wire_clowder::MeltOnchainRequest {
-            quote: qid,
-            address: address.into_unchecked(),
-            amount,
-            inputs,
-            commitment,
-            fees,
-            network_fee: Some(network_fee),
+            quote: req.qid,
+            address: req.address.into_unchecked(),
+            amount: req.target,
+            inputs: req.inputs,
+            commitment: req.commitment,
+            fees: req.fees,
+            network_fee: Some(req.network_fee),
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
