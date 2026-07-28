@@ -27,7 +27,7 @@ pub struct Service {
     pub melt_quote_expiry: chrono::Duration,
     pub mint_quote_expiry: chrono::Duration,
     pub min_mint_threshold: bitcoin::Amount,
-    pub min_melt_threshold: bitcoin::Amount,
+    pub melt_fee_ppk: u64,
     pub alpha_id: PublicKey,
 }
 
@@ -95,6 +95,8 @@ impl Service {
             inputs,
             wallet_key,
             address,
+            amount,
+            network_fee,
         } = request;
         // valid fingerprints
         if inputs.inputs.is_empty() {
@@ -132,19 +134,17 @@ impl Service {
             .clowder_cl
             .verify_onchain_address(address.clone())
             .await?;
-        // sufficient amount for fees
-        let reserve = self.clowder_cl.get_onchain_reserve().await?;
-        let admin_fees = self.calculate_melt_fees(reserve, input_total);
-        let network_fees = self
-            .clowder_cl
-            .estimate_onchain_fees(input_total - admin_fees)
-            .await?;
-        if input_total < admin_fees + network_fees + self.min_melt_threshold {
+        // the user declares the payout amount and the network fee; the mint
+        // charges melt_fee. inputs must cover exactly amount + network_fee + melt_fee
+        let admin_fees = self.melt_fee(amount);
+        let network_fees = network_fee;
+        if input_total != amount + network_fees + admin_fees {
             return Err(Error::InvalidInput(String::from(
-                "insufficient funds to cover fees",
+                "inputs must equal amount + network_fee + melt_fee",
             )));
         }
         // insufficient funds in clowder
+        let reserve = self.clowder_cl.get_onchain_reserve().await?;
         let pending_amount = pending_ops
             .iter()
             .map(|op| op.target)
@@ -162,7 +162,7 @@ impl Service {
             return Err(Error::ServiceUnavailable(suerror));
         }
         // all ok, proceed
-        let target = input_total - admin_fees - network_fees;
+        let target = amount;
         let expiry = now + self.melt_quote_expiry;
         let qid = Uuid::new_v4();
         let body = wire_melt::MeltQuoteOnchainResponseBody {
@@ -170,6 +170,8 @@ impl Service {
             inputs: inputs.clone(),
             address: address.clone(),
             amount: target,
+            network_fee: network_fees,
+            melt_fee: admin_fees,
             expiry: expiry.timestamp().max(0) as u64,
             wallet_key,
         };
@@ -227,14 +229,27 @@ impl Service {
         Ok(ops)
     }
 
-    fn calculate_melt_fees(
-        &self,
-        _reserve: bitcoin::Amount,
-        amount: bitcoin::Amount,
-    ) -> bitcoin::Amount {
-        const MELT_FEES_MULTIPLIER: u64 = 100;
-        let fees_sat = amount.to_sat().div_ceil(MELT_FEES_MULTIPLIER);
+    fn melt_fee(&self, amount: bitcoin::Amount) -> bitcoin::Amount {
+        let fees_sat = amount
+            .to_sat()
+            .saturating_mul(self.melt_fee_ppk)
+            .div_ceil(1000);
         bitcoin::Amount::from_sat(fees_sat)
+    }
+
+    pub async fn estimate_onchain_melt(
+        &self,
+        request: wire_melt::MeltOnchainEstimateRequest,
+    ) -> Result<wire_melt::MeltOnchainEstimateResponse> {
+        let wire_melt::MeltOnchainEstimateRequest { amount, address } = request;
+        self.clowder_cl.verify_onchain_address(address).await?;
+        let estimate = self.clowder_cl.estimate_onchain_tx(amount).await?;
+        Ok(wire_melt::MeltOnchainEstimateResponse {
+            tx_vsize: estimate.tx_vsize,
+            feerates: estimate.feerates,
+            melt_fee: self.melt_fee(amount),
+            melt_fee_ppk: self.melt_fee_ppk,
+        })
     }
 
     pub async fn list_denied_meltops(&self) -> Result<Vec<DeniedMeltOperation>> {
@@ -284,6 +299,10 @@ impl Service {
         let fees_signatures = self.wdc.sign(fees_pre.blinded_messages()).await?;
         let keyset = self.wdc.keyset(fees_pre.keyset_id).await?;
         let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset)?;
+        // network_fee = available - target - melt_fee (derivable for pre-deploy quotes too)
+        let network_fee = bitcoin::Amount::from_sat(u64::from(op.available))
+            - op.target
+            - bitcoin::Amount::from_sat(u64::from(op.fees));
         let txid = self
             .clowder_cl
             .melt_onchain(
@@ -293,6 +312,7 @@ impl Service {
                 inputs.clone(),
                 fees_signatures,
                 op.commitment,
+                network_fee,
             )
             .await?;
         if let Err(e) = self.wdc.burn(inputs).await {
@@ -440,7 +460,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
@@ -469,7 +489,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::from_sat(1000),
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
@@ -514,10 +534,6 @@ mod tests {
             .expect_verify_onchain_address()
             .times(1)
             .returning(|addr| Ok(addr.assume_checked()));
-        clowder
-            .expect_estimate_onchain_fees()
-            .times(1)
-            .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         let qid = Uuid::new_v4();
         let cloned_qid = qid;
         repo.expect_list_pending_meltops()
@@ -556,7 +572,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -569,6 +585,8 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             address,
+            amount: bitcoin::Amount::from_sat(1000),
+            network_fee: bitcoin::Amount::from_sat(14),
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         let response = service
@@ -618,10 +636,6 @@ mod tests {
                     bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
                 Ok((String::new(), signature))
             });
-        clowder
-            .expect_estimate_onchain_fees()
-            .times(1)
-            .returning(|_| Ok(bitcoin::Amount::from_sat(10)));
         repo.expect_store_meltop().times(1).returning(|_, _| Ok(()));
         clowder
             .expect_authenticate_attestation()
@@ -634,7 +648,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -647,6 +661,8 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             address,
+            amount: bitcoin::Amount::from_sat(1000),
+            network_fee: bitcoin::Amount::from_sat(14),
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
@@ -718,7 +734,7 @@ mod tests {
         clowder
             .expect_melt_onchain()
             .times(1)
-            .returning(|_, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
         repo.expect_update_meltop_status()
             .times(1)
             .returning(|_, _| Ok(()));
@@ -729,7 +745,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
@@ -789,7 +805,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
@@ -824,7 +840,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -837,6 +853,8 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             address,
+            amount: bitcoin::Amount::from_sat(512),
+            network_fee: bitcoin::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         let err = service
@@ -866,7 +884,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds1: Vec<_> = signatures_test::generate_blinds(keyset1.id, &[Amount::from(8_u64)])
@@ -962,8 +980,9 @@ mod tests {
                 eq(proofs.clone()),
                 always(),
                 always(),
+                always(),
             )
-            .returning(|_, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
+            .returning(|_, _, _, _, _, _, _| Ok(bitcoin::Txid::all_zeros()));
         vault.expect_store_proofs().times(1).returning(|_| Ok(()));
         repo.expect_update_meltop_status()
             .times(1)
@@ -975,7 +994,7 @@ mod tests {
             melt_quote_expiry: chrono::Duration::seconds(3600),
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
-            min_melt_threshold: bitcoin::Amount::ZERO,
+            melt_fee_ppk: 10,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {

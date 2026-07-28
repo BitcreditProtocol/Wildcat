@@ -81,6 +81,7 @@ pub trait ClowderClient: Send + Sync {
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     ) -> Result<bitcoin::Address>;
+    #[allow(clippy::too_many_arguments)]
     async fn melt_onchain(
         &self,
         qid: Uuid,
@@ -89,13 +90,17 @@ pub trait ClowderClient: Send + Sync {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
+        network_fee: bitcoin::Amount,
     ) -> Result<bitcoin::Txid>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
         mint_id: secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
-    async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
+    async fn estimate_onchain_tx(
+        &self,
+        amount: bitcoin::Amount,
+    ) -> Result<wire_clowder::OnchainTxEstimateResponse>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
     async fn authenticate_attestation(
         &self,

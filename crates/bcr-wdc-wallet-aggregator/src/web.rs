@@ -18,9 +18,12 @@ pub async fn health() -> Result<&'static str> {
 pub async fn get_mint_info(State(ctrl): State<AppController>) -> Result<Json<cashu::MintInfo>> {
     tracing::debug!("Requested /v1/info");
     let network = ctrl.clwdr_rest_client.get_info().await?.network;
+    let melt_fee_ppk = ctrl.melt_fee_ppk;
     let mut long_description = format!(
         r#"[clowder]
 network = {network}
+[onchain_melt]
+melt_fee_ppk = {melt_fee_ppk}
 "#
     );
     let build_time = bcr_wdc_utils::info::get_build_time();

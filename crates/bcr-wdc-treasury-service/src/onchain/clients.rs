@@ -221,6 +221,7 @@ impl ClowderClient for ClowderCl {
         inputs: Vec<cashu::Proof>,
         fees: Vec<cashu::BlindSignature>,
         commitment: secp256k1::schnorr::Signature,
+        network_fee: bitcoin::Amount,
     ) -> Result<bitcoin::Txid> {
         let request = wire_clowder::MeltOnchainRequest {
             quote: qid,
@@ -229,6 +230,7 @@ impl ClowderClient for ClowderCl {
             inputs,
             commitment,
             fees,
+            network_fee: Some(network_fee),
         };
         let response = self.nats.melt_onchain(request).await?;
         Ok(response.txid)
@@ -249,8 +251,11 @@ impl ClowderClient for ClowderCl {
         Ok(response)
     }
 
-    async fn estimate_onchain_fees(&self, target: bitcoin::Amount) -> Result<bitcoin::Amount> {
-        let response = self.rest.onchain_fees_estimate(target).await?;
+    async fn estimate_onchain_tx(
+        &self,
+        amount: bitcoin::Amount,
+    ) -> Result<wire_clowder::OnchainTxEstimateResponse> {
+        let response = self.rest.onchain_tx_estimate(amount).await?;
         Ok(response)
     }
 

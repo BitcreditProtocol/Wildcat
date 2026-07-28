@@ -25,6 +25,7 @@ pub struct AppConfig {
     core_client_url: bcr_common::client::Url,
     treasury_client_url: bcr_common::client::Url,
     clwdr_rest_url: ClientUrl,
+    melt_fee_ppk: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -32,6 +33,7 @@ pub struct AppController {
     core_client: bcr_common::client::core::Client,
     treasury_client: bcr_common::client::treasury::Client,
     clwdr_rest_client: Arc<clowder::Client>,
+    melt_fee_ppk: u64,
     time_started: chrono::DateTime<chrono::Utc>,
 }
 
@@ -41,6 +43,7 @@ impl AppController {
             core_client_url,
             treasury_client_url,
             clwdr_rest_url,
+            melt_fee_ppk,
         } = cfg;
 
         let core_client = bcr_common::client::core::Client::new(core_client_url);
@@ -51,6 +54,7 @@ impl AppController {
             core_client,
             treasury_client,
             clwdr_rest_client,
+            melt_fee_ppk,
             time_started: chrono::Utc::now(),
         }
     }
