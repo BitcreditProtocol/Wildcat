@@ -180,15 +180,13 @@ pub struct MeltOperation {
 
 impl MeltOperation {
     /// target + network fees
-    pub fn outflow(&self) -> bitcoin::Amount {
-        let available = bitcoin::Amount::from_sat(u64::from(self.available));
-        available
+    pub fn outflow(&self) -> Option<bitcoin::Amount> {
+        bitcoin::Amount::from_sat(u64::from(self.available))
             .checked_sub(bitcoin::Amount::from_sat(u64::from(self.fees)))
-            .unwrap_or(available)
     }
 
     pub fn network_fee(&self) -> Option<bitcoin::Amount> {
-        self.outflow().checked_sub(self.target)
+        self.outflow()?.checked_sub(self.target)
     }
 }
 

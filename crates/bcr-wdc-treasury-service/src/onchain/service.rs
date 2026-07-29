@@ -177,8 +177,10 @@ impl Service {
         let reserve = self.clowder_cl.get_onchain_reserve().await?;
         let pending_outflow = pending_ops
             .iter()
-            .map(|op| op.outflow())
-            .sum::<bitcoin::Amount>();
+            .try_fold(bitcoin::Amount::ZERO, |acc, op| {
+                acc.checked_add(op.outflow()?)
+            })
+            .ok_or_else(|| Error::Internal(String::from("pending meltop amounts inconsistent")))?;
         let unreserved = reserve
             .checked_sub(pending_outflow)
             .unwrap_or(bitcoin::Amount::ZERO);
@@ -1079,7 +1081,8 @@ mod tests {
             .returning(|addr| Ok(addr.assume_checked()));
         wdc.expect_verify_fingerprints().returning(|_| Ok(()));
         wdc.expect_check_spendable().returning(|ys| {
-            Ok(ys.into_iter()
+            Ok(ys
+                .into_iter()
                 .map(|y| cashu::ProofState {
                     y,
                     state: cashu::State::Unspent,
@@ -1249,7 +1252,8 @@ mod tests {
             .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
         wdc.expect_verify_fingerprints().returning(|_| Ok(()));
         wdc.expect_check_spendable().returning(|ys| {
-            Ok(ys.into_iter()
+            Ok(ys
+                .into_iter()
                 .map(|y| cashu::ProofState {
                     y,
                     state: cashu::State::Unspent,
