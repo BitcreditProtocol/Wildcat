@@ -74,28 +74,22 @@ pub trait ClowderClient: Send + Sync {
     async fn sign_onchain_melt_response(
         &self,
         msg: &wire_melt::MeltQuoteOnchainResponseBody,
-        admin_fees: bitcoin::Amount,
-        network_fees: bitcoin::Amount,
     ) -> Result<(String, secp256k1::schnorr::Signature)>;
     async fn verify_onchain_address(
         &self,
         address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     ) -> Result<bitcoin::Address>;
-    async fn melt_onchain(
-        &self,
-        qid: Uuid,
-        amount: bitcoin::Amount,
-        address: bitcoin::Address,
-        inputs: Vec<cashu::Proof>,
-        fees: Vec<cashu::BlindSignature>,
-        commitment: secp256k1::schnorr::Signature,
-    ) -> Result<bitcoin::Txid>;
+    async fn melt_onchain(&self, req: MeltOnchainOrder) -> Result<bitcoin::Txid>;
     async fn fetch_mint_signatures(
         &self,
         qid: Uuid,
         mint_id: secp256k1::PublicKey,
     ) -> Result<Vec<cashu::BlindSignature>>;
-    async fn estimate_onchain_fees(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount>;
+    async fn estimate_onchain_tx(
+        &self,
+        amount: bitcoin::Amount,
+        address: Option<bitcoin::Address<bitcoin::address::NetworkUnchecked>>,
+    ) -> Result<wire_clowder::OnchainTxEstimateResponse>;
     async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount>;
     async fn authenticate_attestation(
         &self,
@@ -157,6 +151,17 @@ pub enum MeltStatus {
     Expired,
     Canceled,
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeltOnchainOrder {
+    pub qid: Uuid,
+    pub target: bitcoin::Amount,
+    pub network_fee: bitcoin::Amount,
+    pub address: bitcoin::Address,
+    pub inputs: Vec<cashu::Proof>,
+    pub fees: Vec<cashu::BlindSignature>,
+    pub commitment: secp256k1::schnorr::Signature,
+}
+
 #[derive(Debug, Clone)]
 pub struct MeltOperation {
     pub qid: Uuid,
@@ -171,6 +176,18 @@ pub struct MeltOperation {
     pub fp_digest: [u8; 32],
     pub commitment: secp256k1::schnorr::Signature,
     pub status: MeltStatus,
+}
+
+impl MeltOperation {
+    /// target + network fees
+    pub fn outflow(&self) -> Option<bitcoin::Amount> {
+        bitcoin::Amount::from_sat(u64::from(self.available))
+            .checked_sub(bitcoin::Amount::from_sat(u64::from(self.fees)))
+    }
+
+    pub fn network_fee(&self) -> Option<bitcoin::Amount> {
+        self.outflow()?.checked_sub(self.target)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

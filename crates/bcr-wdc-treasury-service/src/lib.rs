@@ -80,7 +80,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         mint_quote_expiry_seconds,
         melt_quote_expiry_seconds,
         min_confirmations,
-        min_melt_threshold,
+        melt_fee_ppk,
         min_mint_threshold,
         ..
     } = onchain;
@@ -102,7 +102,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         repo: Arc::new(onchain_repo),
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
-        min_melt_threshold,
+        melt_fee_ppk,
         alpha_id: my_pk,
     };
 
@@ -230,6 +230,14 @@ pub fn routes(app: AppController) -> Router {
         .route(
             cl_treasury::web_ep::MELT_ONCHAIN_V1,
             post(web::melt_onchain),
+        )
+        .route(
+            cl_treasury::web_ep::MELT_ONCHAIN_ESTIMATE_V1,
+            post(web::melt_onchain_estimate),
+        )
+        .route(
+            cl_treasury::web_ep::MELT_ONCHAIN_CONFIG_V1,
+            axum::routing::get(web::melt_onchain_config),
         )
         .route(
             cl_treasury::web_ep::MINTQUOTE_ONCHAIN_V1,

@@ -93,6 +93,25 @@ pub async fn melt_onchain(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn melt_onchain_estimate(
+    State(ctrl): State<Arc<onchain::Service>>,
+    Json(request): Json<wire_melt::MeltOnchainEstimateRequest>,
+) -> Result<Json<wire_melt::MeltOnchainEstimateResponse>> {
+    let response = ctrl.estimate_onchain_melt(request).await?;
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn melt_onchain_config(
+    State(ctrl): State<Arc<onchain::Service>>,
+) -> Result<Json<wire_melt::MeltOnchainConfigResponse>> {
+    let response = wire_melt::MeltOnchainConfigResponse {
+        melt_fee_ppk: ctrl.melt_fee_ppk,
+    };
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn mint_quote_onchain(
     State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_mint::OnchainMintQuoteRequest>,

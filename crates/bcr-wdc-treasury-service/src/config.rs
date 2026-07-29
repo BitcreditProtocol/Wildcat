@@ -27,7 +27,7 @@ pub struct Onchain {
     pub melt_quote_expiry_seconds: u32,
     pub mint_quote_expiry_seconds: u32,
     pub min_confirmations: u32,
-    pub min_melt_threshold: bitcoin::Amount,
+    pub melt_fee_ppk: u64,
     pub min_mint_threshold: bitcoin::Amount,
 }
 
