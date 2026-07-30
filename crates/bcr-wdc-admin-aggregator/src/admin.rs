@@ -684,6 +684,7 @@ pub async fn get_mint_info(
         network,
         uptime_timestamp,
         change_address: clowder_change_address,
+        eiou_address: clowder_eiou_address,
         version,
         multisig_agg_xonly: _,
     } = clwd_info;
@@ -703,6 +704,7 @@ pub async fn get_mint_info(
     let response = wire_info::WildcatInfo {
         build_time,
         clowder_change_address,
+        clowder_eiou_address,
         network,
         clowder_node_id: *node_id,
         uptime_timestamp,
