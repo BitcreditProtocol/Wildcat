@@ -29,6 +29,12 @@ pub struct Onchain {
     pub min_confirmations: u32,
     pub melt_fee_ppk: u64,
     pub min_mint_threshold: bitcoin::Amount,
+    #[serde(default = "default_min_feerate_sat_per_vb")]
+    pub min_feerate_sat_per_vb: f64,
+}
+
+fn default_min_feerate_sat_per_vb() -> f64 {
+    0.1
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

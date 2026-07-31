@@ -4,10 +4,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 use bcr_common::{
     cashu::{self, ProofsMethods},
     client::admin::treasury::SUError,
-    wire::{
-        attestation as wire_attestation, clowder as wire_clowder, melt as wire_melt,
-        mint as wire_mint,
-    },
+    wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
@@ -31,6 +28,7 @@ pub struct Service {
     pub mint_quote_expiry: chrono::Duration,
     pub min_mint_threshold: bitcoin::Amount,
     pub melt_fee_ppk: u64,
+    pub min_feerate_sat_per_vb: f64,
     pub alpha_id: PublicKey,
 }
 
@@ -165,10 +163,10 @@ impl Service {
             .clowder_cl
             .estimate_onchain_tx(amount, Some(address.clone()))
             .await?;
-        let min_fee = min_network_fee(&estimate)?;
+        let min_fee = min_network_fee(estimate.tx_vsize, self.min_feerate_sat_per_vb);
         if network_fee < min_fee {
             return Err(Error::InvalidInput(format!(
-                "network_fee {} below minimum {} sats",
+                "network_fee {} below relay minimum {} sats",
                 network_fee.to_sat(),
                 min_fee.to_sat(),
             )));
@@ -370,20 +368,9 @@ impl Service {
     }
 }
 
-fn min_network_fee(estimate: &wire_clowder::OnchainTxEstimateResponse) -> Result<bitcoin::Amount> {
-    let sat_per_vb = estimate
-        .feerates
-        .iter()
-        .map(|rate| rate.sat_per_vb)
-        .fold(f32::INFINITY, f32::min);
-    if !sat_per_vb.is_finite() || sat_per_vb <= 0.0 {
-        let suerror = SUError::MeltOpSuspended(String::from(
-            "on-chain fee estimate unavailable, try again later",
-        ));
-        return Err(Error::ServiceUnavailable(suerror));
-    }
-    let fees_sat = (estimate.tx_vsize as f64 * sat_per_vb as f64).ceil() as u64;
-    Ok(bitcoin::Amount::from_sat(fees_sat))
+fn min_network_fee(tx_vsize: u64, feerate_sat_per_vb: f64) -> bitcoin::Amount {
+    let fees_sat = (tx_vsize as f64 * feerate_sat_per_vb).ceil() as u64;
+    bitcoin::Amount::from_sat(fees_sat)
 }
 
 fn cross_check_locked_fps(
@@ -454,7 +441,7 @@ fn extract_proofs(
 mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
-    use bcr_common::{core, core_tests};
+    use bcr_common::{core, core_tests, wire::clowder as wire_clowder};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::hashes::Hash;
     use cashu::Amount;
@@ -518,6 +505,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
@@ -547,6 +535,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::from_sat(1000),
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
@@ -634,6 +623,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -714,6 +704,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -811,6 +802,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
@@ -871,6 +863,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
@@ -906,6 +899,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
@@ -950,6 +944,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let blinds1: Vec<_> = signatures_test::generate_blinds(keyset1.id, &[Amount::from(8_u64)])
@@ -1057,6 +1052,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let request = wire_melt::MeltOnchainRequest {
@@ -1107,6 +1103,7 @@ mod tests {
             mint_quote_expiry: chrono::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
+            min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         }
     }
@@ -1153,19 +1150,10 @@ mod tests {
     }
 
     #[test]
-    fn min_network_fee_needs_a_feerate() {
-        assert_eq!(
-            min_network_fee(&dummy_estimate(216, 1.5)).unwrap(),
-            bitcoin::Amount::from_sat(324)
-        );
-        let empty = wire_clowder::OnchainTxEstimateResponse {
-            tx_vsize: 216,
-            feerates: vec![],
-        };
-        assert!(matches!(
-            min_network_fee(&empty),
-            Err(Error::ServiceUnavailable(_))
-        ));
+    fn min_network_fee_rounds_up() {
+        assert_eq!(min_network_fee(216, 1.0), bitcoin::Amount::from_sat(216));
+        assert_eq!(min_network_fee(216, 1.5), bitcoin::Amount::from_sat(324));
+        assert_eq!(min_network_fee(198, 1.013), bitcoin::Amount::from_sat(201));
     }
 
     #[tokio::test]
@@ -1213,14 +1201,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn melt_quote_rejects_network_fee_below_estimate() {
+    // the floor is the relay minimum, estimator confirmation targets do not raise it
+    async fn melt_quote_rejects_network_fee_below_relay_floor() {
         let (wdc, repo, mut clowder) = melt_quote_mocks();
         clowder
             .expect_estimate_onchain_tx()
             .times(1)
-            .returning(|_, _| Ok(dummy_estimate(216, 2.0)));
+            .returning(|_, _| Ok(dummy_estimate(216, 5.0)));
         let service = melt_service(wdc, repo, clowder);
-        let request = melt_quote_request(&[512, 512], 800, 216);
+        let request = melt_quote_request(&[512, 256, 128, 64, 32, 16, 8, 4, 2, 1], 800, 215);
         let err = service
             .create_onchain_melt_quote(request, chrono::Utc::now())
             .await
@@ -1228,7 +1217,8 @@ mod tests {
         let Error::InvalidInput(msg) = err else {
             panic!("expected InvalidInput");
         };
-        assert!(msg.contains("432"), "{msg}");
+        assert!(msg.contains("215"), "{msg}");
+        assert!(msg.contains("216"), "{msg}");
     }
 
     #[tokio::test]
