@@ -34,7 +34,7 @@ pub struct Onchain {
 }
 
 fn default_min_feerate_sat_per_vb() -> f64 {
-    1.0
+    0.1
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
