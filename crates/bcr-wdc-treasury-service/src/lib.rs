@@ -82,6 +82,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         min_confirmations,
         melt_fee_ppk,
         min_mint_threshold,
+        min_feerate_sat_per_vb,
         ..
     } = onchain;
     let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
@@ -103,6 +104,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         melt_fee_ppk,
+        min_feerate_sat_per_vb,
         alpha_id: my_pk,
     };
 
