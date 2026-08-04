@@ -6,8 +6,12 @@ use crate::built_info;
 
 // ----- end imports
 
-pub fn get_build_time() -> chrono::DateTime<chrono::Utc> {
-    built::util::strptime(built_info::BUILT_TIME_UTC)
+pub fn get_build_time() -> time::OffsetDateTime {
+    time::OffsetDateTime::parse(
+        built_info::BUILT_TIME_UTC,
+        &time::format_description::well_known::Rfc2822,
+    )
+    .unwrap_or(time::OffsetDateTime::UNIX_EPOCH)
 }
 
 const EBILL_CORE: &str = "bcr-ebill-core";

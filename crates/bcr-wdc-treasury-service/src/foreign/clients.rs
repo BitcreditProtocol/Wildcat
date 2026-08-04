@@ -27,10 +27,7 @@ pub struct CoreCl {
 
 #[async_trait]
 impl foreign::KeysClient for CoreCl {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet> {
+    async fn get_keyset_with_expiration(&self, expiration: time::Date) -> Result<cashu::KeySet> {
         let kinfo = self
             .core
             .get_or_create_keyset_with_expiration(expiration)
@@ -224,7 +221,7 @@ impl ForeignClient for MintClient {
             .cloned()
             .map(wire_keys::ProofFingerprint::try_from)
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let expiry = now + chrono::Duration::minutes(1);
+        let expiry = now + time::Duration::minutes(1);
         let attestation = self
             .foreign_clwdr
             .post_attest_issuance(&wire_attestation::IssuanceAttestationRequest {
@@ -235,7 +232,7 @@ impl ForeignClient for MintClient {
         let request = bcr_common::client::mint::Client::prepare_swap_commitment_request(
             fps,
             outputs,
-            expiry.timestamp() as u64,
+            expiry.unix_timestamp() as u64,
             self.my_pk,
             attestation,
         );

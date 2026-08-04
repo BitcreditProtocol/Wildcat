@@ -103,7 +103,7 @@ mod tests {
                 wallet_pubkey: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 keyset_id: core_tests::generate_random_ecash_keyset().0.id,
             },
-            submitted: chrono::DateTime::default(),
+            submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo::random(),
         };
         let bid = quote.bill.id.clone();
@@ -140,7 +140,7 @@ mod tests {
                 wallet_pubkey: pk,
                 keyset_id: keyset.id,
             },
-            submitted: chrono::DateTime::default(),
+            submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo {
                 sum: bitcoin::Amount::from_sat(2000),
                 ..quotes::BillInfo::random()

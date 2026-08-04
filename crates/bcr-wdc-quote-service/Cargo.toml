@@ -13,12 +13,12 @@ bcr-common = {workspace = true, features = ["clwdr-client"]}
 bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true}
 bitcoin.workspace = true
-chrono.workspace = true
+time.workspace = true
 config.workspace = true
 reqwest = {workspace = true}
 serde.workspace = true
 serde_json.workspace = true
-sqlx = {workspace = true, features = ["chrono", "json", "macros", "migrate", "postgres", "runtime-tokio-rustls", "uuid"]}
+sqlx = {workspace = true, features = ["time", "json", "macros", "migrate", "postgres", "runtime-tokio-rustls", "uuid"]}
 strum = {workspace = true, features = ["derive"]}
 surrealdb.workspace = true
 thiserror.workspace = true

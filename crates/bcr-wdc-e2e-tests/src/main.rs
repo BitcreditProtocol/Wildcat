@@ -261,7 +261,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
             attestation,
         },
         outputs: bs.clone(),
-        expiry: (chrono::Utc::now().timestamp() + 1200) as u64,
+        expiry: (time::OffsetDateTime::now_utc().unix_timestamp() + 1200) as u64,
         wallet_key: wallet_kp.public_key(),
     };
     let commit_response = user_service.commit_swap(commit_request).await;

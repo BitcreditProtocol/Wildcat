@@ -95,7 +95,7 @@ pub async fn commit_to_swap(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::swap_commitment::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {
         let response = nut19::swap_commitment::blob_to_response(blob);
@@ -119,7 +119,7 @@ pub async fn swap_tokens(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::swap::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {
         let response = nut19::swap::blob_to_response(blob);
@@ -148,7 +148,7 @@ pub async fn signed_commit_to_swap(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SignedSwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::swap_commitment::signed_request_to_key(&request);
     if let Some(blob) = cache.load(key).await {
         let response = nut19::swap_commitment::blob_to_response(blob);
@@ -172,7 +172,7 @@ pub async fn check_state(
     State(ctrl): State<Arc<swap::service::Service>>,
     Json(request): Json<cashu::CheckStateRequest>,
 ) -> Result<Json<cashu::CheckStateResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let states = ctrl.check_state(&request.ys, now).await?;
     let response = cashu::CheckStateResponse { states };
     Ok(Json(response))

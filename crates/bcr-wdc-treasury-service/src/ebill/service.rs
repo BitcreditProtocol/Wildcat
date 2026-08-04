@@ -41,7 +41,7 @@ impl Service {
         now: TStamp,
     ) -> Result<()> {
         let kinfo = self.wildcatcl.info(kid).await?;
-        if kinfo.final_expiry.unwrap_or(u64::MAX) < now.timestamp() as u64 {
+        if kinfo.final_expiry.unwrap_or(u64::MAX) < now.unix_timestamp() as u64 {
             return Err(Error::InvalidInput(String::from("keyset expired")));
         }
         let new = MintOperation {
@@ -202,7 +202,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -254,7 +254,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -301,7 +301,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -342,7 +342,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(Uuid::new_v4(), kid, pub_key, amount, bill_id, now)
             .await
@@ -385,7 +385,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -446,7 +446,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id.clone(), now)
             .await
@@ -505,7 +505,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -554,7 +554,7 @@ mod tests {
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await

@@ -31,7 +31,7 @@ pub struct Service {
     pub reserved: Box<dyn ReservedYsRepository>,
     pub clowder: Box<dyn ClowderClient>,
     pub treasury: Box<dyn TreasuryService>,
-    pub max_expiry: chrono::Duration,
+    pub max_expiry: time::Duration,
     pub alpha_id: PublicKey,
     pub settle_window_deadline: TStamp,
 }
@@ -129,7 +129,7 @@ impl Service {
     ) -> Result<(String, schnorr::Signature)> {
         // check expiry
         let expiry =
-            chrono::DateTime::from_timestamp(request.expiry as i64, 0).ok_or_else(|| {
+            time::OffsetDateTime::from_unix_timestamp(request.expiry as i64).map_err(|_| {
                 Error::InvalidInput(BRError::Generic(String::from("invalid expiry timestamp")))
             })?;
         if expiry < now {
@@ -427,9 +427,9 @@ mod tests {
             reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
-            max_expiry: chrono::Duration::seconds(3600),
+            max_expiry: time::Duration::seconds(3600),
             alpha_id,
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         };
         let request = wire_swap::SwapCommitmentRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
@@ -437,11 +437,12 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             outputs: blinds,
-            expiry: (chrono::Utc::now() + chrono::Duration::seconds(60)).timestamp() as u64,
+            expiry: (time::OffsetDateTime::now_utc() + time::Duration::seconds(60)).unix_timestamp()
+                as u64,
             wallet_key: core::generate_random_keypair().public_key(),
         };
         let err = service
-            .commit_to_swap(&sign_service, request, chrono::Utc::now())
+            .commit_to_swap(&sign_service, request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -480,9 +481,9 @@ mod tests {
             reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
-            max_expiry: chrono::Duration::seconds(3600),
+            max_expiry: time::Duration::seconds(3600),
             alpha_id: alpha_kp.public_key(),
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         };
         let request = wire_swap::SwapCommitmentRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
@@ -490,13 +491,19 @@ mod tests {
                 attestation: dummy_attestation(),
             },
             outputs: blinds,
-            expiry: (chrono::Utc::now() + chrono::Duration::seconds(60)).timestamp() as u64,
+            expiry: (time::OffsetDateTime::now_utc() + time::Duration::seconds(60)).unix_timestamp()
+                as u64,
             wallet_key: alpha_kp.public_key(),
         };
         let (content, signature) =
             signature::serialize_n_schnorr_sign_borsh_msg(&request, &alpha_kp).unwrap();
         let err = service
-            .signed_commit_to_swap(&sign_service, content, signature, chrono::Utc::now())
+            .signed_commit_to_swap(
+                &sign_service,
+                content,
+                signature,
+                time::OffsetDateTime::now_utc(),
+            )
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -518,7 +525,7 @@ mod tests {
         let fp_digest = wire_attestation::fp_digest(
             &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
         );
-        let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
+        let expiry = time::OffsetDateTime::now_utc() + time::Duration::seconds(60);
         commitments.expect_load().times(1).returning(move |_| {
             Ok(StoredCommitment {
                 inputs: proof_ys.clone(),
@@ -578,9 +585,9 @@ mod tests {
             reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
-            max_expiry: chrono::Duration::seconds(3600),
+            max_expiry: time::Duration::seconds(3600),
             alpha_id,
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         };
         let signatures = service
             .swap(
@@ -588,7 +595,7 @@ mod tests {
                 proofs,
                 vec![],
                 commitment,
-                chrono::Utc::now(),
+                time::OffsetDateTime::now_utc(),
             )
             .await
             .unwrap();
@@ -607,7 +614,7 @@ mod tests {
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let commitment = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
-        let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
+        let expiry = time::OffsetDateTime::now_utc() + time::Duration::seconds(60);
         // commitment carries a digest over different fingerprints
         commitments.expect_load().times(1).returning(move |_| {
             Ok(StoredCommitment {
@@ -625,9 +632,9 @@ mod tests {
             reserved: Box::new(MockReservedYsRepository::new()),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
-            max_expiry: chrono::Duration::seconds(3600),
+            max_expiry: time::Duration::seconds(3600),
             alpha_id,
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         };
         let err = service
             .swap(
@@ -635,7 +642,7 @@ mod tests {
                 proofs,
                 vec![],
                 commitment,
-                chrono::Utc::now(),
+                time::OffsetDateTime::now_utc(),
             )
             .await
             .unwrap_err();

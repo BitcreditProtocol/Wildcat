@@ -12,7 +12,7 @@ bcr-common = {workspace = true, features = ["mint", "clwdr-client"]}
 bcr-wdc-utils = {workspace = true}
 bitcoin.workspace = true
 borsh = { workspace = true }
-chrono.workspace = true
+time.workspace = true
 config.workspace = true
 futures = {workspace = true}
 rand = {workspace = true}
@@ -20,7 +20,7 @@ reqwest = {workspace = true}
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
 serde_json = {workspace = true}
-sqlx = {workspace = true, default-features = false, features = ["runtime-tokio", "uuid", "postgres", "macros", "json", "migrate", "chrono"]}
+sqlx = {workspace = true, default-features = false, features = ["runtime-tokio", "uuid", "postgres", "macros", "json", "migrate", "time"]}
 strum = {workspace = true}
 surrealdb.workspace = true
 thiserror.workspace = true

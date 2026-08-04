@@ -104,7 +104,7 @@ pub async fn list_quotes(
 ) -> Result<Json<wire_quotes::ListReplyLight>> {
     tracing::debug!("Received request to list quotes");
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let (filters, sort) = convert_into_list_params(params);
     let quotes = ctrl.list_light(filters, sort, now).await?;
     let response = wire_quotes::ListReplyLight {
@@ -120,7 +120,9 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
             submitted: quote.submitted,
-            suggested_expiration: calculate_default_expiration_date_for_quote(chrono::Utc::now()),
+            suggested_expiration: calculate_default_expiration_date_for_quote(
+                time::OffsetDateTime::now_utc(),
+            ),
         },
         quotes::Status::Canceled { tstamp } => wire_quotes::InfoReply::Canceled {
             id: quote.id,
@@ -200,7 +202,7 @@ pub async fn lookup_quote(
 ) -> Result<Json<wire_quotes::InfoReply>> {
     tracing::debug!("Received mint quote lookup request {id}");
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let quote = ctrl.lookup(id, now).await?;
     let response = convert_to_info_reply(quote);
     Ok(Json(response))
@@ -214,7 +216,7 @@ pub async fn update_quote(
 ) -> Result<Json<wire_quotes::UpdateQuoteResponse>> {
     tracing::debug!("Received mint quote update request");
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let response = match req {
         wire_quotes::UpdateQuoteRequest::Deny => {
             ctrl.deny(id, now).await?;

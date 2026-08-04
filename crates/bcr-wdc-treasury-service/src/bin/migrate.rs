@@ -102,7 +102,7 @@ async fn main() {
             .expect("Failed to store onchain mintop");
     }
     println!("Migration for onchain mintops complete");
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     for op in onchain_meltops {
         sqlx_onchain
             .store_meltop(op, now)

@@ -32,7 +32,7 @@ bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
-chrono = {version = "0.4"}
+time = {version = "0.3", features = ["serde", "formatting", "parsing", "macros"]}
 ciborium = {version = "0.2"}
 config = {version = "0.15"}
 futures = {version = "0.3"}

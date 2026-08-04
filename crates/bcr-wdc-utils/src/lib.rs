@@ -22,4 +22,4 @@ pub mod built_info {
 // ----- end imports
 
 pub use crate::keys::KeysetEntry;
-pub type TStamp = chrono::DateTime<chrono::Utc>;
+pub use bcr_common::TStamp;

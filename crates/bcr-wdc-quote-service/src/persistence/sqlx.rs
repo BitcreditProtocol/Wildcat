@@ -38,7 +38,7 @@ struct QuoteRow {
     pub qid: Uuid,
     pub status: String,
     pub submitted: TStamp,
-    pub maturity_date: chrono::NaiveDate,
+    pub maturity_date: time::Date,
     pub bill_id: String,
     pub bill_sum: i64,
     pub bill_drawee_id: String,
@@ -389,5 +389,5 @@ struct LightQuoteRow {
     qid: Uuid,
     status: String,
     bill_sum: i64,
-    maturity_date: chrono::NaiveDate,
+    maturity_date: time::Date,
 }

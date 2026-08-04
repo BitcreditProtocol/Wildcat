@@ -10,7 +10,7 @@ bcr-common = {workspace = true}
 bcr-wdc-utils = {workspace = true, features = ["test-utils"] }
 bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
 bitcoin.workspace = true
-chrono.workspace = true
+time.workspace = true
 config = {workspace = true}
 reqwest = {workspace = true, features = ["json"]}
 serde.workspace = true
