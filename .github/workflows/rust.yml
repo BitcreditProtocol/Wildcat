@@ -46,7 +46,7 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           token: ${{ steps.app-token.outputs.token }}
@@ -89,7 +89,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.3
         continue-on-error: true
         with:
           sarif_file: rust-clippy-results.sarif
