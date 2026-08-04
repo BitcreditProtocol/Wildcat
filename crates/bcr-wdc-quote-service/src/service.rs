@@ -129,7 +129,7 @@ impl Service {
         pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
-        validate_basic_ebill_rules(&bill)?;
+        validate_basic_ebill_rules(&bill, chrono::Utc::now().date_naive())?;
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
         let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
@@ -488,9 +488,11 @@ async fn mint_fees(
     Ok(prfs)
 }
 
-fn validate_basic_ebill_rules(bill: &BillInfo) -> Result<()> {
-    if bill.maturity_date <= chrono::Utc::now().date_naive() {
-        return Err(Error::InvalidInput(String::from("maturity date > today")));
+fn validate_basic_ebill_rules(bill: &BillInfo, today: chrono::NaiveDate) -> Result<()> {
+    if bill.maturity_date < today {
+        return Err(Error::InvalidInput(String::from(
+            "maturity date must be >= today",
+        )));
     }
     if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
         return Err(Error::InvalidInput(format!(
@@ -539,6 +541,18 @@ mod tests {
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
         }
+    }
+
+    #[test]
+    fn test_validate_basic_ebill_rules_maturity_date() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let mut bill = generate_random_bill();
+
+        bill.maturity_date = today;
+        assert!(validate_basic_ebill_rules(&bill, today).is_ok());
+
+        bill.maturity_date = today - chrono::Duration::days(1);
+        assert!(validate_basic_ebill_rules(&bill, today).is_err());
     }
 
     #[tokio::test]
