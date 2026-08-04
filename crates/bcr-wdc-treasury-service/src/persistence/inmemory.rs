@@ -69,7 +69,11 @@ impl foreign::OnlineRepository for OnlineRepository {
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.issued.lock().unwrap();
-        locked.extend(proofs.into_iter().map(|p| (hash, locktime.timestamp(), p)));
+        locked.extend(
+            proofs
+                .into_iter()
+                .map(|p| (hash, locktime.unix_timestamp(), p)),
+        );
         Ok(())
     }
 
@@ -77,7 +81,7 @@ impl foreign::OnlineRepository for OnlineRepository {
         let locked = self.issued.lock().unwrap();
         Ok(locked
             .iter()
-            .filter(|(_, locktime, _)| *locktime < now.timestamp())
+            .filter(|(_, locktime, _)| *locktime < now.unix_timestamp())
             .map(|(_, _, proof)| proof.clone())
             .collect())
     }

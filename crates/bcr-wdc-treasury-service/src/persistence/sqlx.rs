@@ -401,7 +401,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             blobs.push(jason);
         }
         let hashes = vec![hash; ys.len()];
-        let locktimes = vec![locktime.timestamp(); ys.len()];
+        let locktimes = vec![locktime.unix_timestamp(); ys.len()];
         sqlx::query!(
             r#"
             INSERT INTO treasury_foreign_issued_htlc_proofs (y, hash, locktime, blob)
@@ -424,7 +424,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             r#"
             SELECT blob FROM treasury_foreign_issued_htlc_proofs WHERE locktime < $1
             "#,
-            now.timestamp(),
+            now.unix_timestamp(),
         )
         .fetch_all(&self.pool)
         .await
@@ -772,6 +772,7 @@ enum OnChainDeniedMeltOpBlob {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OnChainDeniedMeltOpBlobV1 {
     pub inputs: bitcoin::Amount,
+    #[serde(with = "time::serde::rfc3339")]
     pub created: TStamp,
 }
 

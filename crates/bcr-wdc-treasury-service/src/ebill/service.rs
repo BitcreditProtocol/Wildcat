@@ -206,7 +206,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -259,7 +259,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -307,7 +307,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -349,7 +349,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(Uuid::new_v4(), kid, pub_key, amount, bill_id, now)
             .await
@@ -393,7 +393,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -455,7 +455,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id.clone(), now)
             .await
@@ -515,7 +515,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await
@@ -565,7 +565,7 @@ mod tests {
             repo: Box::new(repo),
             multiplier: cashu::Amount::ONE,
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let err = service
             .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
             .await

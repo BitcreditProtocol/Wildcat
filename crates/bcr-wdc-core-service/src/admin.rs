@@ -16,10 +16,8 @@ pub async fn new_keyset(
     State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_keys::NewKeysetRequest>,
 ) -> Result<Json<ecash::KeySetInfo>> {
-    let now = chrono::Utc::now();
-    let expiration = request
-        .expiration
-        .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc());
+    let now = time::OffsetDateTime::now_utc();
+    let expiration = request.expiration.map(|date| date.midnight().assume_utc());
     let kinfo = ctrl
         .create(request.unit, now, expiration, request.fees_ppk)
         .await?;
