@@ -489,8 +489,8 @@ async fn mint_fees(
 }
 
 fn validate_basic_ebill_rules(bill: &BillInfo) -> Result<()> {
-    if bill.maturity_date <= chrono::Utc::now().date_naive() {
-        return Err(Error::InvalidInput(String::from("maturity date > today")));
+    if bill.maturity_date < chrono::Utc::now().date_naive() {
+        return Err(Error::InvalidInput(String::from("maturity date >= today")));
     }
     if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
         return Err(Error::InvalidInput(format!(
@@ -539,6 +539,18 @@ mod tests {
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
         }
+    }
+
+    #[test]
+    fn test_validate_basic_ebill_rules_maturity_date() {
+        let today = chrono::Utc::now().date_naive();
+        let mut bill = generate_random_bill();
+
+        bill.maturity_date = today;
+        assert!(validate_basic_ebill_rules(&bill).is_ok());
+
+        bill.maturity_date = today - chrono::Duration::days(1);
+        assert!(validate_basic_ebill_rules(&bill).is_err());
     }
 
     #[tokio::test]
