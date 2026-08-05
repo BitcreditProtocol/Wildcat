@@ -179,6 +179,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         repo: Box::new(vault_repo),
         wdc_cl: Box::new(wdccl),
         my_url,
+        mint_id: bcr_common::core::NodeId::new(my_pk, info.network),
     };
 
     // cache
