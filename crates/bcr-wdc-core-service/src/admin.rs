@@ -18,10 +18,8 @@ pub async fn new_keyset(
 ) -> Result<Json<cdk_common::mint::MintKeySetInfo>> {
     tracing::debug!("Received new keyset request");
 
-    let now = chrono::Utc::now();
-    let expiration = request
-        .expiration
-        .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc());
+    let now = time::OffsetDateTime::now_utc();
+    let expiration = request.expiration.map(|date| date.midnight().assume_utc());
     let kinfo = ctrl
         .create(request.unit, now, expiration, request.fees_ppk)
         .await?;

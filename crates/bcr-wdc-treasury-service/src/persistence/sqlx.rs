@@ -701,6 +701,7 @@ enum OnChainDeniedMeltOpBlob {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OnChainDeniedMeltOpBlobV1 {
     pub inputs: bitcoin::Amount,
+    #[serde(with = "time::serde::rfc3339")]
     pub created: TStamp,
 }
 

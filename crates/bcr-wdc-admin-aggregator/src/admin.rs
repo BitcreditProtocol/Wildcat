@@ -689,8 +689,8 @@ pub async fn get_mint_info(
         multisig_agg_xonly: _,
     } = clwd_info;
     let build_time = bcr_wdc_utils::info::get_build_time();
-    let uptime_timestamp = chrono::DateTime::from_timestamp(uptime_timestamp as i64, 0)
-        .ok_or(Error::Internal(String::from("uptime_timestamp error")))?;
+    let uptime_timestamp = time::OffsetDateTime::from_unix_timestamp(uptime_timestamp as i64)
+        .map_err(|_| Error::Internal(String::from("uptime_timestamp error")))?;
     let versions = wire_info::VersionInfo {
         bcr_ebill_core: bcr_wdc_utils::info::get_ebill_version()
             .map(|v| v.to_string())

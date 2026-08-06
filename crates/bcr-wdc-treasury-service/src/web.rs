@@ -60,7 +60,7 @@ pub async fn melt_quote_onchain(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_melt::MeltQuoteOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltQuoteOnchainResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::onchain::melt_quote::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {
         let response = nut19::onchain::melt_quote::blob_to_response(blob);
@@ -79,7 +79,7 @@ pub async fn melt_onchain(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_melt::MeltOnchainRequest>,
 ) -> Result<Json<wire_melt::MeltOnchainResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::onchain::melt::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {
         let response = nut19::onchain::melt::blob_to_response(blob);
@@ -116,7 +116,7 @@ pub async fn mint_quote_onchain(
     State(ctrl): State<Arc<onchain::Service>>,
     Json(request): Json<wire_mint::OnchainMintQuoteRequest>,
 ) -> Result<Json<wire_mint::OnchainMintQuoteResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let response = ctrl.create_onchain_mint_quote(request, now).await?;
     Ok(Json(response))
 }
@@ -137,7 +137,7 @@ pub async fn mint_ebill(
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_mint::EbillMintRequest>,
 ) -> Result<Json<wire_mint::EbillMintResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let key = nut19::ebill::mint::request_to_key(request.clone());
     if let Some(blob) = cache.load(key).await {
         let response = nut19::ebill::mint::blob_to_response(blob);

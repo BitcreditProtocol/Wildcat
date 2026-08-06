@@ -70,10 +70,7 @@ pub trait OfflineRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysClient: Send + Sync {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
+    async fn get_keyset_with_expiration(&self, expiration: time::Date) -> Result<cashu::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
 }
 

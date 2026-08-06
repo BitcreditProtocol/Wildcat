@@ -22,7 +22,7 @@ mod web;
 
 // ----- end imports
 
-type TStamp = chrono::DateTime<chrono::Utc>;
+use bcr_common::TStamp;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -107,13 +107,13 @@ impl AppController {
             nats: clowder_cl,
             rest: clowder_rest,
         };
-        let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
+        let max_expiry = time::Duration::seconds(max_expiry_sec as i64);
         let treasury_cl = TreasuryClient::new(treasury_url);
         let treasury_for_swap = swap::TreasuryCl {
             cl: Box::new(treasury_cl),
         };
         let settle_window_tout =
-            chrono::Utc::now() + chrono::Duration::seconds(settle_window_sec as i64);
+            time::OffsetDateTime::now_utc() + time::Duration::seconds(settle_window_sec as i64);
         let swap_service = swap::service::Service {
             proofs: Box::new(proofs_repo),
             commitments: Box::new(commitments_repo),
@@ -124,7 +124,7 @@ impl AppController {
             alpha_id,
             settle_window_deadline: settle_window_tout,
         };
-        let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
+        let cache_expiry = time::Duration::seconds(cache_expiry_sec as i64);
         let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
         Self {
             keys: Arc::new(keys_service),
@@ -201,9 +201,9 @@ pub mod test_utils {
             reserved: Box::new(persistence::inmemory::ReservedYsMap::default()),
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
-            max_expiry: chrono::Duration::seconds(3600),
+            max_expiry: time::Duration::seconds(3600),
             alpha_id: mint_kp().public_key(),
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         };
         AppController {
             keys: Arc::new(keysrv),
@@ -299,8 +299,8 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
-        let now = chrono::Utc::now();
-        let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: test_utils::attested_fingerprints(proof_fps),
@@ -344,8 +344,8 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         let mint_kp = test_utils::mint_kp();
-        let now = chrono::Utc::now();
-        let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: test_utils::attested_fingerprints(proof_fps),
@@ -435,8 +435,8 @@ mod tests {
                 .map(|bbb| bbb.0)
                 .collect();
         let wallet_kp = core::generate_random_keypair();
-        let now = chrono::Utc::now();
-        let expiry = (now + chrono::TimeDelta::minutes(2)).timestamp() as u64;
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()

@@ -122,6 +122,7 @@ struct OnChainMintOperationDBEntry {
     kid: cashu::Id,
     recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     target: bitcoin::Amount,
+    #[serde(with = "time::serde::rfc3339")]
     expiry: crate::TStamp,
     status: MintStatusDBEntry,
 }
@@ -154,6 +155,7 @@ impl From<OnChainMintOperationDBEntry> for onchain::MintOperation {
 struct OnChainDeniedMeltOpDbEntry {
     id: RecordId,
     inputs: bitcoin::Amount,
+    #[serde(with = "time::serde::rfc3339")]
     created: TStamp,
 }
 impl From<onchain::DeniedMeltOperation> for OnChainDeniedMeltOpDbEntry {
@@ -214,6 +216,7 @@ struct OnChainMeltOpDbEntry {
     available: cashu::Amount,
     target: bitcoin::Amount,
     fees: cashu::Amount,
+    #[serde(with = "time::serde::rfc3339")]
     expiry: TStamp,
     commitment: String,
     input_ys: Vec<String>,
@@ -291,7 +294,7 @@ impl DBOnChain {
             )
             .bind(("table", Self::MINTS_TABLE))
             .bind(("expired", onchain::MintStatus::Expired))
-            .bind(("now", now))
+            .bind(("now", bcr_wdc_utils::surreal::tstamp_param(now)))
             .await?;
         Ok(())
     }
@@ -307,7 +310,7 @@ impl DBOnChain {
             )
             .bind(("table", Self::MELTS_TABLE))
             .bind(("expired", MeltStatusDBEntry::Expired))
-            .bind(("now", now))
+            .bind(("now", bcr_wdc_utils::surreal::tstamp_param(now)))
             .await?;
         Ok(())
     }

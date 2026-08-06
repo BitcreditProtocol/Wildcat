@@ -42,7 +42,8 @@ async fn swap() {
         .unwrap();
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
-    let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
+    let expiry =
+        (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
     let wallet_kp = core::generate_random_keypair();
     let (_, commitment) = client
         .commit_swap(
@@ -134,7 +135,8 @@ async fn swap_p2pk() {
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
     let wallet_kp = core::generate_random_keypair();
-    let expiry = (chrono::Utc::now() + chrono::TimeDelta::minutes(2)).timestamp() as u64;
+    let expiry =
+        (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
     let (_, commitment) = client
         .commit_swap(
             correct_fps.clone(),

@@ -18,7 +18,7 @@ pub enum Error {
     #[error("eCash sign/verify error {0}")]
     SignWithKeys(#[from] ECashSignatureError),
     #[error("Error in parsing datetime: {0}")]
-    Chrono(#[from] chrono::ParseError),
+    Time(#[from] time::error::Parse),
     #[error("quotes repository error {0}")]
     QuotesRepository(AnyError),
     #[error("core client error {0}")]
@@ -76,7 +76,7 @@ impl axum::response::IntoResponse for Error {
                 (StatusCode::CONFLICT, String::from("Quote invalid status"))
             }
 
-            Error::Chrono(e) => {
+            Error::Time(e) => {
                 let v = serde_json::Value::String(format!("Malformed datetime: {e}"));
                 let j = serde_json::to_string(&v).unwrap_or_default();
                 (StatusCode::BAD_REQUEST, j)

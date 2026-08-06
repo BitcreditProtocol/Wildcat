@@ -30,7 +30,7 @@ pub struct WildcatCl {
 impl WdcClient for WildcatCl {
     async fn get_keyset_with_expiration_date(
         &self,
-        redemption_date: chrono::NaiveDate,
+        redemption_date: time::Date,
     ) -> Result<cashu::Id> {
         let kinfo = self
             .core

@@ -31,8 +31,8 @@ pub fn extract_hash_timelock_from_htlc(p: &cashu::Proof) -> Result<(Sha256Hash, 
     let Some(locktime) = locktime else {
         return Err(Error::InvalidInput(String::from("no HTLC time tag")));
     };
-    let locktime = TStamp::from_timestamp_secs(locktime as i64)
-        .ok_or(Error::InvalidInput(String::from("invalid HTLC time tag")))?;
+    let locktime = TStamp::from_unix_timestamp(locktime as i64)
+        .map_err(|_| Error::InvalidInput(String::from("invalid HTLC time tag")))?;
     Ok((data, locktime))
 }
 
@@ -74,7 +74,7 @@ fn generate_htlc_conditions(
     pk: cashu::PublicKey,
 ) -> Result<cashu::SpendingConditions> {
     let conditions = cashu::Conditions::new(
-        locktime.map(|t| t.timestamp() as u64),
+        locktime.map(|t| t.unix_timestamp() as u64),
         Some(vec![pk]),
         None,
         None,
@@ -178,11 +178,9 @@ pub async fn generate_online_exchange_htlc_proofs(
                 "Foreign keyset has no expiration",
             )));
         };
-        let foreign_date = TStamp::from_timestamp_secs(foreign_expiry as i64)
-            .ok_or(Error::InvalidInput(String::from(
-                "foreign expiry date parse",
-            )))?
-            .date_naive();
+        let foreign_date = TStamp::from_unix_timestamp(foreign_expiry as i64)
+            .map_err(|_| Error::InvalidInput(String::from("foreign expiry date parse")))?
+            .date();
         let keyset = keycl.get_keyset_with_expiration(foreign_date).await?;
         let group = generate_htlc_proofs(amount, Some(locktime), hash, pk, &keyset, keycl).await?;
         proofs.extend(group);
@@ -204,7 +202,7 @@ mod tests {
         let pk = cashu::PublicKey::from(kp.public_key());
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amount = cashu::Amount::from(1023);
-        let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
+        let locktime = Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1));
 
         let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
         let premints = cashu::PreMintSecrets::with_conditions(
@@ -246,7 +244,7 @@ mod tests {
         let hash = Sha256Hash::hash(b"test_preimage");
         let pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
+        let locktime = Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1));
         let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
         let premints = cashu::PreMintSecrets::with_conditions(
             keyset.id,

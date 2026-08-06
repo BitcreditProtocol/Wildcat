@@ -23,8 +23,8 @@ use crate::{
 #[derive(Default)]
 pub struct ListFilters {
     pub unit: Option<cashu::CurrencyUnit>,
-    pub min_expiration: Option<chrono::NaiveDate>,
-    pub max_expiration: Option<chrono::NaiveDate>,
+    pub min_expiration: Option<time::Date>,
+    pub max_expiration: Option<time::Date>,
 }
 
 pub struct Service {
@@ -104,10 +104,10 @@ impl Service {
     pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<MintKeySetInfo>> {
         let min_tstamp = filters
             .min_expiration
-            .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+            .map(|d| d.midnight().assume_utc().unix_timestamp() as u64);
         let max_tstamp = filters
             .max_expiration
-            .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+            .map(|d| d.midnight().assume_utc().unix_timestamp() as u64);
         self.keys
             .list_info(filters.unit, min_tstamp, max_tstamp)
             .await

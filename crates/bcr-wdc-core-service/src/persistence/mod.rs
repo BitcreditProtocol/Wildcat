@@ -499,7 +499,7 @@ mod tests {
     async fn commitmentsrepo_store_duplicates(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
@@ -561,7 +561,7 @@ mod tests {
     async fn commitmentsrepo_contains_inputs(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
@@ -603,7 +603,7 @@ mod tests {
     async fn commitmentsrepo_contains_outputs(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
@@ -645,7 +645,7 @@ mod tests {
     async fn commitmentsrepo_load(db: impl CommitmentRepository) {
         let mut inputs = random_cdk_pks(5);
         let mut outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         let fp_digest = [7u8; 32];
         db.store(
@@ -686,7 +686,7 @@ mod tests {
         commitmentsrepo_store_duplicate_signature(db).await;
     }
     async fn commitmentsrepo_store_duplicate_signature(db: impl CommitmentRepository) {
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
             random_cdk_pks(5),
@@ -730,7 +730,7 @@ mod tests {
     async fn commitmentsrepo_delete_releases_inputs_outputs(db: impl CommitmentRepository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.store(
             inputs.clone(),
@@ -778,8 +778,8 @@ mod tests {
         let past_outputs = random_cdk_pks(3);
         let future_inputs = random_cdk_pks(5);
         let future_outputs = random_cdk_pks(3);
-        let past = TStamp::from_timestamp(100000, 0).unwrap();
-        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        let past = TStamp::from_unix_timestamp(100000).unwrap();
+        let future = TStamp::from_unix_timestamp(200000).unwrap();
         db.store(
             past_inputs.clone(),
             past_outputs.clone(),
@@ -802,7 +802,7 @@ mod tests {
         )
         .await
         .unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.clean_expired(TStamp::from_unix_timestamp(150000).unwrap())
             .await
             .unwrap();
         assert!(!db.contains_inputs(&past_inputs).await.unwrap());
@@ -839,7 +839,7 @@ mod tests {
     }
     async fn reservedysrepo_contains(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(5);
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         db.store(inputs.clone(), tstamp).await.unwrap();
         let mut tester = random_cdk_pks(2);
         let result = db.contains(&tester).await.unwrap();
@@ -866,16 +866,16 @@ mod tests {
     }
     async fn reservedysrepo_clean_expired(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(5);
-        let past = TStamp::from_timestamp(100000, 0).unwrap();
-        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        let past = TStamp::from_unix_timestamp(100000).unwrap();
+        let future = TStamp::from_unix_timestamp(200000).unwrap();
         db.store(inputs.clone(), past).await.unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.clean_expired(TStamp::from_unix_timestamp(150000).unwrap())
             .await
             .unwrap();
         let result = db.contains(&inputs).await.unwrap();
         assert!(result.iter().all(|r| !r));
         db.store(inputs.clone(), future).await.unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.clean_expired(TStamp::from_unix_timestamp(150000).unwrap())
             .await
             .unwrap();
         let result = db.contains(&inputs).await.unwrap();
@@ -899,7 +899,7 @@ mod tests {
     async fn reservedysrepo_store_conflict(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(2);
         let fresh_input = random_cdk_pks(1).pop().unwrap();
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         db.store(inputs.clone(), tstamp).await.unwrap();
         let result = db.store(vec![inputs[0], fresh_input], tstamp).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
@@ -926,7 +926,7 @@ mod tests {
     }
     async fn reservedysrepo_store_duplicate_batch(db: impl ReservedYsRepository) {
         let input = random_cdk_pks(1).pop().unwrap();
-        let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
+        let tstamp = TStamp::from_unix_timestamp(100000).unwrap();
         let result = db.store(vec![input, input], tstamp).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
         let result = db.contains(&[input]).await.unwrap();
@@ -949,12 +949,12 @@ mod tests {
     }
     async fn reservedysrepo_store_after_clean_expired(db: impl ReservedYsRepository) {
         let input = random_cdk_pks(1).pop().unwrap();
-        let past = TStamp::from_timestamp(100000, 0).unwrap();
-        let future = TStamp::from_timestamp(200000, 0).unwrap();
+        let past = TStamp::from_unix_timestamp(100000).unwrap();
+        let future = TStamp::from_unix_timestamp(200000).unwrap();
         db.store(vec![input], past).await.unwrap();
         let result = db.store(vec![input], future).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.clean_expired(TStamp::from_unix_timestamp(150000).unwrap())
             .await
             .unwrap();
         db.store(vec![input], future).await.unwrap();

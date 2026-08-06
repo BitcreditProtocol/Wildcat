@@ -40,11 +40,14 @@ impl Factory {
             | (unit_hash[2] as u32) << 8
             | (unit_hash[3] as u32))
             & 0x7FFFFFFF;
-        let expire = expiration.map(|e| e.timestamp().max(0) as u64);
+        let expire = expiration.map(|e| e.unix_timestamp().max(0) as u64);
         let expire_tstamp = expire.unwrap_or_default();
         // concatenate now and expiration_tstamp as vec<u8> of length 16 (8 bytes for each)
-        let time_vec: Vec<u8> =
-            std::iter::chain(now.timestamp().to_be_bytes(), expire_tstamp.to_be_bytes()).collect();
+        let time_vec: Vec<u8> = std::iter::chain(
+            now.unix_timestamp().to_be_bytes(),
+            expire_tstamp.to_be_bytes(),
+        )
+        .collect();
         // sha of the concatenated vec
         let time_hash = Sha256::hash(&time_vec);
         // we take least significant 31 bits of the hash as u32
@@ -83,14 +86,14 @@ impl Factory {
         tracing::info!(
             "new keyset generated: {}, {now}, {}, {fees_ppk} ==> {}",
             keyset.unit,
-            expiration.unwrap_or_default(),
+            expiration.unwrap_or(TStamp::UNIX_EPOCH),
             keyset.id
         );
         let info = MintKeySetInfo {
             id: keyset.id,
             unit: keyset.unit.clone(),
             active: true,
-            valid_from: now.timestamp().max(0) as u64,
+            valid_from: now.unix_timestamp().max(0) as u64,
             final_expiry: keyset.final_expiry,
             derivation_path: path,
             derivation_path_index: None,
@@ -112,26 +115,26 @@ mod tests {
         let derivation = btc32::DerivationPath::default();
         let factory = Factory::new(&seed, derivation);
         let unit1 = cashu::CurrencyUnit::Sat;
-        let now = chrono::DateTime::from_timestamp(1_000_000, 0).unwrap();
-        let expire1 = chrono::DateTime::from_timestamp(2_000_000, 0).unwrap();
+        let now = time::OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
+        let expire1 = time::OffsetDateTime::from_unix_timestamp(2_000_000).unwrap();
         let (info1, _) = factory.generate(unit1.clone(), now, Some(expire1), 100);
         assert_eq!(info1.unit, unit1);
-        assert_eq!(info1.final_expiry, Some(expire1.timestamp() as u64));
+        assert_eq!(info1.final_expiry, Some(expire1.unix_timestamp() as u64));
         // different unit
         let unit2 = cashu::CurrencyUnit::Eur;
         let (info2, _) = factory.generate(unit2.clone(), now, Some(expire1), 0);
         assert_eq!(info2.unit, unit2);
         assert_ne!(info2.id, info1.id);
         // different expiration
-        let expire3 = chrono::DateTime::from_timestamp(3_000_000, 0).unwrap();
+        let expire3 = time::OffsetDateTime::from_unix_timestamp(3_000_000).unwrap();
         let (info3, _) = factory.generate(unit1.clone(), now, Some(expire3), 0);
-        assert_eq!(info3.final_expiry, Some(expire3.timestamp() as u64));
+        assert_eq!(info3.final_expiry, Some(expire3.unix_timestamp() as u64));
         assert_ne!(info3.id, info1.id);
         assert_ne!(info3.id, info2.id);
         // different now
-        let now4 = chrono::DateTime::from_timestamp(1_500_000, 0).unwrap();
+        let now4 = time::OffsetDateTime::from_unix_timestamp(1_500_000).unwrap();
         let (info4, _) = factory.generate(unit1.clone(), now4, Some(expire1), 0);
-        assert_eq!(info4.valid_from, now4.timestamp() as u64);
+        assert_eq!(info4.valid_from, now4.unix_timestamp() as u64);
         assert_ne!(info4.id, info1.id);
         assert_ne!(info4.id, info2.id);
         assert_ne!(info4.id, info3.id);

@@ -15,7 +15,6 @@ use bcr_ebill_core::protocol::{
 };
 use bcr_wdc_utils::convert;
 use bitcoin::{self as btc, secp256k1 as secp, Amount};
-use chrono::NaiveTime;
 use rand::Rng;
 // ----- local imports
 
@@ -46,7 +45,7 @@ pub fn generate_random_bill_enquire_request(
     let core_drawee: BillIdentParticipant =
         convert::billidentparticipant_wire2ebill(drawee).unwrap();
     let core_payee: BillIdentParticipant = convert::billidentparticipant_wire2ebill(payee).unwrap();
-    let now = chrono::Utc::now();
+    let now = Timestamp::new(time::OffsetDateTime::now_utc().unix_timestamp() as u64).unwrap();
     let created_at = Timestamp::new(10000).unwrap();
     let (id_proof, email_proof) =
         signed_identity_proof_test(core_drawer.clone(), signing_key, created_at);
@@ -65,7 +64,7 @@ pub fn generate_random_bill_enquire_request(
             city_of_payment: City::new("Vienna").unwrap(),
             files: vec![],
             signatory: None,
-            signing_timestamp: now.into(),
+            signing_timestamp: now,
             signing_address: PostalAddress {
                 country: Country::AT,
                 city: City::new("Vienna").unwrap(),
@@ -84,7 +83,7 @@ pub fn generate_random_bill_enquire_request(
         BcrKeys::from_private_key(&drawer_key_pair.secret_key()),
         None,
         bill_keys.clone(),
-        now.into(),
+        now,
     )
     .expect("can create bill chain");
     let bill_to_share = create_bill_to_share_with_external_party(
@@ -116,14 +115,11 @@ pub fn holder_key_pair() -> secp::Keypair {
 }
 
 pub fn random_date() -> Date {
-    let start = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
-        .expect("naivedate")
-        .and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("NaiveTime"))
-        .and_utc();
+    let start = time::macros::date!(2026 - 01 - 01);
     let mut rng = rand::thread_rng();
-    let days = chrono::Duration::days(rng.gen_range(0..365));
-    let random_date = start + days;
-    Date::new(random_date.date_naive().to_string()).unwrap()
+    let days = time::Duration::days(rng.gen_range(0..365));
+    let random_date = start.saturating_add(days);
+    Date::new(random_date.to_string()).unwrap()
 }
 
 pub fn signed_identity_proof_test(

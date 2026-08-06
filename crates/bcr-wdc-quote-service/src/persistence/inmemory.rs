@@ -118,7 +118,7 @@ impl Repository for QuotesIDMap {
             .unwrap()
             .iter()
             .filter(|(_, q)| matches!(q.status, quotes::Status::Pending { .. }))
-            .filter(|(_, q)| q.submitted >= since.unwrap_or_default())
+            .filter(|(_, q)| q.submitted >= since.unwrap_or(TStamp::UNIX_EPOCH))
             .map(|(id, _)| *id)
             .collect();
         Ok(a)
