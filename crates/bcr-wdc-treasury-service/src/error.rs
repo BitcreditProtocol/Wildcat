@@ -23,6 +23,10 @@ pub enum Error {
     BcrSignatures(#[from] bcr_wdc_utils::signatures::ChecksError),
     #[error("bcr_common::core::swap::wallet {0}")]
     BcrSwapWallet(#[from] bcr_common::core::swap::wallet::Error),
+    #[error("bcr_common::ecash {0}")]
+    BcrEcashProof(#[from] bcr_common::ecash::Error),
+    #[error("bcr_common::wallet {0}")]
+    BcrWallet(#[from] bcr_common::wallet::Error),
     #[error("bcr_common::signature::ecash {0}")]
     BcrEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("bcr_common::signature::borsh {0}")]
@@ -113,6 +117,8 @@ impl axum::response::IntoResponse for Error {
                 (StatusCode::BAD_REQUEST, j)
             }
             Error::BcrSwapWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrEcashProof(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrEcash(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrBorshSignature(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::Borsh(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
