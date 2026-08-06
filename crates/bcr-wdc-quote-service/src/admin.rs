@@ -83,6 +83,8 @@ fn convert_into_list_params(params: wire_quotes::ListParam) -> (ListFilters, Opt
         None => None,
         Some(wire_quotes::ListSort::BillMaturityDateDesc) => Some(SortOrder::BillMaturityDateDesc),
         Some(wire_quotes::ListSort::BillMaturityDateAsc) => Some(SortOrder::BillMaturityDateAsc),
+        Some(wire_quotes::ListSort::SubmittedDesc) => Some(SortOrder::SubmittedDesc),
+        Some(wire_quotes::ListSort::SubmittedAsc) => Some(SortOrder::SubmittedAsc),
     };
     let filters = ListFilters {
         bill_maturity_date_from,

@@ -358,7 +358,7 @@ mod tests {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::default(),
+            submitted: TStamp::from_timestamp(100000, 0).unwrap(),
         };
         db.store(quote).await.unwrap();
         let qid2 = Uuid::new_v4();
@@ -371,7 +371,7 @@ mod tests {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::default(),
+            submitted: TStamp::from_timestamp(300000, 0).unwrap(),
         };
         db.store(quote).await.unwrap();
         let qid3 = Uuid::new_v4();
@@ -384,7 +384,7 @@ mod tests {
                 maturity_date: chrono::NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::default(),
+            submitted: TStamp::from_timestamp(200000, 0).unwrap(),
         };
         db.store(quote).await.unwrap();
         let filters = service::ListFilters::default();
@@ -405,6 +405,24 @@ mod tests {
         assert_eq!(res[0].id, qid3);
         assert_eq!(res[1].id, qid1);
         assert_eq!(res[2].id, qid2);
+        let filters = service::ListFilters::default();
+        let res = db
+            .list_light(filters, Some(SortOrder::SubmittedAsc))
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid1);
+        assert_eq!(res[1].id, qid3);
+        assert_eq!(res[2].id, qid2);
+        let filters = service::ListFilters::default();
+        let res = db
+            .list_light(filters, Some(SortOrder::SubmittedDesc))
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].id, qid2);
+        assert_eq!(res[1].id, qid3);
+        assert_eq!(res[2].id, qid1);
     }
 
     #[tokio::test]
