@@ -28,6 +28,7 @@ pub struct Service {
     pub repo: Box<dyn Repository>,
     pub wildcatcl: Box<dyn WildcatClient>,
     pub clowdercl: Box<dyn ClowderClient>,
+    pub multiplier: cashu::Amount,
 }
 
 impl Service {
@@ -107,7 +108,11 @@ impl Service {
         if !same_kid {
             return Err(Error::InvalidInput(String::from("invalid keyset id")));
         }
-        if operation.minted + output_amount > operation.target {
+        let target = operation
+            .target
+            .checked_mul(self.multiplier)
+            .unwrap_or(operation.target);
+        if operation.minted + output_amount > target {
             return Err(Error::InvalidInput(String::from("exceeding amount")));
         }
         let signatures = self.wildcatcl.sign(&request.outputs).await?;
@@ -201,6 +206,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         let err = service
@@ -253,6 +259,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         service
@@ -300,6 +307,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         service
@@ -341,6 +349,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         let err = service
@@ -384,6 +393,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         let err = service
@@ -445,6 +455,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         let err = service
@@ -504,6 +515,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         service
@@ -553,6 +565,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
+            multiplier: cashu::Amount::ONE,
         };
         let now = chrono::Utc::now();
         let err = service
@@ -609,6 +622,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
+            multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -635,6 +649,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
+            multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -691,6 +706,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
+            multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid, &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
