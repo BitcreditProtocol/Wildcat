@@ -53,6 +53,7 @@ impl Service {
     pub async fn generate_token(&self, now: TStamp) -> Result<bcr_common::wallet::Token> {
         let unspent_ys = self.clean_local().await?;
         let proofs = self.repo.load_proofs(unspent_ys).await?;
+        let proofs: bcr_common::ecash::Proofs = proofs.into_iter().map(Into::into).collect();
         let memo = format!("Treasury token generated at {now}");
         let token =
             bcr_common::wallet::BitcrTokenV5::new(self.mint_id.clone(), self.wdc_cl.unit(), proofs)
@@ -73,7 +74,7 @@ mod tests {
     /// every proof the vault held survives the round trip through it
     #[tokio::test]
     async fn generate_token_round_trips_the_unspent_proofs() {
-        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let (keyset_info, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
             &[cashu::Amount::from(1_u64), cashu::Amount::from(8_u64)],
@@ -137,7 +138,7 @@ mod tests {
         assert_eq!(token.value().unwrap(), cashu::Amount::from(9_u64));
 
         let mut recovered: Vec<cashu::Proof> = token
-            .proofs(&[keyset.id])
+            .proofs(&[cashu::KeySetInfo::from(keyset_info).into()])
             .unwrap()
             .into_iter()
             .map(Into::into)

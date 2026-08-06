@@ -138,9 +138,9 @@ dependencies = [
 
 [[package]]
 name = "android_system_properties"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
+checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
 dependencies = [
  "libc",
 ]
@@ -1032,9 +1032,9 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.8.5"
+version = "1.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0aa83c34e62843d924f905e0f5c866eb1dd6545fc4d719e803d9ba6030371fce"
+checksum = "76ae7bad254120e9e4c63bafc385310756f90c484eac0e36b8317cf09cb92a77"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -3445,9 +3445,9 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63a1ab99a13ab3343a9b4d1d25c455bf72322819fc5a5f05c5182e704528a583"
+checksum = "2ab16d2a714c0b26d7230bd388ac383a30fce231c8927c62752afc0471a36dc6"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -3485,9 +3485,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-types"
-version = "0.3.2"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c211dfcff95ca308247da8b1e0e81604bc9e568239967cd2c34572558511e869"
+checksum = "c77c676d4a34cceb2ae3756916e446b4d17f9430a24107e099981f0f9aec77e6"
 dependencies = [
  "bitcoin",
 ]
