@@ -655,8 +655,8 @@ dependencies = [
 
 [[package]]
 name = "bcr-ebill-core"
-version = "0.5.14"
-source = "git+https://github.com/BitcreditProtocol/Bitcredit-Core.git?tag=v0.5.14#ec6617001f8bb1b711503dc772c61e47c4e68017"
+version = "0.5.15"
+source = "git+https://github.com/BitcreditProtocol/Bitcredit-Core.git?tag=v0.5.15#cf5241eb98bd9f5fbe0c8aaa65e3aee557742cbf"
 dependencies = [
  "ammonia",
  "bcr-common",
