@@ -109,7 +109,11 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
 
     // eBill
-    let config::Ebill { db: mintops, .. } = ebill;
+    let config::Ebill {
+        db: mintops,
+        multiplier,
+        ..
+    } = ebill;
     let ebill_repo = persistence::surreal::DBEbill::new(mintops)
         .await
         .expect("Failed to create ebill repository");
@@ -121,10 +125,15 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
     };
+    assert!(
+        multiplier > cashu::Amount::ZERO,
+        "Multiplier must be greater than zero"
+    );
     let ebill = ebill::Service {
         repo: Box::new(ebill_repo),
         wildcatcl: Box::new(wdccl),
         clowdercl: Box::new(clwdcl),
+        multiplier,
     };
 
     // foreign
