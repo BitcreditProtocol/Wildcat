@@ -54,6 +54,8 @@ struct LightQuoteDBEntry {
     status: quotes::StatusDiscriminants,
     sum: bitcoin::Amount,
     maturity_date: chrono::NaiveDate,
+    #[allow(dead_code)]
+    submitted: TStamp,
 }
 impl From<LightQuoteDBEntry> for quotes::LightQuote {
     fn from(dbq: LightQuoteDBEntry) -> Self {
@@ -112,7 +114,7 @@ impl DBQuotes {
         sort: Option<SortOrder>,
     ) -> SurrealResult<Vec<LightQuoteDBEntry>> {
         let mut statement = String::from(
-            "SELECT qid, status.status as status, bill.sum AS sum, bill.maturity_date as maturity_date FROM type::table($table)",
+            "SELECT qid, status.status as status, bill.sum AS sum, bill.maturity_date as maturity_date, submitted FROM type::table($table)",
         );
 
         let mut first = true;
@@ -163,6 +165,8 @@ impl DBQuotes {
             statement += match sort {
                 SortOrder::BillMaturityDateAsc => " ORDER BY maturity_date ASC",
                 SortOrder::BillMaturityDateDesc => " ORDER BY maturity_date DESC",
+                SortOrder::SubmittedAsc => " ORDER BY submitted ASC",
+                SortOrder::SubmittedDesc => " ORDER BY submitted DESC",
             };
         }
         let query = self

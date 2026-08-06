@@ -35,6 +35,8 @@ pub struct ListFilters {
 pub enum SortOrder {
     BillMaturityDateAsc,
     BillMaturityDateDesc,
+    SubmittedDesc,
+    SubmittedAsc,
 }
 
 pub enum MintingStatus {

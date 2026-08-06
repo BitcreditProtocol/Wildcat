@@ -288,6 +288,12 @@ impl persistence::Repository for DBQuotes {
                 service::SortOrder::BillMaturityDateDesc => {
                     qb.push(" ORDER BY maturity_date DESC");
                 }
+                service::SortOrder::SubmittedAsc => {
+                    qb.push(" ORDER BY submitted ASC");
+                }
+                service::SortOrder::SubmittedDesc => {
+                    qb.push(" ORDER BY submitted DESC");
+                }
             }
         }
         let rows = qb
