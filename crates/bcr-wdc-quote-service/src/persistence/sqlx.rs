@@ -248,22 +248,6 @@ impl persistence::Repository for DBQuotes {
         .await
     }
 
-    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
-        let results = sqlx::query!(
-            r#"
-            SELECT qid FROM quotes
-            WHERE status = $2 AND ($1::timestamptz IS NULL OR submitted >= $1)
-            ORDER BY submitted DESC
-            "#,
-            since,
-            quotes::StatusDiscriminants::Pending.to_string()
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        Ok(results.into_iter().map(|r| r.qid).collect())
-    }
-
     async fn list_light(
         &self,
         filters: service::ListFilters,

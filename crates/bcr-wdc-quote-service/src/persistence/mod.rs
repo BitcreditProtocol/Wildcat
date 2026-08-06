@@ -2,7 +2,6 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
-use uuid::Uuid;
 // ----- local modules
 pub mod inmemory;
 pub mod sqlx;
@@ -12,7 +11,6 @@ use crate::{
     error::Result,
     quotes::{LightQuote, Quote, Status},
     service::{ListFilters, SortOrder},
-    TStamp,
 };
 
 // ----- end imports
@@ -29,7 +27,6 @@ pub trait Repository {
         id: uuid::Uuid,
         quote: Status,
     ) -> Result<()>;
-    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>>;
     async fn list_light(
         &self,
         filters: ListFilters,
@@ -42,10 +39,11 @@ pub trait Repository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{quotes, service};
+    use crate::{quotes, service, TStamp};
     use bcr_common::{cashu, core_tests, wire_tests::random_identity_public_data};
     use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test, surreal as surreal_config};
+    use uuid::Uuid;
 
     async fn init_surreal_db() -> impl Repository {
         surreal::DBQuotes::new(surreal_config::DBConnConfig {

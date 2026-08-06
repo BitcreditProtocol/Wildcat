@@ -14,7 +14,6 @@ use crate::{
     persistence::Repository,
     quotes,
     service::{ListFilters, SortOrder},
-    TStamp,
 };
 
 #[allow(dead_code)]
@@ -111,18 +110,6 @@ impl Repository for QuotesIDMap {
         )))
     }
 
-    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
-        let a = self
-            .quotes
-            .read()
-            .unwrap()
-            .iter()
-            .filter(|(_, q)| matches!(q.status, quotes::Status::Pending { .. }))
-            .filter(|(_, q)| q.submitted >= since.unwrap_or_default())
-            .map(|(id, _)| *id)
-            .collect();
-        Ok(a)
-    }
     async fn list_light(
         &self,
         filters: ListFilters,
@@ -200,6 +187,8 @@ impl Repository for QuotesIDMap {
                 SortOrder::BillMaturityDateDesc => {
                     q2.bill.maturity_date.cmp(&q1.bill.maturity_date)
                 }
+                SortOrder::SubmittedAsc => q1.submitted.cmp(&q2.submitted),
+                SortOrder::SubmittedDesc => q2.submitted.cmp(&q1.submitted),
             });
         }
         let b = a

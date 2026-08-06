@@ -174,32 +174,6 @@ impl DBQuotes {
         query.await?.take(0)
     }
 
-    async fn list_by_status(
-        &self,
-        status: quotes::StatusDiscriminants,
-        since: Option<TStamp>,
-    ) -> SurrealResult<Vec<Uuid>> {
-        let mut query = String::from(
-            "SELECT qid, submitted FROM type::table($table) WHERE status.status == $status",
-        );
-        if since.is_some() {
-            query += " AND submitted >= $since";
-        }
-        query += " ORDER BY submitted DESC";
-
-        let mut db_query = self
-            .db
-            .query(query)
-            .bind(("table", Self::TABLE))
-            .bind(("status", status));
-
-        if let Some(since) = since {
-            db_query = db_query.bind(("since", since));
-        }
-
-        db_query.await?.take("qid")
-    }
-
     async fn search_by_bill(
         &self,
         bill: &BillId,
@@ -327,12 +301,6 @@ impl Repository for DBQuotes {
                 "Quote not found or not failedebillvalidation"
             ))),
         }
-    }
-
-    async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<Uuid>> {
-        self.list_by_status(quotes::StatusDiscriminants::Pending, since)
-            .await
-            .map_err(|e| Error::QuotesRepository(anyhow!(e)))
     }
 
     async fn list_light(

@@ -256,10 +256,6 @@ impl Service {
         Ok(quote)
     }
 
-    pub async fn list_pendings(&self, since: Option<TStamp>) -> Result<Vec<uuid::Uuid>> {
-        self.quotes.list_pendings(since).await
-    }
-
     pub async fn list_light(
         &self,
         filters: ListFilters,
