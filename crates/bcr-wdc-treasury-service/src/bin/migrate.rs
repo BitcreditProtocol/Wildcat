@@ -21,7 +21,7 @@ async fn main() {
     let dry_run = std::env::args().any(|a| a == "--dry-run");
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("TREASURY_SERVICE"))
+        .add_source(config::Environment::with_prefix("TREASURY_SERVICE").separator("__"))
         .build()
         .expect("Failed to build config");
     let cfg: MigrateConfig = settings

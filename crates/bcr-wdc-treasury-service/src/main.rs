@@ -13,7 +13,7 @@ struct MainConfig {
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("TREASURY_SERVICE"))
+        .add_source(config::Environment::with_prefix("TREASURY_SERVICE").separator("__"))
         .build()
         .expect("Failed to build treasury config");
 
