@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_common::{
-    cashu,
+    cashu, ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bcr_wdc_utils::nut19;
@@ -17,11 +17,10 @@ use crate::{error::Result, keys, swap};
 pub async fn lookup_keyset(
     State(ctrl): State<Arc<keys::service::Service>>,
     Path(kid): Path<cashu::Id>,
-) -> Result<Json<cashu::KeySetInfo>> {
+) -> Result<Json<ecash::KeySetInfo>> {
     tracing::debug!("Received keyset lookup request");
 
-    let info = ctrl.info(kid).await?;
-    Ok(Json(info.into()))
+    ctrl.info(kid).await.map(ecash::KeySetInfo::from).map(Json)
 }
 
 /// --------------------------- list keysets info
@@ -37,7 +36,7 @@ fn convert_keyset_filters(filters: wire_keys::KeysetInfoFilters) -> keys::servic
 pub async fn list_keysets(
     State(ctrl): State<Arc<keys::service::Service>>,
     Query(filters): Query<wire_keys::KeysetInfoFilters>,
-) -> Result<Json<cashu::KeysetResponse>> {
+) -> Result<Json<wire_keys::KeysetResponse>> {
     tracing::debug!("Received keysets list request");
 
     let list_filters = convert_keyset_filters(filters);
@@ -45,9 +44,9 @@ pub async fn list_keysets(
         .list_info(list_filters)
         .await?
         .into_iter()
-        .map(cashu::KeySetInfo::from)
+        .map(ecash::KeySetInfo::from)
         .collect();
-    let response = cashu::KeysetResponse { keysets: infos };
+    let response = wire_keys::KeysetResponse { keysets: infos };
     Ok(Json(response))
 }
 
@@ -60,8 +59,16 @@ pub async fn lookup_keys(
     tracing::debug!("Received keyset lookup request: {kid}");
 
     let keyset = ctrl.keys(kid).await?;
+    let keyset = cashu::KeySet {
+        id: keyset.id,
+        unit: keyset.unit,
+        active: None,
+        keys: cashu::Keys::from(keyset.keys),
+        input_fee_ppk: keyset.input_fee_ppk,
+        final_expiry: keyset.final_expiry,
+    };
     let response = cashu::KeysResponse {
-        keysets: vec![bcr_wdc_utils::keys::to_keyset(&keyset, None)],
+        keysets: vec![keyset],
     };
     Ok(Json(response))
 }

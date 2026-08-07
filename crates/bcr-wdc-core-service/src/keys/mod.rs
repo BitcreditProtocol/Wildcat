@@ -3,7 +3,8 @@ use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu, client::clowder::ClowderNatsClient, core::BillId, wire::clowder as wire_clowder,
+    cashu, cdk_common, client::clowder::ClowderNatsClient, core::BillId, ecash,
+    wire::clowder as wire_clowder,
 };
 // ----- local imports
 use crate::error::Result;
@@ -12,6 +13,47 @@ pub mod factory;
 pub mod service;
 
 // ----- end imports
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MintKeySetInfo {
+    pub id: cashu::Id,
+    pub unit: cashu::CurrencyUnit,
+    pub active: bool,
+    pub valid_from: u64,
+    pub derivation_path: bitcoin::bip32::DerivationPath,
+    pub derivation_path_index: Option<u32>,
+    pub amounts: Vec<u64>,
+    pub input_fee_ppk: u64,
+    pub final_expiry: Option<u64>,
+}
+
+impl std::convert::From<cdk_common::mint::MintKeySetInfo> for MintKeySetInfo {
+    fn from(info: cdk_common::mint::MintKeySetInfo) -> Self {
+        Self {
+            id: info.id,
+            unit: info.unit,
+            active: info.active,
+            valid_from: info.valid_from,
+            derivation_path: info.derivation_path,
+            derivation_path_index: info.derivation_path_index,
+            amounts: info.amounts,
+            input_fee_ppk: info.input_fee_ppk,
+            final_expiry: info.final_expiry,
+        }
+    }
+}
+
+impl std::convert::From<MintKeySetInfo> for ecash::KeySetInfo {
+    fn from(info: MintKeySetInfo) -> Self {
+        Self {
+            id: info.id,
+            unit: info.unit,
+            active: info.active,
+            input_fee_ppk: info.input_fee_ppk,
+            final_expiry: info.final_expiry,
+        }
+    }
+}
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]

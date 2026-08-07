@@ -7,6 +7,7 @@ use bcr_common::{
     client::admin::{clowder as clwdr_rest, core::BRError, treasury::Client as TreasuryClient},
     client::clowder::ClowderNatsClient,
     core::signature,
+    ecash,
     wire::{attestation::AttestedFingerprints, clowder as wire_clowder, swap as wire_swap},
 };
 use bitcoin::secp256k1::{schnorr, PublicKey};
@@ -59,7 +60,11 @@ pub struct KeysSignService {
 #[async_trait]
 impl KeysService for KeysSignService {
     async fn info(&self, id: &cashu::Id) -> Result<cashu::KeySetInfo> {
-        self.srvc.info(*id).await.map(cashu::KeySetInfo::from)
+        self.srvc
+            .info(*id)
+            .await
+            .map(ecash::KeySetInfo::from)
+            .map(cashu::KeySetInfo::from)
     }
 
     async fn sign_blinds(
@@ -87,16 +92,16 @@ impl KeysService for KeysSignService {
             .srvc
             .list_info(keys::service::ListFilters::default())
             .await?;
-        let kmap: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::from_iter(
-            kinfos
-                .into_iter()
-                .map(|kinfo| (kinfo.id, cashu::KeySetInfo::from(kinfo))),
-        );
+        let kmap: HashMap<cashu::Id, cashu::KeySetInfo> =
+            HashMap::from_iter(kinfos.into_iter().map(|kinfo| {
+                let info = ecash::KeySetInfo::from(kinfo);
+                (info.id, cashu::KeySetInfo::from(info))
+            }));
         Ok(kmap)
     }
 
     async fn get_keyset(&self, kid: &cashu::Id) -> Result<cashu::KeySet> {
-        let keyset = self.srvc.keys(*kid).await?;
+        let keyset = self.srvc.load_keyset(*kid).await?;
         Ok(bcr_wdc_utils::keys::to_keyset(&keyset, None))
     }
 }

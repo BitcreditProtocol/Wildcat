@@ -6,14 +6,14 @@ use std::{
 // ----- extra library imports
 use bcr_common::{
     cashu,
-    cdk_common::mint::MintKeySetInfo,
     client::admin::core::RNFError,
     core::signature::{sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint},
+    ecash,
 };
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    keys::{factory::Factory, ClowderClient},
+    keys::{factory::Factory, ClowderClient, MintKeySetInfo},
     persistence::{KeysRepository, SignaturesRepository},
     TStamp,
 };
@@ -54,7 +54,7 @@ impl Service {
         let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
         self.clowder.new_keyset(keyset).await?;
         self.keys.store(entry).await?;
-        Ok(kinfo)
+        Ok(kinfo.into())
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
@@ -62,9 +62,14 @@ impl Service {
             .info(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
+            .map(From::from)
     }
 
-    pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
+    pub async fn keys(&self, kid: cashu::Id) -> Result<ecash::MintKeySet> {
+        self.load_keyset(kid).await.map(From::from)
+    }
+
+    pub(crate) async fn load_keyset(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
             .keyset(kid)
             .await?
@@ -78,7 +83,7 @@ impl Service {
                 kmap
             });
         for (kid, proofs) in by_kid {
-            let keyset = self.keys(kid).await?;
+            let keyset = self.load_keyset(kid).await?;
             for proof in proofs {
                 verify_ecash_proof(&keyset, proof)?;
             }
@@ -93,7 +98,7 @@ impl Service {
                 kmap
             });
         for (kid, fps) in by_kid {
-            let keyset = self.keys(kid).await?;
+            let keyset = self.load_keyset(kid).await?;
             for fp in fps {
                 verify_ecash_fingerprint(&keyset, fp)?;
             }
@@ -111,10 +116,14 @@ impl Service {
         self.keys
             .list_info(filters.unit, min_tstamp, max_tstamp)
             .await
+            .map(|infos| infos.into_iter().map(From::from).collect())
     }
 
-    pub async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
-        self.keys.list_keyset().await
+    pub async fn list_keyset(&self) -> Result<Vec<ecash::MintKeySet>> {
+        self.keys
+            .list_keyset()
+            .await
+            .map(|keysets| keysets.into_iter().map(From::from).collect())
     }
 
     pub async fn search_signature(
@@ -131,7 +140,7 @@ impl Service {
         let Some(first_b) = blinds.next() else {
             return Ok(Vec::new());
         };
-        let mut keyset = self.keys(first_b.keyset_id).await?;
+        let mut keyset = self.load_keyset(first_b.keyset_id).await?;
         let first_s = sign_ecash(&keyset, first_b)?;
         self.signatures
             .store(first_b.blinded_secret, first_s.clone())
@@ -141,7 +150,7 @@ impl Service {
             let cur_keyset = if blind.keyset_id == keyset.id {
                 &keyset
             } else {
-                keyset = self.keys(blind.keyset_id).await?;
+                keyset = self.load_keyset(blind.keyset_id).await?;
                 &keyset
             };
             let signature = sign_ecash(cur_keyset, blind)?;
