@@ -16,24 +16,30 @@ pub mod surreal;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysRepository: Send + Sync {
-    async fn store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
-    async fn info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
-    async fn keyset(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
-    async fn list_info(
+    async fn keys_store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
+    async fn keys_info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
+    async fn keys_load(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
+    async fn keys_list_info(
         &self,
         currency: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<MintKeySetInfo>>;
-    async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>>;
-    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
+    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait SignaturesRepository: Send + Sync {
-    async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()>;
-    async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>>;
+    async fn signature_store(
+        &self,
+        y: cashu::PublicKey,
+        signature: cashu::BlindSignature,
+    ) -> Result<()>;
+    async fn signature_load(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -42,9 +48,9 @@ pub trait ProofRepository: Send + Sync {
     /// WARNING: this method should do strict insert.
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call
-    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
-    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
-    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
+    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
+    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
+    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -65,7 +71,7 @@ pub struct StoredCommitment {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait CommitmentRepository: Send + Sync {
-    async fn store(
+    async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
         outputs: Vec<cashu::PublicKey>,
@@ -75,19 +81,19 @@ pub trait CommitmentRepository: Send + Sync {
         fp_digest: [u8; 32],
         signed: SignatureOwner,
     ) -> Result<()>;
-    async fn load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
-    async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
-    async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
-    async fn delete(&self, commitment: schnorr::Signature) -> Result<()>;
-    async fn clean_expired(&self, now: TStamp) -> Result<()>;
+    async fn commitment_load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
+    async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()>;
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ReservedYsRepository: Send + Sync {
-    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
-    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
-    async fn clean_expired(&self, now: TStamp) -> Result<()>;
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()>;
     // no need to delete as inputs can only end up being burnt, and they will appear as spent in
     // ProofRepository, or they will be cleaned up after the deadline by clean_expired
 }
@@ -136,8 +142,8 @@ mod tests {
     async fn keysrepo_info(db: impl KeysRepository) {
         let entry = core_tests::generate_random_ecash_keyset();
         let kinfo = entry.0.clone();
-        db.store(entry).await.unwrap();
-        let rinfo = db.info(kinfo.id).await.unwrap().unwrap();
+        db.keys_store(entry).await.unwrap();
+        let rinfo = db.keys_info(kinfo.id).await.unwrap().unwrap();
         assert_eq!(rinfo, kinfo);
     }
 
@@ -159,28 +165,28 @@ mod tests {
         let mut entry1 = core_tests::generate_random_ecash_keyset();
         entry1.0.unit = cashu::CurrencyUnit::Sat;
         entry1.0.final_expiry = Some(10);
-        db.store(entry1).await.unwrap();
+        db.keys_store(entry1).await.unwrap();
         let mut entry2 = core_tests::generate_random_ecash_keyset();
         entry2.0.unit = cashu::CurrencyUnit::Usd;
         entry2.0.final_expiry = Some(20);
-        db.store(entry2).await.unwrap();
+        db.keys_store(entry2).await.unwrap();
         let mut entry3 = core_tests::generate_random_ecash_keyset();
         entry3.0.unit = cashu::CurrencyUnit::Usd;
         entry3.0.final_expiry = Some(30);
-        db.store(entry3).await.unwrap();
+        db.keys_store(entry3).await.unwrap();
 
-        let rinfos = db.list_info(None, None, None).await.unwrap();
+        let rinfos = db.keys_list_info(None, None, None).await.unwrap();
         assert_eq!(rinfos.len(), 3);
 
         let rinfos = db
-            .list_info(Some(cashu::CurrencyUnit::Sat), None, None)
+            .keys_list_info(Some(cashu::CurrencyUnit::Sat), None, None)
             .await
             .unwrap();
         assert_eq!(rinfos.len(), 1);
         assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Sat);
 
         let rinfos = db
-            .list_info(Some(cashu::CurrencyUnit::Usd), Some(15), Some(25))
+            .keys_list_info(Some(cashu::CurrencyUnit::Usd), Some(15), Some(25))
             .await
             .unwrap();
         assert_eq!(rinfos.len(), 1);
@@ -204,32 +210,9 @@ mod tests {
     }
     async fn keysrepo_keyset_test(db: impl KeysRepository) {
         let entry = core_tests::generate_random_ecash_keyset();
-        db.store(entry.clone()).await.unwrap();
-        let rkeys = db.keyset(entry.0.id).await.unwrap().unwrap();
+        db.keys_store(entry.clone()).await.unwrap();
+        let rkeys = db.keys_load(entry.0.id).await.unwrap().unwrap();
         assert_eq!(rkeys, entry.1);
-    }
-
-    #[tokio::test]
-    async fn test_keysrepo_list_keyset() {
-        let db = init_memmap_keys_db();
-        keysrepo_list_keyset_test(db).await;
-        //
-        let db = init_surreal_keys_db().await;
-        keysrepo_list_keyset_test(db).await;
-    }
-    #[::sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_keysrepo_list_keyset_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
-        keysrepo_list_keyset_test(db).await;
-    }
-    async fn keysrepo_list_keyset_test(db: impl KeysRepository) {
-        let entry1 = core_tests::generate_random_ecash_keyset();
-        db.store(entry1).await.unwrap();
-        let entry2 = core_tests::generate_random_ecash_keyset();
-        db.store(entry2).await.unwrap();
-        let rkeys = db.list_keyset().await.unwrap();
-        assert_eq!(rkeys.len(), 2);
     }
 
     #[tokio::test]
@@ -246,15 +229,15 @@ mod tests {
     async fn keysrepo_infos_for_expiration_date_test(db: impl KeysRepository) {
         let mut keys0 = core_tests::generate_random_ecash_keyset();
         keys0.0.final_expiry = Some(30);
-        db.store(keys0).await.unwrap();
+        db.keys_store(keys0).await.unwrap();
         let mut keys1 = core_tests::generate_random_ecash_keyset();
         keys1.0.final_expiry = Some(10);
-        db.store(keys1).await.unwrap();
-        let res = db.infos_for_expiration_date(10).await.unwrap();
+        db.keys_store(keys1).await.unwrap();
+        let res = db.keys_infos_for_expiration_date(10).await.unwrap();
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].final_expiry, Some(10));
         assert_eq!(res[1].final_expiry, Some(30));
-        let res = db.infos_for_expiration_date(20).await.unwrap();
+        let res = db.keys_infos_for_expiration_date(20).await.unwrap();
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].final_expiry, Some(30));
     }
@@ -290,7 +273,7 @@ mod tests {
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
         let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
-        db.store(y, signature).await.unwrap();
+        db.signature_store(y, signature).await.unwrap();
     }
 
     #[tokio::test]
@@ -312,8 +295,8 @@ mod tests {
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
         let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
-        db.store(y, signature.clone()).await.unwrap();
-        let res = db.store(y, signature).await;
+        db.signature_store(y, signature.clone()).await.unwrap();
+        let res = db.signature_store(y, signature).await;
         assert!(matches!(res, Err(Error::Conflict(_))));
     }
 
@@ -349,8 +332,11 @@ mod tests {
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
-        db.insert(proofs.clone()).await.unwrap();
-        db.contains(proofs[0].y().unwrap()).await.unwrap().unwrap();
+        db.proofs_insert(proofs.clone()).await.unwrap();
+        db.proofs_contains(proofs[0].y().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]
@@ -373,8 +359,8 @@ mod tests {
             &keyset,
             &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
         );
-        db.insert(proofs.clone()).await.unwrap();
-        let res = db.insert(proofs).await;
+        db.proofs_insert(proofs.clone()).await.unwrap();
+        let res = db.proofs_insert(proofs).await;
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
@@ -403,8 +389,8 @@ mod tests {
                 cashu::Amount::from(4_u64),
             ],
         );
-        db.insert(proofs[0..2].to_vec()).await.unwrap();
-        let res = db.insert(proofs[1..].to_vec()).await;
+        db.proofs_insert(proofs[0..2].to_vec()).await.unwrap();
+        let res = db.proofs_insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
         assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
     }
@@ -433,10 +419,10 @@ mod tests {
                 cashu::Amount::from(4_u64),
             ],
         );
-        db.insert(proofs[0..2].to_vec()).await.unwrap();
-        let res = db.insert(proofs[1..].to_vec()).await;
+        db.proofs_insert(proofs[0..2].to_vec()).await.unwrap();
+        let res = db.proofs_insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
-        db.insert(proofs[2..].to_vec()).await.unwrap();
+        db.proofs_insert(proofs[2..].to_vec()).await.unwrap();
     }
 
     #[tokio::test]
@@ -460,9 +446,9 @@ mod tests {
                 .pop()
                 .unwrap();
         let y = proof.y().unwrap();
-        let result = db.insert(vec![proof.clone(), proof]).await;
+        let result = db.proofs_insert(vec![proof.clone(), proof]).await;
         assert!(matches!(result, Err(Error::InvalidInput(_))));
-        assert!(db.contains(y).await.unwrap().is_none());
+        assert!(db.proofs_contains(y).await.unwrap().is_none());
     }
 
     /////////////////////////////////////////////////////////////////// CommitmentRepository
@@ -501,7 +487,7 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
-        db.store(
+        db.commitment_store(
             inputs.clone(),
             outputs.clone(),
             tstamp,
@@ -517,7 +503,7 @@ mod tests {
         let mut duplicated_outputs = random_cdk_pks(3);
         let signature = signatures_test::random_schnorr_signature();
         let res = db
-            .store(
+            .commitment_store(
                 duplicated_inputs,
                 outputs.clone(),
                 tstamp,
@@ -531,7 +517,7 @@ mod tests {
         duplicated_outputs.push(outputs[0]);
         let signature = signatures_test::random_schnorr_signature();
         let res = db
-            .store(
+            .commitment_store(
                 inputs,
                 duplicated_outputs,
                 tstamp,
@@ -563,7 +549,7 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
-        db.store(
+        db.commitment_store(
             inputs.clone(),
             outputs.clone(),
             tstamp,
@@ -575,14 +561,14 @@ mod tests {
         .await
         .unwrap();
         let mut tester = random_cdk_pks(2);
-        let result = db.contains_inputs(&tester).await;
+        let result = db.commitment_contains_inputs(&tester).await;
         assert!(!result.unwrap());
         tester.push(inputs[0]);
-        let result = db.contains_inputs(&tester).await;
+        let result = db.commitment_contains_inputs(&tester).await;
         assert!(result.unwrap());
-        let result = db.contains_inputs(&inputs).await;
+        let result = db.commitment_contains_inputs(&inputs).await;
         assert!(result.unwrap());
-        let result = db.contains_inputs(&outputs).await;
+        let result = db.commitment_contains_inputs(&outputs).await;
         assert!(!result.unwrap());
     }
 
@@ -605,7 +591,7 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
-        db.store(
+        db.commitment_store(
             inputs.clone(),
             outputs.clone(),
             tstamp,
@@ -617,14 +603,14 @@ mod tests {
         .await
         .unwrap();
         let mut tester = random_cdk_pks(2);
-        let result = db.contains_outputs(&tester).await;
+        let result = db.commitment_contains_outputs(&tester).await;
         assert!(!result.unwrap());
         tester.push(outputs[0]);
-        let result = db.contains_outputs(&tester).await;
+        let result = db.commitment_contains_outputs(&tester).await;
         assert!(result.unwrap());
-        let result = db.contains_outputs(&outputs).await;
+        let result = db.commitment_contains_outputs(&outputs).await;
         assert!(result.unwrap());
-        let result = db.contains_outputs(&inputs).await;
+        let result = db.commitment_contains_outputs(&inputs).await;
         assert!(!result.unwrap());
     }
 
@@ -648,7 +634,7 @@ mod tests {
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         let fp_digest = [7u8; 32];
-        db.store(
+        db.commitment_store(
             inputs.clone(),
             outputs.clone(),
             tstamp,
@@ -659,7 +645,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let mut result = db.load(&signature).await.unwrap();
+        let mut result = db.commitment_load(&signature).await.unwrap();
         result.inputs.sort();
         inputs.sort();
         assert_eq!(result.inputs, inputs);
@@ -688,7 +674,7 @@ mod tests {
     async fn commitmentsrepo_store_duplicate_signature(db: impl CommitmentRepository) {
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
-        db.store(
+        db.commitment_store(
             random_cdk_pks(5),
             random_cdk_pks(3),
             tstamp,
@@ -700,7 +686,7 @@ mod tests {
         .await
         .unwrap();
         let result = db
-            .store(
+            .commitment_store(
                 random_cdk_pks(5),
                 random_cdk_pks(3),
                 tstamp,
@@ -732,7 +718,7 @@ mod tests {
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
-        db.store(
+        db.commitment_store(
             inputs.clone(),
             outputs.clone(),
             tstamp,
@@ -743,10 +729,10 @@ mod tests {
         )
         .await
         .unwrap();
-        db.delete(signature).await.unwrap();
-        assert!(!db.contains_inputs(&inputs).await.unwrap());
-        assert!(!db.contains_outputs(&outputs).await.unwrap());
-        db.store(
+        db.commitment_delete(signature).await.unwrap();
+        assert!(!db.commitment_contains_inputs(&inputs).await.unwrap());
+        assert!(!db.commitment_contains_outputs(&outputs).await.unwrap());
+        db.commitment_store(
             inputs,
             outputs,
             tstamp,
@@ -780,7 +766,7 @@ mod tests {
         let future_outputs = random_cdk_pks(3);
         let past = TStamp::from_timestamp(100000, 0).unwrap();
         let future = TStamp::from_timestamp(200000, 0).unwrap();
-        db.store(
+        db.commitment_store(
             past_inputs.clone(),
             past_outputs.clone(),
             past,
@@ -791,7 +777,7 @@ mod tests {
         )
         .await
         .unwrap();
-        db.store(
+        db.commitment_store(
             future_inputs.clone(),
             future_outputs.clone(),
             future,
@@ -802,13 +788,16 @@ mod tests {
         )
         .await
         .unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.commitment_clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
             .await
             .unwrap();
-        assert!(!db.contains_inputs(&past_inputs).await.unwrap());
-        assert!(!db.contains_outputs(&past_outputs).await.unwrap());
-        assert!(db.contains_inputs(&future_inputs).await.unwrap());
-        assert!(db.contains_outputs(&future_outputs).await.unwrap());
+        assert!(!db.commitment_contains_inputs(&past_inputs).await.unwrap());
+        assert!(!db.commitment_contains_outputs(&past_outputs).await.unwrap());
+        assert!(db.commitment_contains_inputs(&future_inputs).await.unwrap());
+        assert!(db
+            .commitment_contains_outputs(&future_outputs)
+            .await
+            .unwrap());
     }
 
     /////////////////////////////////////////////////////////////////// ReservedYsRepository
@@ -840,12 +829,12 @@ mod tests {
     async fn reservedysrepo_contains(db: impl ReservedYsRepository) {
         let inputs = random_cdk_pks(5);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        db.store(inputs.clone(), tstamp).await.unwrap();
+        db.ys_store(inputs.clone(), tstamp).await.unwrap();
         let mut tester = random_cdk_pks(2);
-        let result = db.contains(&tester).await.unwrap();
+        let result = db.ys_contains(&tester).await.unwrap();
         assert!(result.iter().all(|r| !r));
         tester.push(inputs[0]);
-        let result = db.contains(&tester).await.unwrap();
+        let result = db.ys_contains(&tester).await.unwrap();
         assert!(result[0..2].iter().all(|r| !r));
         assert!(result[2]);
     }
@@ -868,17 +857,17 @@ mod tests {
         let inputs = random_cdk_pks(5);
         let past = TStamp::from_timestamp(100000, 0).unwrap();
         let future = TStamp::from_timestamp(200000, 0).unwrap();
-        db.store(inputs.clone(), past).await.unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.ys_store(inputs.clone(), past).await.unwrap();
+        db.ys_clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
             .await
             .unwrap();
-        let result = db.contains(&inputs).await.unwrap();
+        let result = db.ys_contains(&inputs).await.unwrap();
         assert!(result.iter().all(|r| !r));
-        db.store(inputs.clone(), future).await.unwrap();
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.ys_store(inputs.clone(), future).await.unwrap();
+        db.ys_clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
             .await
             .unwrap();
-        let result = db.contains(&inputs).await.unwrap();
+        let result = db.ys_contains(&inputs).await.unwrap();
         assert!(result.iter().all(|r| *r));
     }
 
@@ -900,11 +889,11 @@ mod tests {
         let inputs = random_cdk_pks(2);
         let fresh_input = random_cdk_pks(1).pop().unwrap();
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        db.store(inputs.clone(), tstamp).await.unwrap();
-        let result = db.store(vec![inputs[0], fresh_input], tstamp).await;
+        db.ys_store(inputs.clone(), tstamp).await.unwrap();
+        let result = db.ys_store(vec![inputs[0], fresh_input], tstamp).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
         let result = db
-            .contains(&[inputs[0], inputs[1], fresh_input])
+            .ys_contains(&[inputs[0], inputs[1], fresh_input])
             .await
             .unwrap();
         assert_eq!(result, vec![true, true, false]);
@@ -927,9 +916,9 @@ mod tests {
     async fn reservedysrepo_store_duplicate_batch(db: impl ReservedYsRepository) {
         let input = random_cdk_pks(1).pop().unwrap();
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
-        let result = db.store(vec![input, input], tstamp).await;
+        let result = db.ys_store(vec![input, input], tstamp).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
-        let result = db.contains(&[input]).await.unwrap();
+        let result = db.ys_contains(&[input]).await.unwrap();
         assert_eq!(result, vec![false]);
     }
 
@@ -951,14 +940,14 @@ mod tests {
         let input = random_cdk_pks(1).pop().unwrap();
         let past = TStamp::from_timestamp(100000, 0).unwrap();
         let future = TStamp::from_timestamp(200000, 0).unwrap();
-        db.store(vec![input], past).await.unwrap();
-        let result = db.store(vec![input], future).await;
+        db.ys_store(vec![input], past).await.unwrap();
+        let result = db.ys_store(vec![input], future).await;
         assert!(matches!(result, Err(Error::Conflict(_))));
-        db.clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
+        db.ys_clean_expired(TStamp::from_timestamp(150000, 0).unwrap())
             .await
             .unwrap();
-        db.store(vec![input], future).await.unwrap();
-        let result = db.contains(&[input]).await.unwrap();
+        db.ys_store(vec![input], future).await.unwrap();
+        let result = db.ys_contains(&[input]).await.unwrap();
         assert_eq!(result, vec![true]);
     }
 }

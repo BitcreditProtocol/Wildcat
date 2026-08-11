@@ -83,14 +83,14 @@ async fn main() {
     // Migrate keys to PostgreSQL
     for keyset in keys {
         let kid = keyset.0.id;
-        if let Err(error) = sqlx_keys.store(keyset).await {
+        if let Err(error) = sqlx_keys.keys_store(keyset).await {
             println!("Skipping keyset {kid}: failed with {error}");
         }
     }
     println!("Migration for keys complete");
     // Migrate signatures to PostgreSQL
     for (y, signature) in signatures {
-        if let Err(error) = sqlx_signatures.store(y, signature).await {
+        if let Err(error) = sqlx_signatures.signature_store(y, signature).await {
             println!("Skipping signature {y}: failed with {error}");
         }
     }

@@ -27,23 +27,23 @@ pub struct KeyMap {
 
 #[async_trait]
 impl persistence::KeysRepository for KeyMap {
-    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
         let mut wlocked = self.keys.write().unwrap();
         wlocked.insert(entry.0.id, entry);
         Ok(())
     }
-    async fn info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
         let a = rlocked.get(&kid).map(|(info, _)| info).cloned();
         Ok(a)
     }
-    async fn keyset(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
         let rlocked = self.keys.read().unwrap();
         let a = rlocked.get(&kid).map(|(_, keyset)| keyset).cloned();
         Ok(a)
     }
 
-    async fn list_info(
+    async fn keys_list_info(
         &self,
         unit: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
@@ -73,16 +73,7 @@ impl persistence::KeysRepository for KeyMap {
             .collect();
         Ok(a)
     }
-    async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
-        let rlocked = self.keys.read().unwrap();
-        let a = rlocked
-            .iter()
-            .map(|(_, (_, keyset))| keyset)
-            .cloned()
-            .collect();
-        Ok(a)
-    }
-    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
+    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
         let mut infos: Vec<_> = rlocked
             .values()
@@ -107,7 +98,11 @@ pub struct SignatureMap {
 
 #[async_trait]
 impl persistence::SignaturesRepository for SignatureMap {
-    async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
+    async fn signature_store(
+        &self,
+        y: cashu::PublicKey,
+        signature: cashu::BlindSignature,
+    ) -> Result<()> {
         let mut locked = self.signs.write().unwrap();
         if locked.contains_key(&y) {
             return Err(Error::Conflict(format!("signature already exists: {}", y)));
@@ -115,7 +110,10 @@ impl persistence::SignaturesRepository for SignatureMap {
         locked.insert(y, signature);
         Ok(())
     }
-    async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>> {
+    async fn signature_load(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
         let a = self
             .signs
             .read()
@@ -133,7 +131,7 @@ pub struct ProofMap {
 
 #[async_trait()]
 impl persistence::ProofRepository for ProofMap {
-    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut items = Vec::with_capacity(tokens.len());
         let mut ys = HashSet::with_capacity(tokens.len());
         for token in tokens {
@@ -159,7 +157,7 @@ impl persistence::ProofRepository for ProofMap {
         Ok(())
     }
 
-    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.proofs.write().unwrap();
         for token in tokens {
             locked.remove(token);
@@ -167,7 +165,7 @@ impl persistence::ProofRepository for ProofMap {
         Ok(())
     }
 
-    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
+    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
         let locked = self.proofs.read().unwrap();
         if locked.get(&y).is_some() {
             let ret_v = cashu::ProofState {
@@ -227,23 +225,23 @@ impl CommitmentMap {
 
 #[async_trait]
 impl persistence::CommitmentRepository for CommitmentMap {
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.commitments.lock().unwrap();
         locked.retain(|_, (_, _, expiration, _, _, _)| *expiration >= now);
         Ok(())
     }
 
-    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
         let locked = self.commitments.lock().unwrap();
         Self::_contains_inputs(&locked, ys)
     }
 
-    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
         let locked = self.commitments.lock().unwrap();
         Self::_contains_outputs(&locked, secrets)
     }
 
-    async fn store(
+    async fn commitment_store(
         &self,
         mut inputs: Vec<cashu::PublicKey>,
         mut outputs: Vec<cashu::PublicKey>,
@@ -274,7 +272,10 @@ impl persistence::CommitmentRepository for CommitmentMap {
         Ok(())
     }
 
-    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
+    async fn commitment_load(
+        &self,
+        signature: &schnorr::Signature,
+    ) -> Result<persistence::StoredCommitment> {
         let locked = self.commitments.lock().unwrap();
         let comm = locked
             .get(signature)
@@ -291,7 +292,7 @@ impl persistence::CommitmentRepository for CommitmentMap {
         })
     }
 
-    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
         let mut locked = self.commitments.lock().unwrap();
         locked.remove(&commitment);
         Ok(())
@@ -305,7 +306,7 @@ pub struct ReservedYsMap {
 
 #[async_trait]
 impl persistence::ReservedYsRepository for ReservedYsMap {
-    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
         let duplicate_check = inputs.iter().collect::<HashSet<_>>();
         if duplicate_check.len() != inputs.len() {
             let err_msg = String::from("ys already reserved");
@@ -324,13 +325,13 @@ impl persistence::ReservedYsRepository for ReservedYsMap {
         Ok(())
     }
 
-    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
         let locked = self.reserved.read().unwrap();
         let results: Vec<bool> = inputs.iter().map(|y| locked.contains_key(y)).collect();
         Ok(results)
     }
 
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.reserved.write().unwrap();
         locked.retain(|_, deadline| *deadline >= now);
         Ok(())

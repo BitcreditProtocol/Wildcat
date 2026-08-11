@@ -150,7 +150,7 @@ impl DBKeys {
 
 #[async_trait]
 impl persistence::KeysRepository for DBKeys {
-    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, entry.0.id.to_string());
         let dbentry = convert_to_keysdbentry(entry, Self::TABLE);
         let _resp: Option<KeysDBEntry> = self
@@ -162,7 +162,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(())
     }
 
-    async fn info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
         let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let info: Option<KeysInfoDBEntry> = self
             .db
@@ -176,7 +176,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(info)
     }
 
-    async fn keyset(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
         let rid = RecordId::from_table_key(Self::TABLE, kid.to_string());
         let entry: Option<KeysDBEntry> = self
             .db
@@ -187,7 +187,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(keyset)
     }
 
-    async fn list_info(
+    async fn keys_list_info(
         &self,
         unit: Option<cashu::CurrencyUnit>,
         min_exp_tstamp: Option<u64>,
@@ -221,24 +221,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(infos)
     }
 
-    async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
-        let response: Vec<KeysDBEntry> = self
-            .db
-            .query("SELECT * FROM type::table($table)")
-            .bind(("table", Self::TABLE))
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let sets = response
-            .into_iter()
-            .map(KeysetEntry::from)
-            .map(|(_, keyset)| keyset)
-            .collect();
-        Ok(sets)
-    }
-
-    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
+    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let infos: Vec<KeysInfoDBEntry> = self
             .db
             // WARNING: https://github.com/surrealdb/surrealdb/issues/6405
@@ -323,7 +306,11 @@ impl DBSignatures {
 
 #[async_trait]
 impl persistence::SignaturesRepository for DBSignatures {
-    async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
+    async fn signature_store(
+        &self,
+        y: cashu::PublicKey,
+        signature: cashu::BlindSignature,
+    ) -> Result<()> {
         let rid = cpk_to_record_id(Self::TABLE, y);
         let entry = convert_to_entry(rid.clone(), signature);
         let r: SurrealResult<Option<SignatureDBEntry>> = self.db.insert(rid).content(entry).await;
@@ -335,7 +322,10 @@ impl persistence::SignaturesRepository for DBSignatures {
             Ok(..) => Ok(()),
         }
     }
-    async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>> {
+    async fn signature_load(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
         let rid = cpk_to_record_id(Self::TABLE, blind.blinded_secret);
         let entry: Option<SignatureDBEntry> = self
             .db
@@ -397,7 +387,7 @@ impl DBProofs {
 
 #[async_trait]
 impl persistence::ProofRepository for DBProofs {
-    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         let mut ys = HashSet::with_capacity(tokens.len());
         for tk in tokens {
@@ -424,7 +414,7 @@ impl persistence::ProofRepository for DBProofs {
         Ok(())
     }
 
-    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         for tk in tokens {
             let rid = cpk_to_record_id(Self::TABLE, *tk);
             let _p: Option<cashu::Proof> = self
@@ -436,7 +426,7 @@ impl persistence::ProofRepository for DBProofs {
         Ok(())
     }
 
-    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
+    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
         let rid = cpk_to_record_id(Self::TABLE, y);
         let res: Option<ProofDBEntry> = self
             .db
@@ -511,7 +501,7 @@ impl DBCommitments {
 
 #[async_trait]
 impl persistence::CommitmentRepository for DBCommitments {
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
         self.db
             .query("DELETE FROM type::table($table) WHERE expiration < $now")
             .bind(("table", Self::TABLE))
@@ -521,7 +511,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(())
     }
 
-    async fn contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {
         let commitment: Option<CommitmentDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(inputs, $ys)) = false LIMIT 1")
@@ -534,7 +524,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(commitment.is_some())
     }
 
-    async fn contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_outputs(&self, secrets: &[cashu::PublicKey]) -> Result<bool> {
         let commitment: Option<CommitmentDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(outputs, $secrets)) = false LIMIT 1")
@@ -547,7 +537,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(commitment.is_some())
     }
 
-    async fn store(
+    async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
         outputs: Vec<cashu::PublicKey>,
@@ -618,7 +608,10 @@ impl persistence::CommitmentRepository for DBCommitments {
         }
     }
 
-    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
+    async fn commitment_load(
+        &self,
+        signature: &schnorr::Signature,
+    ) -> Result<persistence::StoredCommitment> {
         let rid = RecordId::from_table_key(Self::TABLE, signature.to_string());
         let commitment_entry: CommitmentDBEntry = self
             .db
@@ -635,7 +628,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         })
     }
 
-    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
         let rid = RecordId::from_table_key(Self::TABLE, commitment.to_string());
         let _: Option<CommitmentDBEntry> = self
             .db
@@ -672,7 +665,7 @@ impl DBReservedYs {
 
 #[async_trait]
 impl persistence::ReservedYsRepository for DBReservedYs {
-    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
         let mut entries = Vec::with_capacity(inputs.len());
         for y in inputs {
             let rid = cpk_to_record_id(Self::TABLE, y);
@@ -693,7 +686,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
         Ok(())
     }
 
-    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
         let rids: Vec<RecordId> = inputs
             .iter()
             .map(|y| cpk_to_record_id(Self::TABLE, *y))
@@ -715,7 +708,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
         Ok(result)
     }
 
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
         self.db
             .query("DELETE FROM type::table($table) WHERE deadline < $now")
             .bind(("table", Self::TABLE))

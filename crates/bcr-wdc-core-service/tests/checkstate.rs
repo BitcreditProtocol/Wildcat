@@ -17,7 +17,7 @@ async fn checkstate() {
     controller
         .keys
         .keys
-        .store(keys_entry.clone())
+        .keys_store(keys_entry.clone())
         .await
         .expect("store");
 

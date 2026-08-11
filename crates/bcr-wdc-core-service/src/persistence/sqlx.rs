@@ -148,7 +148,7 @@ impl DBKeys {
 
 #[async_trait]
 impl persistence::KeysRepository for DBKeys {
-    async fn store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
         let row = keyset_to_row(entry)?;
         let kid = row.kid.clone();
         let json_blob =
@@ -175,7 +175,7 @@ impl persistence::KeysRepository for DBKeys {
         Ok(())
     }
 
-    async fn info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
         let row = sqlx::query_as!(
             KeysetRow,
             r#"
@@ -193,7 +193,7 @@ impl persistence::KeysRepository for DBKeys {
             .map(|entry| entry.map(|(info, _)| info))
     }
 
-    async fn keyset(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
         let row = sqlx::query_as!(
             KeysetRow,
             r#"
@@ -211,7 +211,7 @@ impl persistence::KeysRepository for DBKeys {
             .map(|entry| entry.map(|(_, keyset)| keyset))
     }
 
-    async fn list_info(
+    async fn keys_list_info(
         &self,
         unit: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
@@ -259,24 +259,7 @@ impl persistence::KeysRepository for DBKeys {
             .collect()
     }
 
-    async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
-        let rows = sqlx::query_as!(
-            KeysetRow,
-            r#"
-            SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
-            FROM core_keys
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        rows.into_iter()
-            .map(keyset_from_row)
-            .map(|entry| entry.map(|(_, keyset)| keyset))
-            .collect()
-    }
-
-    async fn infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
+    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
         let expire = i64::try_from(expire).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let rows = sqlx::query_as!(
             KeysetRow,
@@ -330,7 +313,11 @@ impl DBSignatures {
 
 #[async_trait]
 impl persistence::SignaturesRepository for DBSignatures {
-    async fn store(&self, y: cashu::PublicKey, signature: cashu::BlindSignature) -> Result<()> {
+    async fn signature_store(
+        &self,
+        y: cashu::PublicKey,
+        signature: cashu::BlindSignature,
+    ) -> Result<()> {
         let blob = SignatureBlob::V1(signature);
         let blob_value =
             serde_json::to_value(&blob).map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
@@ -353,7 +340,10 @@ impl persistence::SignaturesRepository for DBSignatures {
         Ok(())
     }
 
-    async fn load(&self, blind: &cashu::BlindedMessage) -> Result<Option<cashu::BlindSignature>> {
+    async fn signature_load(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<SignatureBlob>"
@@ -456,7 +446,7 @@ impl DBProofs {
 
 #[async_trait]
 impl persistence::ProofRepository for DBProofs {
-    async fn insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         if tokens.is_empty() {
             return Ok(());
         }
@@ -497,7 +487,7 @@ impl persistence::ProofRepository for DBProofs {
         Ok(())
     }
 
-    async fn remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
         let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
         sqlx::query!(
             r#"
@@ -511,7 +501,7 @@ impl persistence::ProofRepository for DBProofs {
         Ok(())
     }
 
-    async fn contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
+    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
         let result = sqlx::query!(
             r#"
             SELECT blob as "blob: Json<ProofBlob>"
@@ -634,7 +624,7 @@ impl DBCommitments {
 
 #[async_trait]
 impl persistence::CommitmentRepository for DBCommitments {
-    async fn store(
+    async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
         outputs: Vec<cashu::PublicKey>,
@@ -725,7 +715,10 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(())
     }
 
-    async fn load(&self, signature: &schnorr::Signature) -> Result<persistence::StoredCommitment> {
+    async fn commitment_load(
+        &self,
+        signature: &schnorr::Signature,
+    ) -> Result<persistence::StoredCommitment> {
         let signature = signature.to_string();
         let row = sqlx::query_as!(
             CommitmentRow,
@@ -769,7 +762,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         )
     }
 
-    async fn contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {
         if inputs.is_empty() {
             return Ok(false);
         }
@@ -790,7 +783,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(contains.unwrap_or_default())
     }
 
-    async fn contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool> {
+    async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool> {
         if outputs.is_empty() {
             return Ok(false);
         }
@@ -811,7 +804,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(contains.unwrap_or_default())
     }
 
-    async fn delete(&self, commitment: schnorr::Signature) -> Result<()> {
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
         sqlx::query!(
             r#"
             DELETE FROM core_commitments
@@ -825,7 +818,7 @@ impl persistence::CommitmentRepository for DBCommitments {
         Ok(())
     }
 
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
             DELETE FROM core_commitments
@@ -864,7 +857,7 @@ impl DBReservedYs {
 
 #[async_trait]
 impl persistence::ReservedYsRepository for DBReservedYs {
-    async fn store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
         if inputs.is_empty() {
             return Ok(());
         }
@@ -899,7 +892,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
         Ok(())
     }
 
-    async fn contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
         if inputs.is_empty() {
             return Ok(Vec::new());
         }
@@ -922,7 +915,7 @@ impl persistence::ReservedYsRepository for DBReservedYs {
             .collect())
     }
 
-    async fn clean_expired(&self, now: TStamp) -> Result<()> {
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
             DELETE FROM core_reserved_ys
