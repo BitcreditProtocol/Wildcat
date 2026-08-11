@@ -53,20 +53,20 @@ impl Service {
         let kinfo = entry.0.clone();
         let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
         self.clowder.new_keyset(keyset).await?;
-        self.keys.store(entry).await?;
+        self.keys.keys_store(entry).await?;
         Ok(kinfo)
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
         self.keys
-            .info(kid)
+            .keys_info(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
 
     pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
         self.keys
-            .keyset(kid)
+            .keys_load(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
@@ -109,19 +109,15 @@ impl Service {
             .max_expiration
             .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
         self.keys
-            .list_info(filters.unit, min_tstamp, max_tstamp)
+            .keys_list_info(filters.unit, min_tstamp, max_tstamp)
             .await
-    }
-
-    pub async fn list_keyset(&self) -> Result<Vec<cashu::MintKeySet>> {
-        self.keys.list_keyset().await
     }
 
     pub async fn search_signature(
         &self,
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>> {
-        self.signatures.load(blind).await
+        self.signatures.signature_load(blind).await
     }
 
     pub async fn sign_blinds(
@@ -134,7 +130,7 @@ impl Service {
         let mut keyset = self.keys(first_b.keyset_id).await?;
         let first_s = sign_ecash(&keyset, first_b)?;
         self.signatures
-            .store(first_b.blinded_secret, first_s.clone())
+            .signature_store(first_b.blinded_secret, first_s.clone())
             .await?;
         let mut signatures = vec![first_s];
         for blind in blinds {
@@ -146,7 +142,7 @@ impl Service {
             };
             let signature = sign_ecash(cur_keyset, blind)?;
             self.signatures
-                .store(blind.blinded_secret, signature.clone())
+                .signature_store(blind.blinded_secret, signature.clone())
                 .await?;
             signatures.push(signature);
         }
@@ -186,12 +182,12 @@ mod tests {
             cashu::Amount::from(32),
         ];
         keys_repo
-            .expect_keyset()
+            .expect_keys_load()
             .times(1)
             .with(eq(kinfo.id))
             .returning(move |_| Ok(Some(keyset.clone())));
         signatures_repo
-            .expect_store()
+            .expect_signature_store()
             .times(amounts.len())
             .returning(|_, _| Ok(()));
         let service = Service {
@@ -221,17 +217,17 @@ mod tests {
         let (kinfo1, keyset1) = bcr_common::core_tests::generate_random_ecash_keyset();
         let (kinfo2, keyset2) = bcr_common::core_tests::generate_random_ecash_keyset();
         keys_repo
-            .expect_keyset()
+            .expect_keys_load()
             .times(1)
             .with(eq(kinfo1.id))
             .returning(move |_| Ok(Some(keyset1.clone())));
         keys_repo
-            .expect_keyset()
+            .expect_keys_load()
             .times(1)
             .with(eq(kinfo2.id))
             .returning(move |_| Ok(Some(keyset2.clone())));
         signatures_repo
-            .expect_store()
+            .expect_signature_store()
             .times(4)
             .returning(|_, _| Ok(()));
         let service = Service {

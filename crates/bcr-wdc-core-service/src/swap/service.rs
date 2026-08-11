@@ -42,14 +42,14 @@ impl Service {
         ys: &[cashu::PublicKey],
         now: TStamp,
     ) -> Result<Vec<cashu::ProofState>> {
-        self.commitments.clean_expired(now).await?;
-        self.reserved.clean_expired(now).await?;
+        self.commitments.commitment_clean_expired(now).await?;
+        self.reserved.ys_clean_expired(now).await?;
         let joined_spent = ys
             .iter()
-            .map(|y| self.proofs.contains(*y))
+            .map(|y| self.proofs.proofs_contains(*y))
             .collect::<JoinAll<_>>();
         let states: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
-        let reserveds = self.reserved.contains(ys).await?;
+        let reserveds = self.reserved.ys_contains(ys).await?;
         let mut proof_states = Vec::with_capacity(states.len());
         for (state, reserved, y) in izip!(states.into_iter(), reserveds.into_iter(), ys.iter()) {
             if let Some(state) = state {
@@ -63,7 +63,7 @@ impl Service {
             } else {
                 let committed = self
                     .commitments
-                    .contains_inputs(std::slice::from_ref(y))
+                    .commitment_contains_inputs(std::slice::from_ref(y))
                     .await?;
                 if committed {
                     proof_states.push(cashu::ProofState {
@@ -170,7 +170,7 @@ impl Service {
         sign_service.verify_fingerprints(&core_fps).await?;
         // check outputs not already committed
         let bs: Vec<cashu::PublicKey> = request.outputs.iter().map(|b| b.blinded_secret).collect();
-        let contained = self.commitments.contains_outputs(&bs).await?;
+        let contained = self.commitments.commitment_contains_outputs(&bs).await?;
         if contained {
             return Err(Error::InvalidInput(BRError::Generic(String::from(
                 "blinded messages committed",
@@ -183,7 +183,7 @@ impl Service {
         // store commitment
         let store_res = self
             .commitments
-            .store(
+            .commitment_store(
                 ys,
                 bs,
                 expiry,
@@ -221,7 +221,7 @@ impl Service {
             fp_digest: committed_fp_digest,
             signed,
             ..
-        } = self.commitments.load(&commitment).await?;
+        } = self.commitments.commitment_load(&commitment).await?;
         // check settle window
         if now < self.settle_window_deadline && !matches!(signed, SignatureOwner::Beta) {
             return Err(Error::ServiceUnavailable);
@@ -272,13 +272,13 @@ impl Service {
                 signatures.clone(),
             )
             .await?;
-        if let Err(e) = self.proofs.insert(inputs).await {
+        if let Err(e) = self.proofs.proofs_insert(inputs).await {
             if matches!(e, Error::InvalidInput(_)) {
                 return Ok(signatures);
             }
             return Err(e);
         }
-        self.commitments.delete(commitment).await?;
+        self.commitments.commitment_delete(commitment).await?;
         self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
     }
@@ -297,7 +297,7 @@ impl Service {
             let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
             ys.push(y);
         }
-        self.proofs.insert(proofs).await?;
+        self.proofs.proofs_insert(proofs).await?;
         Ok(ys)
     }
 
@@ -306,12 +306,12 @@ impl Service {
             .iter()
             .map(|proof| cashu::dhke::hash_to_curve(proof.secret.as_bytes()))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        self.proofs.remove(&ys).await?;
+        self.proofs.proofs_remove(&ys).await?;
         Ok(())
     }
 
     pub async fn reserve(&self, ys: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
-        self.reserved.store(ys, deadline).await
+        self.reserved.ys_store(ys, deadline).await
     }
 }
 
@@ -519,15 +519,18 @@ mod tests {
             &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
         );
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
-        commitments.expect_load().times(1).returning(move |_| {
-            Ok(StoredCommitment {
-                inputs: proof_ys.clone(),
-                outputs: vec![],
-                expiration: expiry,
-                fp_digest,
-                signed: SignatureOwner::Unsigned,
-            })
-        });
+        commitments
+            .expect_commitment_load()
+            .times(1)
+            .returning(move |_| {
+                Ok(StoredCommitment {
+                    inputs: proof_ys.clone(),
+                    outputs: vec![],
+                    expiration: expiry,
+                    fp_digest,
+                    signed: SignatureOwner::Unsigned,
+                })
+            });
         let cloned = cashu::KeySetInfo::from(kinfo);
         sign_service.expect_list_kinfos().returning(move || {
             Ok(std::collections::HashMap::from([(
@@ -565,8 +568,14 @@ mod tests {
             .expect_signal_swap_event()
             .times(1)
             .returning(|_, _, _, _, _| Ok(()));
-        commitments.expect_delete().times(1).returning(|_| Ok(()));
-        proofs_repo.expect_insert().times(1).returning(|_| Ok(()));
+        commitments
+            .expect_commitment_delete()
+            .times(1)
+            .returning(|_| Ok(()));
+        proofs_repo
+            .expect_proofs_insert()
+            .times(1)
+            .returning(|_| Ok(()));
         mocktreasu
             .expect_store_proofs()
             .times(1)
@@ -609,15 +618,18 @@ mod tests {
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
         // commitment carries a digest over different fingerprints
-        commitments.expect_load().times(1).returning(move |_| {
-            Ok(StoredCommitment {
-                inputs: proof_ys.clone(),
-                outputs: vec![],
-                expiration: expiry,
-                fp_digest: [1u8; 32],
-                signed: SignatureOwner::Unsigned,
-            })
-        });
+        commitments
+            .expect_commitment_load()
+            .times(1)
+            .returning(move |_| {
+                Ok(StoredCommitment {
+                    inputs: proof_ys.clone(),
+                    outputs: vec![],
+                    expiration: expiry,
+                    fp_digest: [1u8; 32],
+                    signed: SignatureOwner::Unsigned,
+                })
+            });
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
             proofs: Box::new(proofs_repo),

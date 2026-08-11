@@ -258,7 +258,12 @@ pub mod test_utils {
         };
         let cntrl = test_controller();
         if let Some(entry) = keyset {
-            cntrl.keys.keys.store(entry).await.expect("store keyset");
+            cntrl
+                .keys
+                .keys
+                .keys_store(entry)
+                .await
+                .expect("store keyset");
         }
         let server = axum_test::TestServer::new_with_config(routes(cntrl.clone()), cfg)
             .expect("failed to start test server");
@@ -282,7 +287,7 @@ mod tests {
         controller
             .keys
             .keys
-            .store(keys_entry.clone())
+            .keys_store(keys_entry.clone())
             .await
             .expect("store");
         assert!(controller.keys.info(keys_entry.0.id).await.is_ok());
@@ -327,7 +332,7 @@ mod tests {
         controller
             .keys
             .keys
-            .store(keys_entry.clone())
+            .keys_store(keys_entry.clone())
             .await
             .expect("store");
         assert!(controller.keys.info(keys_entry.0.id).await.is_ok());
@@ -379,7 +384,7 @@ mod tests {
         controller
             .keys
             .keys
-            .store(keys_entry.clone())
+            .keys_store(keys_entry.clone())
             .await
             .expect("store");
         let p2pk_secret = cashu::SecretKey::generate();

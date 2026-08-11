@@ -25,7 +25,7 @@ async fn swap() {
     controller
         .keys
         .keys
-        .store(keys_entry.clone())
+        .keys_store(keys_entry.clone())
         .await
         .expect("store");
     let amounts = vec![Amount::from(8_u64)];
@@ -68,7 +68,7 @@ async fn swap_p2pk() {
     controller
         .keys
         .keys
-        .store(keys_entry.clone())
+        .keys_store(keys_entry.clone())
         .await
         .expect("store");
     let p2pk_secret = cashu::SecretKey::generate();
