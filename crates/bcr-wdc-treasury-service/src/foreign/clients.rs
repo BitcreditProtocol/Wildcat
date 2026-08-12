@@ -175,17 +175,28 @@ impl foreign::ClowderClient for ClowderCl {
         Ok(proofs)
     }
 
+    async fn record_offline_exchange(
+        &self,
+        request: &bcr_common::wire::exchange::OfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse> {
+        Ok(self.rest.post_record_offline_exchange(request).await?)
+    }
+
     async fn signal_offline_exchange_event(
         &self,
         fingerprints: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         wallet_pk: cashu::PublicKey,
         proofs: Vec<cashu::Proof>,
+        exchange_digest: Option<[u8; 32]>,
+        wallet_signature: Option<secp256k1::schnorr::Signature>,
     ) -> Result<()> {
         let request = wire_clowder::MintForeignOfflineEcashRequest {
             fingerprints,
             hashes,
             wallet_pk,
+            exchange_digest,
+            wallet_signature,
         };
         let response = wire_clowder::MintForeignOfflineEcashResponse { proofs };
         self.stream

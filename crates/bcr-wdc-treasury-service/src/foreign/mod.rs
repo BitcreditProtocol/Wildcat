@@ -110,12 +110,20 @@ pub trait ClowderClient: Send + Sync {
         outputs: Vec<cashu::Proof>,
         path: Vec<secp256k1::PublicKey>,
     ) -> Result<Vec<cashu::Proof>>;
+    /// Records the wallet-signed exchange on the mint, which verifies, broadcasts and locks the inputs to the alpha's Betas.
+    async fn record_offline_exchange(
+        &self,
+        request: &bcr_common::wire::exchange::OfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse>;
+    #[allow(clippy::too_many_arguments)]
     async fn signal_offline_exchange_event(
         &self,
         inputs: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         wallet_pk: cashu::PublicKey,
         outputs: Vec<cashu::Proof>,
+        exchange_digest: Option<[u8; 32]>,
+        wallet_signature: Option<secp256k1::schnorr::Signature>,
     ) -> Result<()>;
     async fn sign_swap_commitment_request(
         &self,
