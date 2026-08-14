@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu,
@@ -15,10 +15,7 @@ use secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{
-        CommitmentRepository, ProofRepository, ReservedYsRepository, SignatureOwner,
-        StoredCommitment,
-    },
+    persistence::{Repository, SignatureOwner, StoredCommitment},
     swap::{ClowderClient, KeysService, TreasuryService},
     TStamp,
 };
@@ -26,9 +23,7 @@ use crate::{
 // ----- end imports
 
 pub struct Service {
-    pub proofs: Box<dyn ProofRepository>,
-    pub commitments: Box<dyn CommitmentRepository>,
-    pub reserved: Box<dyn ReservedYsRepository>,
+    pub repository: Arc<dyn Repository>,
     pub clowder: Box<dyn ClowderClient>,
     pub treasury: Box<dyn TreasuryService>,
     pub max_expiry: chrono::Duration,
@@ -42,14 +37,14 @@ impl Service {
         ys: &[cashu::PublicKey],
         now: TStamp,
     ) -> Result<Vec<cashu::ProofState>> {
-        self.commitments.commitment_clean_expired(now).await?;
-        self.reserved.ys_clean_expired(now).await?;
+        self.repository.commitment_clean_expired(now).await?;
+        self.repository.ys_clean_expired(now).await?;
         let joined_spent = ys
             .iter()
-            .map(|y| self.proofs.proofs_contains(*y))
+            .map(|y| self.repository.proofs_contains(*y))
             .collect::<JoinAll<_>>();
         let states: Vec<_> = joined_spent.await.into_iter().collect::<Result<_>>()?;
-        let reserveds = self.reserved.ys_contains(ys).await?;
+        let reserveds = self.repository.ys_contains(ys).await?;
         let mut proof_states = Vec::with_capacity(states.len());
         for (state, reserved, y) in izip!(states.into_iter(), reserveds.into_iter(), ys.iter()) {
             if let Some(state) = state {
@@ -62,7 +57,7 @@ impl Service {
                 });
             } else {
                 let committed = self
-                    .commitments
+                    .repository
                     .commitment_contains_inputs(std::slice::from_ref(y))
                     .await?;
                 if committed {
@@ -170,7 +165,7 @@ impl Service {
         sign_service.verify_fingerprints(&core_fps).await?;
         // check outputs not already committed
         let bs: Vec<cashu::PublicKey> = request.outputs.iter().map(|b| b.blinded_secret).collect();
-        let contained = self.commitments.commitment_contains_outputs(&bs).await?;
+        let contained = self.repository.commitment_contains_outputs(&bs).await?;
         if contained {
             return Err(Error::InvalidInput(BRError::Generic(String::from(
                 "blinded messages committed",
@@ -182,7 +177,7 @@ impl Service {
         let (content, commitment) = self.clowder.commit_to_swap(request).await?;
         // store commitment
         let store_res = self
-            .commitments
+            .repository
             .commitment_store(
                 ys,
                 bs,
@@ -221,7 +216,7 @@ impl Service {
             fp_digest: committed_fp_digest,
             signed,
             ..
-        } = self.commitments.commitment_load(&commitment).await?;
+        } = self.repository.commitment_load(&commitment).await?;
         // check settle window
         if now < self.settle_window_deadline && !matches!(signed, SignatureOwner::Beta) {
             return Err(Error::ServiceUnavailable);
@@ -272,13 +267,13 @@ impl Service {
                 signatures.clone(),
             )
             .await?;
-        if let Err(e) = self.proofs.proofs_insert(inputs).await {
+        if let Err(e) = self.repository.proofs_insert(inputs).await {
             if matches!(e, Error::InvalidInput(_)) {
                 return Ok(signatures);
             }
             return Err(e);
         }
-        self.commitments.commitment_delete(commitment).await?;
+        self.repository.commitment_delete(commitment).await?;
         self.treasury.store_proofs(fees_proofs).await?;
         Ok(signatures)
     }
@@ -297,7 +292,7 @@ impl Service {
             let y = cashu::dhke::hash_to_curve(proof.secret.as_bytes())?;
             ys.push(y);
         }
-        self.proofs.proofs_insert(proofs).await?;
+        self.repository.proofs_insert(proofs).await?;
         Ok(ys)
     }
 
@@ -306,12 +301,12 @@ impl Service {
             .iter()
             .map(|proof| cashu::dhke::hash_to_curve(proof.secret.as_bytes()))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        self.proofs.proofs_remove(&ys).await?;
+        self.repository.proofs_remove(&ys).await?;
         Ok(())
     }
 
     pub async fn reserve(&self, ys: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
-        self.reserved.ys_store(ys, deadline).await
+        self.repository.ys_store(ys, deadline).await
     }
 }
 
@@ -388,7 +383,7 @@ fn cross_check_commits_swaps<T: PartialEq>(committed: &[T], swap: &[T]) -> bool 
 mod tests {
     use super::*;
     use crate::{
-        persistence::{MockCommitmentRepository, MockProofRepository, MockReservedYsRepository},
+        persistence::MockRepository,
         swap::MockTreasuryService,
         swap::{test_utils::DummyTreasuryClient, MockClowderClient, MockKeysService},
         test_utils::dummy_attestation,
@@ -400,8 +395,7 @@ mod tests {
     #[tokio::test]
     async fn commit_rejects_when_attestation_invalid() {
         let mut clowder = MockClowderClient::new();
-        let commitments = MockCommitmentRepository::new();
-        let proofs_repo = MockProofRepository::new();
+        let repository = MockRepository::new();
         let sign_service = MockKeysService::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
@@ -422,9 +416,7 @@ mod tests {
             .returning(|_, _| Err(Error::Attestation(AttestationError::DigestMismatch)));
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments),
-            reserved: Box::new(MockReservedYsRepository::new()),
+            repository: Arc::new(repository),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
@@ -453,8 +445,7 @@ mod tests {
     #[tokio::test]
     async fn signed_commit_to_swap_unknown_signer() {
         let mut clowder = MockClowderClient::new();
-        let commitments = MockCommitmentRepository::new();
-        let proofs_repo = MockProofRepository::new();
+        let repository = MockRepository::new();
         let sign_service = MockKeysService::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
@@ -475,9 +466,7 @@ mod tests {
             .returning(|_| Err(Error::InvalidInput(BRError::Generic(String::new()))));
         let alpha_kp = core::generate_random_keypair();
         let service = Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments),
-            reserved: Box::new(MockReservedYsRepository::new()),
+            repository: Arc::new(repository),
             clowder: Box::new(clowder),
             treasury: Box::new(DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
@@ -505,8 +494,7 @@ mod tests {
     #[tokio::test]
     async fn swap_1sat_no_output() {
         let mut clowder = MockClowderClient::new();
-        let mut commitments = MockCommitmentRepository::new();
-        let mut proofs_repo = MockProofRepository::new();
+        let mut repository = MockRepository::new();
         let mut sign_service = MockKeysService::new();
         let mut mocktreasu = MockTreasuryService::new();
         let (mut kinfo, keyset) = core_tests::generate_random_ecash_keyset();
@@ -519,7 +507,7 @@ mod tests {
             &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
         );
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
-        commitments
+        repository
             .expect_commitment_load()
             .times(1)
             .returning(move |_| {
@@ -568,11 +556,11 @@ mod tests {
             .expect_signal_swap_event()
             .times(1)
             .returning(|_, _, _, _, _| Ok(()));
-        commitments
+        repository
             .expect_commitment_delete()
             .times(1)
             .returning(|_| Ok(()));
-        proofs_repo
+        repository
             .expect_proofs_insert()
             .times(1)
             .returning(|_| Ok(()));
@@ -582,9 +570,7 @@ mod tests {
             .returning(|_| Ok(()));
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments),
-            reserved: Box::new(MockReservedYsRepository::new()),
+            repository: Arc::new(repository),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),
@@ -607,8 +593,7 @@ mod tests {
     #[tokio::test]
     async fn swap_rejects_on_digest_mismatch() {
         let clowder = MockClowderClient::new();
-        let mut commitments = MockCommitmentRepository::new();
-        let proofs_repo = MockProofRepository::new();
+        let mut repository = MockRepository::new();
         let sign_service = MockKeysService::new();
         let mocktreasu = MockTreasuryService::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
@@ -618,7 +603,7 @@ mod tests {
         let proof_ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(60);
         // commitment carries a digest over different fingerprints
-        commitments
+        repository
             .expect_commitment_load()
             .times(1)
             .returning(move |_| {
@@ -632,9 +617,7 @@ mod tests {
             });
         let alpha_id = core::generate_random_keypair().public_key();
         let service = Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments),
-            reserved: Box::new(MockReservedYsRepository::new()),
+            repository: Arc::new(repository),
             clowder: Box::new(clowder),
             treasury: Box::new(mocktreasu),
             max_expiry: chrono::Duration::seconds(3600),

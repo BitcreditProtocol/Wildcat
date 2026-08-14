@@ -2,6 +2,7 @@
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
+    sync::Arc,
 };
 // ----- extra library imports
 use bcr_common::{
@@ -14,7 +15,7 @@ use bcr_common::{
 use crate::{
     error::{Error, Result},
     keys::{factory::Factory, ClowderClient},
-    persistence::{KeysRepository, SignaturesRepository},
+    persistence::Repository,
     TStamp,
 };
 
@@ -28,8 +29,7 @@ pub struct ListFilters {
 }
 
 pub struct Service {
-    pub keys: Box<dyn KeysRepository>,
-    pub signatures: Box<dyn SignaturesRepository>,
+    pub repository: Arc<dyn Repository>,
     pub clowder: Box<dyn ClowderClient>,
     pub keygen: Factory,
     pub min_keyset_fees_ppk: AtomicU64,
@@ -53,19 +53,19 @@ impl Service {
         let kinfo = entry.0.clone();
         let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
         self.clowder.new_keyset(keyset).await?;
-        self.keys.keys_store(entry).await?;
+        self.repository.keys_store(entry).await?;
         Ok(kinfo)
     }
 
     pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
-        self.keys
+        self.repository
             .keys_info(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
 
     pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
-        self.keys
+        self.repository
             .keys_load(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
@@ -108,7 +108,7 @@ impl Service {
         let max_tstamp = filters
             .max_expiration
             .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
-        self.keys
+        self.repository
             .keys_list_info(filters.unit, min_tstamp, max_tstamp)
             .await
     }
@@ -117,7 +117,7 @@ impl Service {
         &self,
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>> {
-        self.signatures.signature_load(blind).await
+        self.repository.signature_load(blind).await
     }
 
     pub async fn sign_blinds(
@@ -129,7 +129,7 @@ impl Service {
         };
         let mut keyset = self.keys(first_b.keyset_id).await?;
         let first_s = sign_ecash(&keyset, first_b)?;
-        self.signatures
+        self.repository
             .signature_store(first_b.blinded_secret, first_s.clone())
             .await?;
         let mut signatures = vec![first_s];
@@ -141,7 +141,7 @@ impl Service {
                 &keyset
             };
             let signature = sign_ecash(cur_keyset, blind)?;
-            self.signatures
+            self.repository
                 .signature_store(blind.blinded_secret, signature.clone())
                 .await?;
             signatures.push(signature);
@@ -153,11 +153,7 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        btc32::DerivationPath,
-        keys::MockClowderClient,
-        persistence::{MockKeysRepository, MockSignaturesRepository},
-    };
+    use crate::{btc32::DerivationPath, keys::MockClowderClient, persistence::MockRepository};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use mockall::predicate::eq;
     use std::str::FromStr;
@@ -172,8 +168,7 @@ mod tests {
     #[tokio::test]
     async fn sign_blinds() {
         let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let mut signatures_repo = MockSignaturesRepository::new();
+        let mut repository = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let amounts = vec![
@@ -181,18 +176,17 @@ mod tests {
             cashu::Amount::from(512),
             cashu::Amount::from(32),
         ];
-        keys_repo
+        repository
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo.id))
             .returning(move |_| Ok(Some(keyset.clone())));
-        signatures_repo
+        repository
             .expect_signature_store()
             .times(amounts.len())
             .returning(|_, _| Ok(()));
         let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
+            repository: Arc::new(repository),
             keygen: factory,
             clowder: Box::new(clowder_cl),
             min_keyset_fees_ppk: Default::default(),
@@ -211,28 +205,26 @@ mod tests {
     #[tokio::test]
     async fn sign_blinds_different_keysets() {
         let factory = Factory::new(&seed(), DerivationPath::default());
-        let mut keys_repo = MockKeysRepository::new();
-        let mut signatures_repo = MockSignaturesRepository::new();
+        let mut repository = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let (kinfo1, keyset1) = bcr_common::core_tests::generate_random_ecash_keyset();
         let (kinfo2, keyset2) = bcr_common::core_tests::generate_random_ecash_keyset();
-        keys_repo
+        repository
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo1.id))
             .returning(move |_| Ok(Some(keyset1.clone())));
-        keys_repo
+        repository
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo2.id))
             .returning(move |_| Ok(Some(keyset2.clone())));
-        signatures_repo
+        repository
             .expect_signature_store()
             .times(4)
             .returning(|_, _| Ok(()));
         let service = Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
+            repository: Arc::new(repository),
             keygen: factory,
             clowder: Box::new(clowder_cl),
             min_keyset_fees_ppk: Default::default(),

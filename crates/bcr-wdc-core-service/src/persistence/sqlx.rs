@@ -124,14 +124,98 @@ fn keyset_from_row(row: KeysetRow) -> Result<KeysetEntry> {
     Ok((info, keyset))
 }
 
-// ///////////////////////////////////////////////////////////////////////// DBKeys
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for signatures
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum SignatureBlob {
+    V1(cashu::BlindSignature),
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for proofs
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ProofBlob {
+    V0 {
+        kid: cashu::Id,
+        witness: Option<cashu::Witness>,
+        c: cashu::PublicKey,
+        secret: cashu::secret::Secret,
+    },
+    V1(cashu::Proof),
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for commitments
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum CommitmentBlob {
+    V1(CommitmentBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CommitmentBlobV1 {
+    wallet_key: cashu::PublicKey,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+}
+
+#[derive(sqlx::FromRow)]
+struct CommitmentRow {
+    signature: String,
+    expiration: TStamp,
+    blob: Json<CommitmentBlob>,
+}
+
+fn commitment_to_row(
+    expiration: TStamp,
+    wallet_key: cashu::PublicKey,
+    signature: schnorr::Signature,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+) -> CommitmentRow {
+    CommitmentRow {
+        signature: signature.to_string(),
+        expiration,
+        blob: Json(CommitmentBlob::V1(CommitmentBlobV1 {
+            wallet_key,
+            fp_digest,
+            signed,
+        })),
+    }
+}
+
+fn commitment_from_row(
+    row: CommitmentRow,
+    inputs: Vec<cashu::PublicKey>,
+    outputs: Vec<cashu::PublicKey>,
+) -> Result<persistence::StoredCommitment> {
+    let CommitmentBlob::V1(blob) = row.blob.0;
+    Ok(persistence::StoredCommitment {
+        inputs,
+        outputs,
+        expiration: row.expiration,
+        fp_digest: blob.fp_digest,
+        signed: blob.signed,
+    })
+}
+
+fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKey>> {
+    keys.into_iter()
+        .map(|key| {
+            cashu::PublicKey::from_str(&key).map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+        })
+        .collect()
+}
+
+///////////////////////////////////////////////////////////////////////// Repository
 #[derive(Debug, Clone)]
-pub struct DBKeys {
+pub struct Repository {
     pool: PgPool,
 }
 
-impl DBKeys {
+impl Repository {
     pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(cfg.max_connections)
@@ -146,8 +230,55 @@ impl DBKeys {
     }
 }
 
+pub async fn insert_v0(
+    repository: &Repository,
+    proofs: Vec<persistence::surreal::ProofDBEntry>,
+) -> Result<()> {
+    let p_len = proofs.len();
+    let mut y_strs = Vec::with_capacity(proofs.len());
+    let mut blob_values = Vec::with_capacity(proofs.len());
+    for proof in proofs {
+        let y = cashu::PublicKey::from_str(&proof.id.key().to_string())
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let blob = ProofBlob::V0 {
+            kid: proof.kid,
+            witness: proof.witness,
+            c: proof.c,
+            secret: proof.secret,
+        };
+        let blob_value =
+            serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        y_strs.push(y.to_string());
+        blob_values.push(blob_value);
+    }
+    let mut tx = repository
+        .pool
+        .begin()
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    let result = sqlx::query!(
+        "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
+    &y_strs,
+    &blob_values,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    if result.rows_affected() != p_len as u64 {
+        tx.rollback()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let err = BRError::Generic(String::from("proofs are already spent"));
+        return Err(Error::InvalidInput(err));
+    }
+    tx.commit()
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    Ok(())
+}
+
 #[async_trait]
-impl persistence::KeysRepository for DBKeys {
+impl persistence::Repository for Repository {
     async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
         let row = keyset_to_row(entry)?;
         let kid = row.kid.clone();
@@ -279,40 +410,6 @@ impl persistence::KeysRepository for DBKeys {
             .map(|entry| entry.map(|(info, _)| info))
             .collect()
     }
-}
-
-// ///////////////////////////////////////////////////////////////////////// Versioned blob for signatures
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "version", content = "data")]
-enum SignatureBlob {
-    V1(cashu::BlindSignature),
-}
-
-// ///////////////////////////////////////////////////////////////////////// DBSignatures
-
-#[derive(Debug, Clone)]
-pub struct DBSignatures {
-    pool: PgPool,
-}
-
-impl DBSignatures {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
-    pub fn from_pool(pool: PgPool) -> Self {
-        Self { pool }
-    }
-}
-
-#[async_trait]
-impl persistence::SignaturesRepository for DBSignatures {
     async fn signature_store(
         &self,
         y: cashu::PublicKey,
@@ -362,90 +459,6 @@ impl persistence::SignaturesRepository for DBSignatures {
             SignatureBlob::V1(signature) => Ok(Some(signature)),
         }
     }
-}
-
-// ///////////////////////////////////////////////////////////////////////// Versioned blob for proofs
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "version", content = "data")]
-enum ProofBlob {
-    V0 {
-        kid: cashu::Id,
-        witness: Option<cashu::Witness>,
-        c: cashu::PublicKey,
-        secret: cashu::secret::Secret,
-    },
-    V1(cashu::Proof),
-}
-
-// ///////////////////////////////////////////////////////////////////////// DBProofs
-
-#[derive(Debug, Clone)]
-pub struct DBProofs {
-    pool: PgPool,
-}
-
-impl DBProofs {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
-    pub fn from_pool(pool: PgPool) -> Self {
-        Self { pool }
-    }
-
-    pub async fn insert_v0(&self, proofs: Vec<persistence::surreal::ProofDBEntry>) -> Result<()> {
-        let p_len = proofs.len();
-        let mut y_strs = Vec::with_capacity(proofs.len());
-        let mut blob_values = Vec::with_capacity(proofs.len());
-        for proof in proofs {
-            let y = cashu::PublicKey::from_str(&proof.id.key().to_string())
-                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            let blob = ProofBlob::V0 {
-                kid: proof.kid,
-                witness: proof.witness,
-                c: proof.c,
-                secret: proof.secret,
-            };
-            let blob_value =
-                serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            y_strs.push(y.to_string());
-            blob_values.push(blob_value);
-        }
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        let result = sqlx::query!(
-            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
-        &y_strs,
-        &blob_values,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        if result.rows_affected() != p_len as u64 {
-            tx.rollback()
-                .await
-                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            let err = BRError::Generic(String::from("proofs are already spent"));
-            return Err(Error::InvalidInput(err));
-        }
-        tx.commit()
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl persistence::ProofRepository for DBProofs {
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
         if tokens.is_empty() {
             return Ok(());
@@ -535,95 +548,6 @@ impl persistence::ProofRepository for DBProofs {
             }
         }
     }
-}
-
-// ///////////////////////////////////////////////////////////////////////// Versioned blob for commitments
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "version", content = "data")]
-enum CommitmentBlob {
-    V1(CommitmentBlobV1),
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct CommitmentBlobV1 {
-    wallet_key: cashu::PublicKey,
-    fp_digest: [u8; 32],
-    signed: persistence::SignatureOwner,
-}
-
-#[derive(sqlx::FromRow)]
-struct CommitmentRow {
-    signature: String,
-    expiration: TStamp,
-    blob: Json<CommitmentBlob>,
-}
-
-fn commitment_to_row(
-    expiration: TStamp,
-    wallet_key: cashu::PublicKey,
-    signature: schnorr::Signature,
-    fp_digest: [u8; 32],
-    signed: persistence::SignatureOwner,
-) -> CommitmentRow {
-    CommitmentRow {
-        signature: signature.to_string(),
-        expiration,
-        blob: Json(CommitmentBlob::V1(CommitmentBlobV1 {
-            wallet_key,
-            fp_digest,
-            signed,
-        })),
-    }
-}
-
-fn commitment_from_row(
-    row: CommitmentRow,
-    inputs: Vec<cashu::PublicKey>,
-    outputs: Vec<cashu::PublicKey>,
-) -> Result<persistence::StoredCommitment> {
-    let CommitmentBlob::V1(blob) = row.blob.0;
-    Ok(persistence::StoredCommitment {
-        inputs,
-        outputs,
-        expiration: row.expiration,
-        fp_digest: blob.fp_digest,
-        signed: blob.signed,
-    })
-}
-
-fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKey>> {
-    keys.into_iter()
-        .map(|key| {
-            cashu::PublicKey::from_str(&key).map_err(|e| Error::CommitmentRepository(anyhow!(e)))
-        })
-        .collect()
-}
-
-// ///////////////////////////////////////////////////////////////////////// DBCommitments
-
-#[derive(Debug, Clone)]
-pub struct DBCommitments {
-    pool: PgPool,
-}
-
-impl DBCommitments {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
-    pub fn from_pool(pool: PgPool) -> Self {
-        Self { pool }
-    }
-}
-
-#[async_trait]
-impl persistence::CommitmentRepository for DBCommitments {
     async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
@@ -831,32 +755,6 @@ impl persistence::CommitmentRepository for DBCommitments {
         .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         Ok(())
     }
-}
-
-// ///////////////////////////////////////////////////////////////////////// DBReservedYs
-
-#[derive(Debug, Clone)]
-pub struct DBReservedYs {
-    pool: PgPool,
-}
-
-impl DBReservedYs {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
-    pub fn from_pool(pool: PgPool) -> Self {
-        Self { pool }
-    }
-}
-
-#[async_trait]
-impl persistence::ReservedYsRepository for DBReservedYs {
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
         if inputs.is_empty() {
             return Ok(());

@@ -15,7 +15,7 @@ pub mod surreal;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait KeysRepository: Send + Sync {
+pub trait Repository: Send + Sync {
     async fn keys_store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
     async fn keys_info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
     async fn keys_load(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
@@ -26,11 +26,6 @@ pub trait KeysRepository: Send + Sync {
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<MintKeySetInfo>>;
     async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait SignaturesRepository: Send + Sync {
     async fn signature_store(
         &self,
         y: cashu::PublicKey,
@@ -40,17 +35,32 @@ pub trait SignaturesRepository: Send + Sync {
         &self,
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait ProofRepository: Send + Sync {
     /// WARNING: this method should do strict insert.
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
     async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
+    async fn commitment_store(
+        &self,
+        inputs: Vec<cashu::PublicKey>,
+        outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        commitment: schnorr::Signature,
+        fp_digest: [u8; 32],
+        signed: SignatureOwner,
+    ) -> Result<()>;
+    async fn commitment_load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
+    async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()>;
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()>;
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()>;
+    // no need to delete as inputs can only end up being burnt, and they will appear as spent in
+    // ProofRepository, or they will be cleaned up after the deadline by clean_expired
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -68,36 +78,6 @@ pub struct StoredCommitment {
     pub signed: SignatureOwner,
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait CommitmentRepository: Send + Sync {
-    async fn commitment_store(
-        &self,
-        inputs: Vec<cashu::PublicKey>,
-        outputs: Vec<cashu::PublicKey>,
-        expiration: TStamp,
-        wallet_key: cashu::PublicKey,
-        commitment: schnorr::Signature,
-        fp_digest: [u8; 32],
-        signed: SignatureOwner,
-    ) -> Result<()>;
-    async fn commitment_load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
-    async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
-    async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
-    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()>;
-    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()>;
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait]
-pub trait ReservedYsRepository: Send + Sync {
-    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
-    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
-    async fn ys_clean_expired(&self, now: TStamp) -> Result<()>;
-    // no need to delete as inputs can only end up being burnt, and they will appear as spent in
-    // ProofRepository, or they will be cleaned up after the deadline by clean_expired
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,16 +93,21 @@ mod tests {
         .take(sz)
         .collect()
     }
-    //////////////////////////////////////////////////////////////////// KeysRepository
-    async fn init_surreal_keys_db() -> impl KeysRepository {
+
+    async fn init_surreal_repository() -> impl Repository {
         let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
-        surreal::DBKeys { db: sdb }
+        surreal::Repository::from_db(sdb)
     }
-    fn init_memmap_keys_db() -> impl KeysRepository {
-        inmemory::KeyMap::default()
+
+    //////////////////////////////////////////////////////////////////// KeysRepository
+    async fn init_surreal_keys_db() -> impl Repository {
+        init_surreal_repository().await
+    }
+    fn init_memmap_keys_db() -> impl Repository {
+        inmemory::Repository::default()
     }
 
     #[tokio::test]
@@ -136,10 +121,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_info_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         keysrepo_info(db).await;
     }
-    async fn keysrepo_info(db: impl KeysRepository) {
+    async fn keysrepo_info(db: impl Repository) {
         let entry = core_tests::generate_random_ecash_keyset();
         let kinfo = entry.0.clone();
         db.keys_store(entry).await.unwrap();
@@ -158,10 +143,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_listinfo_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         keysrepo_list_info(db).await;
     }
-    async fn keysrepo_list_info(db: impl KeysRepository) {
+    async fn keysrepo_list_info(db: impl Repository) {
         let mut entry1 = core_tests::generate_random_ecash_keyset();
         entry1.0.unit = cashu::CurrencyUnit::Sat;
         entry1.0.final_expiry = Some(10);
@@ -205,10 +190,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_keyset_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         keysrepo_keyset_test(db).await;
     }
-    async fn keysrepo_keyset_test(db: impl KeysRepository) {
+    async fn keysrepo_keyset_test(db: impl Repository) {
         let entry = core_tests::generate_random_ecash_keyset();
         db.keys_store(entry.clone()).await.unwrap();
         let rkeys = db.keys_load(entry.0.id).await.unwrap().unwrap();
@@ -223,10 +208,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_keysrepo_infos_for_expiration_date_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBKeys::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         keysrepo_infos_for_expiration_date_test(db).await;
     }
-    async fn keysrepo_infos_for_expiration_date_test(db: impl KeysRepository) {
+    async fn keysrepo_infos_for_expiration_date_test(db: impl Repository) {
         let mut keys0 = core_tests::generate_random_ecash_keyset();
         keys0.0.final_expiry = Some(30);
         db.keys_store(keys0).await.unwrap();
@@ -243,15 +228,11 @@ mod tests {
     }
 
     //////////////////////////////////////////////////////////////////// SignaturesRepository
-    async fn init_surreal_signatures_db() -> impl SignaturesRepository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::DBSignatures { db: sdb }
+    async fn init_surreal_signatures_db() -> impl Repository {
+        init_surreal_repository().await
     }
-    fn init_memmap_signatures_db() -> impl SignaturesRepository {
-        inmemory::SignatureMap::default()
+    fn init_memmap_signatures_db() -> impl Repository {
+        inmemory::Repository::default()
     }
 
     #[tokio::test]
@@ -265,10 +246,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_signsrepo_store_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBSignatures::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         signsrepo_store(db).await;
     }
-    async fn signsrepo_store(db: impl SignaturesRepository) {
+    async fn signsrepo_store(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
@@ -287,10 +268,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_signsrepo_store_same_signature_twice_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBSignatures::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         signsrepo_store_same_signature_twice(db).await;
     }
-    async fn signsrepo_store_same_signature_twice(db: impl SignaturesRepository) {
+    async fn signsrepo_store_same_signature_twice(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
@@ -301,15 +282,11 @@ mod tests {
     }
 
     /////////////////////////////////////////////////////////////////// ProofRepository
-    async fn init_surreal_proofs_db() -> impl ProofRepository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::DBProofs { db: sdb }
+    async fn init_surreal_proofs_db() -> impl Repository {
+        init_surreal_repository().await
     }
-    async fn init_proofs_mem_db() -> impl ProofRepository {
-        inmemory::ProofMap::default()
+    async fn init_proofs_mem_db() -> impl Repository {
+        inmemory::Repository::default()
     }
 
     #[tokio::test]
@@ -323,10 +300,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBProofs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         proofsrepo_insert(db).await;
     }
-    async fn proofsrepo_insert(db: impl ProofRepository) {
+    async fn proofsrepo_insert(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
@@ -350,10 +327,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_all_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBProofs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         proofsrepo_insert_double_spent_all(db).await;
     }
-    async fn proofsrepo_insert_double_spent_all(db: impl ProofRepository) {
+    async fn proofsrepo_insert_double_spent_all(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
@@ -376,10 +353,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_partial_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBProofs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         proofsrepo_insert_double_spent_partial(db).await;
     }
-    async fn proofsrepo_insert_double_spent_partial(db: impl ProofRepository) {
+    async fn proofsrepo_insert_double_spent_partial(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
@@ -406,10 +383,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_double_spent_partial_still_valid_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBProofs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
-    async fn proofsrepo_insert_double_spent_partial_still_valid(db: impl ProofRepository) {
+    async fn proofsrepo_insert_double_spent_partial_still_valid(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(
             &keyset,
@@ -436,10 +413,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_proofsrepo_insert_duplicate_in_batch_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBProofs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         proofsrepo_insert_duplicate_in_batch(db).await;
     }
-    async fn proofsrepo_insert_duplicate_in_batch(db: impl ProofRepository) {
+    async fn proofsrepo_insert_duplicate_in_batch(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proof =
             core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
@@ -452,15 +429,11 @@ mod tests {
     }
 
     /////////////////////////////////////////////////////////////////// CommitmentRepository
-    async fn init_surreal_commitments_db() -> impl CommitmentRepository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::DBCommitments { db: sdb }
+    async fn init_surreal_commitments_db() -> impl Repository {
+        init_surreal_repository().await
     }
-    fn init_memmap_commitments_db() -> impl CommitmentRepository {
-        inmemory::CommitmentMap::default()
+    fn init_memmap_commitments_db() -> impl Repository {
+        inmemory::Repository::default()
     }
 
     fn random_wallet_key() -> cashu::PublicKey {
@@ -479,10 +452,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_store_duplicates_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_store_duplicates(db).await;
     }
-    async fn commitmentsrepo_store_duplicates(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_store_duplicates(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -541,10 +514,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_contains_inputs_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_contains_inputs(db).await;
     }
-    async fn commitmentsrepo_contains_inputs(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_contains_inputs(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -583,10 +556,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_contains_outputs_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_contains_outputs(db).await;
     }
-    async fn commitmentsrepo_contains_outputs(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_contains_outputs(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -625,10 +598,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_load_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_load(db).await;
     }
-    async fn commitmentsrepo_load(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_load(db: impl Repository) {
         let mut inputs = random_cdk_pks(5);
         let mut outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -668,10 +641,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_store_duplicate_signature_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_store_duplicate_signature(db).await;
     }
-    async fn commitmentsrepo_store_duplicate_signature(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_store_duplicate_signature(db: impl Repository) {
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let signature = signatures_test::random_schnorr_signature();
         db.commitment_store(
@@ -710,10 +683,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_delete_releases_inputs_outputs_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_delete_releases_inputs_outputs(db).await;
     }
-    async fn commitmentsrepo_delete_releases_inputs_outputs(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_delete_releases_inputs_outputs(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let outputs = random_cdk_pks(3);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -756,10 +729,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_commitmentsrepo_clean_expired_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBCommitments::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         commitmentsrepo_clean_expired(db).await;
     }
-    async fn commitmentsrepo_clean_expired(db: impl CommitmentRepository) {
+    async fn commitmentsrepo_clean_expired(db: impl Repository) {
         let past_inputs = random_cdk_pks(5);
         let past_outputs = random_cdk_pks(3);
         let future_inputs = random_cdk_pks(5);
@@ -801,15 +774,11 @@ mod tests {
     }
 
     /////////////////////////////////////////////////////////////////// ReservedYsRepository
-    async fn init_surreal_reserved_ys_db() -> impl ReservedYsRepository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::DBReservedYs { db: sdb }
+    async fn init_surreal_reserved_ys_db() -> impl Repository {
+        init_surreal_repository().await
     }
-    fn init_memmap_reserved_ys_db() -> impl ReservedYsRepository {
-        inmemory::ReservedYsMap::default()
+    fn init_memmap_reserved_ys_db() -> impl Repository {
+        inmemory::Repository::default()
     }
 
     #[tokio::test]
@@ -823,10 +792,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_reservedysrepo_contains_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBReservedYs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         reservedysrepo_contains(db).await;
     }
-    async fn reservedysrepo_contains(db: impl ReservedYsRepository) {
+    async fn reservedysrepo_contains(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         db.ys_store(inputs.clone(), tstamp).await.unwrap();
@@ -850,10 +819,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_reservedysrepo_clean_expired_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBReservedYs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         reservedysrepo_clean_expired(db).await;
     }
-    async fn reservedysrepo_clean_expired(db: impl ReservedYsRepository) {
+    async fn reservedysrepo_clean_expired(db: impl Repository) {
         let inputs = random_cdk_pks(5);
         let past = TStamp::from_timestamp(100000, 0).unwrap();
         let future = TStamp::from_timestamp(200000, 0).unwrap();
@@ -882,10 +851,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_reservedysrepo_store_conflict_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBReservedYs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         reservedysrepo_store_conflict(db).await;
     }
-    async fn reservedysrepo_store_conflict(db: impl ReservedYsRepository) {
+    async fn reservedysrepo_store_conflict(db: impl Repository) {
         let inputs = random_cdk_pks(2);
         let fresh_input = random_cdk_pks(1).pop().unwrap();
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
@@ -910,10 +879,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_reservedysrepo_store_duplicate_batch_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBReservedYs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         reservedysrepo_store_duplicate_batch(db).await;
     }
-    async fn reservedysrepo_store_duplicate_batch(db: impl ReservedYsRepository) {
+    async fn reservedysrepo_store_duplicate_batch(db: impl Repository) {
         let input = random_cdk_pks(1).pop().unwrap();
         let tstamp = TStamp::from_timestamp(100000, 0).unwrap();
         let result = db.ys_store(vec![input, input], tstamp).await;
@@ -933,10 +902,10 @@ mod tests {
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_reservedysrepo_store_after_clean_expired_sqlx(pool: ::sqlx::PgPool) {
-        let db = sqlx::DBReservedYs::from_pool(pool);
+        let db = sqlx::Repository::from_pool(pool);
         reservedysrepo_store_after_clean_expired(db).await;
     }
-    async fn reservedysrepo_store_after_clean_expired(db: impl ReservedYsRepository) {
+    async fn reservedysrepo_store_after_clean_expired(db: impl Repository) {
         let input = random_cdk_pks(1).pop().unwrap();
         let past = TStamp::from_timestamp(100000, 0).unwrap();
         let future = TStamp::from_timestamp(200000, 0).unwrap();

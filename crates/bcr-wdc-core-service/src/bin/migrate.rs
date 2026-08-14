@@ -1,8 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_core_service::persistence::{
-    sqlx, surreal, KeysRepository as _, SignaturesRepository as _,
-};
+use bcr_wdc_core_service::persistence::{sqlx, surreal, Repository};
 use bcr_wdc_utils::{postgres, surreal as surreal_config};
 // ----- local imports
 
@@ -15,12 +13,8 @@ struct MigrateConfig {
 
 #[derive(Debug, serde::Deserialize)]
 struct MigrateAppConfig {
-    keys: surreal_config::DBConnConfig,
-    keys_new: postgres::DBConnConfig,
-    signatures: surreal_config::DBConnConfig,
-    signatures_new: postgres::DBConnConfig,
-    proofs: surreal_config::DBConnConfig,
-    proofs_new: postgres::DBConnConfig,
+    repository: surreal_config::DBConnConfig,
+    repository_new: postgres::DBConnConfig,
 }
 
 #[tokio::main]
@@ -35,26 +29,20 @@ async fn main() {
         .try_deserialize()
         .expect("Failed to parse migrate config");
     // Connect to SurrealDB
-    let surreal_keys = surreal::DBKeys::new(cfg.appcfg.keys)
+    let surreal_repository = surreal::Repository::new(cfg.appcfg.repository)
         .await
-        .expect("Failed to connect to keys SurrealDB");
-    let surreal_signatures = surreal::DBSignatures::new(cfg.appcfg.signatures)
-        .await
-        .expect("Failed to connect to signatures SurrealDB");
-    let surreal_proofs = surreal::DBProofs::new(cfg.appcfg.proofs)
-        .await
-        .expect("Failed to connect to proofs SurrealDB");
+        .expect("Failed to connect to SurrealDB");
     // Dump all data from SurrealDB
-    let keys = surreal_keys
-        .dump()
+    let keys = surreal_repository
+        .dump_keys()
         .await
         .expect("Failed to list keys from SurrealDB");
-    let signatures = surreal_signatures
-        .dump()
+    let signatures = surreal_repository
+        .dump_signatures()
         .await
         .expect("Failed to list signatures from SurrealDB");
-    let proofs = surreal_proofs
-        .dump()
+    let proofs = surreal_repository
+        .dump_proofs()
         .await
         .expect("Failed to list proofs from SurrealDB");
     println!("Found {} keysets in SurrealDB", keys.len());
@@ -68,37 +56,28 @@ async fn main() {
         return;
     }
     // Connect to PostgreSQL
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.keys_new).await;
-    let sqlx_keys = sqlx::DBKeys::new(cfg.appcfg.keys_new)
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.repository_new).await;
+    let sqlx_repository = sqlx::Repository::new(cfg.appcfg.repository_new)
         .await
-        .expect("Failed to connect to keys PostgreSQL");
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.signatures_new).await;
-    let sqlx_signatures = sqlx::DBSignatures::new(cfg.appcfg.signatures_new)
-        .await
-        .expect("Failed to connect to signatures PostgreSQL");
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.proofs_new).await;
-    let sqlx_proofs = sqlx::DBProofs::new(cfg.appcfg.proofs_new)
-        .await
-        .expect("Failed to connect to proofs PostgreSQL");
+        .expect("Failed to connect to PostgreSQL");
     // Migrate keys to PostgreSQL
     for keyset in keys {
         let kid = keyset.0.id;
-        if let Err(error) = sqlx_keys.keys_store(keyset).await {
+        if let Err(error) = sqlx_repository.keys_store(keyset).await {
             println!("Skipping keyset {kid}: failed with {error}");
         }
     }
     println!("Migration for keys complete");
     // Migrate signatures to PostgreSQL
     for (y, signature) in signatures {
-        if let Err(error) = sqlx_signatures.signature_store(y, signature).await {
+        if let Err(error) = sqlx_repository.signature_store(y, signature).await {
             println!("Skipping signature {y}: failed with {error}");
         }
     }
     println!("Migration for signatures complete");
     // Migrate proofs to PostgreSQL
-    sqlx_proofs
-        .insert_v0(proofs)
+    sqlx::insert_v0(&sqlx_repository, proofs)
         .await
-        .expect("DBProofs::insert_v0 failed");
+        .expect("SqlxRepository::insert_v0 failed");
     println!("Migration for proofs complete");
 }
