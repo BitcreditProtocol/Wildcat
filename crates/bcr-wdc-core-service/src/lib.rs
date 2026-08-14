@@ -26,11 +26,7 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
-    keys: surreal::DBConnConfig,
-    signatures: surreal::DBConnConfig,
-    proofs: surreal::DBConnConfig,
-    commitments: surreal::DBConnConfig,
-    reserved_ys: surreal::DBConnConfig,
+    repository: surreal::DBConnConfig,
     clowder_url: client::clowder::Url,
     treasury_url: client::Url,
     clowder_rest_url: client::Url,
@@ -51,11 +47,7 @@ pub struct AppController {
 impl AppController {
     pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
         let AppConfig {
-            keys,
-            signatures,
-            proofs,
-            commitments,
-            reserved_ys,
+            repository,
             clowder_url,
             treasury_url,
             clowder_rest_url,
@@ -66,21 +58,11 @@ impl AppController {
             settle_window_sec,
         } = cfg;
 
-        let keys_repo = persistence::surreal::DBKeys::new(keys)
-            .await
-            .expect("DB connection to keys failed");
-        let signatures_repo = persistence::surreal::DBSignatures::new(signatures)
-            .await
-            .expect("DB connection to signatures failed");
-        let proofs_repo = persistence::surreal::DBProofs::new(proofs)
-            .await
-            .expect("Failed to create proofs repository");
-        let commitments_repo = persistence::surreal::DBCommitments::new(commitments)
-            .await
-            .expect("Failed to create commitments repository");
-        let reserved_ys_repo = persistence::surreal::DBReservedYs::new(reserved_ys)
-            .await
-            .expect("Failed to create reserved ys repository");
+        let repository = Arc::new(
+            persistence::surreal::Repository::new(repository)
+                .await
+                .expect("Failed to create repository"),
+        );
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl = client::clowder::ClowderNatsClient::new(clowder_url)
             .await
@@ -90,8 +72,7 @@ impl AppController {
             nats: clowder_cl.clone(),
         };
         let keys_service = keys::service::Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
+            repository: repository.clone(),
             clowder: Box::new(clowder_for_keys),
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
@@ -115,9 +96,7 @@ impl AppController {
         let settle_window_tout =
             chrono::Utc::now() + chrono::Duration::seconds(settle_window_sec as i64);
         let swap_service = swap::service::Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments_repo),
-            reserved: Box::new(reserved_ys_repo),
+            repository,
             clowder: Box::new(clowder_for_swap),
             treasury: Box::new(treasury_for_swap),
             max_expiry,
@@ -180,25 +159,19 @@ pub mod test_utils {
     use bcr_wdc_utils::KeysetEntry;
     use std::str::FromStr;
 
-    fn test_controller() -> AppController {
+    pub fn test_controller() -> AppController {
         let seed = [0u8; 32];
         let derivation_path = btc32::DerivationPath::default();
-        let keys_repo = persistence::inmemory::KeyMap::default();
-        let signatures_repo = persistence::inmemory::SignatureMap::default();
+        let repository = Arc::new(persistence::inmemory::Repository::default());
         let keygen = keys::factory::Factory::new(&seed, derivation_path);
         let keysrv = keys::service::Service {
-            keys: Box::new(keys_repo),
-            signatures: Box::new(signatures_repo),
+            repository: repository.clone(),
             keygen,
             clowder: Box::new(keys::DummyClowderClient),
             min_keyset_fees_ppk: Default::default(),
         };
-        let proofs_repo = persistence::inmemory::ProofMap::default();
-        let commitments_repo = persistence::inmemory::CommitmentMap::default();
         let swprv = swap::service::Service {
-            proofs: Box::new(proofs_repo),
-            commitments: Box::new(commitments_repo),
-            reserved: Box::new(persistence::inmemory::ReservedYsMap::default()),
+            repository,
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
             max_expiry: chrono::Duration::seconds(3600),
@@ -260,7 +233,7 @@ pub mod test_utils {
         if let Some(entry) = keyset {
             cntrl
                 .keys
-                .keys
+                .repository
                 .keys_store(entry)
                 .await
                 .expect("store keyset");
@@ -282,11 +255,11 @@ mod tests {
 
     #[tokio::test]
     async fn commit_swap() {
-        let (_, controller) = test_utils::build_test_server(None).await;
+        let controller = test_utils::test_controller();
         let keys_entry = keys_test::generate_keyset();
         controller
             .keys
-            .keys
+            .repository
             .keys_store(keys_entry.clone())
             .await
             .expect("store");
@@ -327,11 +300,11 @@ mod tests {
 
     #[tokio::test]
     async fn swap() {
-        let (_, controller) = test_utils::build_test_server(None).await;
+        let controller = test_utils::test_controller();
         let keys_entry = keys_test::generate_keyset();
         controller
             .keys
-            .keys
+            .repository
             .keys_store(keys_entry.clone())
             .await
             .expect("store");
@@ -378,12 +351,12 @@ mod tests {
 
     #[tokio::test]
     async fn swap_p2pk() {
-        let (_, controller) = test_utils::build_test_server(None).await;
+        let controller = test_utils::test_controller();
         let keys_entry = keys_test::generate_keyset();
         let kid = keys_entry.0.id;
         controller
             .keys
-            .keys
+            .repository
             .keys_store(keys_entry.clone())
             .await
             .expect("store");

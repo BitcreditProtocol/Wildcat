@@ -24,7 +24,7 @@ async fn swap() {
     let keys_entry = keys_test::generate_keyset();
     controller
         .keys
-        .keys
+        .repository
         .keys_store(keys_entry.clone())
         .await
         .expect("store");
@@ -67,7 +67,7 @@ async fn swap_p2pk() {
     let kid = keys_entry.0.id;
     controller
         .keys
-        .keys
+        .repository
         .keys_store(keys_entry.clone())
         .await
         .expect("store");
