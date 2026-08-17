@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO core_proofs (y, signature)\n                SELECT * FROM UNNEST($1::text[], $2::text[])\n                ON CONFLICT (y) DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c53cb64a67db963dac6cfed13940a1cd1eda0ec331933b2230ed1931371d5f84"
+}

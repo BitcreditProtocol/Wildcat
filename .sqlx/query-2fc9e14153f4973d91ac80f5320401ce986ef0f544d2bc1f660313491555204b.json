@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT y\n            FROM core_reserved_ys\n            WHERE y = ANY($1::text[])\n            ",
+  "query": "\n            SELECT y\n            FROM core_proofs\n            WHERE signature = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,12 @@
     ],
     "parameters": {
       "Left": [
-        "TextArray"
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "67b199751494142ba9bf1e0420ed2dcf9e653d965da378c47d642e022a0947a8"
+  "hash": "2fc9e14153f4973d91ac80f5320401ce986ef0f544d2bc1f660313491555204b"
 }

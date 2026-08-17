@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM core_proofs\n            WHERE deadline IS NOT NULL AND deadline < $1::timestamptz\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77a15444823e21a8be3b92be1c69c0d1c7b38cae2f9647c49b6b560de5aaa2ef"
+}

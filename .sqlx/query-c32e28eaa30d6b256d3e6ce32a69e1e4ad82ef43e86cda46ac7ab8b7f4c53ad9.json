@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT blob as \"blob!: Json<ProofBlob>\"\n            FROM core_proofs\n            WHERE y = $1 AND blob IS NOT NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blob!: Json<ProofBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c32e28eaa30d6b256d3e6ce32a69e1e4ad82ef43e86cda46ac7ab8b7f4c53ad9"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO core_proofs (y, blob)\n            SELECT * FROM UNNEST($1::text[], $2::jsonb[])\n            ON CONFLICT (y) DO UPDATE\n            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob\n            WHERE core_proofs.blob IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60cb782dee4e62371dd201c9cc057ace7b2954dad316a45d9994ed5e565361ca"
+}
