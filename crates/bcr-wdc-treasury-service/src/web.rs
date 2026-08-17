@@ -37,7 +37,12 @@ pub async fn offline_exchange(
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
     let proofs = ctrl
         .foreign
-        .offline_exchange(request.fingerprints, request.hashes, request.wallet_pk)
+        .offline_exchange(
+            request.fingerprints,
+            request.hashes,
+            request.wallet_pk,
+            request.wallet_signature,
+        )
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
     let serialized = borsh::to_vec(&payload)?;

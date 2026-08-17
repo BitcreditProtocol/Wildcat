@@ -37,11 +37,22 @@ impl Service {
         inputs: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         wpk: cashu::PublicKey,
+        wallet_signature: secp256k1::schnorr::Signature,
     ) -> Result<Vec<cashu::Proof>> {
         let (_, foreign_mint_id) = self
             .clowder
             .can_accept_offline_exchange(inputs.clone())
             .await?;
+        // No offline eCash is issued until the node has verified the wallet's
+        // signature, recorded the dual-signed exchange and broadcast the
+        // evidence to the alpha's Betas.
+        let request = bcr_common::wire::exchange::OfflineExchangeRequest {
+            fingerprints: inputs.clone(),
+            hashes: hashes.clone(),
+            wallet_pk: wpk,
+            wallet_signature,
+        };
+        let recorded = self.clowder.record_offline_exchange(&request).await?;
         let foreign_fps = fingerprints_vec_to_map(inputs.clone(), hashes.clone());
         let mut retv: Vec<cashu::Proof> = Vec::new();
         for (kid, fps_hashes) in foreign_fps {
@@ -98,7 +109,14 @@ impl Service {
             retv.extend(proofs);
         }
         self.clowder
-            .signal_offline_exchange_event(inputs.clone(), hashes.clone(), wpk, retv.clone())
+            .signal_offline_exchange_event(
+                inputs.clone(),
+                hashes.clone(),
+                wpk,
+                retv.clone(),
+                Some(recorded.exchange_digest),
+                Some(wallet_signature),
+            )
             .await?;
         self.offline_repo
             .store_fps(foreign_mint_id, inputs, hashes)
@@ -499,6 +517,16 @@ mod tests {
             }
             Ok(signatures)
         });
+        // The exchange only proceeds once the node has recorded it.
+        clowder
+            .expect_record_offline_exchange()
+            .times(1)
+            .returning(|_| {
+                Ok(bcr_common::wire::exchange::RecordOfflineExchangeResponse {
+                    evidence_digest: [1u8; 32],
+                    exchange_digest: [2u8; 32],
+                })
+            });
         clowder
             .expect_signal_offline_exchange_event()
             .times(1)
@@ -507,8 +535,10 @@ mod tests {
                 eq(hashes.clone()),
                 eq(cashu::PublicKey::from(wallet_kp.public_key())),
                 always(),
+                eq(Some([2u8; 32])),
+                always(),
             )
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _, _| Ok(()));
         offlinerepo
             .expect_store_fps()
             .with(eq(foreign_pk), eq(inputs.clone()), eq(hashes.clone()))
@@ -524,7 +554,13 @@ mod tests {
             mint_factory: Arc::new(factory),
         };
         let proofs = srvc
-            .offline_exchange(inputs, hashes, wallet_pk)
+            .offline_exchange(
+                inputs,
+                hashes,
+                wallet_pk,
+                secp256k1::global::SECP256K1
+                    .sign_schnorr(&secp256k1::Message::from_digest([2u8; 32]), &wallet_kp),
+            )
             .await
             .unwrap();
         assert_eq!(2, proofs.len());
