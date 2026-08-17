@@ -1,20 +1,16 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_wdc_core_service::persistence::{sqlx, surreal, Repository};
-use bcr_wdc_utils::{postgres, surreal as surreal_config};
+use bcr_wdc_core_service::{
+    config::App as AppCfg,
+    persistence::{sqlx, surreal, Repository},
+};
 // ----- local imports
 
 // ----- end imports
 
 #[derive(Debug, serde::Deserialize)]
 struct MigrateConfig {
-    appcfg: MigrateAppConfig,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct MigrateAppConfig {
-    repository: surreal_config::DBConnConfig,
-    repository_new: postgres::DBConnConfig,
+    appcfg: AppCfg,
 }
 
 #[tokio::main]

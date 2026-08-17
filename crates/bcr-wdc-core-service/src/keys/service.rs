@@ -153,8 +153,9 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{btc32::DerivationPath, keys::MockClowderClient, persistence::MockRepository};
+    use crate::{keys::MockClowderClient, persistence::MockRepository};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
+    use bitcoin::bip32::DerivationPath;
     use mockall::predicate::eq;
     use std::str::FromStr;
 

@@ -10,32 +10,21 @@ use bcr_common::client::{
     self,
     admin::{core, treasury::Client as TreasuryClient},
 };
-use bcr_wdc_utils::{nut19, surreal};
-use bitcoin::bip32 as btc32;
+use bcr_wdc_utils::nut19;
 // ----- local modules
 mod admin;
+pub mod config;
 pub mod error;
 pub mod keys;
 pub mod persistence;
 pub mod swap;
 mod web;
+// local imports
+use crate::persistence::Repository;
 
 // ----- end imports
 
 type TStamp = chrono::DateTime<chrono::Utc>;
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct AppConfig {
-    repository: surreal::DBConnConfig,
-    clowder_url: client::clowder::Url,
-    treasury_url: client::Url,
-    clowder_rest_url: client::Url,
-    starting_derivation_path: btc32::DerivationPath,
-    max_expiry_sec: u64,
-    minimum_keyset_fees_ppk: u64,
-    cache_expiry_sec: u64,
-    settle_window_sec: u64,
-}
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
@@ -45,9 +34,10 @@ pub struct AppController {
 }
 
 impl AppController {
-    pub async fn new(seed: &[u8], cfg: AppConfig) -> Self {
-        let AppConfig {
+    pub async fn new(seed: &[u8], cfg: config::App) -> Self {
+        let config::App {
             repository,
+            repository_new,
             clowder_url,
             treasury_url,
             clowder_rest_url,
@@ -57,12 +47,19 @@ impl AppController {
             cache_expiry_sec,
             settle_window_sec,
         } = cfg;
-
-        let repository = Arc::new(
-            persistence::surreal::Repository::new(repository)
+        let repository = if repository_new.max_connections > 0 {
+            let db = persistence::sqlx::Repository::new(repository_new)
                 .await
-                .expect("Failed to create repository"),
-        );
+                .expect("failed to create sqlx repository");
+            let repository: Arc<dyn Repository> = Arc::new(db);
+            repository
+        } else {
+            let db = persistence::surreal::Repository::new(repository)
+                .await
+                .expect("Failed to create repository");
+            let repository: Arc<dyn Repository> = Arc::new(db);
+            repository
+        };
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl = client::clowder::ClowderNatsClient::new(clowder_url)
             .await
@@ -157,6 +154,7 @@ async fn get_health() -> &'static str {
 pub mod test_utils {
     use super::*;
     use bcr_wdc_utils::KeysetEntry;
+    use bitcoin::bip32 as btc32;
     use std::str::FromStr;
 
     pub fn test_controller() -> AppController {
