@@ -4,11 +4,6 @@ CREATE TABLE IF NOT EXISTS core_signatures (
     blob JSONB NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS core_proofs (
-    y TEXT PRIMARY KEY,
-    blob JSONB NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS core_keys (
     kid TEXT PRIMARY KEY,
     unit TEXT NOT NULL,
@@ -26,9 +21,11 @@ CREATE TABLE core_commitments (
     blob JSONB NOT NULL
 );
 
-CREATE TABLE core_commitment_inputs (
+CREATE TABLE IF NOT EXISTS core_proofs (
     y TEXT PRIMARY KEY,
-    signature TEXT NOT NULL REFERENCES core_commitments(signature) ON DELETE CASCADE
+    signature TEXT REFERENCES core_commitments(signature) ON DELETE CASCADE,
+    deadline TIMESTAMPTZ,
+    blob JSONB
 );
 
 CREATE TABLE core_commitment_outputs (
@@ -37,15 +34,9 @@ CREATE TABLE core_commitment_outputs (
 );
 
 CREATE INDEX core_commitments_expiration_idx ON core_commitments (expiration);
-CREATE INDEX core_commitment_inputs_signature_idx ON core_commitment_inputs (signature);
+CREATE INDEX core_proofs_signature_idx ON core_proofs (signature) WHERE signature IS NOT NULL;
+CREATE INDEX core_proofs_deadline_idx ON core_proofs (deadline) WHERE deadline IS NOT NULL;
 CREATE INDEX core_commitment_outputs_signature_idx ON core_commitment_outputs (signature);
-
-CREATE TABLE IF NOT EXISTS core_reserved_ys (
-    y TEXT PRIMARY KEY,
-    deadline TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS core_reserved_ys_deadline_idx ON core_reserved_ys (deadline);
 
 -- treasury-service
 CREATE TABLE IF NOT EXISTS treasury_ebill_mint_ops (

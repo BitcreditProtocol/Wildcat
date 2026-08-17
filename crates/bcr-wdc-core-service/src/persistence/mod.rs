@@ -94,28 +94,25 @@ mod tests {
         .collect()
     }
 
-    async fn init_surreal_repository() -> impl Repository {
+    async fn init_surreal_db() -> impl Repository {
         let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
         sdb.connect("mem://").await.unwrap();
         sdb.use_ns("test").await.unwrap();
         sdb.use_db("test").await.unwrap();
         surreal::Repository::from_db(sdb)
     }
-
-    //////////////////////////////////////////////////////////////////// KeysRepository
-    async fn init_surreal_keys_db() -> impl Repository {
-        init_surreal_repository().await
-    }
-    fn init_memmap_keys_db() -> impl Repository {
+    fn init_memmap_db() -> impl Repository {
         inmemory::Repository::default()
     }
 
+    //////////////////////////////////////////////////////////////////// KeysRepository
+
     #[tokio::test]
     async fn test_keysrepo_info() {
-        let db = init_memmap_keys_db();
+        let db = init_memmap_db();
         keysrepo_info(db).await;
         //
-        let db = init_surreal_keys_db().await;
+        let db = init_surreal_db().await;
         keysrepo_info(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -134,10 +131,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_keysrepo_listinfo() {
-        let db = init_memmap_keys_db();
+        let db = init_memmap_db();
         keysrepo_list_info(db).await;
         //
-        let db = init_surreal_keys_db().await;
+        let db = init_surreal_db().await;
         keysrepo_list_info(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -181,10 +178,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_keysrepo_keyset() {
-        let db = init_memmap_keys_db();
+        let db = init_memmap_db();
         keysrepo_keyset_test(db).await;
         //
-        let db = init_surreal_keys_db().await;
+        let db = init_surreal_db().await;
         keysrepo_keyset_test(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -202,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_keysrepo_infos_for_expiration_date() {
-        let db = init_memmap_keys_db();
+        let db = init_memmap_db();
         keysrepo_infos_for_expiration_date_test(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -229,7 +226,7 @@ mod tests {
 
     //////////////////////////////////////////////////////////////////// SignaturesRepository
     async fn init_surreal_signatures_db() -> impl Repository {
-        init_surreal_repository().await
+        init_surreal_db().await
     }
     fn init_memmap_signatures_db() -> impl Repository {
         inmemory::Repository::default()
@@ -283,7 +280,7 @@ mod tests {
 
     /////////////////////////////////////////////////////////////////// ProofRepository
     async fn init_surreal_proofs_db() -> impl Repository {
-        init_surreal_repository().await
+        init_surreal_db().await
     }
     async fn init_proofs_mem_db() -> impl Repository {
         inmemory::Repository::default()
@@ -430,7 +427,7 @@ mod tests {
 
     /////////////////////////////////////////////////////////////////// CommitmentRepository
     async fn init_surreal_commitments_db() -> impl Repository {
-        init_surreal_repository().await
+        init_surreal_db().await
     }
     fn init_memmap_commitments_db() -> impl Repository {
         inmemory::Repository::default()
@@ -439,6 +436,169 @@ mod tests {
     fn random_wallet_key() -> cashu::PublicKey {
         let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
         cashu::PublicKey::from(pk)
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_proofs_insert_consumes_deadline_reservations(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(
+            &keyset,
+            &[cashu::Amount::from(16_u64), cashu::Amount::from(8_u64)],
+        );
+        let reserved_y = proofs[0].y().unwrap();
+        let fresh_y = proofs[1].y().unwrap();
+        let deadline = TStamp::from_timestamp(100000, 0).unwrap();
+        db.ys_store(vec![reserved_y], deadline).await.unwrap();
+
+        db.proofs_insert(proofs).await.unwrap();
+
+        assert!(db.proofs_contains(reserved_y).await.unwrap().is_some());
+        assert!(db.proofs_contains(fresh_y).await.unwrap().is_some());
+        assert_eq!(
+            db.ys_contains(&[reserved_y, fresh_y]).await.unwrap(),
+            vec![false, false]
+        );
+        db.ys_clean_expired(TStamp::from_timestamp(200000, 0).unwrap())
+            .await
+            .unwrap();
+        assert!(db.proofs_contains(reserved_y).await.unwrap().is_some());
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_proofs_insert_consumes_commitment_reservations(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proof =
+            core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
+                .pop()
+                .unwrap();
+        let committed_y = proof.y().unwrap();
+        let expiration = TStamp::from_timestamp(100000, 0).unwrap();
+        let signature = signatures_test::random_schnorr_signature();
+        db.commitment_store(
+            vec![committed_y],
+            random_cdk_pks(1),
+            expiration,
+            random_wallet_key(),
+            signature,
+            [0_u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+
+        db.proofs_insert(vec![proof]).await.unwrap();
+
+        assert!(db.proofs_contains(committed_y).await.unwrap().is_some());
+        assert!(!db.commitment_contains_inputs(&[committed_y]).await.unwrap());
+        db.commitment_delete(signature).await.unwrap();
+        assert!(db.proofs_contains(committed_y).await.unwrap().is_some());
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_proof_spend_wins_concurrent_reservation(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proof =
+            core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
+                .pop()
+                .unwrap();
+        let y = proof.y().unwrap();
+        let deadline = TStamp::from_timestamp(100000, 0).unwrap();
+        let reserve_db = db.clone();
+        let spend_db = db.clone();
+
+        let (reserve_result, spend_result) = tokio::join!(
+            reserve_db.ys_store(vec![y], deadline),
+            spend_db.proofs_insert(vec![proof]),
+        );
+
+        assert!(matches!(reserve_result, Ok(()) | Err(Error::Conflict(_))));
+        assert!(spend_result.is_ok());
+        assert!(db.proofs_contains(y).await.unwrap().is_some());
+        assert_eq!(db.ys_contains(&[y]).await.unwrap(), vec![false]);
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_commitment_store_rejects_spent_or_reserved_fingerprints(
+        pool: ::sqlx::PgPool,
+    ) {
+        let db = sqlx::Repository::from_pool(pool);
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proof =
+            core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
+                .pop()
+                .unwrap();
+        let spent_y = proof.y().unwrap();
+        let reserved_y = random_cdk_pks(1).pop().unwrap();
+        let fresh_y = random_cdk_pks(1).pop().unwrap();
+        let expiration = TStamp::from_timestamp(100000, 0).unwrap();
+        db.proofs_insert(vec![proof]).await.unwrap();
+        db.ys_store(vec![reserved_y], expiration).await.unwrap();
+
+        for unavailable_y in [spent_y, reserved_y] {
+            let signature = signatures_test::random_schnorr_signature();
+            let result = db
+                .commitment_store(
+                    vec![unavailable_y, fresh_y],
+                    random_cdk_pks(1),
+                    expiration,
+                    random_wallet_key(),
+                    signature,
+                    [0_u8; 32],
+                    SignatureOwner::Unsigned,
+                )
+                .await;
+
+            assert!(matches!(result, Err(Error::Conflict(_))));
+            assert!(matches!(
+                db.commitment_load(&signature).await,
+                Err(Error::ResourceNotFound(_))
+            ));
+            assert!(!db.commitment_contains_inputs(&[fresh_y]).await.unwrap());
+        }
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_ys_store_rejects_spent_or_committed_fingerprints(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proof =
+            core_tests::generate_random_ecash_proofs(&keyset, &[cashu::Amount::from(16_u64)])
+                .pop()
+                .unwrap();
+        let spent_y = proof.y().unwrap();
+        let committed_y = random_cdk_pks(1).pop().unwrap();
+        let fresh_y = random_cdk_pks(1).pop().unwrap();
+        let deadline = TStamp::from_timestamp(100000, 0).unwrap();
+        db.proofs_insert(vec![proof]).await.unwrap();
+        db.commitment_store(
+            vec![committed_y],
+            random_cdk_pks(1),
+            deadline,
+            random_wallet_key(),
+            signatures_test::random_schnorr_signature(),
+            [0_u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+
+        for unavailable_y in [spent_y, committed_y] {
+            let result = db.ys_store(vec![unavailable_y, fresh_y], deadline).await;
+
+            assert!(matches!(result, Err(Error::Conflict(_))));
+            assert_eq!(
+                db.ys_contains(&[unavailable_y, fresh_y]).await.unwrap(),
+                vec![false, false]
+            );
+        }
     }
 
     #[tokio::test]
@@ -775,7 +935,7 @@ mod tests {
 
     /////////////////////////////////////////////////////////////////// ReservedYsRepository
     async fn init_surreal_reserved_ys_db() -> impl Repository {
-        init_surreal_repository().await
+        init_surreal_db().await
     }
     fn init_memmap_reserved_ys_db() -> impl Repository {
         inmemory::Repository::default()

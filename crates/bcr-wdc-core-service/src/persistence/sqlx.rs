@@ -257,9 +257,13 @@ pub async fn insert_v0(
         .await
         .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
     let result = sqlx::query!(
-        "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
-    &y_strs,
-    &blob_values,
+        r#"INSERT INTO core_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y) DO UPDATE
+            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+            WHERE core_proofs.blob IS NULL"#,
+        &y_strs,
+        &blob_values,
     )
     .execute(&mut *tx)
     .await
@@ -465,12 +469,20 @@ impl persistence::Repository for Repository {
         }
         let mut y_strs = Vec::with_capacity(tokens.len());
         let mut blob_values = Vec::with_capacity(tokens.len());
+        let mut unique_ys = HashSet::with_capacity(tokens.len());
         for token in tokens {
-            let y = token.y().map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            let y = token
+                .y()
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?
+                .to_string();
+            if !unique_ys.insert(y.clone()) {
+                let msg = String::from("duplicate proofs");
+                return Err(Error::InvalidInput(BRError::Generic(msg)));
+            }
             let blob = ProofBlob::V1(token);
             let blob_value =
                 serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            y_strs.push(y.to_string());
+            y_strs.push(y);
             blob_values.push(blob_value);
         }
         let mut tx = self
@@ -479,9 +491,16 @@ impl persistence::Repository for Repository {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let result = sqlx::query!(
-            "INSERT INTO core_proofs (y, blob) SELECT * FROM UNNEST($1::text[], $2::jsonb[]) ON CONFLICT (y) DO NOTHING",
-        &y_strs,
-        &blob_values,
+            r#"
+            INSERT INTO core_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y)
+            DO UPDATE
+            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+            WHERE core_proofs.blob IS NULL
+            "#,
+            &y_strs,
+            &blob_values,
         )
         .execute(&mut *tx)
         .await;
@@ -490,9 +509,8 @@ impl persistence::Repository for Repository {
             tx.rollback()
                 .await
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            return Err(Error::InvalidInput(BRError::Generic(String::from(
-                "proofs already spent",
-            ))));
+            let msg = String::from("proofs already spent");
+            return Err(Error::InvalidInput(BRError::Generic(msg)));
         }
         tx.commit()
             .await
@@ -504,7 +522,8 @@ impl persistence::Repository for Repository {
         let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
         sqlx::query!(
             r#"
-            DELETE FROM core_proofs WHERE y = ANY($1::text[])
+            DELETE FROM core_proofs
+            WHERE y = ANY($1::text[]) AND blob IS NOT NULL
             "#,
             &y_strs
         )
@@ -517,9 +536,9 @@ impl persistence::Repository for Repository {
     async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
         let result = sqlx::query!(
             r#"
-            SELECT blob as "blob: Json<ProofBlob>"
+            SELECT blob as "blob!: Json<ProofBlob>"
             FROM core_proofs
-            WHERE y = $1
+            WHERE y = $1 AND blob IS NOT NULL
             "#,
             y.to_string()
         )
@@ -595,7 +614,7 @@ impl persistence::Repository for Repository {
             let signatures = vec![row.signature.clone(); input_keys.len()];
             let result = sqlx::query!(
                 r#"
-                INSERT INTO core_commitment_inputs (y, signature)
+                INSERT INTO core_proofs (y, signature)
                 SELECT * FROM UNNEST($1::text[], $2::text[])
                 ON CONFLICT (y) DO NOTHING
                 "#,
@@ -660,7 +679,7 @@ impl persistence::Repository for Repository {
         let input_keys = sqlx::query_scalar!(
             r#"
             SELECT y
-            FROM core_commitment_inputs
+            FROM core_proofs
             WHERE signature = $1
             "#,
             &signature
@@ -695,8 +714,8 @@ impl persistence::Repository for Repository {
             r#"
             SELECT EXISTS (
                 SELECT 1
-                FROM core_commitment_inputs
-                WHERE y = ANY($1::text[])
+                FROM core_proofs
+                WHERE y = ANY($1::text[]) AND signature IS NOT NULL
             )
             "#,
             &input_keys
@@ -768,7 +787,7 @@ impl persistence::Repository for Repository {
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         let result = sqlx::query!(
             r#"
-            INSERT INTO core_reserved_ys (y, deadline)
+            INSERT INTO core_proofs (y, deadline)
             SELECT * FROM UNNEST($1::text[], $2::timestamptz[])
             ON CONFLICT (y) DO NOTHING
             "#,
@@ -782,7 +801,7 @@ impl persistence::Repository for Repository {
             tx.rollback()
                 .await
                 .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
-            return Err(Error::Conflict(String::from("ys already reserved")));
+            return Err(Error::Conflict(String::from("conflicting ys")));
         }
         tx.commit()
             .await
@@ -798,8 +817,8 @@ impl persistence::Repository for Repository {
         let reserved: Vec<String> = sqlx::query_scalar!(
             r#"
             SELECT y
-            FROM core_reserved_ys
-            WHERE y = ANY($1::text[])
+            FROM core_proofs
+            WHERE y = ANY($1::text[]) AND deadline IS NOT NULL
             "#,
             &y_strs
         )
@@ -816,8 +835,8 @@ impl persistence::Repository for Repository {
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
         sqlx::query!(
             r#"
-            DELETE FROM core_reserved_ys
-            WHERE deadline < $1::timestamptz
+            DELETE FROM core_proofs
+            WHERE deadline IS NOT NULL AND deadline < $1::timestamptz
             "#,
             now
         )
