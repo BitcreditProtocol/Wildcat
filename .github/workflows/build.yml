@@ -181,3 +181,20 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    # ─────────────────────────────
+    # provenance
+    # ─────────────────────────────
+    - name: Attest GAR image
+      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      with:
+        subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true
+
+    - name: Attest GHCR image
+      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      with:
+        subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true
