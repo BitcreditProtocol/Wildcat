@@ -36,7 +36,7 @@ chrono = {version = "0.4"}
 ciborium = {version = "0.2"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
-itertools = {version = "0.14"}
+itertools = {version = "0.15"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
 reqwest = {version = "0.12"}
