@@ -30,6 +30,7 @@ jobs:
 # detect code changes
 # ───────────────────────────────
   changes:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -60,6 +61,7 @@ jobs:
   base-image:
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 25
     runs-on: ubuntu-latest
 
     steps:
@@ -136,6 +138,7 @@ jobs:
       - changes
       - base-image
     if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       contents: read
