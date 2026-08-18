@@ -19,3 +19,28 @@ updates:
       default-days: 3
     assignees:
       - "codingpeanut157"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    groups:
+      rust-patch:
+        update-types:
+          - "patch"
+      rust-minor:
+        update-types:
+          - "minor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:30"
+      timezone: "Europe/Vienna"
+    open-pull-requests-limit: 7
+    labels:
+      - "dependencies"
+      - "rust"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    assignees:
+      - "codingpeanut157"
