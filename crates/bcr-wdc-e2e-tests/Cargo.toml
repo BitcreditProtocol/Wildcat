@@ -12,7 +12,7 @@ bcr-wdc-webapi = {workspace = true, features = ["test-utils"]}
 bitcoin.workspace = true
 chrono.workspace = true
 config = {workspace = true}
-reqwest = {workspace = true, features = ["json"]}
+reqwest = {workspace = true, features = ["json", "form"]}
 serde.workspace = true
 tokio.workspace = true
 tracing = {workspace = true }
