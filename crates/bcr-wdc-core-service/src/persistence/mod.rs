@@ -38,6 +38,15 @@ pub trait Repository: Send + Sync {
         &self,
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>>;
+    /// Atomically completes the local state transition for an acknowledged swap.
+    ///
+    /// On failure, no proofs or signatures are inserted and the commitment is retained.
+    async fn swap_finalize(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        signatures: Vec<StoredSignature>,
+        commitment: schnorr::Signature,
+    ) -> Result<()>;
     /// WARNING: this method should do strict insert.
     /// i.e. it should fail if any of the proofs is already present in the DB
     /// in case of failure, the DB should be in the same state as before the call
@@ -66,6 +75,12 @@ pub trait Repository: Send + Sync {
     // ProofRepository, or they will be cleaned up after the deadline by clean_expired
 }
 
+#[derive(Clone, Debug)]
+pub struct StoredSignature {
+    pub y: cashu::PublicKey,
+    pub signature: cashu::BlindSignature,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SignatureOwner {
     Unsigned,
@@ -85,9 +100,12 @@ pub struct StoredCommitment {
 mod tests {
     use super::*;
     use crate::error::Error;
-    use bcr_common::core_tests;
+    use bcr_common::{cashu::ProofsMethods, cdk_common, core, core_tests};
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
-    use bitcoin::{key::rand, secp256k1 as secp};
+    use bitcoin::{
+        key::rand,
+        secp256k1::{self as secp, schnorr},
+    };
 
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
         std::iter::repeat_with(|| {
@@ -311,19 +329,13 @@ mod tests {
     }
 
     //////////////////////////////////////////////////////////////////// SignaturesRepository
-    async fn init_surreal_signatures_db() -> impl Repository {
-        init_surreal_db().await
-    }
-    fn init_memmap_signatures_db() -> impl Repository {
-        inmemory::Repository::default()
-    }
 
     #[tokio::test]
     async fn test_signsrepo_store() {
-        let db = init_memmap_signatures_db();
+        let db = init_memmap_db();
         signsrepo_store(db).await;
         //
-        let db = init_surreal_signatures_db().await;
+        let db = init_surreal_db().await;
         signsrepo_store(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -342,10 +354,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_signsrepo_store_same_signature_twice() {
-        let db = init_memmap_signatures_db();
+        let db = init_memmap_db();
         signsrepo_store_same_signature_twice(db).await;
         //
-        let db = init_surreal_signatures_db().await;
+        let db = init_surreal_db().await;
         signsrepo_store_same_signature_twice(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -365,19 +377,12 @@ mod tests {
     }
 
     /////////////////////////////////////////////////////////////////// ProofRepository
-    async fn init_surreal_proofs_db() -> impl Repository {
-        init_surreal_db().await
-    }
-    async fn init_proofs_mem_db() -> impl Repository {
-        inmemory::Repository::default()
-    }
-
     #[tokio::test]
     async fn test_proofsrepo_insert() {
-        let db = init_proofs_mem_db().await;
+        let db = init_memmap_db();
         proofsrepo_insert(db).await;
         //
-        let db = init_surreal_proofs_db().await;
+        let db = init_surreal_db().await;
         proofsrepo_insert(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -401,10 +406,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_proofsrepo_insert_double_spent_all() {
-        let db = init_proofs_mem_db().await;
+        let db = init_memmap_db();
         proofsrepo_insert_double_spent_all(db).await;
         //
-        let db = init_surreal_proofs_db().await;
+        let db = init_surreal_db().await;
         proofsrepo_insert_double_spent_all(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -422,15 +427,15 @@ mod tests {
         db.proofs_insert(proofs.clone()).await.unwrap();
         let res = db.proofs_insert(proofs).await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
+        assert!(matches!(res.unwrap_err(), Error::Conflict(_)));
     }
 
     #[tokio::test]
     async fn test_proofsrepo_insert_double_spent_partial() {
-        let db = init_proofs_mem_db().await;
+        let db = init_memmap_db();
         proofsrepo_insert_double_spent_partial(db).await;
         //
-        let db = init_surreal_proofs_db().await;
+        let db = init_surreal_db().await;
         proofsrepo_insert_double_spent_partial(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -452,15 +457,15 @@ mod tests {
         db.proofs_insert(proofs[0..2].to_vec()).await.unwrap();
         let res = db.proofs_insert(proofs[1..].to_vec()).await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), Error::InvalidInput(_)));
+        assert!(matches!(res.unwrap_err(), Error::Conflict(_)));
     }
 
     #[tokio::test]
     async fn test_proofsrepo_insert_double_spent_partial_still_valid() {
-        let db = init_proofs_mem_db().await;
+        let db = init_memmap_db();
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
         //
-        let db = init_surreal_proofs_db().await;
+        let db = init_surreal_db().await;
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -487,10 +492,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_proofsrepo_insert_duplicate_in_batch() {
-        let db = init_proofs_mem_db().await;
+        let db = init_memmap_db();
         proofsrepo_insert_duplicate_in_batch(db).await;
         //
-        let db = init_surreal_proofs_db().await;
+        let db = init_surreal_db().await;
         proofsrepo_insert_duplicate_in_batch(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -507,17 +512,11 @@ mod tests {
                 .unwrap();
         let y = proof.y().unwrap();
         let result = db.proofs_insert(vec![proof.clone(), proof]).await;
-        assert!(matches!(result, Err(Error::InvalidInput(_))));
+        assert!(matches!(result, Err(Error::Conflict(_))));
         assert!(db.proofs_contains(y).await.unwrap().is_none());
     }
 
     /////////////////////////////////////////////////////////////////// CommitmentRepository
-    async fn init_surreal_commitments_db() -> impl Repository {
-        init_surreal_db().await
-    }
-    fn init_memmap_commitments_db() -> impl Repository {
-        inmemory::Repository::default()
-    }
 
     fn random_wallet_key() -> cashu::PublicKey {
         let pk = secp::generate_keypair(&mut rand::thread_rng()).1;
@@ -689,10 +688,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_store_duplicates() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_store_duplicates(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_store_duplicates(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -751,10 +750,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_contains_inputs() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_contains_inputs(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_contains_inputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -793,10 +792,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_contains_outputs() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_contains_outputs(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_contains_outputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -835,10 +834,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_load() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_load(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_load(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -878,10 +877,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_store_duplicate_signature() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_store_duplicate_signature(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_store_duplicate_signature(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -920,10 +919,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_delete_releases_inputs_outputs() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_delete_releases_inputs_outputs(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_delete_releases_inputs_outputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -966,10 +965,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_commitmentsrepo_clean_expired() {
-        let db = init_memmap_commitments_db();
+        let db = init_memmap_db();
         commitmentsrepo_clean_expired(db).await;
         //
-        let db = init_surreal_commitments_db().await;
+        let db = init_surreal_db().await;
         commitmentsrepo_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1020,19 +1019,13 @@ mod tests {
     }
 
     /////////////////////////////////////////////////////////////////// ReservedYsRepository
-    async fn init_surreal_reserved_ys_db() -> impl Repository {
-        init_surreal_db().await
-    }
-    fn init_memmap_reserved_ys_db() -> impl Repository {
-        inmemory::Repository::default()
-    }
 
     #[tokio::test]
     async fn test_reservedysrepo_contains() {
-        let db = init_memmap_reserved_ys_db();
+        let db = init_memmap_db();
         reservedysrepo_contains(db).await;
         //
-        let db = init_surreal_reserved_ys_db().await;
+        let db = init_surreal_db().await;
         reservedysrepo_contains(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1056,10 +1049,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_reservedysrepo_clean_expired() {
-        let db = init_memmap_reserved_ys_db();
+        let db = init_memmap_db();
         reservedysrepo_clean_expired(db).await;
         //
-        let db = init_surreal_reserved_ys_db().await;
+        let db = init_surreal_db().await;
         reservedysrepo_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1088,10 +1081,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_reservedysrepo_store_conflict() {
-        let db = init_memmap_reserved_ys_db();
+        let db = init_memmap_db();
         reservedysrepo_store_conflict(db).await;
         //
-        let db = init_surreal_reserved_ys_db().await;
+        let db = init_surreal_db().await;
         reservedysrepo_store_conflict(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1116,10 +1109,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_reservedysrepo_store_duplicate_batch() {
-        let db = init_memmap_reserved_ys_db();
+        let db = init_memmap_db();
         reservedysrepo_store_duplicate_batch(db).await;
         //
-        let db = init_surreal_reserved_ys_db().await;
+        let db = init_surreal_db().await;
         reservedysrepo_store_duplicate_batch(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1139,10 +1132,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_reservedysrepo_store_after_clean_expired() {
-        let db = init_memmap_reserved_ys_db();
+        let db = init_memmap_db();
         reservedysrepo_store_after_clean_expired(db).await;
         //
-        let db = init_surreal_reserved_ys_db().await;
+        let db = init_surreal_db().await;
         reservedysrepo_store_after_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1164,5 +1157,141 @@ mod tests {
         db.ys_store(vec![input], future).await.unwrap();
         let result = db.ys_contains(&[input]).await.unwrap();
         assert_eq!(result, vec![true]);
+    }
+
+    fn swap_finalization_fixture(
+        amounts: &[cashu::Amount],
+    ) -> (
+        Vec<cashu::Proof>,
+        Vec<cashu::BlindedMessage>,
+        Vec<StoredSignature>,
+        schnorr::Signature,
+    ) {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, amounts);
+        let blinds: Vec<cashu::BlindedMessage> =
+            signatures_test::generate_blinds(keyset.id, amounts)
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
+        let c_keyset = cdk_common::MintKeySet::from(keyset.clone());
+        let signatures = blinds
+            .iter()
+            .map(|b| {
+                let signature = bcr_common::core::signature::sign_ecash(&c_keyset, b).unwrap();
+                StoredSignature {
+                    y: b.blinded_secret,
+                    signature,
+                }
+            })
+            .collect();
+        let commitment = schnorr::Signature::from_slice(&[42u8; 64]).unwrap();
+        (proofs, blinds, signatures, commitment)
+    }
+
+    async fn store_swap_commitment(
+        db: &impl Repository,
+        proofs: Vec<cashu::Proof>,
+        blinds: Vec<cashu::BlindedMessage>,
+        commitment: schnorr::Signature,
+    ) {
+        let ys = proofs.ys().unwrap();
+        let bs = blinds.iter().map(|b| b.blinded_secret).collect();
+        let kp = core::generate_random_keypair();
+        db.commitment_store(
+            ys,
+            bs,
+            chrono::Utc::now() + chrono::Duration::minutes(1),
+            kp.public_key().into(),
+            commitment,
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_swap_finalize_is_atomic() {
+        swap_finalize_is_atomic(init_memmap_db()).await;
+        swap_finalize_is_atomic(init_surreal_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_swap_finalize_is_atomic_sqlx(pool: ::sqlx::PgPool) {
+        swap_finalize_is_atomic(sqlx::Repository::from_pool(pool)).await;
+    }
+    async fn swap_finalize_is_atomic(db: impl Repository) {
+        let (proofs, blinds, stored_signatures, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+        db.swap_finalize(proofs.clone(), stored_signatures.clone(), commitment)
+            .await
+            .unwrap();
+        let result = db
+            .proofs_contains(proofs.first().unwrap().y().unwrap())
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        let result = db.signature_load(&blinds[0]).await.unwrap();
+        let expected = Some(stored_signatures[0].signature.clone());
+        assert_eq!(result, expected);
+        let result = db.commitment_load(&commitment).await;
+        assert!(matches!(result, Err(Error::ResourceNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_swap_finalize_rolls_back_on_spent_proof() {
+        swap_finalize_rolls_back_on_spent_proof(init_memmap_db()).await;
+        swap_finalize_rolls_back_on_spent_proof(init_surreal_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_swap_finalize_rolls_back_on_spent_proof_sqlx(pool: ::sqlx::PgPool) {
+        swap_finalize_rolls_back_on_spent_proof(sqlx::Repository::from_pool(pool)).await;
+    }
+    async fn swap_finalize_rolls_back_on_spent_proof(db: impl Repository) {
+        let (proofs, blinds, stored_signatures, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+        db.proofs_insert(proofs.clone()).await.unwrap();
+        let result = db
+            .swap_finalize(proofs.clone(), stored_signatures.clone(), commitment)
+            .await;
+        assert!(result.is_err());
+        let result = db.signature_load(&blinds[0]).await.unwrap();
+        assert_eq!(result, None);
+        let result = db.commitment_load(&commitment).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_swap_finalize_rolls_back_on_existing_signature() {
+        swap_finalize_rolls_back_on_existing_signature(init_memmap_db()).await;
+        swap_finalize_rolls_back_on_existing_signature(init_surreal_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_swap_finalize_rolls_back_on_existing_signature_sqlx(pool: ::sqlx::PgPool) {
+        swap_finalize_rolls_back_on_existing_signature(sqlx::Repository::from_pool(pool)).await;
+    }
+    async fn swap_finalize_rolls_back_on_existing_signature(db: impl Repository) {
+        let (proofs, blinds, stored_signatures, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+        db.signature_store(
+            stored_signatures[0].y,
+            stored_signatures[0].signature.clone(),
+        )
+        .await
+        .unwrap();
+        let result = db
+            .swap_finalize(proofs.clone(), stored_signatures, commitment)
+            .await;
+        assert!(result.is_err());
+        let result = db.proofs_contains(proofs[0].y().unwrap()).await.unwrap();
+        assert!(result.is_none());
+        let result = db.commitment_load(&commitment).await;
+        assert!(result.is_ok());
     }
 }

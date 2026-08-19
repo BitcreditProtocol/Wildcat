@@ -5,11 +5,7 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{
-    cashu,
-    client::admin::core::{BRError, RNFError},
-    ecash,
-};
+use bcr_common::{cashu, client::admin::core::RNFError, ecash};
 use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
@@ -165,27 +161,74 @@ impl persistence::Repository for Repository {
         Ok(a)
     }
 
+    async fn swap_finalize(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        signatures: Vec<persistence::StoredSignature>,
+        commitment: schnorr::Signature,
+    ) -> Result<()> {
+        const CONFLICT_MSG: &str = "inputs already spent";
+        let mut proof_items = Vec::with_capacity(proofs.len());
+        let mut proof_ys = HashSet::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y()?;
+            if !proof_ys.insert(y) {
+                return Err(Error::Conflict(String::from(CONFLICT_MSG)));
+            }
+            proof_items.push((y, proof));
+        }
+        let mut signature_ys = HashSet::with_capacity(signatures.len());
+        for stored in &signatures {
+            if !signature_ys.insert(stored.y) {
+                let msg = format!("duplicate signature in input: {}", stored.y);
+                return Err(Error::Conflict(msg));
+            }
+        }
+        let mut locked_proofs = self.proofs.write().unwrap();
+        let mut locked_signatures = self.signatures.write().unwrap();
+        let mut locked_commitments = self.commitments.lock().unwrap();
+        if !locked_commitments.contains_key(&commitment) {
+            return Err(Error::ResourceNotFound(RNFError::Generic(
+                commitment.to_string(),
+            )));
+        }
+        if proof_items
+            .iter()
+            .any(|(y, _)| locked_proofs.contains_key(y))
+        {
+            return Err(Error::Conflict(String::from(CONFLICT_MSG)));
+        }
+        if let Some(stored) = signatures
+            .iter()
+            .find(|stored| locked_signatures.contains_key(&stored.y))
+        {
+            let msg = format!("signature already exists: {}", stored.y);
+            return Err(Error::Conflict(msg));
+        }
+        locked_proofs.extend(proof_items);
+        locked_signatures.extend(
+            signatures
+                .into_iter()
+                .map(|stored| (stored.y, stored.signature)),
+        );
+        locked_commitments.remove(&commitment);
+        Ok(())
+    }
+
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
-        let mut items = Vec::with_capacity(tokens.len());
-        let mut ys = HashSet::with_capacity(tokens.len());
-        for token in tokens {
-            let y = cashu::dhke::hash_to_curve(&token.secret.to_bytes())?;
-            if !ys.insert(y) {
-                return Err(Error::InvalidInput(BRError::Generic(String::from(
-                    "proofs already spent",
-                ))));
-            }
-            items.push((y, token.clone()));
-        }
         let mut locked = self.proofs.write().unwrap();
-        for (y, _) in &items {
-            if locked.contains_key(y) {
-                return Err(Error::InvalidInput(BRError::Generic(String::from(
-                    "proofs already spent",
-                ))));
+        let mut inserted_ys = HashSet::with_capacity(tokens.len());
+        for token in &tokens {
+            let y = token.y()?;
+            if !inserted_ys.insert(y) {
+                return Err(Error::Conflict(String::from("duplicate proofs in input")));
+            }
+            if locked.contains_key(&y) {
+                return Err(Error::Conflict(String::from("proofs already spent")));
             }
         }
-        for (y, token) in items.into_iter() {
+        for token in tokens {
+            let y = token.y()?;
             locked.insert(y, token);
         }
         Ok(())

@@ -459,7 +459,107 @@ impl persistence::Repository for Repository {
             SignatureBlob::V1(signature) => Ok(Some(signature)),
         }
     }
+
+    async fn swap_finalize(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        signatures: Vec<persistence::StoredSignature>,
+        commitment: schnorr::Signature,
+    ) -> Result<()> {
+        let mut proof_ys = Vec::with_capacity(proofs.len());
+        let mut proof_blobs = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof
+                .y()
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?
+                .to_string();
+            let blob = serde_json::to_value(ProofBlob::V1(proof))
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            proof_ys.push(y);
+            proof_blobs.push(blob);
+        }
+        let mut signature_ys = Vec::with_capacity(signatures.len());
+        let mut signature_blobs = Vec::with_capacity(signatures.len());
+        for stored in signatures {
+            let y = stored.y.to_string();
+            let blob = serde_json::to_value(SignatureBlob::V1(stored.signature))
+                .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+            signature_ys.push(y);
+            signature_blobs.push(blob);
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if !proof_ys.is_empty() {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_proofs (y, blob)
+                SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+                ON CONFLICT (y)
+                DO UPDATE
+                SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+                WHERE core_proofs.blob IS NULL
+                "#,
+                &proof_ys,
+                &proof_blobs
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            if result.rows_affected() != proof_ys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("proofs already spent")));
+            }
+        }
+        if !signature_ys.is_empty() {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_signatures (y, blob)
+                SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &signature_ys,
+                &signature_blobs
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+            if result.rows_affected() != signature_ys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from(
+                    "one or more signatures already exist",
+                )));
+            }
+        }
+        let deleted = sqlx::query!(
+            "DELETE FROM core_commitments WHERE signature = $1",
+            commitment.to_string()
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if deleted.rows_affected() != 1 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            return Err(Error::ResourceNotFound(RNFError::Generic(
+                commitment.to_string(),
+            )));
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+        const ERROR_MSG: &str = "proofs already spent";
         if tokens.is_empty() {
             return Ok(());
         }
@@ -471,15 +571,14 @@ impl persistence::Repository for Repository {
                 .y()
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?
                 .to_string();
-            if !unique_ys.insert(y.clone()) {
-                let msg = String::from("duplicate proofs");
-                return Err(Error::InvalidInput(BRError::Generic(msg)));
-            }
             let blob = ProofBlob::V1(token);
             let blob_value =
                 serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            y_strs.push(y);
+            y_strs.push(y.clone());
             blob_values.push(blob_value);
+            if !unique_ys.insert(y) {
+                return Err(Error::Conflict(String::from(ERROR_MSG)));
+            }
         }
         let mut tx = self
             .pool
@@ -505,8 +604,7 @@ impl persistence::Repository for Repository {
             tx.rollback()
                 .await
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-            let msg = String::from("proofs already spent");
-            return Err(Error::InvalidInput(BRError::Generic(msg)));
+            return Err(Error::Conflict(String::from(ERROR_MSG)));
         }
         tx.commit()
             .await
