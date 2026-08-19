@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO core_signatures (y, blob)\n                SELECT * FROM UNNEST($1::text[], $2::jsonb[])\n                ON CONFLICT (y) DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0a8046ffda56e2a422f7491b9c7cff2ac05288daa0eed2cadec92b13e5c9699"
+}

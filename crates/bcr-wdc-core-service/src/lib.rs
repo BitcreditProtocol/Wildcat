@@ -13,10 +13,12 @@ use bcr_common::client::{
 use bcr_wdc_utils::nut19;
 // ----- local modules
 mod admin;
+pub mod clients;
 pub mod config;
 pub mod error;
 pub mod keys;
 pub mod persistence;
+pub mod service;
 pub mod swap;
 mod web;
 // local imports
