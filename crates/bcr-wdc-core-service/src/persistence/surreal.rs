@@ -107,16 +107,142 @@ impl persistence::Repository for Repository {
         Repository::signature_load(self, blind).await
     }
 
+    async fn swap_finalize(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        signatures: Vec<persistence::StoredSignature>,
+        commitment: schnorr::Signature,
+    ) -> Result<()> {
+        let commitment_rid = RecordId::from_table_key(COMMITMENTS_TABLE, commitment.to_string());
+        let existing_commitment: Option<CommitmentDBEntry> = self
+            .db
+            .select(commitment_rid.clone())
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if existing_commitment.is_none() {
+            return Err(Error::ResourceNotFound(RNFError::Generic(
+                commitment.to_string(),
+            )));
+        }
+
+        let mut proof_entries = Vec::with_capacity(proofs.len());
+        let mut proof_ys = HashSet::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y()?;
+            if !proof_ys.insert(y) {
+                return Err(Error::InvalidInput(BRError::Generic(String::from(
+                    "proofs already spent",
+                ))));
+            }
+            let rid = cpk_to_record_id(PROOFS_TABLE, y);
+            let existing: Option<ProofDBEntry> = self
+                .db
+                .select(rid)
+                .await
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            if existing.is_some() {
+                return Err(Error::InvalidInput(BRError::Generic(String::from(
+                    "proofs already spent",
+                ))));
+            }
+            proof_entries.push(convert_to_db(proof, PROOFS_TABLE)?);
+        }
+
+        let mut signature_entries = Vec::with_capacity(signatures.len());
+        let mut signature_ys = HashSet::with_capacity(signatures.len());
+        for stored in signatures {
+            if !signature_ys.insert(stored.y) {
+                return Err(Error::Conflict(format!(
+                    "signature already exists: {}",
+                    stored.y
+                )));
+            }
+            let rid = cpk_to_record_id(SIGNATURES_TABLE, stored.y);
+            let existing: Option<SignatureDBEntry> = self
+                .db
+                .select(rid.clone())
+                .await
+                .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+            if existing.is_some() {
+                return Err(Error::Conflict(format!(
+                    "signature already exists: {}",
+                    stored.y
+                )));
+            }
+            signature_entries.push(convert_to_entry(rid, stored.signature));
+        }
+
+        self.db
+            .query(
+                "
+                BEGIN;
+                    IF !array::is_empty($proofs) { INSERT $proofs };
+                    IF !array::is_empty($signatures) { INSERT $signatures };
+                    DELETE $commitment;
+                COMMIT;
+                ",
+            )
+            .bind(("proofs", proof_entries))
+            .bind(("signatures", signature_entries))
+            .bind(("commitment", commitment_rid))
+            .await
+            .map_err(|e| match e {
+                SurrealError::Db(SurrealDBError::RecordExists { .. }) => {
+                    Error::Conflict(String::from("swap finalization record already exists"))
+                }
+                _ => Error::ProofRepository(anyhow!(e)),
+            })?;
+        Ok(())
+    }
+
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
-        Repository::proofs_insert(self, tokens).await
+        let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
+        for tk in tokens {
+            let db_entry = convert_to_db(tk, PROOFS_TABLE)?;
+            entries.push(db_entry);
+        }
+        let _: Vec<ProofDBEntry> =
+            self.db
+                .insert(())
+                .content(entries)
+                .await
+                .map_err(|e| match e {
+                    surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
+                        Error::Conflict(String::from("proofs already spent"))
+                    }
+                    _ => Error::ProofRepository(anyhow!(e)),
+                })?;
+        Ok(())
     }
 
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
-        Repository::proofs_remove(self, tokens).await
+        for tk in tokens {
+            let rid = cpk_to_record_id(PROOFS_TABLE, *tk);
+            let _p: Option<cashu::Proof> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        }
+        Ok(())
     }
 
     async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
-        Repository::proofs_contains(self, y).await
+        let rid = cpk_to_record_id(PROOFS_TABLE, y);
+        let res: Option<ProofDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if res.is_some() {
+            let ret_v = cashu::ProofState {
+                y,
+                state: cashu::State::Spent,
+                witness: None,
+            };
+            return Ok(Some(ret_v));
+        }
+        Ok(None)
     }
 
     async fn commitment_store(
@@ -470,62 +596,6 @@ impl Repository {
             .take(0)
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         Ok(entries)
-    }
-    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
-        let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
-        let mut ys = HashSet::with_capacity(tokens.len());
-        for tk in tokens {
-            let y = tk.y()?;
-            if !ys.insert(y) {
-                return Err(Error::InvalidInput(BRError::Generic(String::from(
-                    "proofs already spent",
-                ))));
-            }
-            let db_entry = convert_to_db(tk, PROOFS_TABLE)?;
-            entries.push(db_entry);
-        }
-        let _: Vec<ProofDBEntry> =
-            self.db
-                .insert(())
-                .content(entries)
-                .await
-                .map_err(|e| match e {
-                    surrealdb::Error::Db(surrealdb::error::Db::RecordExists { .. }) => {
-                        Error::InvalidInput(BRError::Generic(String::from("proofs already spent")))
-                    }
-                    _ => Error::ProofRepository(anyhow!(e)),
-                })?;
-        Ok(())
-    }
-
-    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
-        for tk in tokens {
-            let rid = cpk_to_record_id(PROOFS_TABLE, *tk);
-            let _p: Option<cashu::Proof> = self
-                .db
-                .delete(rid)
-                .await
-                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        }
-        Ok(())
-    }
-
-    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
-        let rid = cpk_to_record_id(PROOFS_TABLE, y);
-        let res: Option<ProofDBEntry> = self
-            .db
-            .select(rid)
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        if res.is_some() {
-            let ret_v = cashu::ProofState {
-                y,
-                state: cashu::State::Spent,
-                witness: None,
-            };
-            return Ok(Some(ret_v));
-        }
-        Ok(None)
     }
 }
 
