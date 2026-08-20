@@ -715,6 +715,14 @@ struct ForeignOnlineHtlcProofDBEntry {
     hash: Sha256Hash,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignIssuedProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    hash: Sha256Hash,
+    locktime: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct DBForeignOnline {
     db: Surreal<Any>,
@@ -723,6 +731,7 @@ pub struct DBForeignOnline {
 impl DBForeignOnline {
     const FOREIGNS_TABLE: &'static str = "online-foreigns";
     const HTLCS_TABLE: &'static str = "online-htlcs";
+    const ISSUED_TABLE: &'static str = "online-issued";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -817,6 +826,56 @@ impl foreign::OnlineRepository for DBForeignOnline {
         for y in ys {
             let rid = RecordId::from_table_key(Self::HTLCS_TABLE, y.to_string());
             let _: Option<ForeignOnlineHtlcProofDBEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
+        Ok(())
+    }
+
+    async fn store_issued(
+        &self,
+        hash: Sha256Hash,
+        locktime: TStamp,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut entries: Vec<ForeignIssuedProofDBEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let id = RecordId::from_table_key(Self::ISSUED_TABLE, proof.y()?.to_string());
+            entries.push(ForeignIssuedProofDBEntry {
+                id,
+                proof,
+                hash,
+                locktime: locktime.timestamp(),
+            });
+        }
+        let _: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .insert(Self::ISSUED_TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE locktime < $now")
+            .bind(("table", Self::ISSUED_TABLE))
+            .bind(("now", now.timestamp()))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entries.into_iter().map(|entry| entry.proof).collect())
+    }
+
+    async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::ISSUED_TABLE, y.to_string());
+            let _: Option<ForeignIssuedProofDBEntry> = self
                 .db
                 .delete(rid)
                 .await

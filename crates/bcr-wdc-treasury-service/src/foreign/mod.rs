@@ -11,6 +11,7 @@ use tracing::warn;
 // ----- local modules
 pub mod clients;
 mod proof;
+pub mod reclaim;
 mod service;
 pub mod settle;
 // ----- local imports
@@ -39,6 +40,17 @@ pub trait OnlineRepository: Send + Sync {
     ) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>>;
 
     async fn remove_htlcs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
+    /// The eCash this mint issued for an exchange. Kept because a recipient that
+    /// never unlocks leaves it unbacked, and only the issuer can reclaim it once
+    /// the locktime passes.
+    async fn store_issued(
+        &self,
+        hash: Sha256Hash,
+        locktime: TStamp,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()>;
+    async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>>;
+    async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -75,6 +87,8 @@ pub trait KeysClient: Send + Sync {
         expiration: chrono::NaiveDate,
     ) -> Result<cashu::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
+    /// Retires proofs this mint issued, so unbacked eCash stops circulating.
+    async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -115,6 +129,20 @@ pub trait ClowderClient: Send + Sync {
         &self,
         request: &bcr_common::wire::exchange::OfflineExchangeRequest,
     ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse>;
+    /// Authorises a wallet's claim on an exchange the alpha spent but never issued
+    /// against, and returns the amount the mint owes it.
+    async fn redeem_offline_exchange(
+        &self,
+        request: &bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization>;
+    /// Records the burn on this mint's Clowder chain, so its supply falls with it
+    /// rather than overstating what it can honour.
+    async fn signal_burn_event(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+    async fn signal_offline_redeem_event(
+        &self,
+        request: bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()>;
     #[allow(clippy::too_many_arguments)]
     async fn signal_offline_exchange_event(
         &self,

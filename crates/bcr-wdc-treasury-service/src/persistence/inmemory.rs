@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    foreign, vault,
+    foreign, vault, TStamp,
 };
 
 // ----- end imports
@@ -29,6 +29,7 @@ struct ForeignProofs {
 pub struct OnlineRepository {
     proofs: Arc<Mutex<Vec<ForeignProofs>>>,
     htlc: Arc<Mutex<HashMap<Sha256Hash, ForeignProofs>>>,
+    issued: Arc<Mutex<Vec<(i64, cashu::Proof)>>>,
 }
 
 #[async_trait]
@@ -58,6 +59,32 @@ impl foreign::OnlineRepository for OnlineRepository {
         let new = ForeignProofs { mint_id, proofs };
         let mut locked = self.htlc.lock().unwrap();
         locked.insert(hash, new);
+        Ok(())
+    }
+
+    async fn store_issued(
+        &self,
+        _hash: Sha256Hash,
+        locktime: TStamp,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut locked = self.issued.lock().unwrap();
+        locked.extend(proofs.into_iter().map(|p| (locktime.timestamp(), p)));
+        Ok(())
+    }
+
+    async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>> {
+        let locked = self.issued.lock().unwrap();
+        Ok(locked
+            .iter()
+            .filter(|(locktime, _)| *locktime < now.timestamp())
+            .map(|(_, proof)| proof.clone())
+            .collect())
+    }
+
+    async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.issued.lock().unwrap();
+        locked.retain(|(_, proof)| !proof.y().is_ok_and(|y| ys.contains(&y)));
         Ok(())
     }
     async fn search_htlc(

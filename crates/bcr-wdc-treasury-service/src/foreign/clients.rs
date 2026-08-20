@@ -42,6 +42,10 @@ impl foreign::KeysClient for CoreCl {
         let signatures = self.core.sign(blinds).await?;
         Ok(signatures)
     }
+    async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.core.burn(proofs).await?;
+        Ok(())
+    }
 }
 
 ///--------------------------- ClowderCl
@@ -180,6 +184,32 @@ impl foreign::ClowderClient for ClowderCl {
         request: &bcr_common::wire::exchange::OfflineExchangeRequest,
     ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse> {
         Ok(self.rest.post_record_offline_exchange(request).await?)
+    }
+
+    async fn redeem_offline_exchange(
+        &self,
+        request: &bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization> {
+        Ok(self.rest.post_redeem_offline_exchange(request).await?)
+    }
+
+    async fn signal_burn_event(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let req = wire_clowder::BurnRequest { proofs };
+        self.stream.burn(req, wire_clowder::BurnResponse {}).await?;
+        Ok(())
+    }
+
+    async fn signal_offline_redeem_event(
+        &self,
+        request: bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()> {
+        let req = wire_clowder::OfflineRedeemRequest {
+            redemption: request,
+        };
+        let resp = wire_clowder::OfflineRedeemResponse { signatures };
+        self.stream.offline_redeem(req, resp).await?;
+        Ok(())
     }
 
     async fn signal_offline_exchange_event(
