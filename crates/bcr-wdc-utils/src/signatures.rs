@@ -116,13 +116,13 @@ pub mod test_utils {
     }
 
     pub fn generate_signatures(
-        keyset: &cashu::MintKeySet,
+        keyset_id: cashu::Id,
         amounts: &[cashu::Amount],
     ) -> Vec<cashu::BlindSignature> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::new();
         for amount in amounts {
             signatures.push(cashu::BlindSignature {
-                keyset_id: keyset.id,
+                keyset_id,
                 amount: *amount,
                 c: publics()[0],
                 dleq: None,
@@ -135,7 +135,8 @@ pub mod test_utils {
         keyset: &cashu::MintKeySet,
         amounts: &[cashu::Amount],
     ) -> Vec<wire_keys::ProofFingerprint> {
-        let proofs = core_tests::generate_random_ecash_proofs(keyset, amounts);
+        let c_keyset = keyset.clone().into();
+        let proofs = core_tests::generate_random_ecash_proofs(&c_keyset, amounts);
         proofs
             .into_iter()
             .map(wire_keys::ProofFingerprint::try_from)
@@ -168,7 +169,6 @@ pub mod test_utils {
 mod tests {
     use super::test_utils::*;
     use super::*;
-    use crate::keys::test_utils::generate_keyset;
     use bcr_common::core_tests;
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn basic_checks_zero_amount() {
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(2)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn basic_checks_unique() {
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(8)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()

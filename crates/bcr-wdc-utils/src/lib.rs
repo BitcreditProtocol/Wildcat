@@ -21,5 +21,5 @@ pub mod built_info {
 
 // ----- end imports
 
-pub use crate::keys::KeysetEntry;
+pub use crate::keys::MintKeysEntry;
 pub type TStamp = chrono::DateTime<chrono::Utc>;
