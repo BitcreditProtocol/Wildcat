@@ -4,8 +4,10 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::admin::{clowder as clwdr_rest, core::BRError, treasury::Client as TreasuryClient},
-    client::clowder::ClowderNatsClient,
+    client::{
+        admin::{clowder as clwdr_rest, core::BRError, treasury::Client as TreasuryClient},
+        clowder::ClowderNatsClient,
+    },
     core::signature,
     wire::{attestation::AttestedFingerprints, clowder as wire_clowder, swap as wire_swap},
 };
@@ -97,7 +99,7 @@ impl KeysService for KeysSignService {
 
     async fn get_keyset(&self, kid: &cashu::Id) -> Result<cashu::KeySet> {
         let keyset = self.srvc.keys(*kid).await?;
-        Ok(bcr_wdc_utils::keys::to_keyset(&keyset, None))
+        Ok(bcr_wdc_utils::keys::to_keyset(&keyset.into(), None))
     }
 }
 

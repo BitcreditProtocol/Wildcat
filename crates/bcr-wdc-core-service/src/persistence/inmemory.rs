@@ -7,10 +7,10 @@ use std::{
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    cdk_common::mint::MintKeySetInfo,
     client::admin::core::{BRError, RNFError},
+    ecash,
 };
-use bcr_wdc_utils::keys::KeysetEntry;
+use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
 use crate::{
@@ -31,7 +31,7 @@ type Commitment = (
 
 #[derive(Default, Clone)]
 pub struct Repository {
-    keys: Arc<RwLock<HashMap<cashu::Id, KeysetEntry>>>,
+    keys: Arc<RwLock<HashMap<cashu::Id, keys_utils::MintKeysEntry>>>,
     signatures: Arc<RwLock<HashMap<cashu::PublicKey, cashu::BlindSignature>>>,
     proofs: Arc<RwLock<HashMap<cashu::PublicKey, cashu::Proof>>>,
     commitments: Arc<Mutex<HashMap<schnorr::Signature, Commitment>>>,
@@ -70,21 +70,21 @@ impl Repository {
 
 #[async_trait]
 impl persistence::Repository for Repository {
-    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
         let mut wlocked = self.keys.write().unwrap();
-        wlocked.insert(entry.0.id, entry);
+        wlocked.insert(entry.id, entry);
         Ok(())
     }
 
-    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
-        let a = rlocked.get(&kid).map(|(info, _)| info).cloned();
+        let a = rlocked.get(&kid).cloned().map(From::from);
         Ok(a)
     }
 
-    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySet>> {
         let rlocked = self.keys.read().unwrap();
-        let a = rlocked.get(&kid).map(|(_, keyset)| keyset).cloned();
+        let a = rlocked.get(&kid).cloned().map(From::from);
         Ok(a)
     }
 
@@ -93,44 +93,47 @@ impl persistence::Repository for Repository {
         unit: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
-    ) -> Result<Vec<MintKeySetInfo>> {
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
         let max_exp = max_expiration_tstamp.unwrap_or(u64::MAX);
         let min_exp = min_expiration_tstamp.unwrap_or(u64::MIN);
         let a = rlocked
-            .iter()
-            .filter_map(|(_, (info, _))| {
+            .values()
+            .filter_map(|entry| {
                 if let Some(unit) = unit.clone() {
-                    if info.unit != unit {
+                    if entry.unit != unit {
                         return None;
                     }
                 }
-                let exp = info.final_expiry.unwrap_or_default();
+                let exp = entry.final_expiry.unwrap_or_default();
                 if exp < min_exp {
                     return None;
                 }
                 if exp > max_exp {
                     return None;
                 }
+                let info = ecash::MintKeySetInfo::from(entry.clone());
                 Some(info)
             })
-            .cloned()
             .collect();
         Ok(a)
     }
 
-    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
+    async fn keys_infos_for_expiration_date(
+        &self,
+        expire: u64,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
         let rlocked = self.keys.read().unwrap();
         let mut infos: Vec<_> = rlocked
             .values()
-            .filter_map(|(info, _)| {
-                if info.final_expiry.unwrap_or_default() >= expire {
+            .filter_map(|entry| {
+                if entry.final_expiry.unwrap_or_default() >= expire {
+                    let info = ecash::MintKeySetInfo::from(entry.clone());
                     Some(info)
                 } else {
                     None
                 }
             })
-            .cloned()
             .collect();
         infos.sort_by_key(|info| info.final_expiry.unwrap_or_default());
         Ok(infos)

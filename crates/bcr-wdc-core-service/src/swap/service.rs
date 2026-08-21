@@ -519,13 +519,11 @@ mod tests {
                     signed: SignatureOwner::Unsigned,
                 })
             });
+        let kid = keyset.id;
         let cloned = cashu::KeySetInfo::from(kinfo);
-        sign_service.expect_list_kinfos().returning(move || {
-            Ok(std::collections::HashMap::from([(
-                keyset.id,
-                cloned.clone(),
-            )]))
-        });
+        sign_service
+            .expect_list_kinfos()
+            .returning(move || Ok(std::collections::HashMap::from([(kid, cloned.clone())])));
         sign_service
             .expect_verify_proofs()
             .times(1)
@@ -535,12 +533,13 @@ mod tests {
             .times(1)
             .with(eq(vec![]))
             .returning(move |_| Ok(vec![]));
-        let cloned_set = bcr_common::core::keys::to_keyset(&keyset.clone().into(), Some(true));
+        let cashu_keyset: cashu::MintKeySet = keyset.clone().into();
+        let cloned_set = bcr_common::core::keys::to_keyset(&cashu_keyset, Some(true));
         sign_service
             .expect_get_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_set.clone()));
-        let cloned_set: cashu::MintKeySet = keyset.clone().into();
+        let cloned_set: cashu::MintKeySet = keyset.into();
         sign_service
             .expect_sign_blinds()
             .times(1)
