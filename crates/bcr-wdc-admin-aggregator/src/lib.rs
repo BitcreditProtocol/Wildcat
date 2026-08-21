@@ -122,6 +122,8 @@ pub mod endpoints {
     pub const GET_CLOWDER_FOREIGN_COVERAGE: &str = "/v1/admin/clowder/coverage/{pk}";
     pub const GET_CLOWDER_MYSTATUS: &str = "/v1/admin/clowder/status";
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
+    pub const GET_CLOWDER_ADD_RESERVE: &str = "/v1/admin/clowder/add_reserve/{rid}";
+    pub const POST_CLOWDER_ADD_RESERVE: &str = "/v1/admin/clowder/add_reserve";
     // Treasury-Client
     pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/ebill/mint_op_status/{qid}";
     pub const LIST_MINT_OPS: &str = "/v1/admin/treasury/ebill/mint_ops/{kid}";
@@ -201,6 +203,14 @@ pub fn routes(ctrl: AppController) -> Router {
             endpoints::GET_CLOWDER_STATUS,
             get(admin::get_clowder_status),
         )
+        .route(
+            endpoints::GET_CLOWDER_ADD_RESERVE,
+            get(admin::get_add_reserve_status),
+        )
+        .route(
+            endpoints::POST_CLOWDER_ADD_RESERVE,
+            post(admin::post_add_reserve),
+        )
         // treasury service
         .route(endpoints::MINT_OP_STATUS, get(admin::get_mintop_status))
         .route(endpoints::LIST_MINT_OPS, get(admin::list_mintops))
@@ -249,6 +259,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_clowder::PerceivedState,
         wire_clowder::AlphaStateResponse,
         wire_clowder::Coverage,
+        wire_clowder::AddReserveRequest,
+        wire_clowder::AddReserveResponse,
         // treasury service
         wire_treasury::RequestToPayFromEBillRequest,
         wire_treasury::RequestToPayFromEBillResponse,
@@ -291,6 +303,8 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_foreign_coverage,
         admin::get_clowder_mystatus,
         admin::get_clowder_status,
+        admin::get_add_reserve_status,
+        admin::post_add_reserve,
         // treasury service
         admin::post_ebill_reqtopay,
         admin::list_denied_meltops,
