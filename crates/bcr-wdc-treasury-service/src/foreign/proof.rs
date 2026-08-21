@@ -68,18 +68,21 @@ pub async fn check_htlc_foreign_proofs(
     Ok((hash, locktime))
 }
 
+/// `refund` is the issuing mint, the only party that may reclaim once the locktime
+/// passes. Without it an expired HTLC is spendable by anyone with no preimage.
 fn generate_htlc_conditions(
     locktime: Option<TStamp>,
     hash: Sha256Hash,
     pk: cashu::PublicKey,
+    refund: cashu::PublicKey,
 ) -> Result<cashu::SpendingConditions> {
     let conditions = cashu::Conditions::new(
         locktime.map(|t| t.timestamp() as u64),
         Some(vec![pk]),
+        Some(vec![refund]),
         None,
         None,
-        None,
-        None,
+        Some(1),
     )?;
     let spending_conds =
         cashu::SpendingConditions::new_htlc_hash(&hash.to_string(), Some(conditions))?;
@@ -97,15 +100,17 @@ pub fn estimate_foreign_swap_fee(num_proofs: usize, fee_rate_ppk: u64) -> cashu:
     cashu::Amount::from(fee)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_htlc_proofs(
     amount: cashu::Amount,
     locktime: Option<TStamp>,
     hash: Sha256Hash,
     pk: cashu::PublicKey,
+    refund: cashu::PublicKey,
     keyset: &cashu::KeySet,
     keycl: &dyn KeysClient,
 ) -> Result<Vec<cashu::Proof>> {
-    let spending_conds = generate_htlc_conditions(locktime, hash, pk)?;
+    let spending_conds = generate_htlc_conditions(locktime, hash, pk, refund)?;
     let premints = cashu::PreMintSecrets::with_conditions(
         keyset.id,
         amount,
@@ -123,11 +128,13 @@ pub async fn generate_htlc_proofs(
     Ok(proofs)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_online_exchange_htlc_proofs(
     inputs: &[cashu::Proof],
     locktime: TStamp,
     hash: Sha256Hash,
     pk: cashu::PublicKey,
+    refund: cashu::PublicKey,
     foreign_pk: secp256k1::PublicKey,
     clowder: &dyn ClowderClient,
     keycl: &dyn KeysClient,
@@ -184,7 +191,8 @@ pub async fn generate_online_exchange_htlc_proofs(
             )))?
             .date_naive();
         let keyset = keycl.get_keyset_with_expiration(foreign_date).await?;
-        let group = generate_htlc_proofs(amount, Some(locktime), hash, pk, &keyset, keycl).await?;
+        let group =
+            generate_htlc_proofs(amount, Some(locktime), hash, pk, refund, &keyset, keycl).await?;
         proofs.extend(group);
     }
     Ok(proofs)
@@ -206,7 +214,8 @@ mod tests {
         let amount = cashu::Amount::from(1023);
         let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
 
-        let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
+        let refund = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let spending_conds = generate_htlc_conditions(locktime, hash, pk, refund).unwrap();
         let premints = cashu::PreMintSecrets::with_conditions(
             keyset.id,
             amount,
@@ -247,7 +256,8 @@ mod tests {
         let pk = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
-        let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
+        let refund = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let spending_conds = generate_htlc_conditions(locktime, hash, pk, refund).unwrap();
         let premints = cashu::PreMintSecrets::with_conditions(
             keyset.id,
             cashu::Amount::from(1000),

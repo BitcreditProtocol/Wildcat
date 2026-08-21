@@ -42,6 +42,14 @@ pub struct Foreign {
     pub online_repo: surreal::DBConnConfig,
     pub new_online_repo: postgres::DBConnConfig,
     pub offline_repo: surreal::DBConnConfig,
+    /// How much sooner the eCash this mint issues expires than the collateral it
+    /// holds, so it can reclaim before its own claim lapses.
+    #[serde(default = "default_exchange_lock_margin_secs")]
+    pub exchange_lock_margin_secs: u64,
+}
+
+fn default_exchange_lock_margin_secs() -> u64 {
+    15 * 60
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

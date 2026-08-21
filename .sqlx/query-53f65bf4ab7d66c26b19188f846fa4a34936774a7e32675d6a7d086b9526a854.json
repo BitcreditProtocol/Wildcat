@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_foreign_issued_htlc_proofs (y, hash, locktime, blob)\n            SELECT * FROM UNNEST($1::text[], $2::text[], $3::bigint[], $4::jsonb[])\n            ON CONFLICT (y) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53f65bf4ab7d66c26b19188f846fa4a34936774a7e32675d6a7d086b9526a854"
+}

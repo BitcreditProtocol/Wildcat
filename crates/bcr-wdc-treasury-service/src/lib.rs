@@ -140,6 +140,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     let config::Foreign {
         online_repo,
         offline_repo,
+        exchange_lock_margin_secs,
         ..
     } = foreign;
     let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
@@ -168,6 +169,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         keys: foreigncore.clone(),
         clowder: clowder.clone(),
         mint_factory: factory.clone(),
+        exchange_lock_margin_secs,
     };
 
     // vault
@@ -214,10 +216,18 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         ),
         routine::RoutineHandle::new(
             foreign::settle::Handler {
-                online: onlinerepo,
+                online: onlinerepo.clone(),
                 offline: offlinerepo,
-                clowder,
+                clowder: clowder.clone(),
                 mint_factory: factory,
+            },
+            monitor_interval,
+        ),
+        routine::RoutineHandle::new(
+            foreign::reclaim::Handler {
+                online: onlinerepo,
+                keys: foreigncore,
+                clowder,
             },
             monitor_interval,
         ),
@@ -234,6 +244,10 @@ pub fn routes(app: AppController) -> Router {
         .route(
             cl_treasury::web_ep::EXCHANGE_OFFLINE_V1,
             post(web::offline_exchange),
+        )
+        .route(
+            cl_treasury::web_ep::EXCHANGE_OFFLINE_REDEEM_V1,
+            post(web::offline_redeem_exchange),
         )
         .route(
             cl_treasury::web_ep::MELTQUOTE_ONCHAIN_V1,

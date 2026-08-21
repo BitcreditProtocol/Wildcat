@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM treasury_foreign_issued_htlc_proofs WHERE y = ANY($1::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b32415d481412458ed20def643e8213988edcd60cc61c4187dcf25bbe6ec908"
+}

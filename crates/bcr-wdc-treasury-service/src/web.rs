@@ -31,6 +31,17 @@ pub async fn online_exchange(
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn offline_redeem_exchange(
+    State(ctrl): State<AppController>,
+    Json(request): Json<wire_exchange::RedeemOfflineExchangeRequest>,
+) -> Result<Json<wire_exchange::RedeemOfflineExchangeResponse>> {
+    let signatures = ctrl.foreign.redeem_offline_exchange(request).await?;
+    Ok(Json(wire_exchange::RedeemOfflineExchangeResponse {
+        signatures,
+    }))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn offline_exchange(
     State(ctrl): State<AppController>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
