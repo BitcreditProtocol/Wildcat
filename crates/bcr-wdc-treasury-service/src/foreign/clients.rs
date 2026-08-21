@@ -46,6 +46,13 @@ impl foreign::KeysClient for CoreCl {
         self.core.burn(proofs).await?;
         Ok(())
     }
+    async fn proof_states(
+        &self,
+        ys: Vec<cashu::PublicKey>,
+    ) -> Result<HashMap<cashu::PublicKey, cashu::State>> {
+        let states = self.core.check_state(ys).await?;
+        Ok(states.into_iter().map(|s| (s.y, s.state)).collect())
+    }
 }
 
 ///--------------------------- ClowderCl

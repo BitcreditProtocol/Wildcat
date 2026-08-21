@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{cashu, core, wire::keys as wire_keys};
 use bcr_wdc_utils::surreal;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 use surrealdb::{
     engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
     Result as SurrealResult, Surreal,
@@ -883,6 +883,19 @@ impl foreign::OnlineRepository for DBForeignOnline {
         }
         Ok(())
     }
+
+    async fn remove_issued_by_hash(&self, hash: &Sha256Hash) -> Result<()> {
+        let _: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .query("DELETE FROM type::table($table) WHERE hash = $hash")
+            .bind(("table", Self::ISSUED_TABLE))
+            .bind(("hash", *hash))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -904,6 +917,7 @@ pub struct DBForeignOffline {
 impl DBForeignOffline {
     const FPS_TABLE: &'static str = "offline-fps";
     const PROOFS_TABLE: &'static str = "offline-proofs";
+    const REDEMPTIONS_TABLE: &'static str = "offline-redemptions";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -1053,6 +1067,27 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .collect();
         Ok(mint_ids)
     }
+
+    async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
+        let key = Sha256Hash::from_byte_array(digest).to_string();
+        let rid = RecordId::from_table_key(Self::REDEMPTIONS_TABLE, key);
+        // The upsert is the claim: no prior state means this call took it, unraced.
+        let before: Option<ForeignRedemptionDBEntry> = self
+            .db
+            .query("UPSERT $rid SET claimed = true RETURN BEFORE")
+            .bind(("rid", rid))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(before.is_none())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignRedemptionDBEntry {
+    id: RecordId,
+    claimed: bool,
 }
 
 /////////////////////////////////////////////////////////////////////////////// Vault DB

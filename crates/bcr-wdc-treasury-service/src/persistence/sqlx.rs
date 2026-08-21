@@ -453,6 +453,19 @@ impl foreign::OnlineRepository for DBForeignOnline {
         .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
+
+    async fn remove_issued_by_hash(&self, hash: &foreign::Sha256Hash) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM treasury_foreign_issued_htlc_proofs WHERE hash = $1
+            "#,
+            hash.to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
 }
 
 // ///////////////////////////////////////////////////////////////////////// Versioned vault proof blob

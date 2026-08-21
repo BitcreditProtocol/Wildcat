@@ -1,6 +1,6 @@
 // ----- standard library imports
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex, RwLock},
 };
 // ----- extra library imports
@@ -29,7 +29,7 @@ struct ForeignProofs {
 pub struct OnlineRepository {
     proofs: Arc<Mutex<Vec<ForeignProofs>>>,
     htlc: Arc<Mutex<HashMap<Sha256Hash, ForeignProofs>>>,
-    issued: Arc<Mutex<Vec<(i64, cashu::Proof)>>>,
+    issued: Arc<Mutex<Vec<(Sha256Hash, i64, cashu::Proof)>>>,
 }
 
 #[async_trait]
@@ -64,12 +64,12 @@ impl foreign::OnlineRepository for OnlineRepository {
 
     async fn store_issued(
         &self,
-        _hash: Sha256Hash,
+        hash: Sha256Hash,
         locktime: TStamp,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.issued.lock().unwrap();
-        locked.extend(proofs.into_iter().map(|p| (locktime.timestamp(), p)));
+        locked.extend(proofs.into_iter().map(|p| (hash, locktime.timestamp(), p)));
         Ok(())
     }
 
@@ -77,14 +77,20 @@ impl foreign::OnlineRepository for OnlineRepository {
         let locked = self.issued.lock().unwrap();
         Ok(locked
             .iter()
-            .filter(|(locktime, _)| *locktime < now.timestamp())
-            .map(|(_, proof)| proof.clone())
+            .filter(|(_, locktime, _)| *locktime < now.timestamp())
+            .map(|(_, _, proof)| proof.clone())
             .collect())
     }
 
     async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.issued.lock().unwrap();
-        locked.retain(|(_, proof)| !proof.y().is_ok_and(|y| ys.contains(&y)));
+        locked.retain(|(_, _, proof)| !proof.y().is_ok_and(|y| ys.contains(&y)));
+        Ok(())
+    }
+
+    async fn remove_issued_by_hash(&self, hash: &Sha256Hash) -> Result<()> {
+        let mut locked = self.issued.lock().unwrap();
+        locked.retain(|(h, _, _)| h != hash);
         Ok(())
     }
     async fn search_htlc(
@@ -120,6 +126,7 @@ impl foreign::OnlineRepository for OnlineRepository {
 pub struct OfflineRepository {
     fingerprints: Arc<Mutex<HashMap<Sha256Hash, (secp256k1::PublicKey, ProofFingerprint)>>>,
     proofs: Arc<Mutex<HashMap<secp256k1::PublicKey, Vec<cashu::Proof>>>>,
+    redemptions: Arc<Mutex<HashSet<[u8; 32]>>>,
 }
 
 #[async_trait]
@@ -174,6 +181,11 @@ impl foreign::OfflineRepository for OfflineRepository {
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
         let locked = self.proofs.lock().unwrap();
         Ok(locked.keys().cloned().collect())
+    }
+
+    async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
+        let mut locked = self.redemptions.lock().unwrap();
+        Ok(locked.insert(digest))
     }
 }
 

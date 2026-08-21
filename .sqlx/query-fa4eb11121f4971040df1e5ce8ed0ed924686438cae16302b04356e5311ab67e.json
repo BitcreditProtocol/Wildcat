@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM treasury_foreign_issued_htlc_proofs WHERE hash = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa4eb11121f4971040df1e5ce8ed0ed924686438cae16302b04356e5311ab67e"
+}

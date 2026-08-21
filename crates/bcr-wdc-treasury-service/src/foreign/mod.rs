@@ -51,6 +51,8 @@ pub trait OnlineRepository: Send + Sync {
     ) -> Result<()>;
     async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>>;
     async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()>;
+    /// The preimage is out and the collateral claimed, so this issuance is backed.
+    async fn remove_issued_by_hash(&self, hash: &Sha256Hash) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -77,6 +79,8 @@ pub trait OfflineRepository: Send + Sync {
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
+    /// First writer wins on the digest: `false` if the entry was already redeemed.
+    async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -89,6 +93,11 @@ pub trait KeysClient: Send + Sync {
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     /// Retires proofs this mint issued, so unbacked eCash stops circulating.
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+    /// Keyed by `y`. A burn is all-or-nothing, so a batch must hold only unspent.
+    async fn proof_states(
+        &self,
+        ys: Vec<cashu::PublicKey>,
+    ) -> Result<HashMap<cashu::PublicKey, cashu::State>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
