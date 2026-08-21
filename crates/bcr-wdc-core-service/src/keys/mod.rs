@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu, client::clowder::ClowderNatsClient, core::BillId, wire::clowder as wire_clowder,
+    cashu, client::clowder::ClowderNatsClient, core::BillId, ecash, wire::clowder as wire_clowder,
 };
 // ----- local imports
 use crate::error::Result;
@@ -24,7 +24,7 @@ pub trait ClowderClient: Send + Sync {
         bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
-    async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()>;
+    async fn new_keyset(&self, keyset: ecash::KeySet) -> Result<()>;
 }
 
 pub struct ClowderCl {
@@ -33,7 +33,7 @@ pub struct ClowderCl {
 
 #[async_trait]
 impl ClowderClient for ClowderCl {
-    async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()> {
+    async fn new_keyset(&self, keyset: ecash::KeySet) -> Result<()> {
         let req = wire_clowder::KeysetCreationRequest {
             id: keyset.id,
             expiry: keyset.final_expiry.unwrap_or(0_u64),
@@ -77,9 +77,8 @@ pub struct DummyClowderClient;
 
 #[async_trait]
 impl ClowderClient for DummyClowderClient {
-    async fn new_keyset(&self, keyset: cashu::KeySet) -> Result<()> {
+    async fn new_keyset(&self, keyset: ecash::KeySet) -> Result<()> {
         tracing::debug!("DummyClowderClient::new_keyset for kid {}", keyset.id);
-
         Ok(())
     }
     async fn mint_ebill(

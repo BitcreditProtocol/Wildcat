@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, cdk_common::mint::MintKeySetInfo};
+use bcr_common::{cashu, ecash};
 use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::secp256k1::schnorr;
 // ----- local imports
@@ -16,16 +16,19 @@ pub mod surreal;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait Repository: Send + Sync {
-    async fn keys_store(&self, keys: keys_utils::KeysetEntry) -> Result<()>;
-    async fn keys_info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>>;
-    async fn keys_load(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>>;
+    async fn keys_store(&self, keys: keys_utils::MintKeysEntry) -> Result<()>;
+    async fn keys_info(&self, id: cashu::Id) -> Result<Option<ecash::MintKeySetInfo>>;
+    async fn keys_load(&self, id: cashu::Id) -> Result<Option<ecash::MintKeySet>>;
     async fn keys_list_info(
         &self,
         currency: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
-    ) -> Result<Vec<MintKeySetInfo>>;
-    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>>;
+    ) -> Result<Vec<ecash::MintKeySetInfo>>;
+    async fn keys_infos_for_expiration_date(
+        &self,
+        expire: u64,
+    ) -> Result<Vec<ecash::MintKeySetInfo>>;
     async fn signature_store(
         &self,
         y: cashu::PublicKey,
@@ -122,8 +125,19 @@ mod tests {
         keysrepo_info(db).await;
     }
     async fn keysrepo_info(db: impl Repository) {
-        let entry = core_tests::generate_random_ecash_keyset();
-        let kinfo = entry.0.clone();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = keys_utils::MintKeysEntry {
+            id: kinfo.id,
+            unit: kinfo.unit.clone(),
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path.clone(),
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts.clone(),
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys,
+        };
         db.keys_store(entry).await.unwrap();
         let rinfo = db.keys_info(kinfo.id).await.unwrap().unwrap();
         assert_eq!(rinfo, kinfo);
@@ -144,17 +158,53 @@ mod tests {
         keysrepo_list_info(db).await;
     }
     async fn keysrepo_list_info(db: impl Repository) {
-        let mut entry1 = core_tests::generate_random_ecash_keyset();
-        entry1.0.unit = cashu::CurrencyUnit::Sat;
-        entry1.0.final_expiry = Some(10);
+        let (mut info1, keyset1) = core_tests::generate_random_ecash_keyset();
+        info1.unit = cashu::CurrencyUnit::Sat;
+        info1.final_expiry = Some(10);
+        let entry1 = keys_utils::MintKeysEntry {
+            id: info1.id,
+            unit: info1.unit,
+            active: info1.active,
+            valid_from: info1.valid_from,
+            derivation_path: info1.derivation_path,
+            derivation_path_index: info1.derivation_path_index,
+            amounts: info1.amounts,
+            input_fee_ppk: info1.input_fee_ppk,
+            final_expiry: info1.final_expiry,
+            keys: keyset1.keys,
+        };
         db.keys_store(entry1).await.unwrap();
-        let mut entry2 = core_tests::generate_random_ecash_keyset();
-        entry2.0.unit = cashu::CurrencyUnit::Usd;
-        entry2.0.final_expiry = Some(20);
+        let (mut info2, keyset2) = core_tests::generate_random_ecash_keyset();
+        info2.unit = cashu::CurrencyUnit::Usd;
+        info2.final_expiry = Some(20);
+        let entry2 = keys_utils::MintKeysEntry {
+            id: info2.id,
+            unit: info2.unit,
+            active: info2.active,
+            valid_from: info2.valid_from,
+            derivation_path: info2.derivation_path,
+            derivation_path_index: info2.derivation_path_index,
+            amounts: info2.amounts,
+            input_fee_ppk: info2.input_fee_ppk,
+            final_expiry: info2.final_expiry,
+            keys: keyset2.keys,
+        };
         db.keys_store(entry2).await.unwrap();
-        let mut entry3 = core_tests::generate_random_ecash_keyset();
-        entry3.0.unit = cashu::CurrencyUnit::Usd;
-        entry3.0.final_expiry = Some(30);
+        let (mut info3, keyset3) = core_tests::generate_random_ecash_keyset();
+        info3.unit = cashu::CurrencyUnit::Usd;
+        info3.final_expiry = Some(30);
+        let entry3 = keys_utils::MintKeysEntry {
+            id: info3.id,
+            unit: info3.unit,
+            active: info3.active,
+            valid_from: info3.valid_from,
+            derivation_path: info3.derivation_path,
+            derivation_path_index: info3.derivation_path_index,
+            amounts: info3.amounts,
+            input_fee_ppk: info3.input_fee_ppk,
+            final_expiry: info3.final_expiry,
+            keys: keyset3.keys,
+        };
         db.keys_store(entry3).await.unwrap();
 
         let rinfos = db.keys_list_info(None, None, None).await.unwrap();
@@ -191,10 +241,22 @@ mod tests {
         keysrepo_keyset_test(db).await;
     }
     async fn keysrepo_keyset_test(db: impl Repository) {
-        let entry = core_tests::generate_random_ecash_keyset();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = keys_utils::MintKeysEntry {
+            id: kinfo.id,
+            unit: kinfo.unit,
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path,
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts,
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys.clone(),
+        };
         db.keys_store(entry.clone()).await.unwrap();
-        let rkeys = db.keys_load(entry.0.id).await.unwrap().unwrap();
-        assert_eq!(rkeys, entry.1);
+        let rkeys = db.keys_load(entry.id).await.unwrap().unwrap();
+        assert_eq!(rkeys, keyset);
     }
 
     #[tokio::test]
@@ -209,11 +271,35 @@ mod tests {
         keysrepo_infos_for_expiration_date_test(db).await;
     }
     async fn keysrepo_infos_for_expiration_date_test(db: impl Repository) {
-        let mut keys0 = core_tests::generate_random_ecash_keyset();
-        keys0.0.final_expiry = Some(30);
+        let (mut info0, keyset0) = core_tests::generate_random_ecash_keyset();
+        info0.final_expiry = Some(30);
+        let keys0 = keys_utils::MintKeysEntry {
+            id: info0.id,
+            unit: info0.unit,
+            active: info0.active,
+            valid_from: info0.valid_from,
+            derivation_path: info0.derivation_path,
+            derivation_path_index: info0.derivation_path_index,
+            amounts: info0.amounts,
+            input_fee_ppk: info0.input_fee_ppk,
+            final_expiry: info0.final_expiry,
+            keys: keyset0.keys,
+        };
         db.keys_store(keys0).await.unwrap();
-        let mut keys1 = core_tests::generate_random_ecash_keyset();
-        keys1.0.final_expiry = Some(10);
+        let (mut info1, keyset1) = core_tests::generate_random_ecash_keyset();
+        info1.final_expiry = Some(10);
+        let keys1 = keys_utils::MintKeysEntry {
+            id: info1.id,
+            unit: info1.unit,
+            active: info1.active,
+            valid_from: info1.valid_from,
+            derivation_path: info1.derivation_path,
+            derivation_path_index: info1.derivation_path_index,
+            amounts: info1.amounts,
+            input_fee_ppk: info1.input_fee_ppk,
+            final_expiry: info1.final_expiry,
+            keys: keyset1.keys,
+        };
         db.keys_store(keys1).await.unwrap();
         let res = db.keys_infos_for_expiration_date(10).await.unwrap();
         assert_eq!(res.len(), 2);
@@ -250,7 +336,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
+        let signature = signatures_test::generate_signatures(keyset.id, &amounts)[0].clone();
         db.signature_store(y, signature).await.unwrap();
     }
 
@@ -272,7 +358,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(&keyset, &amounts)[0].clone();
+        let signature = signatures_test::generate_signatures(keyset.id, &amounts)[0].clone();
         db.signature_store(y, signature.clone()).await.unwrap();
         let res = db.signature_store(y, signature).await;
         assert!(matches!(res, Err(Error::Conflict(_))));
