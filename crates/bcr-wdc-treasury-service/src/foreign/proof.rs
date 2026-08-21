@@ -205,7 +205,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amount = cashu::Amount::from(1023);
         let locktime = Some(chrono::Utc::now() + chrono::TimeDelta::hours(1));
-
+        let keyset_id = keyset.id;
         let spending_conds = generate_htlc_conditions(locktime, hash, pk).unwrap();
         let premints = cashu::PreMintSecrets::with_conditions(
             keyset.id,
@@ -213,17 +213,16 @@ mod tests {
             &cashu::amount::SplitTarget::None,
             &spending_conds,
             &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
+                &keyset.into(),
+                None,
             )),
         )
         .unwrap();
-
         assert!(premints.len() == 10);
-
         let mut ys = HashSet::new();
         for pm in premints.iter() {
             let proof = cashu::Proof {
-                keyset_id: keyset.id,
+                keyset_id,
                 amount: pm.amount,
                 secret: pm.secret.clone(),
                 c: cashu::PublicKey::from(kp.public_key()), // dummy
@@ -233,7 +232,6 @@ mod tests {
             };
             let y = proof.y().unwrap();
             assert!(ys.insert(y), "duplicate Y found");
-
             // Verify HTLC hash
             let (extracted_hash, _) = extract_hash_timelock_from_htlc(&proof).unwrap();
             assert_eq!(extracted_hash, hash);
@@ -254,7 +252,8 @@ mod tests {
             &cashu::amount::SplitTarget::None,
             &spending_conds,
             &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
+                &keyset.into(),
+                None,
             )),
         )
         .unwrap();

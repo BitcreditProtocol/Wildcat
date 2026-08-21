@@ -629,7 +629,7 @@ mod tests {
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512), Amount::from(512)];
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
+        let fps = signatures_test::generate_fingerprints(&keyset.clone().into(), &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
                 inputs: fps,
@@ -710,7 +710,7 @@ mod tests {
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512), Amount::from(512)];
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
+        let fps = signatures_test::generate_fingerprints(&keyset.clone().into(), &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
                 inputs: fps,
@@ -776,13 +776,16 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
         let cloned_keyset = keyset.clone();
-        wdc.expect_keyset()
-            .times(2)
-            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset, None)));
+        wdc.expect_keyset().times(2).returning(move |_| {
+            Ok(bcr_wdc_utils::keys::to_keyset(
+                &cloned_keyset.clone().into(),
+                None,
+            ))
+        });
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(&cloned_keyset, &amounts);
+            let signatures = signatures_test::generate_signatures(cloned_keyset.id, &amounts);
             Ok(signatures)
         });
         vault.expect_store_proofs().times(1).returning(|_| Ok(()));
@@ -905,7 +908,7 @@ mod tests {
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512)];
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let fps = signatures_test::generate_fingerprints(&keyset, &amounts);
+        let fps = signatures_test::generate_fingerprints(&keyset.clone().into(), &amounts);
         let request = wire_melt::MeltQuoteOnchainRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
                 inputs: fps,
@@ -1017,13 +1020,13 @@ mod tests {
         wdc.expect_keyset_info()
             .times(1)
             .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset, Some(true));
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset.clone().into(), Some(true));
         wdc.expect_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_keyset.clone()));
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(&keyset, &amounts);
+            let signatures = signatures_test::generate_signatures(keyset.id, &amounts);
             Ok(signatures)
         });
         wdc.expect_burn()
@@ -1117,7 +1120,7 @@ mod tests {
         let amounts: Vec<_> = inputs.iter().copied().map(Amount::from).collect();
         wire_melt::MeltQuoteOnchainRequest {
             inputs: bcr_common::wire::attestation::AttestedFingerprints {
-                inputs: signatures_test::generate_fingerprints(&keyset, &amounts),
+                inputs: signatures_test::generate_fingerprints(&keyset.clone().into(), &amounts),
                 attestation: dummy_attestation(),
             },
             address: bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap(),

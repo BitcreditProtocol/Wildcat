@@ -338,7 +338,7 @@ mod tests {
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
         let inputs = vec![
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset,
+                &foreign_keyset.clone().into(),
                 cashu::Amount::from(512),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -346,7 +346,7 @@ mod tests {
             )
             .0,
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset,
+                &foreign_keyset.clone().into(),
                 cashu::Amount::from(256),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -416,7 +416,7 @@ mod tests {
             .returning(move |_, _, _| Ok(cloned_inputs.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         onlinerepo
             .expect_store_htlc()
             .times(1)
@@ -429,8 +429,10 @@ mod tests {
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
-                signatures
-                    .push(bcr_common::core::signature::sign_ecash(&cloned_keyset, blind).unwrap());
+                signatures.push(
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
+                        .unwrap(),
+                );
             }
             Ok(signatures)
         });
@@ -462,7 +464,7 @@ mod tests {
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
         let originals = [
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset,
+                &foreign_keyset.clone().into(),
                 cashu::Amount::from(512),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -470,7 +472,7 @@ mod tests {
             )
             .0,
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset,
+                &foreign_keyset.clone().into(),
                 cashu::Amount::from(256),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -503,7 +505,7 @@ mod tests {
             .returning(move |_, _| Ok(foreign_info.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         keys.expect_get_keyset_with_expiration()
             .with(eq(expiration.date_naive()))
             .times(1)
@@ -512,8 +514,10 @@ mod tests {
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
-                signatures
-                    .push(bcr_common::core::signature::sign_ecash(&cloned_keyset, blind).unwrap());
+                signatures.push(
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
+                        .unwrap(),
+                );
             }
             Ok(signatures)
         });
@@ -579,7 +583,7 @@ mod tests {
         let myself_kp = core::generate_random_keypair();
         let (foreign_kinfo, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let (foreign_proof, preimage) = generate_htlc_proof_for_online_exchange(
-            &foreign_keyset,
+            &foreign_keyset.clone().into(),
             cashu::Amount::from(256),
             chrono::Utc::now() + chrono::TimeDelta::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
@@ -621,7 +625,7 @@ mod tests {
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
             .times(1)
             .returning(move |_, _| Ok(cashu::KeySetInfo::from(foreign_kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset.clone().into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
@@ -665,8 +669,11 @@ mod tests {
             .returning(move |inputs, outputs, _| {
                 let mut signatures = Vec::with_capacity(inputs.len());
                 for blind in outputs {
-                    let signature =
-                        bcr_common::core::signature::sign_ecash(&foreign_keyset, &blind).unwrap();
+                    let signature = bcr_common::core::signature::sign_ecash(
+                        &foreign_keyset.clone().into(),
+                        &blind,
+                    )
+                    .unwrap();
                     signatures.push(signature);
                 }
                 Ok(signatures)
@@ -710,7 +717,7 @@ mod tests {
         let myself_kp = core::generate_random_keypair();
         let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let (foreign_proof, _) = generate_htlc_proof_for_online_exchange(
-            &foreign_keyset,
+            &foreign_keyset.clone().into(),
             cashu::Amount::from(256),
             chrono::Utc::now() + chrono::TimeDelta::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
@@ -731,7 +738,7 @@ mod tests {
             .returning(move |_| Ok(Some(search_response.clone())));
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset.into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))
