@@ -58,7 +58,7 @@ async fn main() {
         .expect("Failed to connect to PostgreSQL");
     // Migrate keys to PostgreSQL
     for keyset in keys {
-        let kid = keyset.0.id;
+        let kid = keyset.id;
         if let Err(error) = sqlx_repository.keys_store(keyset).await {
             println!("Skipping keyset {kid}: failed with {error}");
         }

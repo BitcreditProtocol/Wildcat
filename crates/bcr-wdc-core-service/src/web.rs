@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_common::{
-    cashu,
+    cashu, cdk_common,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bcr_wdc_utils::nut19;
@@ -57,11 +57,11 @@ pub async fn lookup_keys(
     State(ctrl): State<Arc<keys::service::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<cashu::KeysResponse>> {
-    tracing::debug!("Received keyset lookup request: {kid}");
-
-    let keyset = ctrl.keys(kid).await?;
+    let mint_keyset = ctrl.keys(kid).await?;
+    let cmint_keyset = cdk_common::MintKeySet::from(mint_keyset);
+    let keyset = bcr_common::core::keys::to_keyset(&cmint_keyset, None);
     let response = cashu::KeysResponse {
-        keysets: vec![bcr_wdc_utils::keys::to_keyset(&keyset, None)],
+        keysets: vec![keyset],
     };
     Ok(Json(response))
 }

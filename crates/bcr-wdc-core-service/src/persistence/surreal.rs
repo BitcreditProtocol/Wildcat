@@ -7,14 +7,11 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
-    cashu::{
-        self,
-        nut01::{MintKeyPair, MintKeys},
-    },
-    cdk_common::mint::MintKeySetInfo,
+    cashu::{self, nut01::MintKeyPair},
     client::admin::core::{BRError, RNFError},
+    ecash,
 };
-use bcr_wdc_utils::{keys::KeysetEntry, surreal};
+use bcr_wdc_utils::{keys as keys_utils, surreal};
 use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
 use surrealdb::{
     engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
@@ -66,30 +63,96 @@ async fn connect_surreal(cfg: surreal::DBConnConfig) -> SurrealResult<Surreal<An
 
 #[async_trait]
 impl persistence::Repository for Repository {
-    async fn keys_store(&self, keys: KeysetEntry) -> Result<()> {
-        Repository::keys_store(self, keys).await
+    async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
+        let rid = RecordId::from_table_key(KEYS_TABLE, entry.id.to_string());
+        let dbentry = convert_to_keysdbentry(entry, KEYS_TABLE);
+        let _resp: Option<KeysDBEntry> = self
+            .db
+            .insert(rid)
+            .content(dbentry)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        Ok(())
     }
 
-    async fn keys_info(&self, id: cashu::Id) -> Result<Option<MintKeySetInfo>> {
-        Repository::keys_info(self, id).await
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySetInfo>> {
+        let rid = RecordId::from_table_key(KEYS_TABLE, kid.to_string());
+        let info: Option<KeysInfoDBEntry> = self
+            .db
+            .query("SELECT VALUE info FROM $rid")
+            .bind(("rid", rid))
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let info = info.map(ecash::MintKeySetInfo::from);
+        Ok(info)
     }
 
-    async fn keys_load(&self, id: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
-        Repository::keys_load(self, id).await
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySet>> {
+        let rid = RecordId::from_table_key(KEYS_TABLE, kid.to_string());
+        let entry: Option<KeysDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let keyset = entry
+            .map(keys_utils::MintKeysEntry::from)
+            .map(ecash::MintKeySet::from);
+        Ok(keyset)
     }
 
     async fn keys_list_info(
         &self,
-        currency: Option<cashu::CurrencyUnit>,
-        min_expiration_tstamp: Option<u64>,
-        max_expiration_tstamp: Option<u64>,
-    ) -> Result<Vec<MintKeySetInfo>> {
-        Repository::keys_list_info(self, currency, min_expiration_tstamp, max_expiration_tstamp)
+        unit: Option<cashu::CurrencyUnit>,
+        min_exp_tstamp: Option<u64>,
+        max_exp_tstamp: Option<u64>,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
+        let mut statement = String::from("SELECT VALUE info FROM type::table($table)");
+        let mut joiner = "WHERE";
+        if unit.is_some() {
+            statement.push_str(&format!(" {joiner} info.unit = $unit"));
+            joiner = "AND";
+        }
+        if min_exp_tstamp.is_some() {
+            statement.push_str(&format!(" {joiner} info.final_expiry >= $min"));
+            joiner = "AND";
+        }
+        if max_exp_tstamp.is_some() {
+            statement.push_str(&format!(" {joiner} info.final_expiry <= $max"));
+        }
+        let infos: Vec<KeysInfoDBEntry> = self
+            .db
+            .query(statement)
+            .bind(("table", KEYS_TABLE))
+            .bind(("unit", unit.map(|u| u.to_string())))
+            .bind(("min", min_exp_tstamp))
+            .bind(("max", max_exp_tstamp))
             .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let infos = infos.into_iter().map(ecash::MintKeySetInfo::from).collect();
+        Ok(infos)
     }
 
-    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
-        Repository::keys_infos_for_expiration_date(self, expire).await
+    async fn keys_infos_for_expiration_date(
+        &self,
+        expire: u64,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
+        let infos: Vec<KeysInfoDBEntry> = self
+            .db
+            // WARNING: https://github.com/surrealdb/surrealdb/issues/6405
+            // .query("SELECT info FROM type::table($table) WHERE info.final_expiry > $tstamp ORDER BY info.final_expiry ASC")
+            .query("SELECT VALUE info FROM type::table($table) WHERE info.final_expiry >= $expire")
+            .bind(("table", KEYS_TABLE))
+            .bind(("expire", expire))
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let infos = infos.into_iter().map(ecash::MintKeySetInfo::from).collect();
+        Ok(infos)
     }
 
     async fn signature_store(
@@ -184,7 +247,7 @@ struct KeysInfoDBEntry {
     input_fee_ppk: u64,
     final_expiry: Option<u64>,
 }
-impl std::convert::From<KeysInfoDBEntry> for MintKeySetInfo {
+impl std::convert::From<KeysInfoDBEntry> for ecash::MintKeySetInfo {
     fn from(info: KeysInfoDBEntry) -> Self {
         Self {
             id: info.kid,
@@ -196,22 +259,21 @@ impl std::convert::From<KeysInfoDBEntry> for MintKeySetInfo {
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
             amounts: info.denominations,
-            issuer_version: None,
         }
     }
 }
-impl std::convert::From<MintKeySetInfo> for KeysInfoDBEntry {
-    fn from(info: MintKeySetInfo) -> Self {
+impl std::convert::From<keys_utils::MintKeysEntry> for KeysInfoDBEntry {
+    fn from(entry: keys_utils::MintKeysEntry) -> Self {
         Self {
-            kid: info.id,
-            unit: info.unit,
-            active: info.active,
-            valid_from: info.valid_from,
-            derivation_path: info.derivation_path,
-            derivation_path_index: info.derivation_path_index,
-            input_fee_ppk: info.input_fee_ppk,
-            final_expiry: info.final_expiry,
-            denominations: info.amounts,
+            kid: entry.id,
+            unit: entry.unit,
+            active: entry.active,
+            valid_from: entry.valid_from,
+            derivation_path: entry.derivation_path,
+            derivation_path_index: entry.derivation_path_index,
+            input_fee_ppk: entry.input_fee_ppk,
+            final_expiry: entry.final_expiry,
+            denominations: entry.amounts,
         }
     }
 }
@@ -222,11 +284,10 @@ struct KeysDBEntry {
     keys: HashMap<String, MintKeyPair>,
 }
 
-fn convert_to_keysdbentry(entry: KeysetEntry, table: &str) -> KeysDBEntry {
-    let (info, keyset) = entry;
-    let id = RecordId::from_table_key(table, info.id.to_string());
+fn convert_to_keysdbentry(entry: keys_utils::MintKeysEntry, table: &str) -> KeysDBEntry {
+    let id = RecordId::from_table_key(table, entry.id.to_string());
     let mut serialized_keys = HashMap::new();
-    let cashu::MintKeySet { mut keys, .. } = keyset;
+    let mut keys = entry.keys.clone();
     while let Some((amount, keypair)) = keys.pop_last() {
         // surrealDB does not accept map with keys of type anything but Strings
         // so we need to serialize the keys to strings...
@@ -234,33 +295,37 @@ fn convert_to_keysdbentry(entry: KeysetEntry, table: &str) -> KeysDBEntry {
     }
     KeysDBEntry {
         id,
-        info: KeysInfoDBEntry::from(info),
+        info: KeysInfoDBEntry::from(entry),
         keys: serialized_keys,
     }
 }
-impl std::convert::From<KeysDBEntry> for KeysetEntry {
+impl std::convert::From<KeysDBEntry> for keys_utils::MintKeysEntry {
     fn from(dbk: KeysDBEntry) -> Self {
         let KeysDBEntry { info, keys, id: _ } = dbk;
-        let info = MintKeySetInfo::from(info);
+        let info = ecash::MintKeySetInfo::from(info);
         let mut keysmap: BTreeMap<cashu::Amount, MintKeyPair> = BTreeMap::default();
         for (val, keypair) in keys.into_iter() {
             // ... and parse them back to the original type
             let uval = val.parse::<u64>().expect("Failed to parse amount");
             keysmap.insert(cashu::Amount::from(uval), keypair);
         }
-        let keyset = cashu::MintKeySet {
+        Self {
             id: info.id,
-            unit: info.unit.clone(),
-            keys: MintKeys::new(keysmap),
+            unit: info.unit,
+            active: info.active,
+            valid_from: info.valid_from,
+            derivation_path: info.derivation_path,
+            derivation_path_index: info.derivation_path_index,
+            amounts: info.amounts,
             input_fee_ppk: info.input_fee_ppk,
             final_expiry: info.final_expiry,
-        };
-        (info, keyset)
+            keys: cashu::nut01::MintKeys::new(keysmap),
+        }
     }
 }
 
 impl Repository {
-    pub async fn dump_keys(&self) -> Result<Vec<KeysetEntry>> {
+    pub async fn dump_keys(&self) -> Result<Vec<keys_utils::MintKeysEntry>> {
         let entries: Vec<KeysDBEntry> = self
             .db
             .query("SELECT * FROM type::table($table)")
@@ -269,93 +334,10 @@ impl Repository {
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        Ok(entries.into_iter().map(KeysetEntry::from).collect())
-    }
-    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
-        let rid = RecordId::from_table_key(KEYS_TABLE, entry.0.id.to_string());
-        let dbentry = convert_to_keysdbentry(entry, KEYS_TABLE);
-        let _resp: Option<KeysDBEntry> = self
-            .db
-            .insert(rid)
-            .content(dbentry)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        Ok(())
-    }
-
-    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
-        let rid = RecordId::from_table_key(KEYS_TABLE, kid.to_string());
-        let info: Option<KeysInfoDBEntry> = self
-            .db
-            .query("SELECT VALUE info FROM $rid")
-            .bind(("rid", rid))
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let info = info.map(MintKeySetInfo::from);
-        Ok(info)
-    }
-
-    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
-        let rid = RecordId::from_table_key(KEYS_TABLE, kid.to_string());
-        let entry: Option<KeysDBEntry> = self
-            .db
-            .select(rid)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let keyset = entry.map(KeysetEntry::from).map(|(_, keyset)| keyset);
-        Ok(keyset)
-    }
-
-    async fn keys_list_info(
-        &self,
-        unit: Option<cashu::CurrencyUnit>,
-        min_exp_tstamp: Option<u64>,
-        max_exp_tstamp: Option<u64>,
-    ) -> Result<Vec<MintKeySetInfo>> {
-        let mut statement = String::from("SELECT VALUE info FROM type::table($table)");
-        let mut joiner = "WHERE";
-        if unit.is_some() {
-            statement.push_str(&format!(" {joiner} info.unit = $unit"));
-            joiner = "AND";
-        }
-        if min_exp_tstamp.is_some() {
-            statement.push_str(&format!(" {joiner} info.final_expiry >= $min"));
-            joiner = "AND";
-        }
-        if max_exp_tstamp.is_some() {
-            statement.push_str(&format!(" {joiner} info.final_expiry <= $max"));
-        }
-        let infos: Vec<KeysInfoDBEntry> = self
-            .db
-            .query(statement)
-            .bind(("table", KEYS_TABLE))
-            .bind(("unit", unit.map(|u| u.to_string())))
-            .bind(("min", min_exp_tstamp))
-            .bind(("max", max_exp_tstamp))
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let infos = infos.into_iter().map(MintKeySetInfo::from).collect();
-        Ok(infos)
-    }
-
-    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
-        let infos: Vec<KeysInfoDBEntry> = self
-            .db
-            // WARNING: https://github.com/surrealdb/surrealdb/issues/6405
-            // .query("SELECT info FROM type::table($table) WHERE info.final_expiry > $tstamp ORDER BY info.final_expiry ASC")
-            .query("SELECT VALUE info FROM type::table($table) WHERE info.final_expiry >= $expire")
-            .bind(("table", KEYS_TABLE))
-            .bind(("expire", expire))
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        let infos = infos.into_iter().map(MintKeySetInfo::from).collect();
-        Ok(infos)
+        Ok(entries
+            .into_iter()
+            .map(keys_utils::MintKeysEntry::from)
+            .collect())
     }
 }
 

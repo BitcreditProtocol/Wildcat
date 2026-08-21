@@ -7,14 +7,11 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
-    cashu::{
-        self,
-        nut01::{MintKeyPair, MintKeys},
-    },
-    cdk_common::{common::IssuerVersion, mint::MintKeySetInfo},
+    cashu::{self, nut01::MintKeyPair},
     client::admin::core::{BRError, RNFError},
+    ecash,
 };
-use bcr_wdc_utils::{keys::KeysetEntry, postgres};
+use bcr_wdc_utils::{keys as keys_utils, postgres};
 use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -41,7 +38,6 @@ struct KeysetBlobV1 {
     derivation_path_index: Option<u32>,
     amounts: Vec<u64>,
     input_fee_ppk: u64,
-    issuer_version: Option<IssuerVersion>,
     keys: HashMap<String, MintKeyPair>, // Use String for the key to make it JSON serializable
 }
 
@@ -54,37 +50,35 @@ struct KeysetRow {
     blob: Json<KeysetBlob>,
 }
 
-fn keyset_to_row(entry: KeysetEntry) -> Result<KeysetRow> {
-    let (info, keyset) = entry;
-    let final_expiry = info
+fn keyset_to_row(entry: keys_utils::MintKeysEntry) -> Result<KeysetRow> {
+    let final_expiry = entry
         .final_expiry
         .map(i64::try_from)
         .transpose()
         .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-    let jsonable_keys = keyset
+    let jsonable_keys = entry
         .keys
         .iter()
         .map(|(k, v)| (k.to_string(), v.clone()))
         .collect::<HashMap<String, MintKeyPair>>();
     let blob = KeysetBlob::V1(KeysetBlobV1 {
-        valid_from: info.valid_from,
-        derivation_path: info.derivation_path,
-        derivation_path_index: info.derivation_path_index,
-        amounts: info.amounts,
-        input_fee_ppk: info.input_fee_ppk,
-        issuer_version: info.issuer_version,
+        valid_from: entry.valid_from,
+        derivation_path: entry.derivation_path,
+        derivation_path_index: entry.derivation_path_index,
+        amounts: entry.amounts,
+        input_fee_ppk: entry.input_fee_ppk,
         keys: jsonable_keys,
     });
     Ok(KeysetRow {
-        kid: info.id.to_string(),
-        unit: info.unit.to_string(),
-        active: info.active,
+        kid: entry.id.to_string(),
+        unit: entry.unit.to_string(),
+        active: entry.active,
         final_expiry,
         blob: Json(blob),
     })
 }
 
-fn keyset_from_row(row: KeysetRow) -> Result<KeysetEntry> {
+fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
     let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let unit =
         cashu::CurrencyUnit::from_str(&row.unit).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
@@ -94,18 +88,6 @@ fn keyset_from_row(row: KeysetRow) -> Result<KeysetEntry> {
         .transpose()
         .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let KeysetBlob::V1(blob) = row.blob.0;
-    let info = MintKeySetInfo {
-        id: kid,
-        unit: unit.clone(),
-        active: row.active,
-        valid_from: blob.valid_from,
-        derivation_path: blob.derivation_path,
-        derivation_path_index: blob.derivation_path_index,
-        amounts: blob.amounts,
-        input_fee_ppk: blob.input_fee_ppk,
-        final_expiry,
-        issuer_version: blob.issuer_version,
-    };
     let keys = blob
         .keys
         .into_iter()
@@ -114,14 +96,19 @@ fn keyset_from_row(row: KeysetRow) -> Result<KeysetEntry> {
             Ok((key, v))
         })
         .collect::<Result<BTreeMap<cashu::Amount, MintKeyPair>>>()?;
-    let keyset = cashu::MintKeySet {
+    let entry = keys_utils::MintKeysEntry {
         id: kid,
         unit,
-        keys: MintKeys::new(keys),
-        input_fee_ppk: info.input_fee_ppk,
+        active: row.active,
+        valid_from: blob.valid_from,
+        derivation_path: blob.derivation_path,
+        derivation_path_index: blob.derivation_path_index,
+        amounts: blob.amounts,
+        input_fee_ppk: blob.input_fee_ppk,
         final_expiry,
+        keys: cashu::nut01::MintKeys::new(keys),
     };
-    Ok((info, keyset))
+    Ok(entry)
 }
 
 // ///////////////////////////////////////////////////////////////////////// Versioned blob for signatures
@@ -283,7 +270,7 @@ pub async fn insert_v0(
 
 #[async_trait]
 impl persistence::Repository for Repository {
-    async fn keys_store(&self, entry: KeysetEntry) -> Result<()> {
+    async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
         let row = keyset_to_row(entry)?;
         let kid = row.kid.clone();
         let json_blob =
@@ -310,7 +297,7 @@ impl persistence::Repository for Repository {
         Ok(())
     }
 
-    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<MintKeySetInfo>> {
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySetInfo>> {
         let row = sqlx::query_as!(
             KeysetRow,
             r#"
@@ -323,12 +310,11 @@ impl persistence::Repository for Repository {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        row.map(keyset_from_row)
-            .transpose()
-            .map(|entry| entry.map(|(info, _)| info))
+        let info = row.map(keyset_from_row).transpose()?.map(From::from);
+        Ok(info)
     }
 
-    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<cashu::MintKeySet>> {
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySet>> {
         let row = sqlx::query_as!(
             KeysetRow,
             r#"
@@ -341,9 +327,8 @@ impl persistence::Repository for Repository {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        row.map(keyset_from_row)
-            .transpose()
-            .map(|entry| entry.map(|(_, keyset)| keyset))
+        let set = row.map(keyset_from_row).transpose()?.map(From::from);
+        Ok(set)
     }
 
     async fn keys_list_info(
@@ -351,7 +336,7 @@ impl persistence::Repository for Repository {
         unit: Option<cashu::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
-    ) -> Result<Vec<MintKeySetInfo>> {
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
         let min_expiration_tstamp = min_expiration_tstamp
             .map(i64::try_from)
             .transpose()
@@ -388,13 +373,20 @@ impl persistence::Repository for Repository {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        rows.into_iter()
+        let infos = rows
+            .into_iter()
             .map(keyset_from_row)
-            .map(|entry| entry.map(|(info, _)| info))
-            .collect()
+            .collect::<Result<Vec<keys_utils::MintKeysEntry>>>()?
+            .into_iter()
+            .map(ecash::MintKeySetInfo::from)
+            .collect();
+        Ok(infos)
     }
 
-    async fn keys_infos_for_expiration_date(&self, expire: u64) -> Result<Vec<MintKeySetInfo>> {
+    async fn keys_infos_for_expiration_date(
+        &self,
+        expire: u64,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
         let expire = i64::try_from(expire).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         let rows = sqlx::query_as!(
             KeysetRow,
@@ -409,10 +401,14 @@ impl persistence::Repository for Repository {
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        rows.into_iter()
+        let infos = rows
+            .into_iter()
             .map(keyset_from_row)
-            .map(|entry| entry.map(|(info, _)| info))
-            .collect()
+            .collect::<Result<Vec<keys_utils::MintKeysEntry>>>()?
+            .into_iter()
+            .map(ecash::MintKeySetInfo::from)
+            .collect();
+        Ok(infos)
     }
     async fn signature_store(
         &self,

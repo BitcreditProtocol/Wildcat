@@ -7,9 +7,9 @@ use std::{
 // ----- extra library imports
 use bcr_common::{
     cashu,
-    cdk_common::mint::MintKeySetInfo,
     client::admin::core::RNFError,
     core::signature::{sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint},
+    ecash,
 };
 // ----- local imports
 use crate::{
@@ -47,24 +47,23 @@ impl Service {
         now: TStamp,
         expiration: Option<TStamp>,
         fees_ppk: u64,
-    ) -> Result<MintKeySetInfo> {
+    ) -> Result<ecash::MintKeySetInfo> {
         let fees_ppk = std::cmp::max(fees_ppk, self.min_keyset_fees_ppk.load(Ordering::Relaxed));
         let entry = self.keygen.generate(unit, now, expiration, fees_ppk);
-        let kinfo = entry.0.clone();
-        let keyset = bcr_wdc_utils::keys::to_keyset(&entry.1, Some(entry.0.active));
-        self.clowder.new_keyset(keyset).await?;
+        let (kinfo, keyset) = bcr_wdc_utils::keys::from_entry(entry.clone());
+        self.clowder.new_keyset(ecash::KeySet::from(keyset)).await?;
         self.repository.keys_store(entry).await?;
         Ok(kinfo)
     }
 
-    pub async fn info(&self, kid: cashu::Id) -> Result<MintKeySetInfo> {
+    pub async fn info(&self, kid: cashu::Id) -> Result<ecash::MintKeySetInfo> {
         self.repository
             .keys_info(kid)
             .await?
             .ok_or(Error::ResourceNotFound(RNFError::KeysetId(kid)))
     }
 
-    pub async fn keys(&self, kid: cashu::Id) -> Result<cashu::MintKeySet> {
+    pub async fn keys(&self, kid: cashu::Id) -> Result<ecash::MintKeySet> {
         self.repository
             .keys_load(kid)
             .await?
@@ -78,7 +77,7 @@ impl Service {
                 kmap
             });
         for (kid, proofs) in by_kid {
-            let keyset = self.keys(kid).await?;
+            let keyset = self.keys(kid).await?.into();
             for proof in proofs {
                 verify_ecash_proof(&keyset, proof)?;
             }
@@ -93,7 +92,7 @@ impl Service {
                 kmap
             });
         for (kid, fps) in by_kid {
-            let keyset = self.keys(kid).await?;
+            let keyset = self.keys(kid).await?.into();
             for fp in fps {
                 verify_ecash_fingerprint(&keyset, fp)?;
             }
@@ -101,7 +100,7 @@ impl Service {
         Ok(())
     }
 
-    pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<MintKeySetInfo>> {
+    pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<ecash::MintKeySetInfo>> {
         let min_tstamp = filters
             .min_expiration
             .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
@@ -127,7 +126,7 @@ impl Service {
         let Some(first_b) = blinds.next() else {
             return Ok(Vec::new());
         };
-        let mut keyset = self.keys(first_b.keyset_id).await?;
+        let mut keyset = self.keys(first_b.keyset_id).await?.into();
         let first_s = sign_ecash(&keyset, first_b)?;
         self.repository
             .signature_store(first_b.blinded_secret, first_s.clone())
@@ -137,7 +136,7 @@ impl Service {
             let cur_keyset = if blind.keyset_id == keyset.id {
                 &keyset
             } else {
-                keyset = self.keys(blind.keyset_id).await?;
+                keyset = self.keys(blind.keyset_id).await?.into();
                 &keyset
             };
             let signature = sign_ecash(cur_keyset, blind)?;

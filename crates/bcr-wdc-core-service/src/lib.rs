@@ -153,7 +153,7 @@ async fn get_health() -> &'static str {
 #[cfg(feature = "test-utils")]
 pub mod test_utils {
     use super::*;
-    use bcr_wdc_utils::KeysetEntry;
+    use bcr_wdc_utils::MintKeysEntry;
     use bitcoin::bip32 as btc32;
     use std::str::FromStr;
 
@@ -221,7 +221,7 @@ pub mod test_utils {
     }
 
     pub async fn build_test_server(
-        keyset: Option<KeysetEntry>,
+        keyset: Option<MintKeysEntry>,
     ) -> (axum_test::TestServer, AppController) {
         let cfg = axum_test::TestServerConfig {
             transport: Some(axum_test::Transport::HttpRandomPort),
@@ -249,25 +249,37 @@ mod tests {
         cashu, core, core_tests,
         wire::{keys as wire_keys, swap as wire_swap},
     };
-    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+    use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
 
     #[tokio::test]
     async fn commit_swap() {
         let controller = test_utils::test_controller();
-        let keys_entry = keys_test::generate_keyset();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = MintKeysEntry {
+            id: kinfo.id,
+            unit: kinfo.unit.clone(),
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path.clone(),
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts.clone(),
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys.clone(),
+        };
         controller
             .keys
             .repository
-            .keys_store(keys_entry.clone())
+            .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.keys.info(keys_entry.0.id).await.is_ok());
+        assert!(controller.keys.info(kinfo.id).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
-        let blinds: Vec<_> = signatures_test::generate_blinds(keys_entry.0.id, &amounts)
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-        let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
@@ -299,20 +311,32 @@ mod tests {
     #[tokio::test]
     async fn swap() {
         let controller = test_utils::test_controller();
-        let keys_entry = keys_test::generate_keyset();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = MintKeysEntry {
+            id: kinfo.id,
+            unit: kinfo.unit.clone(),
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path.clone(),
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts.clone(),
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys.clone(),
+        };
         controller
             .keys
             .repository
-            .keys_store(keys_entry.clone())
+            .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.keys.info(keys_entry.0.id).await.is_ok());
+        assert!(controller.keys.info(kinfo.id).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
-        let blinds: Vec<_> = signatures_test::generate_blinds(keys_entry.0.id, &amounts)
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-        let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
@@ -350,17 +374,28 @@ mod tests {
     #[tokio::test]
     async fn swap_p2pk() {
         let controller = test_utils::test_controller();
-        let keys_entry = keys_test::generate_keyset();
-        let kid = keys_entry.0.id;
+        let (kinfo, mint_keyset) = core_tests::generate_random_ecash_keyset();
+        let kid = kinfo.id;
+        let entry = MintKeysEntry {
+            id: kinfo.id,
+            unit: kinfo.unit,
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path,
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts,
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: mint_keyset.keys.clone(),
+        };
         controller
             .keys
             .repository
-            .keys_store(keys_entry.clone())
+            .keys_store(entry)
             .await
             .expect("store");
         let p2pk_secret = cashu::SecretKey::generate();
         let conditions = cashu::SpendingConditions::new_p2pk(p2pk_secret.public_key(), None);
-        let mint_keyset = keys_entry.1;
         let amounts = [cashu::Amount::from(2)];
         let output: Vec<_> = amounts
             .iter()
