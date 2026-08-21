@@ -116,13 +116,13 @@ pub mod test_utils {
     }
 
     pub fn generate_signatures(
-        keyset: &ecash::MintKeySet,
+        keyset_id: cashu::Id,
         amounts: &[cashu::Amount],
     ) -> Vec<cashu::BlindSignature> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::new();
         for amount in amounts {
             signatures.push(cashu::BlindSignature {
-                keyset_id: keyset.id,
+                keyset_id,
                 amount: *amount,
                 c: publics()[0],
                 dleq: None,

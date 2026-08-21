@@ -1,11 +1,86 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, cdk_common::mint as cdk_mint};
+use bcr_common::{cashu, ecash};
+use bitcoin::bip32 as btc32;
 // ----- local imports
 
 // ----- end imports
 
-pub type KeysetEntry = (cdk_mint::MintKeySetInfo, cashu::MintKeySet);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MintKeysEntry {
+    pub id: cashu::Id,
+    pub unit: cashu::CurrencyUnit,
+    pub active: bool,
+    pub valid_from: u64,
+    pub derivation_path: btc32::DerivationPath,
+    pub derivation_path_index: Option<u32>,
+    pub amounts: Vec<u64>,
+    pub input_fee_ppk: u64,
+    pub final_expiry: Option<u64>,
+    pub keys: cashu::nut01::MintKeys,
+}
+
+impl From<MintKeysEntry> for ecash::MintKeySet {
+    fn from(entry: MintKeysEntry) -> Self {
+        Self {
+            id: entry.id,
+            unit: entry.unit,
+            input_fee_ppk: entry.input_fee_ppk,
+            final_expiry: entry.final_expiry,
+            keys: entry.keys,
+        }
+    }
+}
+
+impl From<MintKeysEntry> for ecash::MintKeySetInfo {
+    fn from(entry: MintKeysEntry) -> Self {
+        Self {
+            id: entry.id,
+            unit: entry.unit,
+            active: entry.active,
+            valid_from: entry.valid_from,
+            derivation_path: entry.derivation_path,
+            derivation_path_index: entry.derivation_path_index,
+            amounts: entry.amounts,
+            input_fee_ppk: entry.input_fee_ppk,
+            final_expiry: entry.final_expiry,
+        }
+    }
+}
+
+pub fn from_entry(entry: MintKeysEntry) -> (ecash::MintKeySetInfo, ecash::MintKeySet) {
+    let MintKeysEntry {
+        id,
+        unit,
+        active,
+        valid_from,
+        derivation_path,
+        derivation_path_index,
+        amounts,
+        input_fee_ppk,
+        final_expiry,
+        keys,
+    } = entry;
+    let info = ecash::MintKeySetInfo {
+        id,
+        unit: unit.clone(),
+        active,
+        valid_from,
+        derivation_path,
+        derivation_path_index,
+        amounts,
+        input_fee_ppk,
+        final_expiry,
+    };
+    let keyset = ecash::MintKeySet {
+        id,
+        unit,
+        input_fee_ppk,
+        final_expiry,
+        keys,
+    };
+    (info, keyset)
+}
 
 pub use bcr_common::core::keys::{to_fee_and_amounts, to_keyset};
 
@@ -13,36 +88,7 @@ pub use bcr_common::core::keys::{to_fee_and_amounts, to_keyset};
 pub mod test_utils {
 
     use super::*;
-    use bcr_common::cashu::{self, nut02::KeySetVersion, secret as cdk_secret};
-    use bitcoin::bip32::DerivationPath;
-
-    pub fn generate_keyset() -> (cdk_mint::MintKeySetInfo, cashu::MintKeySet) {
-        let path = DerivationPath::master();
-        let denominations: Vec<u64> = (0..10).map(|i| 2u64.pow(i)).collect();
-        let set = cashu::MintKeySet::generate_from_seed(
-            secp256k1::global::SECP256K1,
-            &[],
-            &denominations,
-            cashu::CurrencyUnit::Sat,
-            path.clone(),
-            0,
-            None,
-            KeySetVersion::Version00,
-        );
-        let info = cdk_mint::MintKeySetInfo {
-            id: set.id,
-            amounts: denominations,
-            active: true,
-            unit: cashu::CurrencyUnit::Sat,
-            valid_from: 0,
-            final_expiry: None,
-            derivation_path_index: None,
-            derivation_path: path,
-            input_fee_ppk: 0,
-            issuer_version: None,
-        };
-        (info, set)
-    }
+    use bcr_common::cashu::secret as cdk_secret;
 
     pub fn generate_blind(
         kid: cashu::Id,
