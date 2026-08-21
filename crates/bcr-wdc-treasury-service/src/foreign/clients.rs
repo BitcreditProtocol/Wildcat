@@ -7,8 +7,8 @@ use bcr_common::{
     client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
     wire::{
-        attestation as wire_attestation, clowder as wire_clowder, keys as wire_keys,
-        swap as wire_swap,
+        attestation as wire_attestation, clowder as wire_clowder, exchange as wire_exchange,
+        keys as wire_keys, swap as wire_swap,
     },
 };
 // ----- local imports
@@ -188,14 +188,14 @@ impl foreign::ClowderClient for ClowderCl {
 
     async fn record_offline_exchange(
         &self,
-        request: &bcr_common::wire::exchange::OfflineExchangeRequest,
-    ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse> {
+        request: &wire_exchange::OfflineExchangeRequest,
+    ) -> Result<wire_exchange::RecordOfflineExchangeResponse> {
         Ok(self.rest.post_record_offline_exchange(request).await?)
     }
 
     async fn redeem_offline_exchange(
         &self,
-        request: &bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+        request: &wire_exchange::RedeemOfflineExchangeRequest,
     ) -> Result<bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization> {
         Ok(self.rest.post_redeem_offline_exchange(request).await?)
     }
@@ -208,7 +208,7 @@ impl foreign::ClowderClient for ClowderCl {
 
     async fn signal_offline_redeem_event(
         &self,
-        request: bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+        request: wire_exchange::RedeemOfflineExchangeRequest,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<()> {
         let req = wire_clowder::OfflineRedeemRequest {
