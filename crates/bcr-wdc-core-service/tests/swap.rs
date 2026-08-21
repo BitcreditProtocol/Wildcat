@@ -11,7 +11,7 @@ use bcr_common::{
     wire::keys as wire_keys,
 };
 use bcr_wdc_core_service::test_utils::dummy_attestation_for;
-use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
 // ----- local imports
 
 // ----- end imports
@@ -21,19 +21,31 @@ async fn swap() {
     let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
     let client = CoreClient::new(server_url);
-    let keys_entry = keys_test::generate_keyset();
+    let (info, keyset) = core_tests::generate_random_ecash_keyset();
+    let entry = MintKeysEntry {
+        id: info.id,
+        unit: info.unit,
+        active: info.active,
+        valid_from: info.valid_from,
+        derivation_path: info.derivation_path,
+        derivation_path_index: info.derivation_path_index,
+        amounts: info.amounts,
+        input_fee_ppk: info.input_fee_ppk,
+        final_expiry: info.final_expiry,
+        keys: keyset.keys.clone(),
+    };
     controller
         .keys
         .repository
-        .keys_store(keys_entry.clone())
+        .keys_store(entry)
         .await
         .expect("store");
     let amounts = vec![Amount::from(8_u64)];
-    let blinds: Vec<_> = signatures_test::generate_blinds(keys_entry.1.id, &amounts)
+    let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
-    let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1.clone().into(), &amounts);
+    let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
     let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
         .iter()
         .cloned()
@@ -63,17 +75,28 @@ async fn swap_p2pk() {
     let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
     let client = CoreClient::new(server_url);
-    let keys_entry = keys_test::generate_keyset();
-    let kid = keys_entry.0.id;
+    let (info, mint_keyset) = core_tests::generate_random_ecash_keyset();
+    let kid = info.id;
+    let entry = MintKeysEntry {
+        id: info.id,
+        unit: info.unit,
+        active: info.active,
+        valid_from: info.valid_from,
+        derivation_path: info.derivation_path,
+        derivation_path_index: info.derivation_path_index,
+        amounts: info.amounts,
+        input_fee_ppk: info.input_fee_ppk,
+        final_expiry: info.final_expiry,
+        keys: mint_keyset.keys.clone(),
+    };
     controller
         .keys
         .repository
-        .keys_store(keys_entry.clone())
+        .keys_store(entry)
         .await
         .expect("store");
     let p2pk_secret = cashu::SecretKey::generate();
     let conditions = cashu::SpendingConditions::new_p2pk(p2pk_secret.public_key(), None);
-    let mint_keyset = keys_entry.1;
     let amounts = [Amount::from(2), Amount::from(2), Amount::from(4)];
     let output: Vec<_> = amounts
         .iter()
