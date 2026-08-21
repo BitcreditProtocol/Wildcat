@@ -15,6 +15,7 @@ use bcr_common::{
         treasury as wire_treasury,
     },
 };
+use uuid::Uuid;
 use wire_clowder::ClowderNodeInfo;
 // ----- local imports
 use crate::{
@@ -656,8 +657,6 @@ pub async fn post_ebill_reqtopay(
     State(ctrl): State<AppController>,
     Json(req): Json<wire_treasury::RequestToPayFromEBillRequest>,
 ) -> Result<Json<wire_treasury::RequestToPayFromEBillResponse>> {
-    tracing::debug!("Received ebill request to pay for {}", req.ebill_id);
-
     let response = ctrl
         .treasury_cl
         .request_to_pay_ebill(req.ebill_id, req.amount, req.deadline)
@@ -676,8 +675,6 @@ pub async fn post_ebill_reqtopay(
 pub async fn get_mint_info(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_info::WildcatInfo>> {
-    tracing::debug!("Received request for wildcat info");
-
     let clwd_info = ctrl.clwdr_cl.get_info().await?;
     let ClowderNodeInfo {
         node_id,
@@ -761,5 +758,42 @@ pub async fn collect_fees_token(
     State(ctrl): State<AppController>,
 ) -> Result<Json<wire_treasury::FeesTokenResponse>> {
     let response = ctrl.treasury_cl.fees_token().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::POST_CLOWDER_ADD_RESERVE,
+    request_body(content = wire_clowder::AddReserveRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::AddReserveResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn post_add_reserve(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_clowder::AddReserveRequest>,
+) -> Result<Json<wire_clowder::AddReserveResponse>> {
+    let response = ctrl.clwdr_cl.add_reserve(&req).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_ADD_RESERVE,
+    params(
+        ("rid" = String, Path, description = "the add_reserve request id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::AddReserveResponse, content_type = "application/json"),
+        (status = 404, description = "add_reserve id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_add_reserve_status(
+    State(ctrl): State<AppController>,
+    Path(rid): Path<Uuid>,
+) -> Result<Json<wire_clowder::AddReserveResponse>> {
+    let response = ctrl.clwdr_cl.get_reserve(rid).await?;
     Ok(Json(response))
 }
