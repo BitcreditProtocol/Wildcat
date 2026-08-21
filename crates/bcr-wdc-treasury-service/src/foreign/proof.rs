@@ -227,9 +227,7 @@ mod tests {
             )),
         )
         .unwrap();
-
         assert!(premints.len() == 10);
-
         let mut ys = HashSet::new();
         for pm in premints.iter() {
             let proof = cashu::Proof {
@@ -243,7 +241,6 @@ mod tests {
             };
             let y = proof.y().unwrap();
             assert!(ys.insert(y), "duplicate Y found");
-
             // Verify HTLC hash
             let (extracted_hash, _) = extract_hash_timelock_from_htlc(&proof).unwrap();
             assert_eq!(extracted_hash, hash);
