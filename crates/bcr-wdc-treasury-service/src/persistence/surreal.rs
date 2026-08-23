@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{cashu, core, wire::keys as wire_keys};
 use bcr_wdc_utils::surreal;
-use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 use surrealdb::{
     engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
     Result as SurrealResult, Surreal,
@@ -715,6 +715,14 @@ struct ForeignOnlineHtlcProofDBEntry {
     hash: Sha256Hash,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignIssuedProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+    hash: Sha256Hash,
+    locktime: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct DBForeignOnline {
     db: Surreal<Any>,
@@ -723,6 +731,7 @@ pub struct DBForeignOnline {
 impl DBForeignOnline {
     const FOREIGNS_TABLE: &'static str = "online-foreigns";
     const HTLCS_TABLE: &'static str = "online-htlcs";
+    const ISSUED_TABLE: &'static str = "online-issued";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -824,6 +833,69 @@ impl foreign::OnlineRepository for DBForeignOnline {
         }
         Ok(())
     }
+
+    async fn store_issued(
+        &self,
+        hash: Sha256Hash,
+        locktime: TStamp,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let mut entries: Vec<ForeignIssuedProofDBEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let id = RecordId::from_table_key(Self::ISSUED_TABLE, proof.y()?.to_string());
+            entries.push(ForeignIssuedProofDBEntry {
+                id,
+                proof,
+                hash,
+                locktime: locktime.timestamp(),
+            });
+        }
+        let _: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .insert(Self::ISSUED_TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE locktime < $now")
+            .bind(("table", Self::ISSUED_TABLE))
+            .bind(("now", now.timestamp()))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(entries.into_iter().map(|entry| entry.proof).collect())
+    }
+
+    async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::ISSUED_TABLE, y.to_string());
+            let _: Option<ForeignIssuedProofDBEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
+        Ok(())
+    }
+
+    async fn remove_issued_by_hash(&self, hash: &Sha256Hash) -> Result<()> {
+        let _: Vec<ForeignIssuedProofDBEntry> = self
+            .db
+            .query("DELETE FROM type::table($table) WHERE hash = $hash")
+            .bind(("table", Self::ISSUED_TABLE))
+            .bind(("hash", *hash))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -845,6 +917,7 @@ pub struct DBForeignOffline {
 impl DBForeignOffline {
     const FPS_TABLE: &'static str = "offline-fps";
     const PROOFS_TABLE: &'static str = "offline-proofs";
+    const REDEMPTIONS_TABLE: &'static str = "offline-redemptions";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -994,6 +1067,27 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .collect();
         Ok(mint_ids)
     }
+
+    async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
+        let key = Sha256Hash::from_byte_array(digest).to_string();
+        let rid = RecordId::from_table_key(Self::REDEMPTIONS_TABLE, key);
+        // The upsert is the claim: no prior state means this call took it, unraced.
+        let before: Option<ForeignRedemptionDBEntry> = self
+            .db
+            .query("UPSERT $rid SET claimed = true RETURN BEFORE")
+            .bind(("rid", rid))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(before.is_none())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignRedemptionDBEntry {
+    id: RecordId,
+    claimed: bool,
 }
 
 /////////////////////////////////////////////////////////////////////////////// Vault DB

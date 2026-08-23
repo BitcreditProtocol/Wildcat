@@ -383,6 +383,89 @@ impl foreign::OnlineRepository for DBForeignOnline {
         .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
+
+    async fn store_issued(
+        &self,
+        hash: foreign::Sha256Hash,
+        locktime: TStamp,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        let hash = hash.to_string();
+        let mut ys = Vec::with_capacity(proofs.len());
+        let mut blobs = Vec::with_capacity(proofs.len());
+        for p in proofs {
+            let y = p.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y.to_string());
+            let blob = ForeignHtlcProofBlob::V1(p);
+            let jason = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            blobs.push(jason);
+        }
+        let hashes = vec![hash; ys.len()];
+        let locktimes = vec![locktime.timestamp(); ys.len()];
+        sqlx::query!(
+            r#"
+            INSERT INTO treasury_foreign_issued_htlc_proofs (y, hash, locktime, blob)
+            SELECT * FROM UNNEST($1::text[], $2::text[], $3::bigint[], $4::jsonb[])
+            ON CONFLICT (y) DO NOTHING
+            "#,
+            &ys,
+            &hashes,
+            &locktimes,
+            &blobs,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list_expired_issued(&self, now: TStamp) -> Result<Vec<cashu::Proof>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT blob FROM treasury_foreign_issued_htlc_proofs WHERE locktime < $1
+            "#,
+            now.timestamp(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut proofs = Vec::with_capacity(rows.len());
+        for row in rows {
+            let blob: ForeignHtlcProofBlob =
+                serde_json::from_value(row.blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            match blob {
+                ForeignHtlcProofBlob::V1(proof) => proofs.push(proof),
+            }
+        }
+        Ok(proofs)
+    }
+
+    async fn remove_issued(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM treasury_foreign_issued_htlc_proofs WHERE y = ANY($1::text[])
+            "#,
+            &y_strs
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn remove_issued_by_hash(&self, hash: &foreign::Sha256Hash) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM treasury_foreign_issued_htlc_proofs WHERE hash = $1
+            "#,
+            hash.to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
 }
 
 // ///////////////////////////////////////////////////////////////////////// Versioned vault proof blob

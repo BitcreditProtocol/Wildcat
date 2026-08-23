@@ -107,6 +107,99 @@ mod tests {
         assert_eq!(remaining[0], (mint_id, proofs[1].clone()));
     }
 
+    #[tokio::test]
+    async fn test_foreign_online_issued_by_hash() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_issued_by_hash(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_issued_by_hash(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_issued_by_hash_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_issued_by_hash(db).await;
+    }
+    // An unlocked exchange withdraws its own issuance from reclaim, and only its own.
+    async fn foreign_online_issued_by_hash(db: impl foreign::OnlineRepository) {
+        let unlocked = bitcoin::hashes::sha256::Hash::const_hash(b"unlocked");
+        let abandoned = bitcoin::hashes::sha256::Hash::const_hash(b"abandoned");
+        let locktime = chrono::Utc::now() - chrono::TimeDelta::hours(1);
+        let unlocked_proofs = generate_test_proofs(2);
+        let abandoned_proofs = generate_test_proofs(1);
+        db.store_issued(unlocked, locktime, unlocked_proofs)
+            .await
+            .unwrap();
+        db.store_issued(abandoned, locktime, abandoned_proofs.clone())
+            .await
+            .unwrap();
+        let now = chrono::Utc::now();
+        assert_eq!(db.list_expired_issued(now).await.unwrap().len(), 3);
+
+        db.remove_issued_by_hash(&unlocked).await.unwrap();
+        assert_eq!(db.list_expired_issued(now).await.unwrap(), abandoned_proofs);
+    }
+
+    #[tokio::test]
+    async fn test_foreign_online_issued_locktime() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_issued_locktime(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_issued_locktime(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_issued_locktime_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_issued_locktime(db).await;
+    }
+    // eCash the recipient can still unlock is never offered up for reclaim.
+    async fn foreign_online_issued_locktime(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-locktime");
+        let now = chrono::Utc::now();
+        let proofs = generate_test_proofs(2);
+        db.store_issued(hash, now + chrono::TimeDelta::hours(1), proofs.clone())
+            .await
+            .unwrap();
+        assert!(db.list_expired_issued(now).await.unwrap().is_empty());
+        assert_eq!(
+            db.list_expired_issued(now + chrono::TimeDelta::hours(2))
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        db.remove_issued(&[proofs[0].y().unwrap()]).await.unwrap();
+        assert_eq!(
+            db.list_expired_issued(now + chrono::TimeDelta::hours(2))
+                .await
+                .unwrap(),
+            vec![proofs[1].clone()]
+        );
+    }
+
+    //////////////////////////////////////////////////////////////////// foreign::OfflineRepository
+    async fn init_surreal_foreign_offline_db() -> impl foreign::OfflineRepository {
+        let cfg = bcr_wdc_utils::surreal::DBConnConfig {
+            connection: "mem://".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        };
+        surreal::DBForeignOffline::new(cfg).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_claim_redemption() {
+        foreign_offline_claim_redemption(inmemory::OfflineRepository::default()).await;
+        foreign_offline_claim_redemption(init_surreal_foreign_offline_db().await).await;
+    }
+    // The second claim on a digest never gets through.
+    async fn foreign_offline_claim_redemption(db: impl foreign::OfflineRepository) {
+        assert!(db.claim_redemption([7u8; 32]).await.unwrap());
+        assert!(!db.claim_redemption([7u8; 32]).await.unwrap());
+        assert!(db.claim_redemption([8u8; 32]).await.unwrap());
+    }
+
     //////////////////////////////////////////////////////////////////// ebill::Repository
     async fn init_surreal_ebill_db() -> impl ebill::Repository {
         let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();

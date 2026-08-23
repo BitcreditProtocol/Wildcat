@@ -29,6 +29,7 @@ pub struct Service {
     pub keys: Arc<dyn KeysClient>,
     pub clowder: Arc<dyn ClowderClient>,
     pub mint_factory: Arc<dyn MintClientFactory>,
+    pub exchange_lock_margin_secs: u64,
 }
 
 impl Service {
@@ -155,13 +156,17 @@ impl Service {
             self.clowder.as_ref(),
         )
         .await?;
-        let locktime = foreign_locktime - chrono::TimeDelta::minutes(15);
+        let locktime =
+            foreign_locktime - chrono::TimeDelta::seconds(self.exchange_lock_margin_secs as i64);
         let wallet_cpk = cashu::PublicKey::from(*wallet_pk);
+        // Only this mint may reclaim once the locktime passes.
+        let refund = cashu::PublicKey::from(myself);
         let outputs = proof::generate_online_exchange_htlc_proofs(
             &inputs,
             locktime,
             htlc_hash,
             wallet_cpk,
+            refund,
             *foreign_pk,
             self.clowder.as_ref(),
             self.keys.as_ref(),
@@ -174,7 +179,46 @@ impl Service {
         self.online_repo
             .store_htlc(*foreign_pk, htlc_hash, inputs)
             .await?;
+        // Kept so an issuance the recipient never unlocks can be reclaimed at its
+        // locktime instead of circulating unbacked.
+        self.online_repo
+            .store_issued(htlc_hash, locktime, outputs)
+            .await?;
         Ok(proofs)
+    }
+
+    /// Claims an exchange the alpha spent at recovery but never issued against.
+    /// The node authorises against the spend entry it recorded, so this only signs
+    /// outputs a spend entry already owes.
+    pub async fn redeem_offline_exchange(
+        &self,
+        request: bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let authorized = self.clowder.redeem_offline_exchange(&request).await?;
+        // Before signing: a withheld blind signature is still fetchable from restore.
+        // Before claiming: a bad request must not spend the entry's one issuance.
+        let claimed = cashu::Amount::try_sum(request.outputs.iter().map(|o| o.amount))
+            .map_err(|_| Error::InvalidInput(String::from("redemption amount overflow")))?;
+        if claimed != authorized.amount {
+            return Err(Error::InvalidInput(String::from(
+                "outputs ask for more than the spend entry authorised",
+            )));
+        }
+        // One entry, one issuance, however often the claim is replayed.
+        if !self
+            .offline_repo
+            .claim_redemption(request.exchange_digest)
+            .await?
+        {
+            return Err(Error::InvalidInput(String::from(
+                "spend entry already redeemed",
+            )));
+        }
+        let signatures = self.keys.sign(&request.outputs).await?;
+        self.clowder
+            .signal_offline_redeem_event(request, signatures.clone())
+            .await?;
+        Ok(signatures)
     }
 
     pub async fn try_swap_htlc(&self, preimage: &str, now: TStamp) -> Result<cashu::Amount> {
@@ -227,6 +271,10 @@ async fn try_online_htlc(
         repo.store(mint_id, new_proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         gran_total += total;
+    }
+    if gran_total > cashu::Amount::ZERO {
+        // Backed now, so no longer the reclaim routine's to burn.
+        repo.remove_issued_by_hash(&hash).await?;
     }
     Ok(gran_total)
 }
@@ -283,12 +331,13 @@ mod tests {
     use mockall::predicate::*;
 
     fn generate_htlc_proof_for_online_exchange(
-        keyset: &cashu::MintKeySet,
+        keyset: &bcr_common::ecash::MintKeySet,
         amount: cashu::Amount,
         locktime: TStamp,
         wpk: cashu::PublicKey,
         mint: cashu::PublicKey,
     ) -> (cashu::Proof, String) {
+        let keyset: cashu::MintKeySet = keyset.clone().into();
         let preimage: [u8; 32] = rand::random();
         let preimage = format!("{:x}", preimage.as_hex());
         let conditions = cashu::SpendingConditions::new_htlc(
@@ -306,14 +355,16 @@ mod tests {
             amount,
             &cashu::amount::SplitTarget::None,
             &conditions,
-            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(keyset, None)),
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
+                &keyset, None,
+            )),
         )
         .unwrap();
         assert_eq!(premints.blinded_messages().len(), 1);
         let blind = premints.blinded_messages()[0].clone();
-        let signature = bcr_common::core::signature::sign_ecash(keyset, &blind).unwrap();
+        let signature = bcr_common::core::signature::sign_ecash(&keyset, &blind).unwrap();
         let proof = bcr_common::core::signature::unblind_ecash_signature(
-            &bcr_wdc_utils::keys::to_keyset(keyset, None),
+            &bcr_wdc_utils::keys::to_keyset(&keyset, None),
             premints.into_iter().next().unwrap(),
             signature,
         )
@@ -416,16 +467,20 @@ mod tests {
             .returning(move |_, _, _| Ok(cloned_inputs.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         onlinerepo
             .expect_store_htlc()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        onlinerepo
+            .expect_store_issued()
             .times(1)
             .returning(|_, _, _| Ok(()));
         keys.expect_get_keyset_with_expiration()
             .with(eq(expiration.date_naive()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset = myself_keyset.clone();
+        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
@@ -441,6 +496,7 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            exchange_lock_margin_secs: 15 * 60,
         };
         let proofs = srvc.online_exchange(inputs, exchange_path).await.unwrap();
         assert_eq!(2, proofs.len());
@@ -503,12 +559,12 @@ mod tests {
             .returning(move |_, _| Ok(foreign_info.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         keys.expect_get_keyset_with_expiration()
             .with(eq(expiration.date_naive()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset = myself_keyset.clone();
+        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
@@ -552,6 +608,7 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            exchange_lock_margin_secs: 15 * 60,
         };
         let proofs = srvc
             .offline_exchange(
@@ -564,6 +621,128 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(2, proofs.len());
+    }
+
+    fn redeem_request(amounts: &[u64]) -> bcr_common::wire::exchange::RedeemOfflineExchangeRequest {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts: Vec<cashu::Amount> = amounts.iter().map(|a| cashu::Amount::from(*a)).collect();
+        let outputs = core_tests::generate_random_ecash_blindedmessages(keyset.id, &amounts)
+            .into_iter()
+            .map(|(msg, _, _)| msg)
+            .collect();
+        bcr_common::wire::exchange::RedeemOfflineExchangeRequest::new(
+            &core::generate_random_keypair().public_key(),
+            [7u8; 32],
+            outputs,
+            &core::generate_random_keypair(),
+        )
+    }
+
+    fn redeem_service(
+        offline_repo: crate::foreign::MockOfflineRepository,
+        keys: crate::foreign::MockKeysClient,
+        clowder: crate::foreign::MockClowderClient,
+    ) -> Service {
+        Service {
+            online_repo: Arc::new(crate::foreign::MockOnlineRepository::new()),
+            offline_repo: Arc::new(offline_repo),
+            keys: Arc::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+        }
+    }
+
+    // Refused before anything is signed, or restore hands over the signatures anyway.
+    #[tokio::test]
+    async fn redeem_over_the_authorised_amount_never_signs() {
+        let request = redeem_request(&[1, 2]);
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_redeem_offline_exchange()
+            .times(1)
+            .returning(|_| {
+                Ok(
+                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
+                        amount: cashu::Amount::from(2u64),
+                    },
+                )
+            });
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut offline_repo = crate::foreign::MockOfflineRepository::new();
+        offline_repo.expect_claim_redemption().never();
+
+        let srvc = redeem_service(offline_repo, keys, clowder);
+        assert!(srvc.redeem_offline_exchange(request).await.is_err());
+    }
+
+    // A replay with fresh outputs signs nothing.
+    #[tokio::test]
+    async fn redeem_replay_never_signs() {
+        let request = redeem_request(&[1, 2]);
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_redeem_offline_exchange()
+            .times(1)
+            .returning(|_| {
+                Ok(
+                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
+                        amount: cashu::Amount::from(3u64),
+                    },
+                )
+            });
+        let mut offline_repo = crate::foreign::MockOfflineRepository::new();
+        offline_repo
+            .expect_claim_redemption()
+            .with(eq([7u8; 32]))
+            .times(1)
+            .returning(|_| Ok(false));
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+
+        let srvc = redeem_service(offline_repo, keys, clowder);
+        assert!(srvc.redeem_offline_exchange(request).await.is_err());
+    }
+
+    // Claim the entry, then sign exactly what it owes.
+    #[tokio::test]
+    async fn redeem_signs_what_the_entry_owes() {
+        let request = redeem_request(&[1, 2]);
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_redeem_offline_exchange()
+            .times(1)
+            .returning(|_| {
+                Ok(
+                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
+                        amount: cashu::Amount::from(3u64),
+                    },
+                )
+            });
+        clowder
+            .expect_signal_offline_redeem_event()
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let mut offline_repo = crate::foreign::MockOfflineRepository::new();
+        offline_repo
+            .expect_claim_redemption()
+            .times(1)
+            .returning(|_| Ok(true));
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().times(1).returning(|blinds| {
+            let (_, keyset) = core_tests::generate_random_ecash_keyset();
+            Ok(blinds
+                .iter()
+                .map(|b| {
+                    bcr_common::core::signature::sign_ecash(&keyset.clone().into(), b).unwrap()
+                })
+                .collect())
+        });
+
+        let srvc = redeem_service(offline_repo, keys, clowder);
+        let signatures = srvc.redeem_offline_exchange(request).await.unwrap();
+        assert_eq!(2, signatures.len());
     }
 
     #[tokio::test]
@@ -621,7 +800,7 @@ mod tests {
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
             .times(1)
             .returning(move |_, _| Ok(cashu::KeySetInfo::from(foreign_kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset.clone().into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
@@ -665,8 +844,11 @@ mod tests {
             .returning(move |inputs, outputs, _| {
                 let mut signatures = Vec::with_capacity(inputs.len());
                 for blind in outputs {
-                    let signature =
-                        bcr_common::core::signature::sign_ecash(&foreign_keyset, &blind).unwrap();
+                    let signature = bcr_common::core::signature::sign_ecash(
+                        &foreign_keyset.clone().into(),
+                        &blind,
+                    )
+                    .unwrap();
                     signatures.push(signature);
                 }
                 Ok(signatures)
@@ -684,12 +866,18 @@ mod tests {
             .with(eq(vec![foreign_y]))
             .times(1)
             .returning(|_| Ok(()));
+        onlinerepo
+            .expect_remove_issued_by_hash()
+            .with(eq(hash))
+            .times(1)
+            .returning(|_| Ok(()));
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            exchange_lock_margin_secs: 15 * 60,
         };
         let amount = srvc
             .try_swap_htlc(&preimage, chrono::Utc::now())
@@ -731,7 +919,7 @@ mod tests {
             .returning(move |_| Ok(Some(search_response.clone())));
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset.clone().into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))
@@ -754,6 +942,7 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
             mint_factory: Arc::new(factory),
+            exchange_lock_margin_secs: 15 * 60,
         };
         let amount = srvc
             .try_swap_htlc(&preimage, chrono::Utc::now())
