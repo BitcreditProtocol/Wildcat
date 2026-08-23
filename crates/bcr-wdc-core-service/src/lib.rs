@@ -267,7 +267,8 @@ mod tests {
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-        let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+        let proofs =
+            core_tests::generate_random_ecash_proofs(&keys_entry.1.clone().into(), &amounts);
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()
@@ -312,7 +313,8 @@ mod tests {
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-        let proofs = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+        let proofs =
+            core_tests::generate_random_ecash_proofs(&keys_entry.1.clone().into(), &amounts);
         let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
             .iter()
             .cloned()

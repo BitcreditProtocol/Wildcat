@@ -94,7 +94,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
-    use bcr_common::core_tests;
+    use bcr_common::{core_tests, ecash};
     use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
@@ -116,7 +116,7 @@ pub mod test_utils {
     }
 
     pub fn generate_signatures(
-        keyset: &cashu::MintKeySet,
+        keyset: &ecash::MintKeySet,
         amounts: &[cashu::Amount],
     ) -> Vec<cashu::BlindSignature> {
         let mut signatures: Vec<cashu::BlindSignature> = Vec::new();
@@ -132,7 +132,7 @@ pub mod test_utils {
     }
 
     pub fn generate_fingerprints(
-        keyset: &cashu::MintKeySet,
+        keyset: &ecash::MintKeySet,
         amounts: &[cashu::Amount],
     ) -> Vec<wire_keys::ProofFingerprint> {
         let proofs = core_tests::generate_random_ecash_proofs(keyset, amounts);
@@ -144,7 +144,7 @@ pub mod test_utils {
     }
 
     pub fn verify_signatures_data(
-        keyset: &cashu::MintKeySet,
+        keyset: &ecash::MintKeySet,
         signatures: impl std::iter::IntoIterator<Item = (cashu::BlindedMessage, cashu::BlindSignature)>,
     ) -> bool {
         for (msg, sig) in signatures.into_iter() {
@@ -168,7 +168,6 @@ pub mod test_utils {
 mod tests {
     use super::test_utils::*;
     use super::*;
-    use crate::keys::test_utils::generate_keyset;
     use bcr_common::core_tests;
 
     #[test]
@@ -184,7 +183,7 @@ mod tests {
 
     #[test]
     fn basic_checks_zero_amount() {
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(2)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()
@@ -205,7 +204,7 @@ mod tests {
 
     #[test]
     fn basic_checks_unique() {
-        let (_, keyset) = generate_keyset();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(8)];
         let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
             .into_iter()

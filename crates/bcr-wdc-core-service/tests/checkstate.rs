@@ -22,12 +22,12 @@ async fn checkstate() {
         .expect("store");
 
     let amounts = vec![cashu::Amount::from(8_u64), cashu::Amount::from(16_u64)];
-    let spent = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+    let spent = core_tests::generate_random_ecash_proofs(&keys_entry.1.clone().into(), &amounts);
 
     corecl.burn(spent.clone()).await.expect("burn");
 
     let amounts = vec![cashu::Amount::from(32_u64), cashu::Amount::from(64_u64)];
-    let unspent = core_tests::generate_random_ecash_proofs(&keys_entry.1, &amounts);
+    let unspent = core_tests::generate_random_ecash_proofs(&keys_entry.1.clone().into(), &amounts);
 
     let ys = vec![
         cashu::dhke::hash_to_curve(&spent[0].secret.to_bytes()).expect("hash_to_curve"),

@@ -535,12 +535,12 @@ mod tests {
             .times(1)
             .with(eq(vec![]))
             .returning(move |_| Ok(vec![]));
-        let cloned_set = bcr_common::core::keys::to_keyset(&keyset, Some(true));
+        let cloned_set = bcr_common::core::keys::to_keyset(&keyset.clone().into(), Some(true));
         sign_service
             .expect_get_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_set.clone()));
-        let cloned_set = keyset.clone();
+        let cloned_set: cashu::MintKeySet = keyset.clone().into();
         sign_service
             .expect_sign_blinds()
             .times(1)

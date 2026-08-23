@@ -86,6 +86,30 @@ mod tests {
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{key::rand, secp256k1 as secp};
 
+    fn to_keyset_entry(
+        entry: (
+            bcr_common::ecash::MintKeySetInfo,
+            bcr_common::ecash::MintKeySet,
+        ),
+    ) -> keys_utils::KeysetEntry {
+        let (info, keyset) = entry;
+        (
+            MintKeySetInfo {
+                id: info.id,
+                unit: info.unit,
+                active: info.active,
+                valid_from: info.valid_from,
+                derivation_path: info.derivation_path,
+                derivation_path_index: info.derivation_path_index,
+                amounts: info.amounts,
+                input_fee_ppk: info.input_fee_ppk,
+                final_expiry: info.final_expiry,
+                issuer_version: None,
+            },
+            keyset.into(),
+        )
+    }
+
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
         std::iter::repeat_with(|| {
             cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key())
@@ -122,7 +146,7 @@ mod tests {
         keysrepo_info(db).await;
     }
     async fn keysrepo_info(db: impl Repository) {
-        let entry = core_tests::generate_random_ecash_keyset();
+        let entry = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         let kinfo = entry.0.clone();
         db.keys_store(entry).await.unwrap();
         let rinfo = db.keys_info(kinfo.id).await.unwrap().unwrap();
@@ -144,15 +168,15 @@ mod tests {
         keysrepo_list_info(db).await;
     }
     async fn keysrepo_list_info(db: impl Repository) {
-        let mut entry1 = core_tests::generate_random_ecash_keyset();
+        let mut entry1 = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         entry1.0.unit = cashu::CurrencyUnit::Sat;
         entry1.0.final_expiry = Some(10);
         db.keys_store(entry1).await.unwrap();
-        let mut entry2 = core_tests::generate_random_ecash_keyset();
+        let mut entry2 = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         entry2.0.unit = cashu::CurrencyUnit::Usd;
         entry2.0.final_expiry = Some(20);
         db.keys_store(entry2).await.unwrap();
-        let mut entry3 = core_tests::generate_random_ecash_keyset();
+        let mut entry3 = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         entry3.0.unit = cashu::CurrencyUnit::Usd;
         entry3.0.final_expiry = Some(30);
         db.keys_store(entry3).await.unwrap();
@@ -191,7 +215,7 @@ mod tests {
         keysrepo_keyset_test(db).await;
     }
     async fn keysrepo_keyset_test(db: impl Repository) {
-        let entry = core_tests::generate_random_ecash_keyset();
+        let entry = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         db.keys_store(entry.clone()).await.unwrap();
         let rkeys = db.keys_load(entry.0.id).await.unwrap().unwrap();
         assert_eq!(rkeys, entry.1);
@@ -209,10 +233,10 @@ mod tests {
         keysrepo_infos_for_expiration_date_test(db).await;
     }
     async fn keysrepo_infos_for_expiration_date_test(db: impl Repository) {
-        let mut keys0 = core_tests::generate_random_ecash_keyset();
+        let mut keys0 = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         keys0.0.final_expiry = Some(30);
         db.keys_store(keys0).await.unwrap();
-        let mut keys1 = core_tests::generate_random_ecash_keyset();
+        let mut keys1 = to_keyset_entry(core_tests::generate_random_ecash_keyset());
         keys1.0.final_expiry = Some(10);
         db.keys_store(keys1).await.unwrap();
         let res = db.keys_infos_for_expiration_date(10).await.unwrap();

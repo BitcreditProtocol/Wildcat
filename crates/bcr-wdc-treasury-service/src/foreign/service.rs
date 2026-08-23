@@ -331,12 +331,13 @@ mod tests {
     use mockall::predicate::*;
 
     fn generate_htlc_proof_for_online_exchange(
-        keyset: &cashu::MintKeySet,
+        keyset: &bcr_common::ecash::MintKeySet,
         amount: cashu::Amount,
         locktime: TStamp,
         wpk: cashu::PublicKey,
         mint: cashu::PublicKey,
     ) -> (cashu::Proof, String) {
+        let keyset: cashu::MintKeySet = keyset.clone().into();
         let preimage: [u8; 32] = rand::random();
         let preimage = format!("{:x}", preimage.as_hex());
         let conditions = cashu::SpendingConditions::new_htlc(
@@ -354,14 +355,16 @@ mod tests {
             amount,
             &cashu::amount::SplitTarget::None,
             &conditions,
-            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(keyset, None)),
+            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
+                &keyset, None,
+            )),
         )
         .unwrap();
         assert_eq!(premints.blinded_messages().len(), 1);
         let blind = premints.blinded_messages()[0].clone();
-        let signature = bcr_common::core::signature::sign_ecash(keyset, &blind).unwrap();
+        let signature = bcr_common::core::signature::sign_ecash(&keyset, &blind).unwrap();
         let proof = bcr_common::core::signature::unblind_ecash_signature(
-            &bcr_wdc_utils::keys::to_keyset(keyset, None),
+            &bcr_wdc_utils::keys::to_keyset(&keyset, None),
             premints.into_iter().next().unwrap(),
             signature,
         )
@@ -464,7 +467,7 @@ mod tests {
             .returning(move |_, _, _| Ok(cloned_inputs.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         onlinerepo
             .expect_store_htlc()
             .times(1)
@@ -477,7 +480,7 @@ mod tests {
             .with(eq(expiration.date_naive()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset = myself_keyset.clone();
+        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
@@ -556,12 +559,12 @@ mod tests {
             .returning(move |_, _| Ok(foreign_info.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
         myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         keys.expect_get_keyset_with_expiration()
             .with(eq(expiration.date_naive()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset = myself_keyset.clone();
+        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
@@ -731,7 +734,9 @@ mod tests {
             let (_, keyset) = core_tests::generate_random_ecash_keyset();
             Ok(blinds
                 .iter()
-                .map(|b| bcr_common::core::signature::sign_ecash(&keyset, b).unwrap())
+                .map(|b| {
+                    bcr_common::core::signature::sign_ecash(&keyset.clone().into(), b).unwrap()
+                })
                 .collect())
         });
 
@@ -795,7 +800,7 @@ mod tests {
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
             .times(1)
             .returning(move |_, _| Ok(cashu::KeySetInfo::from(foreign_kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset.clone().into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
@@ -839,8 +844,11 @@ mod tests {
             .returning(move |inputs, outputs, _| {
                 let mut signatures = Vec::with_capacity(inputs.len());
                 for blind in outputs {
-                    let signature =
-                        bcr_common::core::signature::sign_ecash(&foreign_keyset, &blind).unwrap();
+                    let signature = bcr_common::core::signature::sign_ecash(
+                        &foreign_keyset.clone().into(),
+                        &blind,
+                    )
+                    .unwrap();
                     signatures.push(signature);
                 }
                 Ok(signatures)
@@ -911,7 +919,7 @@ mod tests {
             .returning(move |_| Ok(Some(search_response.clone())));
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset, None);
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset.clone().into(), None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))

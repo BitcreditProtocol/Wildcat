@@ -776,9 +776,12 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
         let cloned_keyset = keyset.clone();
-        wdc.expect_keyset()
-            .times(2)
-            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset, None)));
+        wdc.expect_keyset().times(2).returning(move |_| {
+            Ok(bcr_wdc_utils::keys::to_keyset(
+                &cloned_keyset.clone().into(),
+                None,
+            ))
+        });
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
@@ -1017,7 +1020,7 @@ mod tests {
         wdc.expect_keyset_info()
             .times(1)
             .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset, Some(true));
+        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset.clone().into(), Some(true));
         wdc.expect_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_keyset.clone()));

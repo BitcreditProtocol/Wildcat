@@ -222,7 +222,8 @@ mod tests {
             &cashu::amount::SplitTarget::None,
             &spending_conds,
             &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
+                &keyset.clone().into(),
+                None,
             )),
         )
         .unwrap();
@@ -264,7 +265,8 @@ mod tests {
             &cashu::amount::SplitTarget::None,
             &spending_conds,
             &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
+                &keyset.clone().into(),
+                None,
             )),
         )
         .unwrap();
