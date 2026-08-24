@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   build:
+    name: E2E integration test
 
     if: false
     runs-on: ubuntu-latest
