@@ -101,7 +101,7 @@ impl axum::response::IntoResponse for Error {
                 String::from("Quote has no credit program binding"),
             ),
             Error::CreditAuthorizationRequired => (
-                StatusCode::FORBIDDEN,
+                StatusCode::BAD_REQUEST,
                 String::from("Credit authorization is required"),
             ),
             Error::CreditAuthorizationInvalid => (
