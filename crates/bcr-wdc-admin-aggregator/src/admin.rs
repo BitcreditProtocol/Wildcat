@@ -140,7 +140,7 @@ pub async fn list_mintops(
         ("qid" = uuid::Uuid, Path, description = "the quote id")
     ),
     responses (
-        (status = 200, description = "Successful response", body = wire_quotes::InfoReply , content_type = "application/json"),
+        (status = 200, description = "Successful response", body = wire_quotes::AdminInfoReply , content_type = "application/json"),
         (status = 404, description = "quote id not found"),
     )
 )]
@@ -148,7 +148,7 @@ pub async fn list_mintops(
 pub async fn get_quote(
     State(ctrl): State<AppController>,
     Path(qid): Path<uuid::Uuid>,
-) -> Result<Json<wire_quotes::InfoReply>> {
+) -> Result<Json<wire_quotes::AdminInfoReply>> {
     tracing::debug!("Received credit quote request for {qid}");
 
     let status = ctrl.quotes_cl.lookup(qid).await?;

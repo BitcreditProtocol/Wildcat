@@ -43,6 +43,9 @@ impl Repository for QuotesIDMap {
     }
 
     async fn store(&self, quote: quotes::Quote) -> Result<()> {
+        if quote.credit_program().is_none() {
+            return Err(Error::CreditProgramNotBound(quote.id));
+        }
         self.quotes.write().unwrap().insert(quote.id, quote);
         Ok(())
     }

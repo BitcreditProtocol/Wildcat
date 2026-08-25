@@ -240,6 +240,7 @@ pub fn routes(ctrl: AppController) -> Router {
         // quotes service
         wire_quotes::ListSort,
         wire_quotes::InfoReply,
+        wire_quotes::AdminInfoReply,
         wire_quotes::LightInfo,
         wire_quotes::UpdateQuoteRequest,
         wire_quotes::UpdateQuoteResponse,

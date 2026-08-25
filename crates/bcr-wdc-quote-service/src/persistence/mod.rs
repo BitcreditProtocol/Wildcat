@@ -67,6 +67,7 @@ mod tests {
             status: quotes::Status::Pending {
                 wallet_pubkey: keys_test::publics()[0],
             },
+            credit_program: Some(quotes::test_credit_program_binding()),
         }
     }
 
@@ -85,6 +86,44 @@ mod tests {
             discounted: bitcoin::Amount::default(),
             wallet_pubkey: keys_test::publics()[0],
         }
+    }
+
+    #[tokio::test]
+    async fn test_store_load_preserves_credit_program() {
+        store_load_preserves_credit_program(init_inmemory_db()).await;
+        store_load_preserves_credit_program(init_surreal_db().await).await;
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_store_load_preserves_credit_program_sqlx(pool: ::sqlx::PgPool) {
+        store_load_preserves_credit_program(sqlx::DBQuotes::from_pool(pool)).await;
+    }
+
+    async fn store_load_preserves_credit_program(db: impl Repository) {
+        let quote = pending_quote();
+        let expected = quote.credit_program().cloned();
+        db.store(quote.clone()).await.unwrap();
+
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+
+        assert_eq!(stored.credit_program(), expected.as_ref());
+    }
+
+    #[tokio::test]
+    async fn test_store_rejects_unbound_quote() {
+        store_rejects_unbound_quote(init_inmemory_db()).await;
+        store_rejects_unbound_quote(init_surreal_db().await).await;
+    }
+
+    async fn store_rejects_unbound_quote(db: impl Repository) {
+        let mut quote = pending_quote();
+        quote.credit_program = None;
+
+        assert!(matches!(
+            db.store(quote.clone()).await,
+            Err(crate::error::Error::CreditProgramNotBound(id)) if id == quote.id
+        ));
     }
 
     #[tokio::test]
@@ -299,6 +338,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         db.store(quote.clone()).await.unwrap();
         let filters = service::ListFilters::default();
@@ -359,6 +399,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             submitted: TStamp::from_timestamp(100000, 0).unwrap(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         db.store(quote).await.unwrap();
         let qid2 = Uuid::new_v4();
@@ -372,6 +413,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             submitted: TStamp::from_timestamp(300000, 0).unwrap(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         db.store(quote).await.unwrap();
         let qid3 = Uuid::new_v4();
@@ -385,6 +427,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             submitted: TStamp::from_timestamp(200000, 0).unwrap(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         db.store(quote).await.unwrap();
         let filters = service::ListFilters::default();
@@ -454,6 +497,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             submitted: TStamp::default(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         db.store(quote.clone()).await.unwrap();
         let result = db

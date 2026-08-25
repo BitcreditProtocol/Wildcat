@@ -105,6 +105,7 @@ mod tests {
             },
             submitted: chrono::DateTime::default(),
             bill: quotes::BillInfo::random(),
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         let bid = quote.bill.id.clone();
         repo.expect_load()
@@ -119,6 +120,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: quotes::test_credit_program_binding(),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
@@ -145,6 +147,7 @@ mod tests {
                 sum: bitcoin::Amount::from_sat(2000),
                 ..quotes::BillInfo::random()
             },
+            credit_program: Some(quotes::test_credit_program_binding()),
         };
         let bid = quote.bill.id.clone();
         repo.expect_load()
@@ -207,6 +210,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: quotes::test_credit_program_binding(),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),

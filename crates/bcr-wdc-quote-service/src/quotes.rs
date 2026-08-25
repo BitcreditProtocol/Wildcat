@@ -155,6 +155,75 @@ pub struct Quote {
     pub id: Uuid,
     pub bill: BillInfo,
     pub submitted: TStamp,
+    pub(crate) credit_program: Option<CreditProgramBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CreditProgramBinding {
+    version: String,
+    digest: String,
+}
+
+impl<'de> serde::Deserialize<'de> for CreditProgramBinding {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct StoredCreditProgramBinding {
+            version: String,
+            digest: String,
+        }
+
+        let stored = StoredCreditProgramBinding::deserialize(deserializer)?;
+        Self::new(stored.version, stored.digest).map_err(serde::de::Error::custom)
+    }
+}
+
+impl CreditProgramBinding {
+    pub fn new(version: String, digest: String) -> Result<Self> {
+        if version.trim() != version
+            || version.is_empty()
+            || version.len() > 128
+            || version.chars().any(char::is_control)
+        {
+            return Err(Error::InvalidInput(String::from(
+                "credit program version must contain 1 to 128 non-control, non-whitespace-padded characters",
+            )));
+        }
+        let Some(hex) = digest.strip_prefix("sha256:") else {
+            return Err(Error::InvalidInput(String::from(
+                "credit program digest must use sha256:<64 lowercase hex characters>",
+            )));
+        };
+        if hex.len() != 64
+            || !hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(Error::InvalidInput(String::from(
+                "credit program digest must use sha256:<64 lowercase hex characters>",
+            )));
+        }
+        Ok(Self { version, digest })
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_credit_program_binding() -> CreditProgramBinding {
+    CreditProgramBinding::new(
+        String::from("test-credit-program-v1"),
+        String::from("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+    )
+    .expect("valid test credit program binding")
 }
 
 pub struct LightQuote {
@@ -165,13 +234,30 @@ pub struct LightQuote {
 }
 
 impl Quote {
-    pub fn new(bill: BillInfo, wallet_pubkey: cashu::PublicKey, submitted: TStamp) -> Self {
+    pub fn new(
+        bill: BillInfo,
+        wallet_pubkey: cashu::PublicKey,
+        submitted: TStamp,
+        credit_program: CreditProgramBinding,
+    ) -> Self {
         Self {
             status: Status::Pending { wallet_pubkey },
             id: Uuid::new_v4(),
             bill,
             submitted,
+            credit_program: Some(credit_program),
         }
+    }
+
+    pub fn credit_program(&self) -> Option<&CreditProgramBinding> {
+        self.credit_program.as_ref()
+    }
+
+    pub(crate) fn require_credit_program(&self) -> Result<()> {
+        self.credit_program
+            .as_ref()
+            .map(|_| ())
+            .ok_or(Error::CreditProgramNotBound(self.id))
     }
 
     pub fn cancel(&mut self, tstamp: TStamp) -> Result<()> {
@@ -206,6 +292,7 @@ impl Quote {
         ttl: TStamp,
         discounted: bitcoin::Amount,
     ) -> Result<()> {
+        self.require_credit_program()?;
         let Status::Pending { wallet_pubkey, .. } = self.status else {
             return Err(Error::InvalidQuoteStatus(
                 self.id,
@@ -253,6 +340,7 @@ impl Quote {
     }
 
     pub fn accept(&mut self, tstamp: TStamp) -> Result<()> {
+        self.require_credit_program()?;
         self.check_expire(tstamp);
         match self.status {
             Status::Offered {
@@ -279,6 +367,7 @@ impl Quote {
     }
 
     pub fn override_failed_ebill_validation(&mut self, fee: cashu::Amount) -> Result<()> {
+        self.require_credit_program()?;
         match self.status {
             Status::FailedEbillValidation {
                 keyset_id,
@@ -304,6 +393,7 @@ impl Quote {
     }
 
     pub fn start_minting(&mut self, fee: cashu::Amount) -> Result<()> {
+        self.require_credit_program()?;
         match self.status {
             Status::Accepted {
                 keyset_id,
@@ -329,6 +419,7 @@ impl Quote {
     }
 
     pub fn set_failed_ebill_validation(&mut self) -> Result<()> {
+        self.require_credit_program()?;
         match self.status {
             Status::Accepted {
                 keyset_id,
@@ -350,5 +441,62 @@ impl Quote {
             }
         };
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    #[test]
+    fn credit_program_binding_is_strict() {
+        assert!(CreditProgramBinding::new(
+            String::from("gt-coffee-v1"),
+            String::from("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .is_ok());
+        assert!(CreditProgramBinding::new(
+            String::from(" gt-coffee-v1"),
+            String::from("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .is_err());
+        assert!(CreditProgramBinding::new(
+            String::from("gt-coffee\nv1"),
+            String::from("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .is_err());
+        assert!(CreditProgramBinding::new(
+            String::from("gt-coffee-v1"),
+            String::from("sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn malformed_persisted_credit_program_binding_is_rejected() {
+        let malformed = serde_json::json!({
+            "version": "gt-coffee-v1",
+            "digest": "sha256:not-a-digest"
+        });
+
+        assert!(serde_json::from_value::<CreditProgramBinding>(malformed).is_err());
+    }
+
+    #[test]
+    fn legacy_unbound_quote_cannot_be_offered() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+        quote.credit_program = None;
+        let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+
+        let result = quote.offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1));
+
+        assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
+        assert!(matches!(quote.status, Status::Pending { .. }));
     }
 }

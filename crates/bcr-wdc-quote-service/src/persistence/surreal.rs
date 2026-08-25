@@ -24,6 +24,8 @@ struct QuoteDBEntry {
     bill: quotes::BillInfo,
     submitted: TStamp,
     status: quotes::Status,
+    #[serde(default)]
+    credit_program: Option<quotes::CreditProgramBinding>,
 }
 
 impl From<QuoteDBEntry> for quotes::Quote {
@@ -33,6 +35,7 @@ impl From<QuoteDBEntry> for quotes::Quote {
             bill: dbq.bill,
             submitted: dbq.submitted,
             status: dbq.status,
+            credit_program: dbq.credit_program,
         }
     }
 }
@@ -44,6 +47,7 @@ impl From<quotes::Quote> for QuoteDBEntry {
             bill: quote.bill,
             submitted: quote.submitted,
             status: quote.status,
+            credit_program: quote.credit_program,
         }
     }
 }
@@ -335,9 +339,38 @@ impl Repository for DBQuotes {
     }
 
     async fn store(&self, quote: quotes::Quote) -> Result<()> {
+        if quote.credit_program().is_none() {
+            return Err(Error::CreditProgramNotBound(quote.id));
+        }
         self.store(quote.into())
             .await
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    #[test]
+    fn legacy_entry_without_credit_program_remains_readable_but_unbound() {
+        let quote = quotes::Quote::new(
+            quotes::BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            quotes::test_credit_program_binding(),
+        );
+        let mut value = serde_json::to_value(QuoteDBEntry::from(quote)).unwrap();
+        value
+            .as_object_mut()
+            .expect("quote entry is an object")
+            .remove("credit_program");
+
+        let legacy: QuoteDBEntry = serde_json::from_value(value).unwrap();
+        let restored = quotes::Quote::from(legacy);
+
+        assert!(restored.credit_program().is_none());
     }
 }

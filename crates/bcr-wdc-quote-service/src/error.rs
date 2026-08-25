@@ -34,6 +34,8 @@ pub enum Error {
         crate::quotes::StatusDiscriminants,
         crate::quotes::StatusDiscriminants,
     ),
+    #[error("quote {0} has no credit program binding")]
+    CreditProgramNotBound(uuid::Uuid),
     #[error("resource not found: resource id {0}")]
     ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
@@ -75,6 +77,10 @@ impl axum::response::IntoResponse for Error {
             Error::InvalidQuoteStatus(_, _, _) => {
                 (StatusCode::CONFLICT, String::from("Quote invalid status"))
             }
+            Error::CreditProgramNotBound(_) => (
+                StatusCode::CONFLICT,
+                String::from("Quote has no credit program binding"),
+            ),
 
             Error::Chrono(e) => {
                 let v = serde_json::Value::String(format!("Malformed datetime: {e}"));

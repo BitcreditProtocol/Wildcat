@@ -116,8 +116,14 @@ pub async fn list_quotes(
 }
 
 /// --------------------------- Look up request
-fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
-    match quote.status {
+fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::AdminInfoReply {
+    let credit_program_version = quote
+        .credit_program()
+        .map(|binding| binding.version().to_owned());
+    let credit_program_digest = quote
+        .credit_program()
+        .map(|binding| binding.digest().to_owned());
+    let quote = match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::InfoReply::Pending {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
@@ -192,6 +198,11 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
             discounted,
             keyset_id,
         },
+    };
+    wire_quotes::AdminInfoReply {
+        quote,
+        credit_program_version,
+        credit_program_digest,
     }
 }
 
@@ -199,7 +210,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
 pub async fn lookup_quote(
     State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<wire_quotes::InfoReply>> {
+) -> Result<Json<wire_quotes::AdminInfoReply>> {
     tracing::debug!("Received mint quote lookup request {id}");
 
     let now = chrono::Utc::now();
@@ -250,4 +261,43 @@ pub async fn get_shared_ebill_history(
     tracing::debug!("Received get shared ebill history request");
     let bill_history_blocks = ctrl.get_shared_ebill_history(id).await?;
     Ok(Json(bill_history_blocks))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    fn pending_quote() -> quotes::Quote {
+        quotes::Quote::new(
+            quotes::BillInfo::random(),
+            keys_test::publics()[0],
+            crate::TStamp::default(),
+            quotes::test_credit_program_binding(),
+        )
+    }
+
+    #[test]
+    fn admin_quote_json_exposes_top_level_credit_program_binding() {
+        let value = serde_json::to_value(convert_to_info_reply(pending_quote())).unwrap();
+
+        assert_eq!(value["status"], "Pending");
+        assert_eq!(value["credit_program_version"], "test-credit-program-v1");
+        assert_eq!(
+            value["credit_program_digest"],
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+        assert!(value.get("quote").is_none());
+    }
+
+    #[test]
+    fn legacy_admin_quote_json_is_explicitly_unbound() {
+        let mut quote = pending_quote();
+        quote.credit_program = None;
+
+        let value = serde_json::to_value(convert_to_info_reply(quote)).unwrap();
+
+        assert!(value["credit_program_version"].is_null());
+        assert!(value["credit_program_digest"].is_null());
+    }
 }

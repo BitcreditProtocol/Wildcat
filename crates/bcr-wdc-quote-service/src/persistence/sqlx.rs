@@ -23,12 +23,20 @@ use crate::{
 #[serde(tag = "version", content = "data")]
 enum QuoteBlob {
     V1(QuoteBlobV1),
+    V2(QuoteBlobV2),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteBlobV1 {
     bill: quotes::BillInfo,
     status: quotes::Status,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct QuoteBlobV2 {
+    bill: quotes::BillInfo,
+    status: quotes::Status,
+    credit_program: quotes::CreditProgramBinding,
 }
 
 // ///////////////////////////////////////////////////////////////////////// QuoteRow
@@ -48,12 +56,13 @@ struct QuoteRow {
     pub blob: Json<QuoteBlob>,
 }
 
-fn quote_to_row(quote: quotes::Quote) -> QuoteRow {
+fn quote_to_row(quote: quotes::Quote) -> Result<QuoteRow> {
     let quotes::Quote {
         status,
         id,
         bill,
         submitted,
+        credit_program,
     } = quote;
     let maturity_date = bill.maturity_date;
     let bill_id = bill.id.to_string();
@@ -63,9 +72,14 @@ fn quote_to_row(quote: quotes::Quote) -> QuoteRow {
     let bill_payer_id = bill.payee.node_id().to_string();
     let bill_holder_id = bill.current_holder.node_id().to_string();
     let status_d = status.discriminant().to_string();
-    let blob_v1 = QuoteBlobV1 { bill, status };
-    let blob = Json(QuoteBlob::V1(blob_v1));
-    QuoteRow {
+    let credit_program = credit_program.ok_or(Error::CreditProgramNotBound(id))?;
+    let blob_v2 = QuoteBlobV2 {
+        bill,
+        status,
+        credit_program,
+    };
+    let blob = Json(QuoteBlob::V2(blob_v2));
+    Ok(QuoteRow {
         qid: id,
         status: status_d,
         submitted,
@@ -77,14 +91,22 @@ fn quote_to_row(quote: quotes::Quote) -> QuoteRow {
         bill_payer_id,
         bill_holder_id,
         blob,
-    }
+    })
 }
 
 fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
-    let (bill, status) = match row.blob.0 {
+    let (bill, status, credit_program) = match row.blob.0 {
         QuoteBlob::V1(blob_v1) => {
             let QuoteBlobV1 { bill, status } = blob_v1;
-            (bill, status)
+            (bill, status, None)
+        }
+        QuoteBlob::V2(blob_v2) => {
+            let QuoteBlobV2 {
+                bill,
+                status,
+                credit_program,
+            } = blob_v2;
+            (bill, status, Some(credit_program))
         }
     };
     let expected_d = status.discriminant().to_string();
@@ -100,6 +122,7 @@ fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
         bill,
         status,
         submitted: row.submitted,
+        credit_program,
     })
 }
 
@@ -161,7 +184,7 @@ impl DBQuotes {
             UPDATE quote_quotes
             SET status = $2,
                 blob = jsonb_set(blob, '{data,status}', $3, true)
-            WHERE qid = $1 AND status = $4 AND blob->>'version' = 'V1'
+            WHERE qid = $1 AND status = $4
             "#,
             id,
             new_disc,
@@ -334,7 +357,7 @@ impl persistence::Repository for DBQuotes {
     }
 
     async fn store(&self, quote: quotes::Quote) -> Result<()> {
-        let row = quote_to_row(quote);
+        let row = quote_to_row(quote)?;
         let blob = row.blob.0;
         let json_blob =
             serde_json::to_value(&blob).map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
@@ -376,4 +399,47 @@ struct LightQuoteRow {
     status: String,
     bill_sum: i64,
     maturity_date: chrono::NaiveDate,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    fn pending_quote() -> quotes::Quote {
+        quotes::Quote::new(
+            quotes::BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            quotes::test_credit_program_binding(),
+        )
+    }
+
+    #[test]
+    fn v2_blob_roundtrip_preserves_credit_program() {
+        let quote = pending_quote();
+        let expected = quote.credit_program().cloned();
+
+        let row = quote_to_row(quote).unwrap();
+        let restored = quote_from_row(row).unwrap();
+
+        assert_eq!(restored.credit_program(), expected.as_ref());
+    }
+
+    #[test]
+    fn v1_blob_restores_as_unbound_and_cannot_be_offered() {
+        let quote = pending_quote();
+        let mut row = quote_to_row(quote.clone()).unwrap();
+        row.blob = Json(QuoteBlob::V1(QuoteBlobV1 {
+            bill: quote.bill,
+            status: quote.status,
+        }));
+
+        let mut restored = quote_from_row(row).unwrap();
+        let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+        let result = restored.offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1));
+
+        assert!(restored.credit_program().is_none());
+        assert!(matches!(result, Err(Error::CreditProgramNotBound(_))));
+    }
 }
