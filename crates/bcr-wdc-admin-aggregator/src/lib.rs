@@ -342,5 +342,6 @@ mod tests {
 
         let json = ApiDoc::generate_json();
         assert!(json.is_some());
+        assert!(json.unwrap().contains("\"credit_authorization_receipt\""));
     }
 }

@@ -123,6 +123,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::AdminInfoReply {
     let credit_program_digest = quote
         .credit_program()
         .map(|binding| binding.digest().to_owned());
+    let credit_authorization_receipt = quote.authorization_receipt().cloned();
     let quote = match quote.status {
         quotes::Status::Pending { .. } => wire_quotes::InfoReply::Pending {
             id: quote.id,
@@ -203,6 +204,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::AdminInfoReply {
         quote,
         credit_program_version,
         credit_program_digest,
+        credit_authorization_receipt,
     }
 }
 
@@ -289,6 +291,23 @@ mod tests {
         )
     }
 
+    fn authorization_receipt() -> wire_quotes::CreditAuthorizationReceipt {
+        wire_quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: format!("sha256:{}", "c".repeat(64)),
+            authorization_digest: format!("sha256:{}", "a".repeat(64)),
+            case_id: String::from("case-a"),
+            status: String::from("completed"),
+            mint_id: String::from("local-wildcat"),
+            bill_id: String::from("bill-a"),
+            action: String::from("request_to_mint"),
+            effect_id: String::from("quote-a"),
+            result_digest: format!("sha256:{}", "b".repeat(64)),
+            completed_at: String::from("2026-08-21T12:06:00.000Z"),
+            synthetic: true,
+        }
+    }
+
     #[test]
     fn admin_quote_json_exposes_top_level_credit_program_binding() {
         let value = serde_json::to_value(convert_to_info_reply(pending_quote())).unwrap();
@@ -299,7 +318,22 @@ mod tests {
             value["credit_program_digest"],
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
+        assert!(value["credit_authorization_receipt"].is_null());
         assert!(value.get("quote").is_none());
+    }
+
+    #[test]
+    fn admin_quote_json_exposes_durable_credit_authorization_receipt() {
+        let mut quote = pending_quote();
+        quote.authorization_receipt = Some(authorization_receipt());
+
+        let value = serde_json::to_value(convert_to_info_reply(quote)).unwrap();
+        let receipt = &value["credit_authorization_receipt"];
+
+        assert_eq!(receipt["receiptVersion"], "credit-authorization-receipt-v1");
+        assert_eq!(receipt["status"], "completed");
+        assert_eq!(receipt["effectId"], "quote-a");
+        assert_eq!(receipt["action"], "request_to_mint");
     }
 
     #[test]
@@ -311,5 +345,6 @@ mod tests {
 
         assert!(value["credit_program_version"].is_null());
         assert!(value["credit_program_digest"].is_null());
+        assert!(value["credit_authorization_receipt"].is_null());
     }
 }
