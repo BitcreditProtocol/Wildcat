@@ -638,12 +638,14 @@ name = "bcr-wdc-admin-aggregator"
 version = "0.7.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "bcr-common",
  "bcr-wdc-utils",
  "config",
  "futures",
  "secp256k1 0.29.1",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "time",
  "tokio",
