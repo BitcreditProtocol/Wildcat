@@ -21,7 +21,7 @@ pub struct EbillMonitor {
 impl EbillMonitor {
     async fn check_quotes(&self, now: TStamp) {
         tracing::info!("Checking accepted quotes for endorsed ebills");
-        let qids = match self.list_accepted_quotes(now).await {
+        let qids = match self.list_quotes(StatusDiscriminants::Accepted, now).await {
             Ok(qids) => qids,
             Err(e) => {
                 tracing::error!("Failed to list accepted quotes: {e}");
@@ -34,15 +34,59 @@ impl EbillMonitor {
                 Err(e) => tracing::error!("Failed to check quote {qid}: {e}"),
             }
         }
+        // ponytail: this scans MintingEnabled quotes on the existing monitor cadence. Add a
+        // dedicated settlement event feed before the quote volume makes polling material.
+        let qids = match self
+            .list_quotes(StatusDiscriminants::MintingEnabled, now)
+            .await
+        {
+            Ok(qids) => qids,
+            Err(e) => {
+                tracing::error!("Failed to list minting-enabled quotes: {e}");
+                return;
+            }
+        };
+        for qid in qids {
+            if let Err(e) = self.release_paid_exposure(qid, now).await {
+                tracing::error!("Failed to reconcile exposure for quote {qid}: {e}");
+            }
+        }
     }
 
-    async fn list_accepted_quotes(&self, now: TStamp) -> Result<Vec<uuid::Uuid>> {
+    async fn list_quotes(
+        &self,
+        status: StatusDiscriminants,
+        now: TStamp,
+    ) -> Result<Vec<uuid::Uuid>> {
         let filters = ListFilters {
-            status: Some(StatusDiscriminants::Accepted),
+            status: Some(status),
             ..Default::default()
         };
         let list = self.srvc.list_light(filters, None, now).await?;
         list.into_iter().map(|q| Ok(q.id)).collect()
+    }
+
+    async fn release_paid_exposure(&self, qid: uuid::Uuid, now: TStamp) -> Result<()> {
+        let Some(quote) = self.srvc.quotes.load(qid).await? else {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        };
+        if !matches!(quote.status, Status::MintingEnabled { .. }) {
+            return Err(Error::InvalidQuoteStatus(
+                qid,
+                StatusDiscriminants::MintingEnabled,
+                StatusDiscriminants::from(&quote.status),
+            ));
+        }
+        let Ok(bill) = self.srvc.wdc_client.get_ebill(quote.bill.id).await else {
+            return Ok(());
+        };
+        if bill.status.payment.paid {
+            self.srvc
+                .quotes
+                .release_committed_exposure(qid, now)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn check_quote_ebill(&self, qid: uuid::Uuid) -> Result<()> {
@@ -222,5 +266,72 @@ mod tests {
             srvc: Arc::new(serv),
         };
         monitor.check_quote_ebill(qid).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn ebillmonitor_releases_committed_exposure_after_bill_payment() {
+        let mut repo = MockRepository::new();
+        let mut wdc = MockWdcClient::new();
+        let qid = Uuid::new_v4();
+        let now = TStamp::default();
+        let quote = quotes::Quote {
+            id: qid,
+            status: quotes::Status::MintingEnabled {
+                discounted: bitcoin::Amount::from_sat(1_000),
+                fee: cashu::Amount::from(1_000),
+                wallet_pubkey: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+                keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            },
+            submitted: now,
+            bill: quotes::BillInfo::random(),
+            credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
+        };
+        let bid = quote.bill.id.clone();
+        repo.expect_load()
+            .times(1)
+            .with(eq(qid))
+            .returning(move |_| Ok(Some(quote.clone())));
+        repo.expect_release_committed_exposure()
+            .times(1)
+            .with(eq(qid), eq(now))
+            .returning(|_, _| Ok(()));
+        wdc.expect_get_ebill()
+            .times(1)
+            .with(eq(bid.clone()))
+            .returning(move |_| {
+                let mut bill = wire_bill::BitcreditBill {
+                    id: bid.clone(),
+                    participants: wire_bill::BillParticipants {
+                        drawee: wire_tests::random_identity_public_data().1,
+                        drawer: wire_tests::random_identity_public_data().1,
+                        payee: wire_bill::BillParticipant::Ident(
+                            wire_tests::random_identity_public_data().1,
+                        ),
+                        endorsee: None,
+                        endorsements: vec![],
+                        endorsements_count: 0,
+                        all_participant_node_ids: vec![],
+                    },
+                    data: wire_bill::BillData::default(),
+                    status: wire_bill::BillStatus::default(),
+                    current_waiting_state: None,
+                };
+                bill.status.payment.paid = true;
+                Ok(bill)
+            });
+        let serv = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
+        };
+        let monitor = EbillMonitor {
+            srvc: Arc::new(serv),
+        };
+
+        monitor.release_paid_exposure(qid, now).await.unwrap();
     }
 }

@@ -278,6 +278,14 @@ impl persistence::Repository for DBQuotes {
             .await
     }
 
+    async fn release_committed_exposure(
+        &self,
+        _id: uuid::Uuid,
+        _now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        Err(Error::CreditCapacityUnavailable)
+    }
+
     async fn update_status_if_accepted(
         &self,
         id: uuid::Uuid,
