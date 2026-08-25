@@ -57,6 +57,23 @@ impl AuthorizationVerifier {
         quote: &Quote,
         now: TStamp,
     ) -> Result<VerifiedOffer> {
+        self.verify_inner(signed, quote, Some(now))
+    }
+
+    pub fn verify_replay(
+        &self,
+        signed: wire_quotes::SignedCreditAuthorizationEnvelope,
+        quote: &Quote,
+    ) -> Result<VerifiedOffer> {
+        self.verify_inner(signed, quote, None)
+    }
+
+    fn verify_inner(
+        &self,
+        signed: wire_quotes::SignedCreditAuthorizationEnvelope,
+        quote: &Quote,
+        now: Option<TStamp>,
+    ) -> Result<VerifiedOffer> {
         let authorization = signed.authorization;
         validate_envelope(&authorization)?;
         if signed.signature_algorithm != "Ed25519"
@@ -81,7 +98,7 @@ impl AuthorizationVerifier {
 
         let issued_at = parse_datetime(&authorization.issued_at)?;
         let expires_at = parse_datetime(&authorization.expires_at)?;
-        if issued_at > now || expires_at <= now || expires_at <= issued_at {
+        if expires_at <= issued_at || now.is_some_and(|now| issued_at > now || expires_at <= now) {
             return Err(invalid());
         }
 
@@ -248,15 +265,25 @@ fn validate_envelope(value: &wire_quotes::CreditAuthorizationEnvelope) -> Result
     let operating = u128::from(parse_sat(&value.terms.operating_cost_sat)?);
     let effective_fee = u128::from(parse_sat(&value.terms.effective_fee_sat)?);
     let exposure = u128::from(parse_sat(&value.terms.endorsement_exposure_sat)?);
+    if sum == 0 || discounted == 0 {
+        return Err(invalid());
+    }
     let fee = applied + operating;
-    if sum == 0
-        || discounted == 0
-        || exposure != sum
+    let tenor = u128::from(value.terms.tenor_days);
+    let annual_discount_bps = u128::from(value.terms.annual_discount_bps);
+    let day_count_denominator = 10_000 * 360;
+    // The governed core derives SAT from the policy rate. An operator adjustment instead derives
+    // the disclosed rate from exact SAT, so accept either valid rounding direction.
+    let annual_discount_is_consistent = applied
+        == (sum * annual_discount_bps * tenor).div_ceil(day_count_denominator)
+        || annual_discount_bps == (applied * day_count_denominator).div_ceil(sum * tenor);
+    if exposure != sum
         || sum != discounted + fee
         || effective_fee != fee
+        || !annual_discount_is_consistent
         || u128::from(value.terms.fee_ratio_bps) != (fee * 10_000).div_ceil(sum)
         || u128::from(value.terms.effective_annual_bps)
-            != (fee * 10_000 * 360).div_ceil(discounted * u128::from(value.terms.tenor_days))
+            != (fee * 10_000 * 360).div_ceil(discounted * tenor)
         || value.terms.offer_expires_on > value.terms.maturity_date
     {
         return Err(invalid());
@@ -359,7 +386,7 @@ fn digest(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use bcr_common::wire::quotes as wire_quotes;
     use bitcoin::{hashes::Hash as _, Amount};
@@ -373,7 +400,7 @@ mod tests {
         )
     }
 
-    fn signed_for(quote: &Quote) -> wire_quotes::SignedCreditAuthorizationEnvelope {
+    pub(crate) fn signed_for(quote: &Quote) -> wire_quotes::SignedCreditAuthorizationEnvelope {
         let holder_ref = quote.bill.current_holder.node_id().to_string();
         let acceptor_ref = quote.bill.drawee.node_id.to_string();
         let bill_id = quote.bill.id.to_string();
@@ -477,11 +504,48 @@ mod tests {
             .unwrap();
         assert_eq!(verified.discounted, Amount::from_sat(7_734_000));
 
-        let mut tampered = signed;
+        let mut tampered = signed.clone();
         tampered.authorization.terms.discounted_sat = String::from("7733999");
         assert!(matches!(
             test_authorization_verifier().verify(tampered, &quote, now),
             Err(Error::CreditAuthorizationInvalid)
         ));
+
+        let expired = now + chrono::Duration::days(3);
+        assert!(matches!(
+            test_authorization_verifier().verify(signed.clone(), &quote, expired),
+            Err(Error::CreditAuthorizationInvalid)
+        ));
+        test_authorization_verifier()
+            .verify_replay(signed, &quote)
+            .expect("a completed operation remains safely replayable after authorization expiry");
+    }
+
+    #[test]
+    fn annual_discount_accepts_both_pricing_rounding_modes_and_rejects_mismatch() {
+        let mut bill = crate::quotes::BillInfo::random();
+        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let mut authorization = signed_for(&quote).authorization;
+
+        authorization.terms.annual_discount_bps = 541;
+        assert!(matches!(
+            validate_envelope(&authorization),
+            Err(Error::CreditAuthorizationInvalid)
+        ));
+
+        authorization.terms.applied_discount_sat = String::from("216001");
+        authorization.terms.discounted_sat = String::from("7733999");
+        authorization.terms.effective_fee_sat = String::from("266001");
+        authorization.terms.annual_discount_bps =
+            u32::try_from((216_001_u128 * 10_000 * 360).div_ceil(8_000_000_u128 * 180)).unwrap();
+        authorization.terms.effective_annual_bps =
+            u32::try_from((266_001_u128 * 10_000 * 360).div_ceil(7_733_999_u128 * 180)).unwrap();
+        assert!(validate_envelope(&authorization).is_ok());
     }
 }
