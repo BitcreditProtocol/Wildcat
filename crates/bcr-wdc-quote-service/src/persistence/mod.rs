@@ -190,9 +190,18 @@ mod tests {
 
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn authorization_transition_is_atomic_and_idempotent_sqlx(pool: ::sqlx::PgPool) {
-        authorization_transition_is_atomic_and_idempotent_for(sqlx::DBQuotes::from_pool(pool))
-            .await;
+    async fn authorization_transition_is_fail_closed_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBQuotes::from_pool(pool);
+        let mut quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        quote.status = offered_status(&quote);
+        quote.authorization_receipt = Some(authorization_receipt("sqlx-operation"));
+
+        assert!(matches!(
+            db.execute_authorization(quote, exposure(TStamp::default()))
+                .await,
+            Err(crate::error::Error::CreditCapacityUnavailable)
+        ));
     }
 
     async fn authorization_transition_is_atomic_and_idempotent_for(db: impl Repository) {
@@ -385,7 +394,18 @@ mod tests {
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_update_status_if_offered_ok_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
-        update_status_if_offered_ok(db).await;
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        db.update_status_if_pending(quote.id, offered_status(&quote))
+            .await
+            .unwrap();
+
+        db.update_status_if_offered(quote.id, accepted_status(), TStamp::default())
+            .await
+            .unwrap();
+
+        let updated = db.load(quote.id).await.unwrap().unwrap();
+        assert!(matches!(updated.status, quotes::Status::Accepted { .. }));
     }
     async fn update_status_if_offered_ok(db: impl Repository) {
         let mut quote = pending_quote();
