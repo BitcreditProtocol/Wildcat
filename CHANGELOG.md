@@ -1,3 +1,14 @@
+# 0.6.0
+* Consolidated key and swap services into core.
+* Introduced redemption-date keysets.
+* Added online and offline intermint exchanges.
+* Expanded Clowder and multisig integration.
+* Added mandatory swap commitments and attestations.
+* Improved eBill minting and validation.
+* Enhanced mint/melt fees and safeguards.
+* Migrated persistence to PostgreSQL/SQLx.
+* Added NUT-19 response caching.
+
 # 0.5.0
 * upgrade bcr-ebill-core to 0.4.5
 * fixes in config for bcr-wdc-ebpp
