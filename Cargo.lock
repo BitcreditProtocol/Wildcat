@@ -704,6 +704,7 @@ name = "bcr-wdc-admin-aggregator"
 version = "0.5.0-alpha"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "bcr-common",
  "bcr-wdc-utils",
  "chrono",
@@ -711,6 +712,7 @@ dependencies = [
  "futures",
  "secp256k1",
  "serde",
+ "serde_json",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

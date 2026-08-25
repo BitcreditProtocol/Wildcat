@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use axum::{
     extract::FromRef,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use bcr_common::{
@@ -19,6 +19,7 @@ use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 mod admin;
 mod authorization;
 mod client;
+mod credit_evidence;
 mod error;
 mod monitor;
 mod persistence;
@@ -46,11 +47,17 @@ pub struct AppConfig {
     credit_authorization_mint_id: String,
     credit_authorization_key_id: String,
     credit_authorization_public_key: String,
+    credit_evidence_risk_methodology_version: String,
+    credit_evidence_risk_assessed_by: String,
+    credit_evidence_capacity_methodology_version: String,
+    credit_evidence_capacity_assessed_by: String,
+    credit_evidence_synthetic: bool,
 }
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
     quote: Arc<service::Service>,
+    credit_evidence: Arc<credit_evidence::Store>,
 }
 
 pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
@@ -66,16 +73,39 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         credit_authorization_mint_id,
         credit_authorization_key_id,
         credit_authorization_public_key,
+        credit_evidence_risk_methodology_version,
+        credit_evidence_risk_assessed_by,
+        credit_evidence_capacity_methodology_version,
+        credit_evidence_capacity_assessed_by,
+        credit_evidence_synthetic,
     } = cfg;
     let credit_program =
         quotes::CreditProgramBinding::new(credit_program_version, credit_program_digest)
             .expect("invalid Mint credit program binding");
+    let credit_evidence_mint_id = credit_authorization_mint_id.clone();
     let authorization_verifier = authorization::AuthorizationVerifier::new(
         credit_authorization_mint_id,
         credit_authorization_key_id,
         credit_authorization_public_key,
     )
     .expect("invalid AI Credit authorization verifier configuration");
+    let credit_evidence = Arc::new(
+        credit_evidence::Store::new(
+            quotes.clone(),
+            credit_evidence::Settings {
+                mint_id: credit_evidence_mint_id,
+                risk_methodology_version: credit_evidence_risk_methodology_version,
+                risk_assessed_by: credit_evidence_risk_assessed_by,
+                capacity_methodology_version: credit_evidence_capacity_methodology_version,
+                capacity_assessed_by: credit_evidence_capacity_assessed_by,
+                synthetic: credit_evidence_synthetic,
+            }
+            .validate()
+            .expect("invalid Mint credit evidence configuration"),
+        )
+        .await
+        .expect("DB connection to Mint credit evidence failed"),
+    );
     let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
         .await
         .expect("DB connection to quotes failed");
@@ -116,14 +146,16 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         MINIMUM_MONITOR_INTERVAL_SECONDS,
     ));
     let routine_handle = RoutineHandle::new(monitor, interval);
-    (AppController { quote }, routine_handle)
+    (
+        AppController {
+            quote,
+            credit_evidence,
+        },
+        routine_handle,
+    )
 }
 
-pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
-where
-    Arc<service::Service>: FromRef<Cntrlr> + Send + Sync + 'static,
-    Cntrlr: Send + Sync + Clone + 'static,
-{
+pub fn routes(ctrl: AppController) -> Router {
     let web = Router::new()
         .route("/health", get(get_health))
         .route(quote::web_ep::ENQUIRE_V1, post(web::enquire_quote))
@@ -136,6 +168,14 @@ where
         .route(quote::admin_ep::LOOKUP, get(admin::lookup_quote))
         .route(quote::admin_ep::UPDATE, patch(admin::update_quote))
         .route(quote::admin_ep::AUTHORIZE, patch(admin::authorize_quote))
+        .route(
+            quote::admin_ep::ACCEPTOR_RISK_EVIDENCE,
+            put(admin::record_acceptor_risk_evidence),
+        )
+        .route(
+            quote::admin_ep::MINT_CAPACITY_EVIDENCE,
+            put(admin::record_mint_capacity_evidence),
+        )
         .route(
             quote::admin_ep::ENABLE_MINTING,
             patch(admin::enable_minting),

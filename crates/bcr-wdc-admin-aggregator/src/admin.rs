@@ -2,9 +2,10 @@
 // ----- extra library imports
 use axum::{
     extract::{Json, Path, Query, State},
-    http::header,
+    http::{header, HeaderMap},
     response::{AppendHeaders, IntoResponse},
 };
+use base64::{engine::general_purpose, Engine as _};
 use bcr_common::{
     cashu,
     client::ebill::Error as EbillClientError,
@@ -25,6 +26,44 @@ use crate::{
 };
 
 // ----- end imports
+
+fn verified_approver(headers: &HeaderMap) -> Result<String> {
+    let encoded = headers
+        .get("x-jwt-payload")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty() && value.len() <= 16_384)
+        .ok_or_else(|| Error::Forbidden(String::from("verified Keycloak claims are required")))?;
+    let bytes = general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .or_else(|_| general_purpose::URL_SAFE.decode(encoded))
+        .map_err(|_| Error::Forbidden(String::from("verified Keycloak claims are malformed")))?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| Error::Forbidden(String::from("verified Keycloak claims are malformed")))?;
+    if claims.get("azp").and_then(serde_json::Value::as_str) != Some("bff-dashboard") {
+        return Err(Error::Forbidden(String::from(
+            "token was not issued to the dashboard",
+        )));
+    }
+    let operator_id = claims
+        .get("sub")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 200 && !value.chars().any(char::is_control)
+        })
+        .ok_or_else(|| Error::Forbidden(String::from("Keycloak subject is invalid")))?;
+    let realm_approver = claims
+        .pointer("/realm_access/roles")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|roles| roles.iter().any(|role| role.as_str() == Some("approver")));
+    let client_approver = claims
+        .pointer("/resource_access/bff-dashboard/roles")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|roles| roles.iter().any(|role| role.as_str() == Some("approver")));
+    if !realm_approver && !client_approver {
+        return Err(Error::Forbidden(String::from("approver role is required")));
+    }
+    Ok(operator_id.to_owned())
+}
 
 #[utoipa::path(
     get,
@@ -229,6 +268,96 @@ pub async fn authorize_quote(
     Json(request): Json<wire_quotes::AuthorizedQuoteRequest>,
 ) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
     Ok(Json(ctrl.quotes_cl.authorize(qid, request).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = endpoints::RECORD_ACCEPTOR_RISK_EVIDENCE,
+    params(("qid" = uuid::Uuid, Path, description = "The quote whose acceptor owns the risk record")),
+    request_body(content = wire_quotes::AcceptorRiskEvidenceRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Mint-owned acceptor risk evidence recorded", body = wire_quotes::AcceptorRiskEvidence),
+        (status = 400, description = "Invalid evidence"),
+        (status = 403, description = "Approver role required"),
+        (status = 404, description = "Quote not found"),
+    )
+)]
+pub async fn record_acceptor_risk_evidence(
+    State(ctrl): State<AppController>,
+    headers: HeaderMap,
+    Path(qid): Path<uuid::Uuid>,
+    Json(request): Json<wire_quotes::AcceptorRiskEvidenceRequest>,
+) -> Result<Json<wire_quotes::AcceptorRiskEvidence>> {
+    let operator_id = verified_approver(&headers)?;
+    Ok(Json(
+        ctrl.quotes_cl
+            .record_acceptor_risk_evidence(
+                qid,
+                wire_quotes::AcceptorRiskEvidenceCommand {
+                    operator_id,
+                    request,
+                },
+            )
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    put,
+    path = endpoints::RECORD_MINT_CAPACITY_EVIDENCE,
+    request_body(content = wire_quotes::MintCapacityEvidenceRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Mint-owned capacity evidence recorded", body = wire_quotes::MintCapacityEvidence),
+        (status = 400, description = "Invalid evidence"),
+        (status = 403, description = "Approver role required"),
+    )
+)]
+pub async fn record_mint_capacity_evidence(
+    State(ctrl): State<AppController>,
+    headers: HeaderMap,
+    Json(request): Json<wire_quotes::MintCapacityEvidenceRequest>,
+) -> Result<Json<wire_quotes::MintCapacityEvidence>> {
+    let operator_id = verified_approver(&headers)?;
+    Ok(Json(
+        ctrl.quotes_cl
+            .record_mint_capacity_evidence(wire_quotes::MintCapacityEvidenceCommand {
+                operator_id,
+                request,
+            })
+            .await?,
+    ))
+}
+
+#[cfg(test)]
+mod credit_evidence_auth_tests {
+    use super::*;
+
+    fn headers(claims: serde_json::Value) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        let encoded = general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap());
+        headers.insert("x-jwt-payload", encoded.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn only_verified_dashboard_approvers_may_record_mint_evidence() {
+        let approver = headers(
+            serde_json::json!({"azp":"bff-dashboard","sub":"operator-a","realm_access":{"roles":["approver"]}}),
+        );
+        assert_eq!(verified_approver(&approver).unwrap(), "operator-a");
+
+        let reviewer = headers(
+            serde_json::json!({"azp":"bff-dashboard","sub":"operator-b","realm_access":{"roles":["reviewer"]}}),
+        );
+        assert!(matches!(
+            verified_approver(&reviewer),
+            Err(Error::Forbidden(_))
+        ));
+        assert!(matches!(
+            verified_approver(&HeaderMap::new()),
+            Err(Error::Forbidden(_))
+        ));
+    }
 }
 
 #[utoipa::path(

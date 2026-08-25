@@ -35,6 +35,8 @@ pub enum Error {
     ResourceNotFound(String),
     #[error("Internal server error: {0}")]
     Internal(String),
+    #[error("forbidden: {0}")]
+    Forbidden(String),
 }
 
 impl axum::response::IntoResponse for Error {
@@ -52,6 +54,10 @@ impl axum::response::IntoResponse for Error {
             }
             Error::ResourceNotFound(e) => {
                 (StatusCode::NOT_FOUND, format!("resource not found: {e}"))
+            }
+            Error::Forbidden(e) => (StatusCode::FORBIDDEN, e),
+            Error::QuotesClient(QuotesClientError::InvalidRequest(e)) => {
+                (StatusCode::BAD_REQUEST, e.to_string())
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

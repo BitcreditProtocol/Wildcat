@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 axum = {workspace = true, features = ["macros"]}
+base64.workspace = true
 bcr-common = {workspace = true, features = ["clwdr-client"]}
 bcr-wdc-utils = {workspace = true}
 chrono = {workspace = true}
@@ -13,6 +14,7 @@ config = {workspace = true}
 futures = {workspace = true}
 secp256k1 = {workspace = true}
 serde  = {workspace = true}
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}
 tracing = {workspace = true, features = ["log"]}
