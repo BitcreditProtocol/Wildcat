@@ -24,6 +24,7 @@ use crate::{
 enum QuoteBlob {
     V1(QuoteBlobV1),
     V2(QuoteBlobV2),
+    V3(Box<QuoteBlobV3>),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -37,6 +38,14 @@ struct QuoteBlobV2 {
     bill: quotes::BillInfo,
     status: quotes::Status,
     credit_program: quotes::CreditProgramBinding,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct QuoteBlobV3 {
+    bill: quotes::BillInfo,
+    status: quotes::Status,
+    credit_program: quotes::CreditProgramBinding,
+    authorization_receipt: Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>,
 }
 
 // ///////////////////////////////////////////////////////////////////////// QuoteRow
@@ -63,6 +72,7 @@ fn quote_to_row(quote: quotes::Quote) -> Result<QuoteRow> {
         bill,
         submitted,
         credit_program,
+        authorization_receipt,
     } = quote;
     let maturity_date = bill.maturity_date;
     let bill_id = bill.id.to_string();
@@ -73,12 +83,13 @@ fn quote_to_row(quote: quotes::Quote) -> Result<QuoteRow> {
     let bill_holder_id = bill.current_holder.node_id().to_string();
     let status_d = status.discriminant().to_string();
     let credit_program = credit_program.ok_or(Error::CreditProgramNotBound(id))?;
-    let blob_v2 = QuoteBlobV2 {
+    let blob_v3 = QuoteBlobV3 {
         bill,
         status,
         credit_program,
+        authorization_receipt,
     };
-    let blob = Json(QuoteBlob::V2(blob_v2));
+    let blob = Json(QuoteBlob::V3(Box::new(blob_v3)));
     Ok(QuoteRow {
         qid: id,
         status: status_d,
@@ -95,10 +106,10 @@ fn quote_to_row(quote: quotes::Quote) -> Result<QuoteRow> {
 }
 
 fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
-    let (bill, status, credit_program) = match row.blob.0 {
+    let (bill, status, credit_program, authorization_receipt) = match row.blob.0 {
         QuoteBlob::V1(blob_v1) => {
             let QuoteBlobV1 { bill, status } = blob_v1;
-            (bill, status, None)
+            (bill, status, None, None)
         }
         QuoteBlob::V2(blob_v2) => {
             let QuoteBlobV2 {
@@ -106,7 +117,16 @@ fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
                 status,
                 credit_program,
             } = blob_v2;
-            (bill, status, Some(credit_program))
+            (bill, status, Some(credit_program), None)
+        }
+        QuoteBlob::V3(blob_v3) => {
+            let QuoteBlobV3 {
+                bill,
+                status,
+                credit_program,
+                authorization_receipt,
+            } = *blob_v3;
+            (bill, status, Some(credit_program), authorization_receipt)
         }
     };
     let expected_d = status.discriminant().to_string();
@@ -123,6 +143,7 @@ fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
         status,
         submitted: row.submitted,
         credit_program,
+        authorization_receipt,
     })
 }
 
@@ -234,6 +255,50 @@ impl persistence::Repository for DBQuotes {
     ) -> Result<()> {
         self.update_status_if(id, quotes::StatusDiscriminants::Pending, new_status)
             .await
+    }
+
+    async fn execute_authorization(
+        &self,
+        quote: quotes::Quote,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let receipt = quote
+            .authorization_receipt
+            .clone()
+            .ok_or(Error::CreditAuthorizationInvalid)?;
+        let row = quote_to_row(quote)?;
+        let blob = serde_json::to_value(row.blob.0)
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        let rows = sqlx::query(
+            r#"
+            UPDATE quote_quotes
+            SET status = $2, blob = $3
+            WHERE qid = $1 AND status = $4
+              AND (blob->'data'->'authorization_receipt') IS NULL
+            "#,
+        )
+        .bind(row.qid)
+        .bind(row.status)
+        .bind(blob)
+        .bind(quotes::StatusDiscriminants::Pending.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+        .rows_affected();
+        if rows == 1 {
+            return Ok(receipt);
+        }
+        let stored = <Self as persistence::Repository>::load(self, row.qid)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(row.qid.to_string()))?;
+        match stored.authorization_receipt {
+            Some(existing)
+                if existing.operation_id == receipt.operation_id
+                    && existing.authorization_digest == receipt.authorization_digest =>
+            {
+                Ok(existing)
+            }
+            _ => Err(Error::CreditAuthorizationConflict),
+        }
     }
 
     async fn update_status_if_offered(

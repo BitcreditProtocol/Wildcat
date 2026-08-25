@@ -1,0 +1,37 @@
+{
+  "description": "Cross-language canonicalization vector for the decision-relevant bill state observed by Wildcat.",
+  "billState": {
+    "schemaVersion": "mint-observed-bill-state-v1",
+    "billId": "synthetic-bill-a",
+    "holderRef": "synthetic-holder-a",
+    "acceptorRef": "synthetic-cooperativa-a",
+    "faceValueSat": "8000000",
+    "maturityDate": "2027-02-06"
+  },
+  "expected": {
+    "canonicalBase64": "AAAAHEFJLUNSRURJVC1NSU5ULUJJTEwtU1RBVEUtVjEAAAAbbWludC1vYnNlcnZlZC1iaWxsLXN0YXRlLXYxAAAAEHN5bnRoZXRpYy1iaWxsLWEAAAASc3ludGhldGljLWhvbGRlci1hAAAAF3N5bnRoZXRpYy1jb29wZXJhdGl2YS1hAAAABzgwMDAwMDAAAAAKMjAyNy0wMi0wNg==",
+    "billStateDigest": "sha256:9d5357e97763cea3bff9bc2a852803eabc0536887123be3a69ac9e24ef4d123b"
+  },
+  "negativeCases": [
+    {
+      "name": "non-NFC holder",
+      "patch": { "holderRef": "synthetic-holdér-a" }
+    },
+    {
+      "name": "numeric face value",
+      "patch": { "faceValueSat": 8000000 }
+    },
+    {
+      "name": "non-canonical face value",
+      "patch": { "faceValueSat": "08000000" }
+    },
+    {
+      "name": "invalid maturity date",
+      "patch": { "maturityDate": "02/06/2027" }
+    },
+    {
+      "name": "unknown field",
+      "patch": { "synthetic": true }
+    }
+  ]
+}

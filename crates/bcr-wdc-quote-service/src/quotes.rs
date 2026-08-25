@@ -162,6 +162,7 @@ pub struct Quote {
     pub bill: BillInfo,
     pub submitted: TStamp,
     pub(crate) credit_program: Option<CreditProgramBinding>,
+    pub(crate) authorization_receipt: Option<wire_quotes::CreditAuthorizationReceipt>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -252,6 +253,7 @@ impl Quote {
             bill,
             submitted,
             credit_program: Some(credit_program),
+            authorization_receipt: None,
         }
     }
 
@@ -259,11 +261,22 @@ impl Quote {
         self.credit_program.as_ref()
     }
 
+    pub fn authorization_receipt(&self) -> Option<&wire_quotes::CreditAuthorizationReceipt> {
+        self.authorization_receipt.as_ref()
+    }
+
     pub(crate) fn require_credit_program(&self) -> Result<()> {
         self.credit_program
             .as_ref()
             .map(|_| ())
             .ok_or(Error::CreditProgramNotBound(self.id))
+    }
+
+    fn require_credit_authorization(&self) -> Result<()> {
+        self.authorization_receipt
+            .as_ref()
+            .map(|_| ())
+            .ok_or(Error::CreditAuthorizationRequired)
     }
 
     pub fn cancel(&mut self, tstamp: TStamp) -> Result<()> {
@@ -348,6 +361,7 @@ impl Quote {
 
     pub fn accept(&mut self, tstamp: TStamp) -> Result<()> {
         self.require_credit_program()?;
+        self.require_credit_authorization()?;
         self.check_expire(tstamp);
         match self.status {
             Status::Offered {
@@ -521,5 +535,25 @@ mod tests {
 
         assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
         assert!(matches!(quote.status, Status::Pending { .. }));
+    }
+
+    #[test]
+    fn offer_without_authorization_receipt_cannot_be_accepted() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+        let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+        quote
+            .offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1))
+            .unwrap();
+
+        assert!(matches!(
+            quote.accept(TStamp::default()),
+            Err(Error::CreditAuthorizationRequired)
+        ));
+        assert!(matches!(quote.status, Status::Offered { .. }));
     }
 }
