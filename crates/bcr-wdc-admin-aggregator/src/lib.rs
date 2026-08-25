@@ -100,6 +100,7 @@ pub mod endpoints {
     pub const GET_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const LIST_CREDIT_QUOTES: &str = "/v1/admin/credit/quote";
     pub const UPDATE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
+    pub const AUTHORIZE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}/authorization";
     pub const GET_SHARED_EBILL_HISTORY: &str = "/v1/admin/credit/quote/{qid}/ebill/history";
     pub const ENABLE_QUOTE_MINTING: &str = "/v1/admin/credit/quote/enable_mint/{qid}";
     // EBills-Client
@@ -146,6 +147,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(endpoints::GET_CREDIT_QUOTE, get(admin::get_quote))
         .route(endpoints::LIST_CREDIT_QUOTES, get(admin::list_quotes))
         .route(endpoints::UPDATE_CREDIT_QUOTE, put(admin::update_quote))
+        .route(
+            endpoints::AUTHORIZE_CREDIT_QUOTE,
+            put(admin::authorize_quote),
+        )
         .route(
             endpoints::ENABLE_QUOTE_MINTING,
             patch(admin::patch_enable_quote_minting),
@@ -244,6 +249,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_quotes::LightInfo,
         wire_quotes::UpdateQuoteRequest,
         wire_quotes::UpdateQuoteResponse,
+        wire_quotes::AuthorizedQuoteRequest,
+        wire_quotes::CreditAuthorizationReceipt,
         wire_bill::BillHistoryBlock,
         wire_quotes::EnableMintingResponse,
         // ebills service
@@ -283,6 +290,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_quote,
         admin::list_quotes,
         admin::update_quote,
+        admin::authorize_quote,
         admin::get_shared_ebill_history,
         admin::patch_enable_quote_minting,
         // ebills service

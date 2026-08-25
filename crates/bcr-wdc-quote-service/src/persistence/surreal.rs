@@ -26,6 +26,8 @@ struct QuoteDBEntry {
     status: quotes::Status,
     #[serde(default)]
     credit_program: Option<quotes::CreditProgramBinding>,
+    #[serde(default)]
+    authorization_receipt: Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>,
 }
 
 impl From<QuoteDBEntry> for quotes::Quote {
@@ -36,6 +38,7 @@ impl From<QuoteDBEntry> for quotes::Quote {
             submitted: dbq.submitted,
             status: dbq.status,
             credit_program: dbq.credit_program,
+            authorization_receipt: dbq.authorization_receipt,
         }
     }
 }
@@ -48,6 +51,7 @@ impl From<quotes::Quote> for QuoteDBEntry {
             submitted: quote.submitted,
             status: quote.status,
             credit_program: quote.credit_program,
+            authorization_receipt: quote.authorization_receipt,
         }
     }
 }
@@ -231,6 +235,47 @@ impl Repository for DBQuotes {
             None => Err(Error::QuotesRepository(anyhow!(
                 "Quote not found or not pending"
             ))),
+        }
+    }
+
+    async fn execute_authorization(
+        &self,
+        quote: quotes::Quote,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let receipt = quote
+            .authorization_receipt
+            .clone()
+            .ok_or(Error::CreditAuthorizationInvalid)?;
+        let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, quote.id);
+        let updated: Option<QuoteDBEntry> = self
+            .db
+            .query(
+                "UPDATE $rid SET status = $new, authorization_receipt = $receipt WHERE status.status == $status AND authorization_receipt == NONE RETURN AFTER",
+            )
+            .bind(("rid", recordid))
+            .bind(("new", quote.status))
+            .bind(("receipt", receipt.clone()))
+            .bind(("status", quotes::StatusDiscriminants::Pending))
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .take(0)
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        if updated.is_some() {
+            return Ok(receipt);
+        }
+        let stored = self
+            .load(quote.id)
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .ok_or_else(|| Error::ResourceNotFound(quote.id.to_string()))?;
+        match stored.authorization_receipt {
+            Some(existing)
+                if existing.operation_id == receipt.operation_id
+                    && existing.authorization_digest == receipt.authorization_digest =>
+            {
+                Ok(existing)
+            }
+            _ => Err(Error::CreditAuthorizationConflict),
         }
     }
 

@@ -67,6 +67,35 @@ impl Repository for QuotesIDMap {
         )))
     }
 
+    async fn execute_authorization(
+        &self,
+        quote: quotes::Quote,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let receipt = quote
+            .authorization_receipt
+            .clone()
+            .ok_or(Error::CreditAuthorizationInvalid)?;
+        let mut quotes = self.quotes.write().unwrap();
+        let stored = quotes
+            .get_mut(&quote.id)
+            .ok_or_else(|| Error::ResourceNotFound(quote.id.to_string()))?;
+        if let Some(existing) = &stored.authorization_receipt {
+            return if existing.operation_id == receipt.operation_id
+                && existing.authorization_digest == receipt.authorization_digest
+            {
+                Ok(existing.clone())
+            } else {
+                Err(Error::CreditAuthorizationConflict)
+            };
+        }
+        if !matches!(stored.status, quotes::Status::Pending { .. }) {
+            return Err(Error::CreditAuthorizationConflict);
+        }
+        stored.status = quote.status;
+        stored.authorization_receipt = Some(receipt.clone());
+        Ok(receipt)
+    }
+
     async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);

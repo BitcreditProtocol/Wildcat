@@ -36,6 +36,12 @@ pub enum Error {
     ),
     #[error("quote {0} has no credit program binding")]
     CreditProgramNotBound(uuid::Uuid),
+    #[error("credit authorization is required")]
+    CreditAuthorizationRequired,
+    #[error("credit authorization is invalid")]
+    CreditAuthorizationInvalid,
+    #[error("credit authorization conflicts with a completed operation")]
+    CreditAuthorizationConflict,
     #[error("resource not found: resource id {0}")]
     ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
@@ -80,6 +86,18 @@ impl axum::response::IntoResponse for Error {
             Error::CreditProgramNotBound(_) => (
                 StatusCode::CONFLICT,
                 String::from("Quote has no credit program binding"),
+            ),
+            Error::CreditAuthorizationRequired => (
+                StatusCode::FORBIDDEN,
+                String::from("Credit authorization is required"),
+            ),
+            Error::CreditAuthorizationInvalid => (
+                StatusCode::UNAUTHORIZED,
+                String::from("Credit authorization is invalid"),
+            ),
+            Error::CreditAuthorizationConflict => (
+                StatusCode::CONFLICT,
+                String::from("Credit authorization conflicts with a completed operation"),
             ),
 
             Error::Chrono(e) => {

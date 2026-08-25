@@ -213,6 +213,25 @@ pub async fn update_quote(
 }
 
 #[utoipa::path(
+    put,
+    path = endpoints::AUTHORIZE_CREDIT_QUOTE,
+    params(("qid" = String, Path, description = "The quote id")),
+    request_body(content = wire_quotes::AuthorizedQuoteRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Authorization executed or replayed", body = wire_quotes::CreditAuthorizationReceipt),
+        (status = 401, description = "Invalid authorization"),
+        (status = 409, description = "Conflicting authorization or quote state"),
+    )
+)]
+pub async fn authorize_quote(
+    State(ctrl): State<AppController>,
+    Path(qid): Path<uuid::Uuid>,
+    Json(request): Json<wire_quotes::AuthorizedQuoteRequest>,
+) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
+    Ok(Json(ctrl.quotes_cl.authorize(qid, request).await?))
+}
+
+#[utoipa::path(
     patch,
     path = endpoints::ENABLE_QUOTE_MINTING,
     params(

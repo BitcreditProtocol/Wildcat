@@ -6,7 +6,7 @@ use bcr_common::wire::bill as wire_bill;
 use bcr_common::wire::quotes as wire_quotes;
 // ----- local imports
 use crate::{
-    error::Result,
+    error::{Error, Result},
     quotes,
     service::{calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
 };
@@ -234,11 +234,23 @@ pub async fn update_quote(
             wire_quotes::UpdateQuoteResponse::Denied
         }
         wire_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
-            let (discounted, ttl) = ctrl.offer(id, discounted, now, ttl).await?;
-            wire_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
+            let _ = (discounted, ttl);
+            return Err(Error::CreditAuthorizationRequired);
         }
     };
     Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, request))]
+pub async fn authorize_quote(
+    State(ctrl): State<Arc<Service>>,
+    Path(id): Path<uuid::Uuid>,
+    Json(request): Json<wire_quotes::AuthorizedQuoteRequest>,
+) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
+    let receipt = ctrl
+        .authorize_offer(id, request.signed_authorization, chrono::Utc::now())
+        .await?;
+    Ok(Json(receipt))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]

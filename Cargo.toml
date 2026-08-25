@@ -33,9 +33,11 @@ bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
 chrono = {version = "0.4"}
+base64 = {version = "0.22"}
 ciborium = {version = "0.2"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
+ed25519-dalek = {version = "2"}
 itertools = {version = "0.15"}
 mockall = {version = "0.13"}
 rand = {version = "0.8"}
@@ -52,6 +54,7 @@ tokio-util = {version = "0.7"}
 tracing = {version = "0.1"}
 tracing-log = {version = "0.2"}
 tracing-subscriber = {version = "0.3"}
+unicode-normalization = {version = "0.1"}
 url = {version = "2.5.4"}
 utoipa = {version = "5"}
 utoipa-swagger-ui = {version = "9"}

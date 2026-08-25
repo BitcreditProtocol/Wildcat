@@ -20,6 +20,10 @@ use crate::{
 pub trait Repository {
     async fn load(&self, id: uuid::Uuid) -> Result<Option<Quote>>;
     async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
+    async fn execute_authorization(
+        &self,
+        quote: Quote,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt>;
     async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_accepted(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_failedebillvalidation(
@@ -68,6 +72,7 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         }
     }
 
@@ -123,6 +128,62 @@ mod tests {
         assert!(matches!(
             db.store(quote.clone()).await,
             Err(crate::error::Error::CreditProgramNotBound(id)) if id == quote.id
+        ));
+    }
+
+    fn authorization_receipt(
+        operation_id: &str,
+    ) -> bcr_common::wire::quotes::CreditAuthorizationReceipt {
+        bcr_common::wire::quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: operation_id.to_owned(),
+            authorization_digest: format!("sha256:{}", "a".repeat(64)),
+            case_id: String::from("case-a"),
+            status: String::from("completed"),
+            mint_id: String::from("local-wildcat"),
+            bill_id: String::from("bill-a"),
+            action: String::from("request_to_mint"),
+            effect_id: String::from("effect-a"),
+            result_digest: format!("sha256:{}", "b".repeat(64)),
+            completed_at: String::from("2026-08-10T12:06:00.000Z"),
+            synthetic: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_transition_is_atomic_and_idempotent() {
+        authorization_transition_is_atomic_and_idempotent_for(init_inmemory_db()).await;
+        authorization_transition_is_atomic_and_idempotent_for(init_surreal_db().await).await;
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn authorization_transition_is_atomic_and_idempotent_sqlx(pool: ::sqlx::PgPool) {
+        authorization_transition_is_atomic_and_idempotent_for(sqlx::DBQuotes::from_pool(pool))
+            .await;
+    }
+
+    async fn authorization_transition_is_atomic_and_idempotent_for(db: impl Repository) {
+        let mut quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        quote.status = offered_status(&quote);
+        let receipt = authorization_receipt(&format!("sha256:{}", "c".repeat(64)));
+        quote.authorization_receipt = Some(receipt.clone());
+
+        assert_eq!(
+            db.execute_authorization(quote.clone()).await.unwrap(),
+            receipt
+        );
+        assert_eq!(
+            db.execute_authorization(quote.clone()).await.unwrap(),
+            receipt
+        );
+
+        quote.authorization_receipt =
+            Some(authorization_receipt(&format!("sha256:{}", "d".repeat(64))));
+        assert!(matches!(
+            db.execute_authorization(quote).await,
+            Err(crate::error::Error::CreditAuthorizationConflict)
         ));
     }
 
@@ -339,6 +400,7 @@ mod tests {
             },
             submitted: TStamp::default(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         db.store(quote.clone()).await.unwrap();
         let filters = service::ListFilters::default();
@@ -400,6 +462,7 @@ mod tests {
             },
             submitted: TStamp::from_timestamp(100000, 0).unwrap(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         db.store(quote).await.unwrap();
         let qid2 = Uuid::new_v4();
@@ -414,6 +477,7 @@ mod tests {
             },
             submitted: TStamp::from_timestamp(300000, 0).unwrap(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         db.store(quote).await.unwrap();
         let qid3 = Uuid::new_v4();
@@ -428,6 +492,7 @@ mod tests {
             },
             submitted: TStamp::from_timestamp(200000, 0).unwrap(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         db.store(quote).await.unwrap();
         let filters = service::ListFilters::default();
@@ -498,6 +563,7 @@ mod tests {
             },
             submitted: TStamp::default(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         db.store(quote.clone()).await.unwrap();
         let result = db

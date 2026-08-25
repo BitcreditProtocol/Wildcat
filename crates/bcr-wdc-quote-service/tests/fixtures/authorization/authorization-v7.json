@@ -1,0 +1,889 @@
+{
+  "description": "Synthetic Ed25519 conformance vector. The signing key is derived at runtime from a public label (see syntheticConformanceSigningKey); only the public half is stored here.",
+  "testKey": {
+    "keyId": "synthetic-ed25519-v1",
+    "publicKeyJwk": {
+      "crv": "Ed25519",
+      "x": "jn__htbnO4jauBDTN5Oeby-2uOylC6skT2-jm8mXiNc",
+      "kty": "OKP"
+    }
+  },
+  "authorization": {
+    "schemaVersion": "credit-authorization-v7",
+    "keyId": "synthetic-ed25519-v1",
+    "mintId": "synthetic-mint-guatemala",
+    "mintQuoteId": "synthetic-quote-a",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
+    "creditProgramDigest": "sha256:d8f65c260a9dc70a14afab2a67a909776bb0952dff0ff8136b595f12374eba7c",
+    "caseId": "synthetic-case-a",
+    "billId": "synthetic-bill-a",
+    "billStateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "holderRef": "synthetic-holder-a",
+    "acceptorRef": "synthetic-cooperativa-a",
+    "decisionSnapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
+    "decisionResultDigest": "sha256:c2701c525942f50df28d0021a3096ead5d27bf17e730a4404988a6d0a056bdd3",
+    "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
+    "policyPackVersion": "synthetic-guatemala-coffee-v11",
+    "calculationVersion": "deterministic-credit-core-v9",
+    "terms": {
+      "billSumSat": "8000000",
+      "discountedSat": "7734000",
+      "appliedDiscountSat": "216000",
+      "operatingCostSat": "50000",
+      "effectiveFeeSat": "266000",
+      "endorsementExposureSat": "8000000",
+      "maturityDate": "2027-02-06",
+      "offerExpiresOn": "2026-08-12",
+      "tenorDays": 180,
+      "annualDiscountBps": 540,
+      "effectiveAnnualBps": 688,
+      "feeRatioBps": 333
+    },
+    "operatorId": "synthetic-operator-a",
+    "issuedAt": "2026-08-10T12:00:00.000Z",
+    "expiresAt": "2026-08-10T12:15:00.000Z",
+    "nonce": "00000000-0000-4000-8000-000000000001",
+    "action": "request_to_mint",
+    "synthetic": true
+  },
+  "verificationContext": {
+    "now": "2026-08-10T12:05:00.000Z",
+    "mintQuoteId": "synthetic-quote-a",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
+    "creditProgramDigest": "sha256:d8f65c260a9dc70a14afab2a67a909776bb0952dff0ff8136b595f12374eba7c",
+    "action": "request_to_mint",
+    "billId": "synthetic-bill-a",
+    "billStateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "holderRef": "synthetic-holder-a",
+    "acceptorRef": "synthetic-cooperativa-a",
+    "decision": {
+      "schemaVersion": "decision-result-v9",
+      "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
+      "mintId": "synthetic-mint-guatemala",
+      "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
+      "policyPackVersion": "synthetic-guatemala-coffee-v11",
+      "calculationVersion": "deterministic-credit-core-v9",
+      "assessmentStatus": "ready_for_decision",
+      "recommendation": "offer_available",
+      "axes": [
+        {
+          "axis": "instrument_eligibility",
+          "status": "pass",
+          "reasonCodes": ["accepted_bill_eligible"]
+        },
+        {
+          "axis": "acceptor_repayment_risk",
+          "status": "pass",
+          "reasonCodes": ["acceptor_loss_parameters_verified"]
+        },
+        {
+          "axis": "transaction_integrity",
+          "status": "pass",
+          "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
+        },
+        {
+          "axis": "applicant_recourse_risk",
+          "status": "pass",
+          "reasonCodes": ["whole_face_recourse_acknowledged"]
+        },
+        {
+          "axis": "evidence_sufficiency",
+          "status": "pass",
+          "reasonCodes": ["evidence_admissible"]
+        },
+        {
+          "axis": "mint_exposure_capacity",
+          "status": "pass",
+          "reasonCodes": ["mint_capacity_available"]
+        }
+      ],
+      "terms": {
+        "billSumSat": "8000000",
+        "discountedSat": "7734000",
+        "appliedDiscountSat": "216000",
+        "operatingCostSat": "50000",
+        "effectiveFeeSat": "266000",
+        "endorsementExposureSat": "8000000",
+        "maturityDate": "2027-02-06",
+        "offerExpiresOn": "2026-08-12",
+        "tenorDays": 180,
+        "annualDiscountBps": 540,
+        "effectiveAnnualBps": 688,
+        "feeRatioBps": 333
+      },
+      "verificationRequests": [],
+      "reasonCodes": ["governed_terms_available"],
+      "assessmentTrace": [
+        {
+          "ruleId": "accepted_bill_eligible",
+          "subject": "instrument_eligibility",
+          "outcome": "pass",
+          "reasonCode": "accepted_bill_eligible",
+          "observed": {
+            "acceptanceState": "accepted",
+            "faceValueSat": "8000000",
+            "tenorDays": 180,
+            "alreadyFinanced": false
+          },
+          "policy": {
+            "maximumBillSumSat": "20000000",
+            "minimumTenorDays": 30,
+            "maximumTenorDays": 240
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "eligibleForPricing": true
+          }
+        },
+        {
+          "ruleId": "acceptor_loss_parameters_verified",
+          "subject": "acceptor_repayment_risk",
+          "outcome": "pass",
+          "reasonCode": "acceptor_loss_parameters_verified",
+          "observed": {
+            "probabilityOfDefaultBps": 600,
+            "lossGivenDefaultBps": 4000,
+            "evidenceState": "independently_verified",
+            "methodologyVersion": "synthetic-acceptor-loss-parameters-v1",
+            "assessedBy": "synthetic_fixture_risk_policy",
+            "assessedAt": "2026-08-10",
+            "validThrough": "2026-11-08",
+            "evidenceRefs": "synthetic-case-a-acceptor-loss-parameters"
+          },
+          "policy": {
+            "exposureAtDefaultSat": "8000000",
+            "requiredEvidenceStates": "corroborated,independently_verified",
+            "requiredMethodologyVersion": "synthetic-acceptor-loss-parameters-v1",
+            "allowedAssessors": "synthetic_fixture_risk_policy",
+            "asOfDate": "2026-08-10"
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "expectedLossBps": 240,
+            "aggregateScore": "none"
+          }
+        },
+        {
+          "ruleId": "pricing_components",
+          "subject": "product_fit",
+          "outcome": "pass",
+          "reasonCode": "pricing_components_applied",
+          "observed": {
+            "costOfFundsBps": 100,
+            "expectedLossBps": 240,
+            "uncertaintyEvidenceState": "independently_verified",
+            "uncertaintyMarginBps": 100,
+            "returnObjectiveBps": 100,
+            "subsidyBps": 0,
+            "operatingCostSat": "50000"
+          },
+          "policy": {
+            "formula": "costOfFunds + expectedLoss + uncertaintyMargin + returnObjective - subsidy",
+            "expectedLossFormula": "probabilityOfDefault * lossGivenDefault",
+            "corroboratedUncertaintyMarginBps": 200,
+            "independentlyVerifiedUncertaintyMarginBps": 100,
+            "operatingCostBasis": "fixed_cost_per_case"
+          },
+          "effect": {
+            "annualDiscountBps": 540,
+            "pricingInputAccepted": true
+          }
+        },
+        {
+          "ruleId": "duplicate_check_clear",
+          "subject": "transaction_integrity",
+          "outcome": "pass",
+          "reasonCode": "duplicate_check_clear",
+          "observed": {
+            "result": "clear",
+            "evidenceState": "independently_verified",
+            "methodologyVersion": "synthetic-mint-duplicate-check-v1",
+            "assessedBy": "synthetic_fixture_mint",
+            "assessedAt": "2026-08-10",
+            "validThrough": "2026-11-08",
+            "evidenceRefs": "synthetic-case-a-duplicate-check"
+          },
+          "policy": {
+            "requiredResult": "clear",
+            "requiredEvidenceStates": "corroborated,independently_verified",
+            "requiredMethodologyVersion": "synthetic-mint-duplicate-check-v1",
+            "allowedAssessors": "synthetic_fixture_mint",
+            "asOfDate": "2026-08-10"
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "duplicateConflict": false
+          }
+        },
+        {
+          "ruleId": "bill_and_invoice_consistent",
+          "subject": "transaction_integrity",
+          "outcome": "pass",
+          "reasonCode": "bill_and_invoice_consistent",
+          "observed": {
+            "billFaceSat": "8000000",
+            "invoiceTotalSat": "8000000",
+            "billAndClaimsConsistency": "match",
+            "sellerMatchesHolder": true,
+            "buyerMatchesAcceptor": true,
+            "evidenceState": "independently_verified",
+            "methodologyVersion": "synthetic-invoice-review-v1",
+            "assessedBy": "synthetic_fixture_verifier",
+            "assessedAt": "2026-08-10",
+            "validThrough": "2026-11-08",
+            "evidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab"
+          },
+          "policy": {
+            "requiredConsistency": "match",
+            "requiredPlausibility": "plausible",
+            "requiredEvidenceStates": "corroborated,independently_verified",
+            "requiredMethodologyVersion": "synthetic-invoice-review-v1",
+            "allowedAssessors": "synthetic_fixture_verifier",
+            "asOfDate": "2026-08-10"
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "transactionEligibleForPricing": true
+          }
+        },
+        {
+          "ruleId": "whole_face_recourse_acknowledged",
+          "subject": "applicant_recourse_risk",
+          "outcome": "pass",
+          "reasonCode": "whole_face_recourse_acknowledged",
+          "observed": {
+            "wholeFaceRecourseAcknowledged": true,
+            "recourseExposureSat": "8000000"
+          },
+          "policy": {
+            "recourseBasis": "whole_face_recourse_by_endorsement",
+            "acknowledgmentRequired": true
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "recourseAttachedToWholeFace": true
+          }
+        },
+        {
+          "ruleId": "evidence_admissible",
+          "subject": "evidence_sufficiency",
+          "outcome": "pass",
+          "reasonCode": "evidence_admissible",
+          "observed": {
+            "invoiceEvidenceState": "independently_verified",
+            "acceptorEvidenceState": "independently_verified",
+            "mintCapacityEvidenceState": "independently_verified",
+            "invoiceEvidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab",
+            "acceptorEvidenceRefs": "synthetic-case-a-acceptor-loss-parameters",
+            "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check",
+            "mintCapacityEvidenceRefs": "synthetic-case-a-mint-capacity"
+          },
+          "policy": {
+            "requiredEvidenceStates": "corroborated,independently_verified",
+            "currentAsOfDate": "2026-08-10"
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "assessmentMayProceed": true
+          }
+        },
+        {
+          "ruleId": "mint_capacity_available",
+          "subject": "mint_exposure_capacity",
+          "outcome": "pass",
+          "reasonCode": "mint_capacity_available",
+          "observed": {
+            "existingExposureSat": "8000000",
+            "proposedExposureSat": "8000000",
+            "resultingExposureSat": "16000000",
+            "evidenceState": "independently_verified",
+            "methodologyVersion": "synthetic-mint-capacity-v1",
+            "assessedBy": "synthetic_fixture_mint",
+            "assessedAt": "2026-08-10",
+            "validThrough": "2026-11-08",
+            "evidenceRefs": "synthetic-case-a-mint-capacity"
+          },
+          "policy": {
+            "exposureLimitSat": "40000000",
+            "remainingCapacityAfterSat": "24000000"
+          },
+          "effect": {
+            "findingStatus": "pass",
+            "capacityAvailable": true
+          }
+        },
+        {
+          "ruleId": "whole_bill_offer",
+          "subject": "product_fit",
+          "outcome": "pass",
+          "reasonCode": "governed_terms_available",
+          "observed": {
+            "billSumSat": "8000000",
+            "discountedSat": "7734000"
+          },
+          "policy": {
+            "wholeBillOnly": true,
+            "minimumUsefulDiscountedSat": "500000",
+            "partialOfferAvailable": false
+          },
+          "effect": {
+            "recommendation": "offer_available",
+            "discountedSat": "7734000",
+            "billSumOwedByAcceptorSat": "8000000"
+          }
+        }
+      ],
+      "calculationTrace": [
+        {
+          "step": "tenor_days",
+          "formula": "maturityDate - asOfDate",
+          "inputs": {
+            "asOfDate": "2026-08-10",
+            "maturityDate": "2027-02-06"
+          },
+          "result": "180"
+        },
+        {
+          "step": "uncertainty_margin_bps",
+          "formula": "policy uncertainty margin for admissible acceptor evidence state",
+          "inputs": {
+            "acceptorEvidenceState": "independently_verified",
+            "corroboratedUncertaintyMarginBps": 200,
+            "independentlyVerifiedUncertaintyMarginBps": 100
+          },
+          "result": "100"
+        },
+        {
+          "step": "annual_discount_bps",
+          "formula": "costOfFundsBps + expectedLossBps + uncertaintyMarginBps + returnObjectiveBps - subsidyBps",
+          "inputs": {
+            "costOfFundsBps": 100,
+            "expectedLossBps": 240,
+            "uncertaintyMarginBps": 100,
+            "returnObjectiveBps": 100,
+            "subsidyBps": 0
+          },
+          "result": "540"
+        },
+        {
+          "step": "applied_discount_sat",
+          "formula": "ceil(faceSat * annualDiscountBps * tenorDays / (10000 * dayCountDenominator))",
+          "inputs": {
+            "faceSat": "8000000",
+            "annualDiscountBps": 540,
+            "tenorDays": 180,
+            "dayCountDenominator": 360
+          },
+          "result": "216000"
+        },
+        {
+          "step": "effective_fee_sat",
+          "formula": "appliedDiscountSat + operatingCostSat",
+          "inputs": {
+            "appliedDiscountSat": "216000",
+            "operatingCostSat": "50000"
+          },
+          "result": "266000"
+        },
+        {
+          "step": "discounted_sat",
+          "formula": "billSumSat - effectiveFeeSat",
+          "inputs": {
+            "billSumSat": "8000000",
+            "effectiveFeeSat": "266000"
+          },
+          "result": "7734000"
+        },
+        {
+          "step": "effective_annual_bps",
+          "formula": "ceil(effectiveFeeSat * 10000 * dayCountDenominator / (discountedSat * tenorDays))",
+          "inputs": {
+            "effectiveFeeSat": "266000",
+            "discountedSat": "7734000",
+            "tenorDays": 180,
+            "dayCountDenominator": 360
+          },
+          "result": "688"
+        },
+        {
+          "step": "fee_ratio_bps",
+          "formula": "ceil(effectiveFeeSat * 10000 / billSumSat)",
+          "inputs": {
+            "effectiveFeeSat": "266000",
+            "billSumSat": "8000000"
+          },
+          "result": "333"
+        }
+      ]
+    },
+    "caseId": "synthetic-case-a",
+    "operatorId": "synthetic-operator-a"
+  },
+  "expected": {
+    "canonicalBase64": "AAAAGkFJLUNSRURJVC1BVVRIT1JJWkFUSU9OLVY3AAAAF2NyZWRpdC1hdXRob3JpemF0aW9uLXY3AAAAFHN5bnRoZXRpYy1lZDI1NTE5LXYxAAAAGHN5bnRoZXRpYy1taW50LWd1YXRlbWFsYQAAABFzeW50aGV0aWMtcXVvdGUtYQAAACVzeW50aGV0aWMtZ3VhdGVtYWxhLWNvZmZlZS1wcm9ncmFtLXYxAAAAR3NoYTI1NjpkOGY2NWMyNjBhOWRjNzBhMTRhZmFiMmE2N2E5MDk3NzZiYjA5NTJkZmYwZmY4MTM2YjU5NWYxMjM3NGViYTdjAAAAEHN5bnRoZXRpYy1jYXNlLWEAAAAQc3ludGhldGljLWJpbGwtYQAAAEdzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQAAABJzeW50aGV0aWMtaG9sZGVyLWEAAAAXc3ludGhldGljLWNvb3BlcmF0aXZhLWEAAABHc2hhMjU2OmY1ZDg5N2E4NDRkZTQ5NmExMTg0Y2RhNjZkOGJkMDY4ZTA0ZDNlNDYzYjcyZmIxMmUwOWE0OTVlYjY2ZjYwNjcAAABHc2hhMjU2OmMyNzAxYzUyNTk0MmY1MGRmMjhkMDAyMWEzMDk2ZWFkNWQyN2JmMTdlNzMwYTQ0MDQ5ODhhNmQwYTA1NmJkZDMAAABHc2hhMjU2OjgwZGFjNjJhYTFhYjY1ZjcyYWU0OGM2ZjA1YTVjZGMyZTAwMWQ5NzIwYzBmYzU1ZTIwNDcwYWFmMTU0ZDljNDYAAAAec3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtdjExAAAAHGRldGVybWluaXN0aWMtY3JlZGl0LWNvcmUtdjkAAAAHODAwMDAwMAAAAAc3NzM0MDAwAAAABjIxNjAwMAAAAAU1MDAwMAAAAAYyNjYwMDAAAAAHODAwMDAwMAAAAAoyMDI3LTAyLTA2AAAACjIwMjYtMDgtMTIAAAADMTgwAAAAAzU0MAAAAAM2ODgAAAADMzMzAAAAFHN5bnRoZXRpYy1vcGVyYXRvci1hAAAAGDIwMjYtMDgtMTBUMTI6MDA6MDAuMDAwWgAAABgyMDI2LTA4LTEwVDEyOjE1OjAwLjAwMFoAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxAAAAD3JlcXVlc3RfdG9fbWludAAAAAR0cnVl",
+    "authorizationDigest": "sha256:80a5a26840eed1f07b20f42fd613b9de5cdd684a52399b0ee224c5208bfbd95b",
+    "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
+    "signature": "HI6dfrEBs3dggKfSmf7NeajRCmRsAD/nOvou482lNTX24ux/YAZQmUbbvE2Lig72lPmf3AdRMR3mgJ2aZ+fgBA=="
+  },
+  "negativeEnvelopes": [
+    {
+      "name": "changed quote without resigning",
+      "authorizationPatch": { "mintQuoteId": "synthetic-quote-b" },
+      "resign": false,
+      "expectedReason": "digest_mismatch"
+    },
+    {
+      "name": "validly signed wrong quote",
+      "authorizationPatch": { "mintQuoteId": "synthetic-quote-b" },
+      "resign": true,
+      "expectedReason": "wrong_quote"
+    },
+    {
+      "name": "validly signed wrong credit program",
+      "authorizationPatch": {
+        "creditProgramDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "resign": true,
+      "expectedReason": "wrong_program"
+    },
+    {
+      "name": "validly signed wrong decision result",
+      "authorizationPatch": {
+        "decisionResultDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "resign": true,
+      "expectedReason": "wrong_decision"
+    }
+  ],
+  "negativeContexts": [
+    {
+      "name": "not yet valid",
+      "patch": {
+        "now": "2026-08-10T11:59:59.000Z"
+      },
+      "expectedReason": "not_yet_valid"
+    },
+    {
+      "name": "expired",
+      "patch": {
+        "now": "2026-08-10T12:15:00.000Z"
+      },
+      "expectedReason": "expired"
+    },
+    {
+      "name": "wrong mint",
+      "patch": {
+        "decision": {
+          "schemaVersion": "decision-result-v9",
+          "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
+          "mintId": "synthetic-mint-b",
+          "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
+          "policyPackVersion": "synthetic-guatemala-coffee-v11",
+          "calculationVersion": "deterministic-credit-core-v9",
+          "assessmentStatus": "ready_for_decision",
+          "recommendation": "offer_available",
+          "axes": [
+            {
+              "axis": "instrument_eligibility",
+              "status": "pass",
+              "reasonCodes": ["accepted_bill_eligible"]
+            },
+            {
+              "axis": "acceptor_repayment_risk",
+              "status": "pass",
+              "reasonCodes": ["acceptor_loss_parameters_verified"]
+            },
+            {
+              "axis": "transaction_integrity",
+              "status": "pass",
+              "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
+            },
+            {
+              "axis": "applicant_recourse_risk",
+              "status": "pass",
+              "reasonCodes": ["whole_face_recourse_acknowledged"]
+            },
+            {
+              "axis": "evidence_sufficiency",
+              "status": "pass",
+              "reasonCodes": ["evidence_admissible"]
+            },
+            {
+              "axis": "mint_exposure_capacity",
+              "status": "pass",
+              "reasonCodes": ["mint_capacity_available"]
+            }
+          ],
+          "terms": {
+            "billSumSat": "8000000",
+            "discountedSat": "7734000",
+            "appliedDiscountSat": "216000",
+            "operatingCostSat": "50000",
+            "effectiveFeeSat": "266000",
+            "endorsementExposureSat": "8000000",
+            "maturityDate": "2027-02-06",
+            "offerExpiresOn": "2026-08-12",
+            "tenorDays": 180,
+            "annualDiscountBps": 540,
+            "effectiveAnnualBps": 688,
+            "feeRatioBps": 333
+          },
+          "verificationRequests": [],
+          "reasonCodes": ["governed_terms_available"],
+          "assessmentTrace": [
+            {
+              "ruleId": "accepted_bill_eligible",
+              "subject": "instrument_eligibility",
+              "outcome": "pass",
+              "reasonCode": "accepted_bill_eligible",
+              "observed": {
+                "acceptanceState": "accepted",
+                "faceValueSat": "8000000",
+                "tenorDays": 180,
+                "alreadyFinanced": false
+              },
+              "policy": {
+                "maximumBillSumSat": "20000000",
+                "minimumTenorDays": 30,
+                "maximumTenorDays": 240
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "eligibleForPricing": true
+              }
+            },
+            {
+              "ruleId": "acceptor_loss_parameters_verified",
+              "subject": "acceptor_repayment_risk",
+              "outcome": "pass",
+              "reasonCode": "acceptor_loss_parameters_verified",
+              "observed": {
+                "probabilityOfDefaultBps": 600,
+                "lossGivenDefaultBps": 4000,
+                "evidenceState": "independently_verified",
+                "methodologyVersion": "synthetic-acceptor-loss-parameters-v1",
+                "assessedBy": "synthetic_fixture_risk_policy",
+                "assessedAt": "2026-08-10",
+                "validThrough": "2026-11-08",
+                "evidenceRefs": "synthetic-case-a-acceptor-loss-parameters"
+              },
+              "policy": {
+                "exposureAtDefaultSat": "8000000",
+                "requiredEvidenceStates": "corroborated,independently_verified",
+                "requiredMethodologyVersion": "synthetic-acceptor-loss-parameters-v1",
+                "allowedAssessors": "synthetic_fixture_risk_policy",
+                "asOfDate": "2026-08-10"
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "expectedLossBps": 240,
+                "aggregateScore": "none"
+              }
+            },
+            {
+              "ruleId": "pricing_components",
+              "subject": "product_fit",
+              "outcome": "pass",
+              "reasonCode": "pricing_components_applied",
+              "observed": {
+                "costOfFundsBps": 100,
+                "expectedLossBps": 240,
+                "uncertaintyEvidenceState": "independently_verified",
+                "uncertaintyMarginBps": 100,
+                "returnObjectiveBps": 100,
+                "subsidyBps": 0,
+                "operatingCostSat": "50000"
+              },
+              "policy": {
+                "formula": "costOfFunds + expectedLoss + uncertaintyMargin + returnObjective - subsidy",
+                "expectedLossFormula": "probabilityOfDefault * lossGivenDefault",
+                "corroboratedUncertaintyMarginBps": 200,
+                "independentlyVerifiedUncertaintyMarginBps": 100,
+                "operatingCostBasis": "fixed_cost_per_case"
+              },
+              "effect": {
+                "annualDiscountBps": 540,
+                "pricingInputAccepted": true
+              }
+            },
+            {
+              "ruleId": "duplicate_check_clear",
+              "subject": "transaction_integrity",
+              "outcome": "pass",
+              "reasonCode": "duplicate_check_clear",
+              "observed": {
+                "result": "clear",
+                "evidenceState": "independently_verified",
+                "methodologyVersion": "synthetic-mint-duplicate-check-v1",
+                "assessedBy": "synthetic_fixture_mint",
+                "assessedAt": "2026-08-10",
+                "validThrough": "2026-11-08",
+                "evidenceRefs": "synthetic-case-a-duplicate-check"
+              },
+              "policy": {
+                "requiredResult": "clear",
+                "requiredEvidenceStates": "corroborated,independently_verified",
+                "requiredMethodologyVersion": "synthetic-mint-duplicate-check-v1",
+                "allowedAssessors": "synthetic_fixture_mint",
+                "asOfDate": "2026-08-10"
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "duplicateConflict": false
+              }
+            },
+            {
+              "ruleId": "bill_and_invoice_consistent",
+              "subject": "transaction_integrity",
+              "outcome": "pass",
+              "reasonCode": "bill_and_invoice_consistent",
+              "observed": {
+                "billFaceSat": "8000000",
+                "invoiceTotalSat": "8000000",
+                "billAndClaimsConsistency": "match",
+                "sellerMatchesHolder": true,
+                "buyerMatchesAcceptor": true,
+                "evidenceState": "independently_verified",
+                "methodologyVersion": "synthetic-invoice-review-v1",
+                "assessedBy": "synthetic_fixture_verifier",
+                "assessedAt": "2026-08-10",
+                "validThrough": "2026-11-08",
+                "evidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab"
+              },
+              "policy": {
+                "requiredConsistency": "match",
+                "requiredPlausibility": "plausible",
+                "requiredEvidenceStates": "corroborated,independently_verified",
+                "requiredMethodologyVersion": "synthetic-invoice-review-v1",
+                "allowedAssessors": "synthetic_fixture_verifier",
+                "asOfDate": "2026-08-10"
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "transactionEligibleForPricing": true
+              }
+            },
+            {
+              "ruleId": "whole_face_recourse_acknowledged",
+              "subject": "applicant_recourse_risk",
+              "outcome": "pass",
+              "reasonCode": "whole_face_recourse_acknowledged",
+              "observed": {
+                "wholeFaceRecourseAcknowledged": true,
+                "recourseExposureSat": "8000000"
+              },
+              "policy": {
+                "recourseBasis": "whole_face_recourse_by_endorsement",
+                "acknowledgmentRequired": true
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "recourseAttachedToWholeFace": true
+              }
+            },
+            {
+              "ruleId": "evidence_admissible",
+              "subject": "evidence_sufficiency",
+              "outcome": "pass",
+              "reasonCode": "evidence_admissible",
+              "observed": {
+                "invoiceEvidenceState": "independently_verified",
+                "acceptorEvidenceState": "independently_verified",
+                "mintCapacityEvidenceState": "independently_verified",
+                "invoiceEvidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab",
+                "acceptorEvidenceRefs": "synthetic-case-a-acceptor-loss-parameters",
+                "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check",
+                "mintCapacityEvidenceRefs": "synthetic-case-a-mint-capacity"
+              },
+              "policy": {
+                "requiredEvidenceStates": "corroborated,independently_verified",
+                "currentAsOfDate": "2026-08-10"
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "assessmentMayProceed": true
+              }
+            },
+            {
+              "ruleId": "mint_capacity_available",
+              "subject": "mint_exposure_capacity",
+              "outcome": "pass",
+              "reasonCode": "mint_capacity_available",
+              "observed": {
+                "existingExposureSat": "8000000",
+                "proposedExposureSat": "8000000",
+                "resultingExposureSat": "16000000",
+                "evidenceState": "independently_verified",
+                "methodologyVersion": "synthetic-mint-capacity-v1",
+                "assessedBy": "synthetic_fixture_mint",
+                "assessedAt": "2026-08-10",
+                "validThrough": "2026-11-08",
+                "evidenceRefs": "synthetic-case-a-mint-capacity"
+              },
+              "policy": {
+                "exposureLimitSat": "40000000",
+                "remainingCapacityAfterSat": "24000000"
+              },
+              "effect": {
+                "findingStatus": "pass",
+                "capacityAvailable": true
+              }
+            },
+            {
+              "ruleId": "whole_bill_offer",
+              "subject": "product_fit",
+              "outcome": "pass",
+              "reasonCode": "governed_terms_available",
+              "observed": {
+                "billSumSat": "8000000",
+                "discountedSat": "7734000"
+              },
+              "policy": {
+                "wholeBillOnly": true,
+                "minimumUsefulDiscountedSat": "500000",
+                "partialOfferAvailable": false
+              },
+              "effect": {
+                "recommendation": "offer_available",
+                "discountedSat": "7734000",
+                "billSumOwedByAcceptorSat": "8000000"
+              }
+            }
+          ],
+          "calculationTrace": [
+            {
+              "step": "tenor_days",
+              "formula": "maturityDate - asOfDate",
+              "inputs": {
+                "asOfDate": "2026-08-10",
+                "maturityDate": "2027-02-06"
+              },
+              "result": "180"
+            },
+            {
+              "step": "uncertainty_margin_bps",
+              "formula": "policy uncertainty margin for admissible acceptor evidence state",
+              "inputs": {
+                "acceptorEvidenceState": "independently_verified",
+                "corroboratedUncertaintyMarginBps": 200,
+                "independentlyVerifiedUncertaintyMarginBps": 100
+              },
+              "result": "100"
+            },
+            {
+              "step": "annual_discount_bps",
+              "formula": "costOfFundsBps + expectedLossBps + uncertaintyMarginBps + returnObjectiveBps - subsidyBps",
+              "inputs": {
+                "costOfFundsBps": 100,
+                "expectedLossBps": 240,
+                "uncertaintyMarginBps": 100,
+                "returnObjectiveBps": 100,
+                "subsidyBps": 0
+              },
+              "result": "540"
+            },
+            {
+              "step": "applied_discount_sat",
+              "formula": "ceil(faceSat * annualDiscountBps * tenorDays / (10000 * dayCountDenominator))",
+              "inputs": {
+                "faceSat": "8000000",
+                "annualDiscountBps": 540,
+                "tenorDays": 180,
+                "dayCountDenominator": 360
+              },
+              "result": "216000"
+            },
+            {
+              "step": "effective_fee_sat",
+              "formula": "appliedDiscountSat + operatingCostSat",
+              "inputs": {
+                "appliedDiscountSat": "216000",
+                "operatingCostSat": "50000"
+              },
+              "result": "266000"
+            },
+            {
+              "step": "discounted_sat",
+              "formula": "billSumSat - effectiveFeeSat",
+              "inputs": {
+                "billSumSat": "8000000",
+                "effectiveFeeSat": "266000"
+              },
+              "result": "7734000"
+            },
+            {
+              "step": "effective_annual_bps",
+              "formula": "ceil(effectiveFeeSat * 10000 * dayCountDenominator / (discountedSat * tenorDays))",
+              "inputs": {
+                "effectiveFeeSat": "266000",
+                "discountedSat": "7734000",
+                "tenorDays": 180,
+                "dayCountDenominator": 360
+              },
+              "result": "688"
+            },
+            {
+              "step": "fee_ratio_bps",
+              "formula": "ceil(effectiveFeeSat * 10000 / billSumSat)",
+              "inputs": {
+                "effectiveFeeSat": "266000",
+                "billSumSat": "8000000"
+              },
+              "result": "333"
+            }
+          ]
+        }
+      },
+      "expectedReason": "wrong_mint"
+    },
+    {
+      "name": "wrong action",
+      "patch": {
+        "action": "accept_mint_quote"
+      },
+      "expectedReason": "wrong_action"
+    },
+    {
+      "name": "wrong bill",
+      "patch": {
+        "billId": "synthetic-bill-b"
+      },
+      "expectedReason": "wrong_bill"
+    },
+    {
+      "name": "stale bill state",
+      "patch": {
+        "billStateDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expectedReason": "stale_bill_state"
+    },
+    {
+      "name": "wrong holder",
+      "patch": {
+        "holderRef": "synthetic-holder-b"
+      },
+      "expectedReason": "wrong_holder"
+    },
+    {
+      "name": "wrong acceptor",
+      "patch": {
+        "acceptorRef": "synthetic-acceptor-b"
+      },
+      "expectedReason": "wrong_acceptor"
+    }
+  ],
+  "completionReceipt": {
+    "receiptVersion": "credit-authorization-receipt-v1",
+    "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
+    "authorizationDigest": "sha256:80a5a26840eed1f07b20f42fd613b9de5cdd684a52399b0ee224c5208bfbd95b",
+    "caseId": "synthetic-case-a",
+    "status": "completed",
+    "mintId": "synthetic-mint-guatemala",
+    "billId": "synthetic-bill-a",
+    "action": "request_to_mint",
+    "effectId": "synthetic-mint-operation-a",
+    "resultDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "completedAt": "2026-08-10T12:06:00.000Z",
+    "synthetic": true
+  }
+}
