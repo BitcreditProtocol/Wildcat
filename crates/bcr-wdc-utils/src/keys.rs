@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::collections::HashMap;
 // ----- extra library imports
 use bcr_common::{cashu, ecash};
 use bitcoin::bip32 as btc32;
@@ -80,6 +81,27 @@ pub fn from_entry(entry: MintKeysEntry) -> (ecash::MintKeySetInfo, ecash::MintKe
         keys,
     };
     (info, keyset)
+}
+
+pub fn to_entry(info: ecash::MintKeySetInfo, keyset: ecash::MintKeySet) -> MintKeysEntry {
+    MintKeysEntry {
+        id: info.id,
+        unit: info.unit,
+        active: info.active,
+        valid_from: info.valid_from,
+        derivation_path: info.derivation_path,
+        derivation_path_index: info.derivation_path_index,
+        amounts: info.amounts,
+        input_fee_ppk: info.input_fee_ppk,
+        final_expiry: info.final_expiry,
+        keys: keyset.keys,
+    }
+}
+
+pub fn kinfos_list_to_map(
+    kinfos: Vec<ecash::MintKeySetInfo>,
+) -> HashMap<cashu::Id, ecash::KeySetInfo> {
+    HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo.into())))
 }
 
 pub use bcr_common::core::keys::{to_fee_and_amounts, to_keyset};
