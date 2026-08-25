@@ -2,7 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
-use bcr_common::wire::quotes::SignedCreditQuoteReissuePermit;
+use bcr_common::wire::quotes::{CreditAuthorizationReceipt, SignedCreditQuoteReissuePermit};
 // ----- local modules
 pub mod inmemory;
 pub mod sqlx;
@@ -24,6 +24,14 @@ pub struct ExposureReservationInput {
     pub now: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone)]
+pub struct GovernedDenialInput {
+    pub quote_id: uuid::Uuid,
+    pub receipt: CreditAuthorizationReceipt,
+    pub denied_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
 // ----- end imports
 
 #[cfg_attr(test, mockall::automock)]
@@ -36,6 +44,10 @@ pub trait Repository {
         quote: Quote,
         exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt>;
+    async fn execute_governed_denial(
+        &self,
+        input: GovernedDenialInput,
+    ) -> Result<CreditAuthorizationReceipt>;
     async fn update_status_if_offered(
         &self,
         id: uuid::Uuid,
@@ -73,6 +85,24 @@ pub trait Repository {
         quote: Quote,
         consumed_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<uuid::Uuid>;
+}
+
+pub(super) fn same_governed_denial_authority(
+    stored: &CreditAuthorizationReceipt,
+    requested: &CreditAuthorizationReceipt,
+) -> bool {
+    stored.receipt_version == requested.receipt_version
+        && stored.operation_id == requested.operation_id
+        && stored.case_id == requested.case_id
+        && stored.status == "completed"
+        && requested.status == "completed"
+        && stored.mint_id == requested.mint_id
+        && stored.bill_id == requested.bill_id
+        && stored.action == crate::authorization::QUOTE_DENIAL_ACTION
+        && requested.action == crate::authorization::QUOTE_DENIAL_ACTION
+        && stored.effect_id == requested.effect_id
+        && stored.synthetic
+        && requested.synthetic
 }
 
 fn same_semantic_quote(stored: &Quote, requested: &Quote) -> bool {
@@ -236,6 +266,24 @@ mod tests {
         }
     }
 
+    fn authorized_offer_candidate(quote: &quotes::Quote, operation_id: &str) -> quotes::Quote {
+        let mut offered = quote.clone();
+        offered.status = offered_status(&offered);
+        let mut receipt = authorization_receipt(operation_id);
+        receipt.bill_id = offered.bill.id.to_string();
+        receipt.effect_id = offered.id.to_string();
+        let quotes::Status::Offered {
+            discounted, ttl, ..
+        } = &offered.status
+        else {
+            unreachable!("test helper always creates an offered quote")
+        };
+        receipt.result_digest =
+            crate::authorization::offer_result_digest(offered.id, *discounted, *ttl);
+        offered.authorization_receipt = Some(receipt);
+        offered
+    }
+
     #[tokio::test]
     async fn authorization_transition_is_atomic_and_idempotent() {
         authorization_transition_is_atomic_and_idempotent_for(init_inmemory_db()).await;
@@ -285,6 +333,319 @@ mod tests {
                 .await,
             Err(crate::error::Error::CreditAuthorizationConflict)
         ));
+    }
+
+    fn denial_input(
+        quote: &quotes::Quote,
+        operation_id: &str,
+        now: TStamp,
+        expires_at: TStamp,
+    ) -> GovernedDenialInput {
+        let completed_at = now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        GovernedDenialInput {
+            receipt: bcr_common::wire::quotes::CreditAuthorizationReceipt {
+                receipt_version: String::from("credit-authorization-receipt-v1"),
+                operation_id: operation_id.to_owned(),
+                authorization_digest: format!("sha256:{}", "a".repeat(64)),
+                case_id: uuid::Uuid::from_u128(10).to_string(),
+                status: String::from("completed"),
+                mint_id: String::from("local-wildcat"),
+                bill_id: quote.bill.id.to_string(),
+                action: String::from(crate::authorization::QUOTE_DENIAL_ACTION),
+                effect_id: quote.id.to_string(),
+                result_digest: crate::authorization::denial_result_digest(quote.id, &completed_at),
+                completed_at,
+                synthetic: true,
+            },
+            quote_id: quote.id,
+            denied_at: now,
+            expires_at,
+        }
+    }
+
+    #[tokio::test]
+    async fn governed_denial_is_atomic_and_replays_after_expiry() {
+        governed_denial_is_atomic_and_replays_after_expiry_for(init_inmemory_db()).await;
+        governed_denial_is_atomic_and_replays_after_expiry_for(init_surreal_db().await).await;
+    }
+
+    async fn governed_denial_is_atomic_and_replays_after_expiry_for(db: impl Repository) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        let first = denial_input(
+            &quote,
+            &format!("sha256:{}", "c".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+
+        let receipt = db.execute_governed_denial(first.clone()).await.unwrap();
+        let mut renewed = denial_input(
+            &quote,
+            &first.receipt.operation_id,
+            now + chrono::Duration::days(2),
+            now + chrono::Duration::days(3),
+        );
+        renewed.receipt.authorization_digest = format!("sha256:{}", "d".repeat(64));
+        assert_eq!(db.execute_governed_denial(renewed).await.unwrap(), receipt);
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        assert!(matches!(stored.status, quotes::Status::Denied { tstamp } if tstamp == now));
+        assert_eq!(stored.authorization_receipt(), Some(&receipt));
+
+        let conflict = denial_input(
+            &quote,
+            &format!("sha256:{}", "e".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        assert!(matches!(
+            db.execute_governed_denial(conflict).await,
+            Err(crate::error::Error::CreditQuoteDenialConflict)
+        ));
+    }
+
+    #[tokio::test]
+    async fn expired_governed_denial_does_not_mutate_quote() {
+        expired_governed_denial_does_not_mutate_quote_for(init_inmemory_db()).await;
+        expired_governed_denial_does_not_mutate_quote_for(init_surreal_db().await).await;
+    }
+
+    async fn expired_governed_denial_does_not_mutate_quote_for(db: impl Repository) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        let expired = denial_input(&quote, &format!("sha256:{}", "c".repeat(64)), now, now);
+
+        assert!(matches!(
+            db.execute_governed_denial(expired).await,
+            Err(crate::error::Error::CreditQuoteDenialInvalid)
+        ));
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        assert!(matches!(stored.status, quotes::Status::Pending { .. }));
+        assert!(stored.authorization_receipt().is_none());
+    }
+
+    #[tokio::test]
+    async fn governed_denial_concurrent_commands_have_one_authority() {
+        governed_denial_concurrent_commands_have_one_authority_for(init_inmemory_db()).await;
+        governed_denial_concurrent_commands_have_one_authority_for(init_surreal_db().await).await;
+    }
+
+    async fn governed_denial_concurrent_commands_have_one_authority_for(db: impl Repository) {
+        let backend = std::any::type_name_of_val(&db);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        let left = denial_input(
+            &quote,
+            &format!("sha256:{}", "c".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let right = denial_input(
+            &quote,
+            &format!("sha256:{}", "d".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+
+        let (left, right) = tokio::join!(
+            db.execute_governed_denial(left),
+            db.execute_governed_denial(right)
+        );
+        assert_eq!(
+            usize::from(left.is_ok()) + usize::from(right.is_ok()),
+            1,
+            "{backend} accepted two conflicting denial authorities"
+        );
+        assert!(matches!(
+            left.as_ref().err().or(right.as_ref().err()),
+            Some(crate::error::Error::CreditQuoteDenialConflict)
+                | Some(crate::error::Error::QuotesRepository(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn governed_denial_and_offer_have_one_pending_transition_and_exposure() {
+        governed_denial_and_offer_have_one_pending_transition_and_exposure_for(init_inmemory_db())
+            .await;
+        governed_denial_and_offer_have_one_pending_transition_and_exposure_for(
+            init_surreal_db().await,
+        )
+        .await;
+    }
+
+    async fn governed_denial_and_offer_have_one_pending_transition_and_exposure_for(
+        db: impl Repository,
+    ) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        let fallback = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        db.store(fallback.clone()).await.unwrap();
+        let offered = authorized_offer_candidate(&quote, &format!("sha256:{}", "e".repeat(64)));
+        let fallback_offer =
+            authorized_offer_candidate(&fallback, &format!("sha256:{}", "f".repeat(64)));
+        let denial = denial_input(
+            &quote,
+            &format!("sha256:{}", "d".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let capacity = || ExposureReservationInput {
+            exposure_limit_sat: 8_000_000,
+            ..exposure(now)
+        };
+
+        let (offer_result, denial_result) = tokio::join!(
+            db.execute_authorization(offered.clone(), capacity()),
+            db.execute_governed_denial(denial.clone()),
+        );
+        assert_eq!(
+            usize::from(offer_result.is_ok()) + usize::from(denial_result.is_ok()),
+            1
+        );
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        match (offer_result, denial_result) {
+            (Ok(offer_receipt), Err(crate::error::Error::CreditQuoteDenialConflict)) => {
+                assert!(matches!(stored.status, quotes::Status::Offered { .. }));
+                assert_eq!(stored.authorization_receipt(), Some(&offer_receipt));
+                assert!(matches!(
+                    db.execute_authorization(fallback_offer, capacity()).await,
+                    Err(crate::error::Error::CreditCapacityExceeded)
+                ));
+            }
+            (Err(crate::error::Error::CreditAuthorizationConflict), Ok(denial_receipt)) => {
+                assert!(matches!(stored.status, quotes::Status::Denied { .. }));
+                assert_eq!(stored.authorization_receipt(), Some(&denial_receipt));
+                db.execute_authorization(fallback_offer, capacity())
+                    .await
+                    .expect("a winning denial must not reserve exposure");
+            }
+            unexpected => panic!("incoherent offer/denial race result: {unexpected:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn governed_denial_and_cancel_have_one_pending_transition_without_exposure() {
+        governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
+            init_inmemory_db(),
+        )
+        .await;
+        governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
+            init_surreal_db().await,
+        )
+        .await;
+    }
+
+    async fn governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
+        db: impl Repository,
+    ) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        let fallback = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        db.store(fallback.clone()).await.unwrap();
+        let denial = denial_input(
+            &quote,
+            &format!("sha256:{}", "d".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let canceled = quotes::Status::Canceled { tstamp: now };
+
+        let (cancel_result, denial_result) = tokio::join!(
+            db.update_status_if_pending(quote.id, canceled),
+            db.execute_governed_denial(denial),
+        );
+        assert_eq!(
+            usize::from(cancel_result.is_ok()) + usize::from(denial_result.is_ok()),
+            1
+        );
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        match (cancel_result, denial_result) {
+            (Ok(()), Err(crate::error::Error::CreditQuoteDenialConflict)) => {
+                assert!(matches!(stored.status, quotes::Status::Canceled { .. }));
+                assert!(stored.authorization_receipt().is_none());
+            }
+            (Err(crate::error::Error::QuotesRepository(_)), Ok(denial_receipt)) => {
+                assert!(matches!(stored.status, quotes::Status::Denied { .. }));
+                assert_eq!(stored.authorization_receipt(), Some(&denial_receipt));
+            }
+            unexpected => panic!("incoherent cancel/denial race result: {unexpected:?}"),
+        }
+
+        let fallback_offer =
+            authorized_offer_candidate(&fallback, &format!("sha256:{}", "f".repeat(64)));
+        db.execute_authorization(
+            fallback_offer,
+            ExposureReservationInput {
+                exposure_limit_sat: 8_000_000,
+                ..exposure(now)
+            },
+        )
+        .await
+        .expect("cancel and denial must not reserve exposure");
+    }
+
+    #[tokio::test]
+    async fn governed_denial_durable_record_replays_from_another_surreal_handle() {
+        let db = init_surreal_db().await;
+        let other = db.independent_test_handle();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+        let input = denial_input(
+            &quote,
+            &format!("sha256:{}", "c".repeat(64)),
+            now,
+            now + chrono::Duration::hours(1),
+        );
+
+        let committed = db.execute_governed_denial(input.clone()).await.unwrap();
+        let replayed = other.execute_governed_denial(input).await.unwrap();
+        assert_eq!(committed, replayed);
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        assert!(matches!(stored.status, quotes::Status::Denied { .. }));
+        assert!(stored.authorization_receipt().is_some());
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn governed_denial_is_fail_closed_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBQuotes::from_pool(pool);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let quote = pending_quote();
+        db.store(quote.clone()).await.unwrap();
+
+        assert!(matches!(
+            db.execute_governed_denial(denial_input(
+                &quote,
+                &format!("sha256:{}", "c".repeat(64)),
+                now,
+                now + chrono::Duration::hours(1),
+            ))
+            .await,
+            Err(crate::error::Error::CreditQuoteDenialUnavailable)
+        ));
+        let stored = db.load(quote.id).await.unwrap().unwrap();
+        assert!(matches!(stored.status, quotes::Status::Pending { .. }));
+        assert!(stored.authorization_receipt().is_none());
     }
 
     #[tokio::test]

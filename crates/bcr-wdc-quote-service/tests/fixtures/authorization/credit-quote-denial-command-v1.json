@@ -1,0 +1,32 @@
+{
+  "command": {
+    "schemaVersion": "credit-quote-denial-command-v1",
+    "keyId": "synthetic-ed25519-v1",
+    "mintId": "local-wildcat",
+    "mintQuoteId": "00000000-0000-4000-8000-000000000301",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
+    "creditProgramDigest": "sha256:d8f65c260a9dc70a14afab2a67a909776bb0952dff0ff8136b595f12374eba7c",
+    "caseId": "00000000-0000-4000-8000-000000000302",
+    "billId": "bitcrtFL6Y5MdK49p29vha5zsMFxKXRmBJFJsWUaw3FtKPLpJZ",
+    "billStateDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "holderRef": "bitcrt0205b2af2e5d47d1737eeda473cde0b145c07529997f1aca1359c4547eeb130489",
+    "decisionSnapshotDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "decisionResultDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "policyPackDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "policyPackVersion": "synthetic-guatemala-policy-v11",
+    "calculationVersion": "deterministic-credit-core-v9",
+    "operatorDecisionDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "operationId": "sha256:ac4e1c44a06f8bf91893700ff5f6d14268de84a6d4c6d716c43e5311c52d08b6",
+    "issuedAt": "2026-08-25T12:00:00.000Z",
+    "expiresAt": "2026-08-26T12:00:00.000Z",
+    "nonce": "00000000-0000-4000-8000-000000000303",
+    "action": "deny_governed_quote",
+    "synthetic": true
+  },
+  "expected": {
+    "canonicalBase64": "AAAAIUFJLUNSRURJVC1RVU9URS1ERU5JQUwtQ09NTUFORC1WMQAAAB5jcmVkaXQtcXVvdGUtZGVuaWFsLWNvbW1hbmQtdjEAAAAUc3ludGhldGljLWVkMjU1MTktdjEAAAANbG9jYWwtd2lsZGNhdAAAACQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAzMDEAAAAlc3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtcHJvZ3JhbS12MQAAAEdzaGEyNTY6ZDhmNjVjMjYwYTlkYzcwYTE0YWZhYjJhNjdhOTA5Nzc2YmIwOTUyZGZmMGZmODEzNmI1OTVmMTIzNzRlYmE3YwAAACQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAzMDIAAAAyYml0Y3J0Rkw2WTVNZEs0OXAyOXZoYTV6c01GeEtYUm1CSkZKc1dVYXczRnRLUExwSloAAABHc2hhMjU2OjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIAAABIYml0Y3J0MDIwNWIyYWYyZTVkNDdkMTczN2VlZGE0NzNjZGUwYjE0NWMwNzUyOTk5N2YxYWNhMTM1OWM0NTQ3ZWViMTMwNDg5AAAAR3NoYTI1NjphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhAAAAR3NoYTI1NjpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiAAAAR3NoYTI1NjpjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjAAAAHnN5bnRoZXRpYy1ndWF0ZW1hbGEtcG9saWN5LXYxMQAAABxkZXRlcm1pbmlzdGljLWNyZWRpdC1jb3JlLXY5AAAAR3NoYTI1NjpkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkAAAAR3NoYTI1NjphYzRlMWM0NGEwNmY4YmY5MTg5MzcwMGZmNWY2ZDE0MjY4ZGU4NGE2ZDRjNmQ3MTZjNDNlNTMxMWM1MmQwOGI2AAAAGDIwMjYtMDgtMjVUMTI6MDA6MDAuMDAwWgAAABgyMDI2LTA4LTI2VDEyOjAwOjAwLjAwMFoAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMzAzAAAAE2RlbnlfZ292ZXJuZWRfcXVvdGUAAAAEdHJ1ZQ==",
+    "commandDigest": "sha256:4d53611deb385e4ad0e3443dc347de2e35ed1a5a0a21e58d37afe368785f01e0",
+    "operationId": "sha256:ac4e1c44a06f8bf91893700ff5f6d14268de84a6d4c6d716c43e5311c52d08b6",
+    "signature": "qF3fA/cegYXYgjQJ7314S4hWU20wKvaOFmz90STTyaWzJtGAiPswXf7hFpI+ZcpkLTYe5p82DEpHAXZvwl36Bw=="
+  }
+}

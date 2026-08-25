@@ -284,10 +284,27 @@ impl Quote {
     }
 
     fn require_credit_authorization(&self) -> Result<()> {
-        self.authorization_receipt
+        let receipt = self
+            .authorization_receipt
             .as_ref()
-            .map(|_| ())
-            .ok_or(Error::CreditAuthorizationRequired)
+            .ok_or(Error::CreditAuthorizationRequired)?;
+        let expected_result_digest = match &self.status {
+            Status::Offered {
+                discounted, ttl, ..
+            } => crate::authorization::offer_result_digest(self.id, *discounted, *ttl),
+            _ => return Err(Error::CreditAuthorizationInvalid),
+        };
+        if receipt.receipt_version != "credit-authorization-receipt-v1"
+            || receipt.status != "completed"
+            || receipt.action != crate::authorization::AUTHORIZATION_ACTION
+            || receipt.effect_id != self.id.to_string()
+            || receipt.bill_id != self.bill.id.to_string()
+            || receipt.result_digest != expected_result_digest
+            || !receipt.synthetic
+        {
+            return Err(Error::CreditAuthorizationInvalid);
+        }
+        Ok(())
     }
 
     pub fn cancel(&mut self, tstamp: TStamp) -> Result<()> {
@@ -304,7 +321,9 @@ impl Quote {
     }
 
     pub fn deny(&mut self, tstamp: TStamp) -> Result<()> {
-        self.require_credit_program()?;
+        if self.credit_program.is_some() {
+            return Err(Error::CreditAuthorizationRequired);
+        }
         if let Status::Pending { .. } = self.status {
             self.status = Status::Denied { tstamp };
             Ok(())
@@ -533,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_unbound_quote_cannot_be_denied() {
+    fn legacy_unbound_quote_can_be_denied() {
         let mut quote = Quote::new(
             BillInfo::random(),
             keys_test::publics()[0],
@@ -544,7 +563,22 @@ mod tests {
 
         let result = quote.deny(TStamp::default());
 
-        assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
+        assert!(result.is_ok());
+        assert!(matches!(quote.status, Status::Denied { .. }));
+    }
+
+    #[test]
+    fn governed_quote_cannot_use_unsigned_denial() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+
+        let result = quote.deny(TStamp::default());
+
+        assert!(matches!(result, Err(Error::CreditAuthorizationRequired)));
         assert!(matches!(quote.status, Status::Pending { .. }));
     }
 
@@ -564,6 +598,80 @@ mod tests {
         assert!(matches!(
             quote.accept(TStamp::default()),
             Err(Error::CreditAuthorizationRequired)
+        ));
+        assert!(matches!(quote.status, Status::Offered { .. }));
+    }
+
+    #[test]
+    fn governed_denial_receipt_cannot_authorize_offer_acceptance() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+        let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+        quote
+            .offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1))
+            .unwrap();
+        quote.authorization_receipt = Some(wire_quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: format!("sha256:{}", "a".repeat(64)),
+            authorization_digest: format!("sha256:{}", "b".repeat(64)),
+            case_id: uuid::Uuid::new_v4().to_string(),
+            status: String::from("completed"),
+            mint_id: String::from("local-wildcat"),
+            bill_id: quote.bill.id.to_string(),
+            action: String::from(crate::authorization::QUOTE_DENIAL_ACTION),
+            effect_id: quote.id.to_string(),
+            result_digest: format!("sha256:{}", "c".repeat(64)),
+            completed_at: String::from("2026-08-25T12:00:00.000Z"),
+            synthetic: true,
+        });
+
+        assert!(matches!(
+            quote.accept(TStamp::default()),
+            Err(Error::CreditAuthorizationInvalid)
+        ));
+        assert!(matches!(quote.status, Status::Offered { .. }));
+    }
+
+    #[test]
+    fn tampered_offer_result_receipt_cannot_authorize_acceptance() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+        let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+        let ttl = chrono::DateTime::parse_from_rfc3339("2026-08-26T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let discounted = bitcoin::Amount::from_sat(7_735_000);
+        quote.offer(keyset_id, ttl, discounted).unwrap();
+        quote.authorization_receipt = Some(wire_quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: format!("sha256:{}", "a".repeat(64)),
+            authorization_digest: format!("sha256:{}", "b".repeat(64)),
+            case_id: uuid::Uuid::new_v4().to_string(),
+            status: String::from("completed"),
+            mint_id: String::from("local-wildcat"),
+            bill_id: quote.bill.id.to_string(),
+            action: String::from(crate::authorization::AUTHORIZATION_ACTION),
+            effect_id: quote.id.to_string(),
+            result_digest: format!("sha256:{}", "c".repeat(64)),
+            completed_at: String::from("2026-08-25T12:00:00.000Z"),
+            synthetic: true,
+        });
+
+        assert_ne!(
+            quote.authorization_receipt().unwrap().result_digest,
+            crate::authorization::offer_result_digest(quote.id, discounted, ttl)
+        );
+        assert!(matches!(
+            quote.accept(TStamp::default()),
+            Err(Error::CreditAuthorizationInvalid)
         ));
         assert!(matches!(quote.status, Status::Offered { .. }));
     }

@@ -48,6 +48,12 @@ pub enum Error {
     CreditQuoteReissueConflict,
     #[error("quote reissue is unavailable on this repository backend")]
     CreditQuoteReissueUnavailable,
+    #[error("governed quote denial command is invalid")]
+    CreditQuoteDenialInvalid,
+    #[error("governed quote denial conflicts with current Mint state")]
+    CreditQuoteDenialConflict,
+    #[error("governed quote denial is unavailable on this repository backend")]
+    CreditQuoteDenialUnavailable,
     #[error("Mint exposure capacity is unavailable")]
     CreditCapacityUnavailable,
     #[error("Mint exposure capacity is exhausted")]
@@ -120,6 +126,18 @@ impl axum::response::IntoResponse for Error {
             Error::CreditQuoteReissueUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 String::from("Quote reissue is unavailable"),
+            ),
+            Error::CreditQuoteDenialInvalid => (
+                StatusCode::UNAUTHORIZED,
+                String::from("Governed quote denial command is invalid"),
+            ),
+            Error::CreditQuoteDenialConflict => (
+                StatusCode::CONFLICT,
+                String::from("Governed quote denial conflicts with current Mint state"),
+            ),
+            Error::CreditQuoteDenialUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                String::from("Governed quote denial is unavailable"),
             ),
             Error::CreditCapacityUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,

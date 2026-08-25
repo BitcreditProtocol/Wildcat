@@ -13,7 +13,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{self, ExposureReservationInput},
+    persistence::{self, ExposureReservationInput, GovernedDenialInput},
     quotes, service, TStamp,
 };
 
@@ -267,6 +267,15 @@ impl persistence::Repository for DBQuotes {
         // ponytail: the deployed quote service uses SurrealDB; keep the dormant SQL backend
         // fail-closed until it gains the same transactional exposure ledger.
         Err(Error::CreditCapacityUnavailable)
+    }
+
+    async fn execute_governed_denial(
+        &self,
+        _input: GovernedDenialInput,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        // The deployed quote service uses SurrealDB. Do not expose an unsigned fallback while the
+        // dormant SQL backend lacks the same atomic denial receipt transition.
+        Err(Error::CreditQuoteDenialUnavailable)
     }
 
     async fn update_status_if_offered(

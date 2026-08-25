@@ -290,6 +290,14 @@ pub async fn authorize_quote(
     Ok(Json(receipt))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, command))]
+pub async fn deny_governed_quote(
+    State(ctrl): State<Arc<Service>>,
+    Json(command): Json<crate::authorization::SignedCreditQuoteDenialCommandV1>,
+) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
+    Ok(Json(ctrl.deny_governed(command, chrono::Utc::now()).await?))
+}
+
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn enable_minting(
     State(ctrl): State<Arc<Service>>,

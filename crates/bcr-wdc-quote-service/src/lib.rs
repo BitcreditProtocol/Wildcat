@@ -2,7 +2,7 @@
 use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use axum::{
-    extract::FromRef,
+    extract::{DefaultBodyLimit, FromRef},
     routing::{delete, get, patch, post, put},
     Router,
 };
@@ -33,6 +33,8 @@ mod web;
 type TStamp = chrono::DateTime<chrono::Utc>;
 
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
+const GOVERNED_QUOTE_DENIAL_PATH: &str = "/v1/internal/credit/quote/deny";
+const GOVERNED_QUOTE_DENIAL_BODY_LIMIT: usize = 16 * 1024;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -201,10 +203,58 @@ pub fn routes(ctrl: AppController) -> Router {
             quote::admin_ep::SHARED_EBILL_HISTORY,
             get(admin::get_shared_ebill_history),
         );
+    let internal = governed_quote_denial_routes::<AppController>();
 
-    Router::new().merge(web).merge(admin).with_state(ctrl)
+    Router::new()
+        .merge(web)
+        .merge(admin)
+        .merge(internal)
+        .with_state(ctrl)
+}
+
+fn governed_quote_denial_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    Arc<service::Service>: FromRef<S>,
+{
+    Router::new()
+        .route(GOVERNED_QUOTE_DENIAL_PATH, post(admin::deny_governed_quote))
+        .layer(DefaultBodyLimit::max(GOVERNED_QUOTE_DENIAL_BODY_LIMIT))
 }
 
 async fn get_health() -> &'static str {
     "{ \"status\": \"OK\" }"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn governed_quote_denial_route_rejects_oversized_body() {
+        let service = Arc::new(service::Service {
+            wdc_client: Box::new(service::MockWdcClient::new()),
+            quotes: Box::new(persistence::inmemory::QuotesIDMap::default()),
+            mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
+            credit_program: quotes::test_credit_program_binding(),
+            authorization_verifier: authorization::test_authorization_verifier(),
+            credit_evidence: None,
+        });
+        let app = governed_quote_denial_routes::<Arc<service::Service>>().with_state(service);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+
+        let status = reqwest::Client::new()
+            .post(format!("http://{address}{GOVERNED_QUOTE_DENIAL_PATH}"))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(vec![b' '; GOVERNED_QUOTE_DENIAL_BODY_LIMIT + 1])
+            .send()
+            .await
+            .unwrap()
+            .status();
+        server.abort();
+
+        assert_eq!(status, reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+    }
 }

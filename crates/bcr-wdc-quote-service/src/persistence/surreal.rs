@@ -15,7 +15,8 @@ use crate::{
     authorization::same_quote_reissue_authority,
     error::{Error, Result},
     persistence::{
-        same_executed_quote, same_pending_quote_request, ExposureReservationInput, Repository,
+        same_executed_quote, same_governed_denial_authority, same_pending_quote_request,
+        ExposureReservationInput, GovernedDenialInput, Repository,
     },
     quotes,
     service::{ListFilters, SortOrder},
@@ -80,6 +81,14 @@ struct QuoteReissueRecord {
     consumed_at: crate::TStamp,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GovernedDenialRecord {
+    id: surrealdb::RecordId,
+    quote_id: uuid::Uuid,
+    receipt: bcr_common::wire::quotes::CreditAuthorizationReceipt,
+}
+
 impl From<QuoteDBEntry> for quotes::Quote {
     fn from(dbq: QuoteDBEntry) -> Self {
         Self {
@@ -130,9 +139,11 @@ impl From<LightQuoteDBEntry> for quotes::LightQuote {
 #[derive(Debug, Clone)]
 pub struct DBQuotes {
     db: Surreal<surrealdb::engine::any::Any>,
-    // ponytail: one lock matches the single quote-service replica deployed today. Move the
-    // compare-and-reserve into a serializable external ledger before horizontally scaling it.
-    credit_exposure_lock: Arc<Mutex<()>>,
+    // ponytail: SurrealDB 2.6 embedded does not reliably reject competing conditional updates of
+    // one schemaless quote row. This single mutex serializes every transition out of Pending and
+    // the coupled exposure lifecycle while quote-service has one replica. Replace it with a
+    // DB-backed cross-replica CAS/lease before horizontal scaling.
+    quote_transition_lock: Arc<Mutex<()>>,
     quote_reissue_lock: Arc<Mutex<()>>,
 }
 
@@ -153,6 +164,7 @@ macro_rules! add_filter_statement {
 impl DBQuotes {
     const TABLE: &'static str = "quotes";
     const QUOTE_REISSUE_TABLE: &'static str = "credit_quote_reissue_permits";
+    const GOVERNED_DENIAL_TABLE: &'static str = "credit_quote_governed_denials";
 
     pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -161,7 +173,7 @@ impl DBQuotes {
         db_connection.use_db(cfg.database).await?;
         Ok(Self {
             db: db_connection,
-            credit_exposure_lock: Arc::new(Mutex::new(())),
+            quote_transition_lock: Arc::new(Mutex::new(())),
             quote_reissue_lock: Arc::new(Mutex::new(())),
         })
     }
@@ -170,7 +182,7 @@ impl DBQuotes {
     pub(super) fn independent_test_handle(&self) -> Self {
         Self {
             db: self.db.clone(),
-            credit_exposure_lock: Arc::new(Mutex::new(())),
+            quote_transition_lock: Arc::new(Mutex::new(())),
             quote_reissue_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -190,6 +202,14 @@ impl DBQuotes {
         previous_quote_id: Uuid,
     ) -> SurrealResult<Option<QuoteReissueRecord>> {
         let rid = surrealdb::RecordId::from_table_key(Self::QUOTE_REISSUE_TABLE, previous_quote_id);
+        self.db.select(rid).await
+    }
+
+    async fn load_governed_denial_record(
+        &self,
+        quote_id: Uuid,
+    ) -> SurrealResult<Option<GovernedDenialRecord>> {
+        let rid = surrealdb::RecordId::from_table_key(Self::GOVERNED_DENIAL_TABLE, quote_id);
         self.db.select(rid).await
     }
 
@@ -234,6 +254,40 @@ impl DBQuotes {
                 Ok(Some(existing.reissued_quote_id))
             }
             _ => Err(Error::CreditQuoteReissueConflict),
+        }
+    }
+
+    async fn resolve_governed_denial_receipt(
+        &self,
+        quote_id: Uuid,
+        requested: &bcr_common::wire::quotes::CreditAuthorizationReceipt,
+    ) -> Result<Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>> {
+        let record = self
+            .load_governed_denial_record(quote_id)
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        let stored = self
+            .load(quote_id)
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .map(quotes::Quote::from)
+            .ok_or_else(|| Error::ResourceNotFound(quote_id.to_string()))?;
+        let Some(record) = record else {
+            return if stored.authorization_receipt().is_none() {
+                Ok(None)
+            } else {
+                Err(Error::CreditQuoteDenialConflict)
+            };
+        };
+        let existing = &record.receipt;
+        if matches!(stored.status, quotes::Status::Denied { .. })
+            && record.quote_id == quote_id
+            && stored.authorization_receipt() == Some(existing)
+            && same_governed_denial_authority(existing, requested)
+        {
+            Ok(Some(existing.clone()))
+        } else {
+            Err(Error::CreditQuoteDenialConflict)
         }
     }
 
@@ -336,6 +390,7 @@ impl Repository for DBQuotes {
     }
 
     async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
+        let _transition_guard = self.quote_transition_lock.lock().await;
         let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, qid);
         let before: Option<QuoteDBEntry> = self
             .db
@@ -364,7 +419,7 @@ impl Repository for DBQuotes {
         quote: quotes::Quote,
         exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
-        let _exposure_guard = self.credit_exposure_lock.lock().await;
+        let _transition_guard = self.quote_transition_lock.lock().await;
         let receipt = quote
             .authorization_receipt
             .clone()
@@ -488,13 +543,109 @@ impl Repository for DBQuotes {
         }
     }
 
+    async fn execute_governed_denial(
+        &self,
+        input: GovernedDenialInput,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let _transition_guard = self.quote_transition_lock.lock().await;
+        if let Some(receipt) = self
+            .resolve_governed_denial_receipt(input.quote_id, &input.receipt)
+            .await?
+        {
+            return Ok(receipt);
+        }
+        let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, input.quote_id);
+        let denial_rid =
+            surrealdb::RecordId::from_table_key(Self::GOVERNED_DENIAL_TABLE, input.quote_id);
+        let denied = quotes::Status::Denied {
+            tstamp: input.denied_at,
+        };
+        let denial_record = GovernedDenialRecord {
+            id: denial_rid.clone(),
+            quote_id: input.quote_id,
+            receipt: input.receipt.clone(),
+        };
+        let response = self
+            .db
+            .query(
+                r#"
+                BEGIN TRANSACTION;
+                LET $denial_before = SELECT * FROM ONLY $denial_rid;
+                IF $denial_before { THROW "CREDIT_QUOTE_DENIAL_CONFLICT" };
+                LET $before = SELECT * FROM ONLY $rid;
+                IF !$before
+                    OR $before.status.status != $pending
+                    OR $before.credit_program == NONE
+                    OR $before.authorization_receipt != NONE
+                {
+                    THROW "CREDIT_QUOTE_DENIAL_CONFLICT"
+                };
+                IF $expires_at <= $now { THROW "CREDIT_QUOTE_DENIAL_EXPIRED" };
+                LET $updated = UPDATE $rid SET status = $denied, authorization_receipt = $receipt
+                    WHERE status.status == $pending
+                        AND credit_program != NONE
+                        AND authorization_receipt == NONE
+                    RETURN AFTER;
+                IF !$updated { THROW "CREDIT_QUOTE_DENIAL_CONFLICT" };
+                INSERT $denial_record;
+                COMMIT TRANSACTION;
+                "#,
+            )
+            .bind(("rid", recordid))
+            .bind(("denial_rid", denial_rid))
+            .bind(("pending", quotes::StatusDiscriminants::Pending))
+            .bind(("expires_at", input.expires_at))
+            .bind(("now", input.denied_at))
+            .bind(("denied", denied))
+            .bind(("receipt", input.receipt.clone()))
+            .bind(("denial_record", denial_record))
+            .await;
+        let mut response = match response {
+            Ok(response) => response,
+            Err(error) if is_transaction_conflict(&error.to_string()) => {
+                if let Some(receipt) = self
+                    .resolve_governed_denial_receipt(input.quote_id, &input.receipt)
+                    .await?
+                {
+                    return Ok(receipt);
+                }
+                return Err(Error::CreditQuoteDenialConflict);
+            }
+            Err(error) => return Err(Error::QuotesRepository(anyhow!(error))),
+        };
+        let errors = response.take_errors();
+        if errors.is_empty() {
+            return Ok(input.receipt);
+        }
+        let message = errors
+            .values()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        if let Some(receipt) = self
+            .resolve_governed_denial_receipt(input.quote_id, &input.receipt)
+            .await?
+        {
+            return Ok(receipt);
+        }
+        if message.contains("CREDIT_QUOTE_DENIAL_EXPIRED") {
+            Err(Error::CreditQuoteDenialInvalid)
+        } else if message.contains("CREDIT_QUOTE_DENIAL_CONFLICT")
+            || is_transaction_conflict(&message)
+        {
+            Err(Error::CreditQuoteDenialConflict)
+        } else {
+            Err(Error::QuotesRepository(anyhow!(message)))
+        }
+    }
+
     async fn update_status_if_offered(
         &self,
         qid: uuid::Uuid,
         new: quotes::Status,
         now: crate::TStamp,
     ) -> Result<()> {
-        let _exposure_guard = self.credit_exposure_lock.lock().await;
+        let _transition_guard = self.quote_transition_lock.lock().await;
         let target_state = match &new {
             quotes::Status::Accepted { .. } => "committed",
             quotes::Status::Rejected { .. } | quotes::Status::OfferExpired { .. } => "released",
@@ -565,7 +716,7 @@ impl Repository for DBQuotes {
     }
 
     async fn release_committed_exposure(&self, qid: uuid::Uuid, now: crate::TStamp) -> Result<()> {
-        let _exposure_guard = self.credit_exposure_lock.lock().await;
+        let _transition_guard = self.quote_transition_lock.lock().await;
         let reservation_rid = surrealdb::RecordId::from_table_key(
             crate::credit_evidence::Store::RESERVATION_TABLE,
             qid,

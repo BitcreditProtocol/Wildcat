@@ -14,10 +14,13 @@ use bitcoin as btc;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
-    authorization::{offer_result_digest, AuthorizationVerifier},
+    authorization::{
+        denial_result_digest, offer_result_digest, AuthorizationVerifier,
+        SignedCreditQuoteDenialCommandV1,
+    },
     credit_evidence,
     error::{Error, Result},
-    persistence::{ExposureReservationInput, Repository},
+    persistence::{ExposureReservationInput, GovernedDenialInput, Repository},
     quotes::{BillInfo, CreditProgramBinding, LightQuote, Quote, Status, StatusDiscriminants},
     TStamp,
 };
@@ -278,6 +281,48 @@ impl Service {
             .update_status_if_pending(quote.id, quote.status)
             .await?;
         Ok(())
+    }
+
+    pub async fn deny_governed(
+        &self,
+        signed: SignedCreditQuoteDenialCommandV1,
+        now: TStamp,
+    ) -> Result<wire_quotes::CreditAuthorizationReceipt> {
+        let qid = uuid::Uuid::parse_str(&signed.command.mint_quote_id)
+            .map_err(|_| Error::CreditQuoteDenialInvalid)?;
+        let quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        let verified = self
+            .authorization_verifier
+            .verify_quote_denial(signed, &quote, now)?;
+        let denied_at = chrono::DateTime::from_timestamp_millis(now.timestamp_millis())
+            .ok_or(Error::CreditQuoteDenialInvalid)?;
+        let completed_at = denied_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let receipt = wire_quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: verified.operation_id,
+            authorization_digest: verified.command_digest,
+            case_id: verified.command.case_id,
+            status: String::from("completed"),
+            mint_id: verified.command.mint_id,
+            bill_id: verified.command.bill_id,
+            action: verified.command.action,
+            effect_id: qid.to_string(),
+            result_digest: denial_result_digest(qid, &completed_at),
+            completed_at,
+            synthetic: true,
+        };
+        self.quotes
+            .execute_governed_denial(GovernedDenialInput {
+                quote_id: qid,
+                receipt,
+                denied_at,
+                expires_at: verified.expires_at,
+            })
+            .await
     }
 
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
@@ -787,6 +832,105 @@ mod tests {
             .unwrap();
 
         assert_eq!(replayed, first);
+    }
+
+    #[tokio::test]
+    async fn governed_denial_replays_after_command_expiry() {
+        let mut bill = generate_random_bill();
+        bill.sum = btc::Amount::from_sat(8_000_000);
+        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let qid = quote.id;
+        let issued = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let signed = crate::authorization::tests::signed_denial_for(
+            &quote,
+            issued,
+            issued + chrono::Duration::hours(1),
+        );
+        let db = crate::persistence::inmemory::QuotesIDMap::default();
+        db.store(quote).await.unwrap();
+        let service = Service {
+            quotes: Box::new(db),
+            wdc_client: Box::new(MockWdcClient::new()),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
+        };
+
+        let consumed_at = issued + chrono::Duration::microseconds(123);
+        let first = service
+            .deny_governed(signed.clone(), consumed_at)
+            .await
+            .unwrap();
+        let stored = service.lookup(qid, consumed_at).await.unwrap();
+        assert!(matches!(
+            stored.status,
+            Status::Denied { tstamp }
+                if tstamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                    == first.completed_at
+        ));
+        let replayed = service
+            .deny_governed(signed, issued + chrono::Duration::days(2))
+            .await
+            .unwrap();
+
+        assert_eq!(replayed, first);
+        assert_eq!(replayed.action, crate::authorization::QUOTE_DENIAL_ACTION);
+        assert_eq!(replayed.effect_id, qid.to_string());
+    }
+
+    #[tokio::test]
+    async fn unsigned_and_signed_governed_denial_have_one_allowed_outcome() {
+        let mut bill = generate_random_bill();
+        bill.sum = btc::Amount::from_sat(8_000_000);
+        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let qid = quote.id;
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let signed = crate::authorization::tests::signed_denial_for(
+            &quote,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let db = crate::persistence::inmemory::QuotesIDMap::default();
+        db.store(quote).await.unwrap();
+        let service = Arc::new(Service {
+            quotes: Box::new(db),
+            wdc_client: Box::new(MockWdcClient::new()),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
+        });
+
+        let (unsigned, governed) =
+            tokio::join!(service.deny(qid, now), service.deny_governed(signed, now),);
+
+        assert!(matches!(unsigned, Err(Error::CreditAuthorizationRequired)));
+        assert!(governed.is_ok());
+        let stored = service.lookup(qid, now).await.unwrap();
+        assert!(matches!(stored.status, Status::Denied { .. }));
+        assert_eq!(
+            stored
+                .authorization_receipt()
+                .map(|receipt| receipt.action.as_str()),
+            Some(crate::authorization::QUOTE_DENIAL_ACTION)
+        );
     }
 
     #[tokio::test]
