@@ -498,6 +498,7 @@ impl Quote {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::response::IntoResponse;
     use bcr_wdc_utils::keys::test_utils as keys_test;
 
     #[test]
@@ -568,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn governed_quote_cannot_use_unsigned_denial() {
+    fn governed_quote_rejects_unsigned_denial_without_changing_state() {
         let mut quote = Quote::new(
             BillInfo::random(),
             keys_test::publics()[0],
@@ -578,7 +579,12 @@ mod tests {
 
         let result = quote.deny(TStamp::default());
 
-        assert!(matches!(result, Err(Error::CreditAuthorizationRequired)));
+        let error = result.unwrap_err();
+        assert!(matches!(&error, Error::CreditAuthorizationRequired));
+        assert_eq!(
+            error.into_response().status(),
+            axum::http::StatusCode::BAD_REQUEST
+        );
         assert!(matches!(quote.status, Status::Pending { .. }));
     }
 

@@ -86,4 +86,14 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
+
+    #[test]
+    fn quote_invalid_request_is_not_an_internal_error() {
+        let response = Error::QuotesClient(QuotesClientError::InvalidRequest(
+            serde_json::Value::String(String::from("Credit authorization is required")),
+        ))
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }
