@@ -274,6 +274,7 @@ impl Quote {
     }
 
     pub fn deny(&mut self, tstamp: TStamp) -> Result<()> {
+        self.require_credit_program()?;
         if let Status::Pending { .. } = self.status {
             self.status = Status::Denied { tstamp };
             Ok(())
@@ -495,6 +496,22 @@ mod tests {
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
 
         let result = quote.offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1));
+
+        assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
+        assert!(matches!(quote.status, Status::Pending { .. }));
+    }
+
+    #[test]
+    fn legacy_unbound_quote_cannot_be_denied() {
+        let mut quote = Quote::new(
+            BillInfo::random(),
+            keys_test::publics()[0],
+            TStamp::default(),
+            test_credit_program_binding(),
+        );
+        quote.credit_program = None;
+
+        let result = quote.deny(TStamp::default());
 
         assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
         assert!(matches!(quote.status, Status::Pending { .. }));
