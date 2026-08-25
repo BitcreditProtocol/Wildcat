@@ -317,6 +317,7 @@ impl persistence::Repository for Repository {
         Ok(None)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
@@ -713,6 +714,7 @@ impl Repository {
         Ok(commitment.is_some())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
@@ -878,6 +880,8 @@ impl Repository {
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?
             .take(0)
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        // SurrealDB's RecordId is stable as a key here despite its internal cache mutability.
+        #[allow(clippy::mutable_key_type)]
         let reserved_set: HashSet<RecordId> = reserved.into_iter().collect();
         let mut result = Vec::with_capacity(inputs.len());
         for rid in rids {
