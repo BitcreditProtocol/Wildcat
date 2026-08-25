@@ -21,6 +21,7 @@ use bcr_common::{
 use bcr_wdc_utils::{routine::RoutineHandle, surreal};
 // ----- local modules
 mod admin;
+mod authorization;
 mod client;
 mod error;
 mod monitor;
@@ -49,6 +50,9 @@ pub struct AppConfig {
     user_decision_retention_seconds: u64,
     credit_program_version: String,
     credit_program_digest: String,
+    credit_authorization_mint_id: String,
+    credit_authorization_key_id: String,
+    credit_authorization_public_key: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -68,10 +72,19 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         user_decision_retention_seconds,
         credit_program_version,
         credit_program_digest,
+        credit_authorization_mint_id,
+        credit_authorization_key_id,
+        credit_authorization_public_key,
     } = cfg;
     let credit_program =
         quotes::CreditProgramBinding::new(credit_program_version, credit_program_digest)
             .expect("invalid Mint credit program binding");
+    let authorization_verifier = authorization::AuthorizationVerifier::new(
+        credit_authorization_mint_id,
+        credit_authorization_key_id,
+        credit_authorization_public_key,
+    )
+    .expect("invalid AI Credit authorization verifier configuration");
     let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
         .await
         .expect("DB connection to quotes failed");
@@ -106,6 +119,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         mint_url: cashu_mint_url,
         user_decision_retention,
         credit_program,
+        authorization_verifier,
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
@@ -135,6 +149,7 @@ where
         .route(quote::admin_ep::LIST, get(admin::list_quotes))
         .route(quote::admin_ep::LOOKUP, get(admin::lookup_quote))
         .route(quote::admin_ep::UPDATE, patch(admin::update_quote))
+        .route(quote::admin_ep::AUTHORIZE, patch(admin::authorize_quote))
         .route(
             quote::admin_ep::ENABLE_MINTING,
             patch(admin::enable_minting),

@@ -106,6 +106,7 @@ mod tests {
             submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo::random(),
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         let bid = quote.bill.id.clone();
         repo.expect_load()
@@ -122,6 +123,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
@@ -149,6 +151,7 @@ mod tests {
                 ..quotes::BillInfo::random()
             },
             credit_program: Some(quotes::test_credit_program_binding()),
+            authorization_receipt: None,
         };
         let bid = quote.bill.id.clone();
         repo.expect_load()
@@ -213,6 +216,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),

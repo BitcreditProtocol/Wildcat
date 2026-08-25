@@ -11,6 +11,7 @@ use bitcoin as btc;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
+    authorization::{offer_result_digest, AuthorizationVerifier},
     error::{Error, Result},
     persistence::Repository,
     quotes::{BillInfo, CreditProgramBinding, LightQuote, Quote, Status, StatusDiscriminants},
@@ -98,6 +99,7 @@ pub struct Service {
     pub mint_url: cashu::MintUrl,
     pub user_decision_retention: time::Duration,
     pub credit_program: CreditProgramBinding,
+    pub(crate) authorization_verifier: AuthorizationVerifier,
 }
 
 impl Service {
@@ -315,6 +317,7 @@ impl Service {
         Ok(lights)
     }
 
+    #[cfg(test)]
     pub async fn offer(
         &self,
         qid: uuid::Uuid,
@@ -350,6 +353,53 @@ impl Service {
             .update_status_if_pending(quote.id, quote.status)
             .await?;
         Ok((discounted, expiration))
+    }
+
+    pub async fn authorize_offer(
+        &self,
+        qid: uuid::Uuid,
+        signed: wire_quotes::SignedCreditAuthorizationEnvelope,
+        now: TStamp,
+    ) -> Result<wire_quotes::CreditAuthorizationReceipt> {
+        let verifier = &self.authorization_verifier;
+        let mut quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        let verified = verifier.verify(signed, &quote, now)?;
+        if let Some(existing) = quote.authorization_receipt() {
+            return if existing.operation_id == verified.operation_id
+                && existing.authorization_digest == verified.authorization_digest
+            {
+                Ok(existing.clone())
+            } else {
+                Err(Error::CreditAuthorizationConflict)
+            };
+        }
+
+        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date);
+        let keyset_id = self
+            .wdc_client
+            .get_keyset_with_expiration_date(expiration_date)
+            .await?;
+        quote.offer(keyset_id, verified.expiration, verified.discounted)?;
+        let receipt = wire_quotes::CreditAuthorizationReceipt {
+            receipt_version: String::from("credit-authorization-receipt-v1"),
+            operation_id: verified.operation_id,
+            authorization_digest: verified.authorization_digest,
+            case_id: verified.authorization.case_id,
+            status: String::from("completed"),
+            mint_id: verified.authorization.mint_id,
+            bill_id: verified.authorization.bill_id,
+            action: verified.authorization.action,
+            effect_id: qid.to_string(),
+            result_digest: offer_result_digest(qid, verified.discounted, verified.expiration),
+            completed_at: now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            synthetic: true,
+        };
+        quote.authorization_receipt = Some(receipt);
+        self.quotes.execute_authorization(quote).await
     }
 
     pub async fn set_failed_ebill_validation(&self, qid: uuid::Uuid) -> Result<()> {
@@ -713,6 +763,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let test = service
             .enquire(
@@ -743,6 +794,7 @@ mod tests {
                     bill: cloned.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -754,6 +806,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, time::OffsetDateTime::now_utc())
@@ -782,6 +835,7 @@ mod tests {
                     bill: cloned.clone(),
                     submitted: now,
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -793,6 +847,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -824,6 +879,7 @@ mod tests {
                     bill: cloned.clone(),
                     submitted: now,
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -835,6 +891,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -866,6 +923,7 @@ mod tests {
                     bill: cloned.clone(),
                     submitted: now,
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }])
             });
         repo.expect_update_status_if_offered()
@@ -878,6 +936,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, now + time::Duration::seconds(1))
@@ -912,6 +971,7 @@ mod tests {
                     bill: cloned.clone(),
                     submitted: now,
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }])
             });
         repo.expect_update_status_if_offered()
@@ -929,6 +989,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let submitted = now + service.user_decision_retention + time::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
@@ -952,6 +1013,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -976,6 +1038,7 @@ mod tests {
                     bill: rnd_bill.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }))
             });
 
@@ -987,6 +1050,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -1044,6 +1108,7 @@ mod tests {
                     bill: quote.bill.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
                     credit_program: Some(crate::quotes::test_credit_program_binding()),
+                    authorization_receipt: None,
                 }))
             });
         repo.expect_update_status_if_failedebillvalidation()
@@ -1108,6 +1173,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());
