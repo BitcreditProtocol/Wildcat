@@ -481,6 +481,59 @@ impl Repository for DBQuotes {
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))
     }
 
+    async fn release_committed_exposure(&self, qid: uuid::Uuid, now: crate::TStamp) -> Result<()> {
+        let _exposure_guard = self.credit_exposure_lock.lock().await;
+        let reservation_rid = surrealdb::RecordId::from_table_key(
+            crate::credit_evidence::Store::RESERVATION_TABLE,
+            qid,
+        );
+        let event_rid =
+            surrealdb::RecordId::from_table_key("credit_exposure_events", uuid::Uuid::new_v4());
+        let response = self
+            .db
+            .query(
+                r#"
+                BEGIN TRANSACTION;
+                LET $reservation = SELECT * FROM ONLY $reservation_rid;
+                IF !$reservation { THROW "CREDIT_EXPOSURE_RESERVATION_MISSING" };
+                IF $reservation.state == "committed" {
+                    LET $ledger = UPDATE type::thing("credit_exposure_ledgers", $reservation.mintId)
+                        SET activeAmount -= $reservation.amount, revision += 1, updatedAt = $now
+                        WHERE activeAmount >= $reservation.amount RETURN AFTER;
+                    IF !$ledger { THROW "CREDIT_EXPOSURE_LEDGER_CONFLICT" };
+                    UPDATE $reservation_rid SET state = "released", updatedAt = $now;
+                    CREATE $event_rid SET
+                        eventVersion = "credit-exposure-event-v1",
+                        eventId = $event_id,
+                        quoteId = $qid,
+                        reservationId = $reservation.reservationId,
+                        mintId = $reservation.mintId,
+                        amountSat = $reservation.amountSat,
+                        fromState = "committed",
+                        toState = "released",
+                        capacityEvidenceId = $reservation.capacityEvidenceId,
+                        recordedAt = $now;
+                } ELSE {
+                    IF $reservation.state != "released" {
+                        THROW "CREDIT_EXPOSURE_RESERVATION_CONFLICT"
+                    };
+                };
+                COMMIT TRANSACTION;
+                "#,
+            )
+            .bind(("reservation_rid", reservation_rid))
+            .bind(("now", now))
+            .bind(("event_rid", event_rid))
+            .bind(("event_id", uuid::Uuid::new_v4()))
+            .bind(("qid", qid))
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        response
+            .check()
+            .map(|_| ())
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))
+    }
+
     async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, qid);
         let before: Option<QuoteDBEntry> = self

@@ -41,6 +41,11 @@ pub trait Repository {
         quote: Status,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<()>;
+    async fn release_committed_exposure(
+        &self,
+        id: uuid::Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()>;
     async fn update_status_if_accepted(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_failedebillvalidation(
         &self,
@@ -306,6 +311,15 @@ mod tests {
                 .await,
             Err(crate::error::Error::CreditCapacityExceeded)
         ));
+        db.release_committed_exposure(quotes[1].id, TStamp::default())
+            .await
+            .unwrap();
+        db.release_committed_exposure(quotes[1].id, TStamp::default())
+            .await
+            .unwrap();
+        db.execute_authorization(quotes[2].clone(), capacity())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
