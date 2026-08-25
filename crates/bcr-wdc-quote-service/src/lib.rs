@@ -58,7 +58,11 @@ pub struct AppConfig {
     credit_evidence_risk_assessed_by: String,
     credit_evidence_capacity_methodology_version: String,
     credit_evidence_capacity_assessed_by: String,
-    credit_evidence_synthetic: bool,
+    credit_evidence_risk_authority_key_id: String,
+    credit_evidence_risk_authority_public_key: String,
+    credit_evidence_capacity_authority_key_id: String,
+    credit_evidence_capacity_authority_public_key: String,
+    credit_evidence_allow_synthetic: bool,
 }
 
 #[derive(Clone, FromRef)]
@@ -86,7 +90,11 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         credit_evidence_risk_assessed_by,
         credit_evidence_capacity_methodology_version,
         credit_evidence_capacity_assessed_by,
-        credit_evidence_synthetic,
+        credit_evidence_risk_authority_key_id,
+        credit_evidence_risk_authority_public_key,
+        credit_evidence_capacity_authority_key_id,
+        credit_evidence_capacity_authority_public_key,
+        credit_evidence_allow_synthetic,
     } = cfg;
     let credit_program =
         quotes::CreditProgramBinding::new(credit_program_version, credit_program_digest)
@@ -107,7 +115,11 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
                 risk_assessed_by: credit_evidence_risk_assessed_by,
                 capacity_methodology_version: credit_evidence_capacity_methodology_version,
                 capacity_assessed_by: credit_evidence_capacity_assessed_by,
-                synthetic: credit_evidence_synthetic,
+                risk_authority_key_id: credit_evidence_risk_authority_key_id,
+                risk_authority_public_key: credit_evidence_risk_authority_public_key,
+                capacity_authority_key_id: credit_evidence_capacity_authority_key_id,
+                capacity_authority_public_key: credit_evidence_capacity_authority_public_key,
+                allow_synthetic: credit_evidence_allow_synthetic,
             }
             .validate()
             .expect("invalid Mint credit evidence configuration"),
@@ -150,6 +162,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         user_decision_retention,
         credit_program,
         authorization_verifier,
+        credit_evidence: Some(credit_evidence.clone()),
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
