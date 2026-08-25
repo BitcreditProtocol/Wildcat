@@ -20,12 +20,60 @@ use crate::{
 const MAX_SATOSHIS: u64 = 2_100_000_000_000_000;
 pub const AUTHORIZATION_ACTION: &str = "request_to_mint";
 pub const QUOTE_REISSUE_ACTION: &str = wire_quotes::REISSUE_ENQUIRE_ACTION;
+pub const QUOTE_DENIAL_ACTION: &str = "deny_governed_quote";
+pub const QUOTE_DENIAL_SCHEMA_VERSION: &str = "credit-quote-denial-command-v1";
 const MAX_QUOTE_REISSUE_PERMIT_TTL: chrono::Duration = chrono::Duration::days(1);
 const QUOTE_REISSUE_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+const MAX_QUOTE_DENIAL_COMMAND_TTL: chrono::Duration = chrono::Duration::days(1);
+const QUOTE_DENIAL_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreditQuoteDenialCommandV1 {
+    pub schema_version: String,
+    pub key_id: String,
+    pub mint_id: String,
+    pub mint_quote_id: String,
+    pub credit_program_version: String,
+    pub credit_program_digest: String,
+    pub case_id: String,
+    pub bill_id: String,
+    pub bill_state_digest: String,
+    pub holder_ref: String,
+    pub decision_snapshot_digest: String,
+    pub decision_result_digest: String,
+    pub policy_pack_digest: String,
+    pub policy_pack_version: String,
+    pub calculation_version: String,
+    pub operator_decision_digest: String,
+    pub operation_id: String,
+    pub issued_at: String,
+    pub expires_at: String,
+    pub nonce: String,
+    pub action: String,
+    pub synthetic: bool,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SignedCreditQuoteDenialCommandV1 {
+    pub command: CreditQuoteDenialCommandV1,
+    pub command_digest: String,
+    pub signature_algorithm: String,
+    pub signature: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct VerifiedQuoteReissuePermit {
     pub signed: SignedQuoteReissuePermit,
+}
+
+#[derive(Clone, Debug)]
+pub struct VerifiedQuoteDenial {
+    pub command: CreditQuoteDenialCommandV1,
+    pub command_digest: String,
+    pub operation_id: String,
+    pub expires_at: TStamp,
 }
 
 #[derive(Clone, Debug)]
@@ -259,6 +307,108 @@ impl AuthorizationVerifier {
 
         Ok(VerifiedQuoteReissuePermit { signed })
     }
+
+    pub fn verify_quote_denial(
+        &self,
+        signed: SignedCreditQuoteDenialCommandV1,
+        quote: &Quote,
+        now: TStamp,
+    ) -> Result<VerifiedQuoteDenial> {
+        let command = signed.command;
+        for text in [
+            &command.schema_version,
+            &command.key_id,
+            &command.mint_id,
+            &command.credit_program_version,
+            &command.bill_id,
+            &command.holder_ref,
+            &command.policy_pack_version,
+            &command.calculation_version,
+            &command.action,
+        ] {
+            validate_text(text).map_err(|_| invalid_denial())?;
+        }
+        for value in [
+            &command.credit_program_digest,
+            &command.bill_state_digest,
+            &command.decision_snapshot_digest,
+            &command.decision_result_digest,
+            &command.policy_pack_digest,
+            &command.operator_decision_digest,
+            &command.operation_id,
+        ] {
+            validate_digest(value).map_err(|_| invalid_denial())?;
+        }
+        let quote_id =
+            parse_canonical_uuid(&command.mint_quote_id).map_err(|_| invalid_denial())?;
+        parse_canonical_uuid(&command.case_id).map_err(|_| invalid_denial())?;
+        parse_canonical_uuid(&command.nonce).map_err(|_| invalid_denial())?;
+        if signed.signature_algorithm != "Ed25519"
+            || command.schema_version != QUOTE_DENIAL_SCHEMA_VERSION
+            || command.key_id != self.key_id
+            || command.mint_id != self.mint_id
+            || command.action != QUOTE_DENIAL_ACTION
+            || !command.synthetic
+            || quote_id != quote.id
+        {
+            return Err(invalid_denial());
+        }
+
+        let canonical = canonical_quote_denial_command(&command);
+        let expected_digest = digest(&canonical);
+        if signed.command_digest != expected_digest {
+            return Err(invalid_denial());
+        }
+        let signature_bytes = general_purpose::STANDARD
+            .decode(&signed.signature)
+            .map_err(|_| invalid_denial())?;
+        let signature = Signature::from_slice(&signature_bytes).map_err(|_| invalid_denial())?;
+        self.public_key
+            .verify(&canonical, &signature)
+            .map_err(|_| invalid_denial())?;
+
+        let issued_at = parse_datetime(&command.issued_at).map_err(|_| invalid_denial())?;
+        let expires_at = parse_datetime(&command.expires_at).map_err(|_| invalid_denial())?;
+        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.issued_at
+            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.expires_at
+            || issued_at > now + QUOTE_DENIAL_CLOCK_SKEW
+            || expires_at <= issued_at
+            || expires_at - issued_at > MAX_QUOTE_DENIAL_COMMAND_TTL
+        {
+            return Err(invalid_denial());
+        }
+
+        let credit_program = quote
+            .credit_program()
+            .ok_or(Error::CreditProgramNotBound(quote.id))?;
+        let bill_id = quote.bill.id.to_string();
+        let holder_ref = quote.bill.current_holder.node_id().to_string();
+        let acceptor_ref = quote.bill.drawee.node_id.to_string();
+        let bill_state_digest = digest(&canonical_bill_state(
+            &bill_id,
+            &holder_ref,
+            &acceptor_ref,
+            &quote.bill.sum.to_sat().to_string(),
+            &quote.bill.maturity_date.to_string(),
+        ));
+        let operation_id = digest(&canonical_quote_denial_operation(&command));
+        if command.credit_program_version != credit_program.version()
+            || command.credit_program_digest != credit_program.digest()
+            || command.bill_id != bill_id
+            || command.bill_state_digest != bill_state_digest
+            || command.holder_ref != holder_ref
+            || command.operation_id != operation_id
+        {
+            return Err(invalid_denial());
+        }
+
+        Ok(VerifiedQuoteDenial {
+            command,
+            command_digest: signed.command_digest,
+            operation_id,
+            expires_at,
+        })
+    }
 }
 
 pub fn same_quote_reissue_authority(left: &QuoteReissuePermit, right: &QuoteReissuePermit) -> bool {
@@ -296,6 +446,10 @@ fn invalid() -> Error {
 
 fn invalid_reissue() -> Error {
     Error::CreditQuoteReissueInvalid
+}
+
+fn invalid_denial() -> Error {
+    Error::CreditQuoteDenialInvalid
 }
 
 fn validate_text(value: &str) -> Result<()> {
@@ -342,6 +496,15 @@ fn parse_datetime(value: &str) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|_| invalid())
+}
+
+fn parse_canonical_uuid(value: &str) -> Result<uuid::Uuid> {
+    validate_text(value)?;
+    let parsed = uuid::Uuid::parse_str(value).map_err(|_| invalid())?;
+    if parsed.to_string() != value {
+        return Err(invalid());
+    }
+    Ok(parsed)
 }
 
 fn validate_envelope(value: &wire_quotes::CreditAuthorizationEnvelope) -> Result<()> {
@@ -505,12 +668,71 @@ fn canonical_quote_reissue_permit(value: &QuoteReissuePermit) -> Vec<u8> {
     ])
 }
 
+fn canonical_quote_denial_command(value: &CreditQuoteDenialCommandV1) -> Vec<u8> {
+    encode_fields(&[
+        "AI-CREDIT-QUOTE-DENIAL-COMMAND-V1",
+        &value.schema_version,
+        &value.key_id,
+        &value.mint_id,
+        &value.mint_quote_id,
+        &value.credit_program_version,
+        &value.credit_program_digest,
+        &value.case_id,
+        &value.bill_id,
+        &value.bill_state_digest,
+        &value.holder_ref,
+        &value.decision_snapshot_digest,
+        &value.decision_result_digest,
+        &value.policy_pack_digest,
+        &value.policy_pack_version,
+        &value.calculation_version,
+        &value.operator_decision_digest,
+        &value.operation_id,
+        &value.issued_at,
+        &value.expires_at,
+        &value.nonce,
+        &value.action,
+        "true",
+    ])
+}
+
+fn canonical_quote_denial_operation(value: &CreditQuoteDenialCommandV1) -> Vec<u8> {
+    encode_fields(&[
+        "AI-CREDIT-QUOTE-DENIAL-OPERATION-V1",
+        &value.schema_version,
+        &value.mint_id,
+        &value.mint_quote_id,
+        &value.credit_program_version,
+        &value.credit_program_digest,
+        &value.case_id,
+        &value.bill_id,
+        &value.bill_state_digest,
+        &value.holder_ref,
+        &value.decision_snapshot_digest,
+        &value.decision_result_digest,
+        &value.policy_pack_digest,
+        &value.policy_pack_version,
+        &value.calculation_version,
+        &value.operator_decision_digest,
+        &value.action,
+        "true",
+    ])
+}
+
 pub fn offer_result_digest(quote_id: uuid::Uuid, discounted: Amount, expiration: TStamp) -> String {
     digest(&encode_fields(&[
         "AI-CREDIT-WILDCAT-OFFER-RESULT-V1",
         &quote_id.to_string(),
         &discounted.to_sat().to_string(),
         &expiration.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    ]))
+}
+
+pub fn denial_result_digest(quote_id: uuid::Uuid, completed_at: &str) -> String {
+    digest(&encode_fields(&[
+        "AI-CREDIT-WILDCAT-DENIAL-RESULT-V1",
+        &quote_id.to_string(),
+        completed_at,
     ]))
 }
 
@@ -650,6 +872,59 @@ pub(crate) mod tests {
         }
     }
 
+    fn sign_denial_command(
+        mut command: CreditQuoteDenialCommandV1,
+    ) -> SignedCreditQuoteDenialCommandV1 {
+        command.operation_id = digest(&canonical_quote_denial_operation(&command));
+        let bytes = canonical_quote_denial_command(&command);
+        SignedCreditQuoteDenialCommandV1 {
+            command,
+            command_digest: digest(&bytes),
+            signature_algorithm: String::from("Ed25519"),
+            signature: general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes()),
+        }
+    }
+
+    pub(crate) fn signed_denial_for(
+        quote: &Quote,
+        issued_at: TStamp,
+        expires_at: TStamp,
+    ) -> SignedCreditQuoteDenialCommandV1 {
+        let bill_id = quote.bill.id.to_string();
+        let holder_ref = quote.bill.current_holder.node_id().to_string();
+        let acceptor_ref = quote.bill.drawee.node_id.to_string();
+        sign_denial_command(CreditQuoteDenialCommandV1 {
+            schema_version: String::from(QUOTE_DENIAL_SCHEMA_VERSION),
+            key_id: String::from("synthetic-ed25519-v1"),
+            mint_id: String::from("local-wildcat"),
+            mint_quote_id: quote.id.to_string(),
+            credit_program_version: quote.credit_program().unwrap().version().to_owned(),
+            credit_program_digest: quote.credit_program().unwrap().digest().to_owned(),
+            case_id: uuid::Uuid::from_u128(10).to_string(),
+            bill_id: bill_id.clone(),
+            bill_state_digest: digest(&canonical_bill_state(
+                &bill_id,
+                &holder_ref,
+                &acceptor_ref,
+                &quote.bill.sum.to_sat().to_string(),
+                &quote.bill.maturity_date.to_string(),
+            )),
+            holder_ref,
+            decision_snapshot_digest: format!("sha256:{}", "a".repeat(64)),
+            decision_result_digest: format!("sha256:{}", "b".repeat(64)),
+            policy_pack_digest: format!("sha256:{}", "c".repeat(64)),
+            policy_pack_version: String::from("synthetic-policy-v1"),
+            calculation_version: String::from("deterministic-credit-core-v9"),
+            operator_decision_digest: format!("sha256:{}", "d".repeat(64)),
+            operation_id: String::new(),
+            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            nonce: uuid::Uuid::from_u128(11).to_string(),
+            action: String::from(QUOTE_DENIAL_ACTION),
+            synthetic: true,
+        })
+    }
+
     #[test]
     fn verifies_frozen_vector_bytes_and_rejects_tampering() {
         let vector: serde_json::Value = serde_json::from_str(include_str!(
@@ -779,6 +1054,201 @@ pub(crate) mod tests {
                 Err(Error::CreditQuoteReissueInvalid)
             ));
         }
+    }
+
+    #[test]
+    fn quote_denial_verifier_binds_signature_quote_program_bill_and_authority() {
+        let mut bill = crate::quotes::BillInfo::random();
+        bill.sum = Amount::from_sat(8_000_000);
+        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let verified = test_authorization_verifier()
+            .verify_quote_denial(signed.clone(), &quote, issued)
+            .unwrap();
+        assert_eq!(verified.operation_id, signed.command.operation_id);
+        // Expiry gates first repository consumption, not replay of a committed receipt.
+        test_authorization_verifier()
+            .verify_quote_denial(signed.clone(), &quote, issued + chrono::Duration::days(2))
+            .unwrap();
+
+        let mut tampered = signed.clone();
+        tampered.command.operator_decision_digest = format!("sha256:{}", "e".repeat(64));
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_denial(tampered, &quote, issued),
+            Err(Error::CreditQuoteDenialInvalid)
+        ));
+
+        for mutate in [
+            |command: &mut CreditQuoteDenialCommandV1| {
+                command.mint_quote_id = uuid::Uuid::new_v4().to_string();
+            },
+            |command: &mut CreditQuoteDenialCommandV1| {
+                command.credit_program_version = String::from("another-program-v1");
+            },
+            |command: &mut CreditQuoteDenialCommandV1| {
+                command.bill_id = String::from("another-bill");
+            },
+            |command: &mut CreditQuoteDenialCommandV1| {
+                command.bill_state_digest = format!("sha256:{}", "f".repeat(64));
+            },
+            |command: &mut CreditQuoteDenialCommandV1| {
+                command.holder_ref = String::from("another-holder");
+            },
+        ] {
+            let mut changed = signed.command.clone();
+            mutate(&mut changed);
+            assert!(matches!(
+                test_authorization_verifier().verify_quote_denial(
+                    sign_denial_command(changed),
+                    &quote,
+                    issued
+                ),
+                Err(Error::CreditQuoteDenialInvalid)
+            ));
+        }
+
+        let mut malformed_digest = signed.command.clone();
+        malformed_digest.operator_decision_digest = String::from("sha256:NOT-CANONICAL");
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_denial(
+                sign_denial_command(malformed_digest),
+                &quote,
+                issued
+            ),
+            Err(Error::CreditQuoteDenialInvalid)
+        ));
+
+        let issued_too_far_ahead = signed_denial_for(
+            &quote,
+            issued + chrono::Duration::seconds(31),
+            issued + chrono::Duration::hours(1),
+        );
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_denial(issued_too_far_ahead, &quote, issued),
+            Err(Error::CreditQuoteDenialInvalid)
+        ));
+        let ttl_too_long = signed_denial_for(
+            &quote,
+            issued,
+            issued + chrono::Duration::hours(24) + chrono::Duration::milliseconds(1),
+        );
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_denial(ttl_too_long, &quote, issued),
+            Err(Error::CreditQuoteDenialInvalid)
+        ));
+    }
+
+    #[test]
+    fn quote_denial_contract_rejects_unknown_fields_and_noncanonical_shapes() {
+        let quote = Quote::new(
+            crate::quotes::BillInfo::random(),
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let mut value = serde_json::to_value(&signed).unwrap();
+        value["unexpected"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<SignedCreditQuoteDenialCommandV1>(value).is_err());
+
+        for invalid in [
+            signed.command.mint_quote_id.to_uppercase(),
+            String::from("not-a-uuid"),
+        ] {
+            let mut changed = signed.command.clone();
+            changed.mint_quote_id = invalid;
+            assert!(matches!(
+                test_authorization_verifier().verify_quote_denial(
+                    sign_denial_command(changed),
+                    &quote,
+                    issued
+                ),
+                Err(Error::CreditQuoteDenialInvalid)
+            ));
+        }
+        for invalid in ["2026-08-25T12:00:00Z", "2026-08-25T12:00:00.00Z"] {
+            let mut changed = signed.command.clone();
+            changed.issued_at = String::from(invalid);
+            assert!(matches!(
+                test_authorization_verifier().verify_quote_denial(
+                    sign_denial_command(changed),
+                    &quote,
+                    issued
+                ),
+                Err(Error::CreditQuoteDenialInvalid)
+            ));
+        }
+    }
+
+    #[test]
+    fn quote_denial_operation_is_stable_across_key_and_delivery_renewal() {
+        let quote = Quote::new(
+            crate::quotes::BillInfo::random(),
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let mut renewed = signed.command.clone();
+        renewed.key_id = String::from("rotated-ed25519-v2");
+        renewed.issued_at = (issued + chrono::Duration::hours(2))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        renewed.expires_at = (issued + chrono::Duration::hours(3))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        renewed.nonce = uuid::Uuid::from_u128(12).to_string();
+
+        assert_eq!(
+            digest(&canonical_quote_denial_operation(&signed.command)),
+            digest(&canonical_quote_denial_operation(&renewed))
+        );
+    }
+
+    #[test]
+    fn verifies_ts_issued_quote_denial_command_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/authorization/credit-quote-denial-command-v1.json"
+        ))
+        .unwrap();
+        let command: CreditQuoteDenialCommandV1 =
+            serde_json::from_value(vector["command"].clone()).unwrap();
+        let bytes = canonical_quote_denial_command(&command);
+        let expected_base64 = vector["expected"]["canonicalBase64"].as_str().unwrap();
+
+        assert_eq!(general_purpose::STANDARD.encode(&bytes), expected_base64);
+        assert_eq!(
+            digest(&bytes),
+            vector["expected"]["commandDigest"].as_str().unwrap()
+        );
+        assert_eq!(
+            digest(&canonical_quote_denial_operation(&command)),
+            vector["expected"]["operationId"].as_str().unwrap()
+        );
+        assert_eq!(
+            command.operation_id,
+            vector["expected"]["operationId"].as_str().unwrap()
+        );
+        let signature = general_purpose::STANDARD
+            .decode(vector["expected"]["signature"].as_str().unwrap())
+            .unwrap();
+        signing_key()
+            .verifying_key()
+            .verify(&bytes, &Signature::from_slice(&signature).unwrap())
+            .unwrap();
     }
 
     #[test]

@@ -14,7 +14,8 @@ use crate::{
     authorization::same_quote_reissue_authority,
     error::{Error, Result},
     persistence::{
-        same_executed_quote, same_pending_quote_request, ExposureReservationInput, Repository,
+        same_executed_quote, same_governed_denial_authority, same_pending_quote_request,
+        ExposureReservationInput, GovernedDenialInput, Repository,
     },
     quotes,
     service::{ListFilters, SortOrder},
@@ -26,6 +27,8 @@ pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
     reservations: Arc<RwLock<HashMap<Uuid, bcr_common::wire::quotes::CreditExposureReservation>>>,
     quote_reissues: Arc<RwLock<HashMap<Uuid, QuoteReissueRecord>>>,
+    governed_denials:
+        Arc<RwLock<HashMap<Uuid, bcr_common::wire::quotes::CreditAuthorizationReceipt>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -248,6 +251,48 @@ impl Repository for QuotesIDMap {
             },
         );
         Ok(receipt)
+    }
+
+    async fn execute_governed_denial(
+        &self,
+        input: GovernedDenialInput,
+    ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let mut denials = self.governed_denials.write().unwrap();
+        let mut quotes = self.quotes.write().unwrap();
+        let stored = quotes
+            .get_mut(&input.quote_id)
+            .ok_or_else(|| Error::ResourceNotFound(input.quote_id.to_string()))?;
+        if let Some(existing) = denials.get(&input.quote_id) {
+            return if stored.authorization_receipt.as_ref() == Some(existing)
+                && matches!(stored.status, quotes::Status::Denied { .. })
+                && same_governed_denial_authority(existing, &input.receipt)
+            {
+                Ok(existing.clone())
+            } else {
+                Err(Error::CreditQuoteDenialConflict)
+            };
+        }
+        if stored.authorization_receipt.is_some() {
+            return Err(Error::CreditQuoteDenialConflict);
+        }
+        if input.expires_at <= input.denied_at {
+            return Err(Error::CreditQuoteDenialInvalid);
+        }
+        if !matches!(stored.status, quotes::Status::Pending { .. })
+            || stored.credit_program().is_none()
+            || input.receipt.effect_id != input.quote_id.to_string()
+            || input.receipt.bill_id != stored.bill.id.to_string()
+            || input.receipt.action != crate::authorization::QUOTE_DENIAL_ACTION
+            || input.receipt.status != "completed"
+        {
+            return Err(Error::CreditQuoteDenialConflict);
+        }
+        stored.status = quotes::Status::Denied {
+            tstamp: input.denied_at,
+        };
+        stored.authorization_receipt = Some(input.receipt.clone());
+        denials.insert(input.quote_id, input.receipt.clone());
+        Ok(input.receipt)
     }
 
     async fn update_status_if_offered(
