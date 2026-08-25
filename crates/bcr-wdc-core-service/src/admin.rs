@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::{
-    cashu, cdk_common,
+    cashu, ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 // ----- local imports
@@ -15,9 +15,7 @@ use crate::{error::Result, keys, swap};
 pub async fn new_keyset(
     State(ctrl): State<Arc<keys::service::Service>>,
     Json(request): Json<wire_keys::NewKeysetRequest>,
-) -> Result<Json<cdk_common::mint::MintKeySetInfo>> {
-    tracing::debug!("Received new keyset request");
-
+) -> Result<Json<ecash::KeySetInfo>> {
     let now = chrono::Utc::now();
     let expiration = request
         .expiration
@@ -25,7 +23,7 @@ pub async fn new_keyset(
     let kinfo = ctrl
         .create(request.unit, now, expiration, request.fees_ppk)
         .await?;
-    Ok(Json(kinfo))
+    Ok(Json(kinfo.into()))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]

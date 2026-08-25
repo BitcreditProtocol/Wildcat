@@ -785,7 +785,7 @@ mod tests {
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(&cloned_keyset, &amounts);
+            let signatures = signatures_test::generate_signatures(cloned_keyset.id, &amounts);
             Ok(signatures)
         });
         vault.expect_store_proofs().times(1).returning(|_| Ok(()));
@@ -1026,7 +1026,7 @@ mod tests {
             .returning(move |_| Ok(cloned_keyset.clone()));
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(&keyset, &amounts);
+            let signatures = signatures_test::generate_signatures(keyset.id, &amounts);
             Ok(signatures)
         });
         wdc.expect_burn()

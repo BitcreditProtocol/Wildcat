@@ -1,8 +1,10 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::cashu::{self, nut02::KeySetVersion};
-use bcr_common::cdk_common::mint::MintKeySetInfo;
-use bcr_wdc_utils::keys;
+use bcr_common::{
+    cashu::{self, nut02::KeySetVersion},
+    cdk_common,
+};
+use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::{
     bip32 as btc32,
     hashes::{sha256::Hash as Sha256, Hash},
@@ -31,7 +33,7 @@ impl Factory {
         now: TStamp,
         expiration: Option<TStamp>,
         fees_ppk: u64,
-    ) -> keys::KeysetEntry {
+    ) -> keys_utils::MintKeysEntry {
         // sha of info.unit.to_string()
         let unit_hash = Sha256::hash(unit.to_string().as_bytes());
         // we take least significant 31 bits of the hash as u32
@@ -86,19 +88,25 @@ impl Factory {
             expiration.unwrap_or_default(),
             keyset.id
         );
-        let info = MintKeySetInfo {
-            id: keyset.id,
-            unit: keyset.unit.clone(),
+        let cdk_common::MintKeySet {
+            id,
+            unit,
+            keys,
+            input_fee_ppk,
+            final_expiry,
+        } = keyset;
+        keys_utils::MintKeysEntry {
+            id,
+            unit,
             active: true,
             valid_from: now.timestamp().max(0) as u64,
-            final_expiry: keyset.final_expiry,
             derivation_path: path,
             derivation_path_index: None,
             amounts: denominations,
-            input_fee_ppk: fees_ppk,
-            issuer_version: None,
-        };
-        (info, keyset)
+            input_fee_ppk,
+            final_expiry,
+            keys,
+        }
     }
 }
 
@@ -114,23 +122,23 @@ mod tests {
         let unit1 = cashu::CurrencyUnit::Sat;
         let now = chrono::DateTime::from_timestamp(1_000_000, 0).unwrap();
         let expire1 = chrono::DateTime::from_timestamp(2_000_000, 0).unwrap();
-        let (info1, _) = factory.generate(unit1.clone(), now, Some(expire1), 100);
+        let info1 = factory.generate(unit1.clone(), now, Some(expire1), 100);
         assert_eq!(info1.unit, unit1);
         assert_eq!(info1.final_expiry, Some(expire1.timestamp() as u64));
         // different unit
         let unit2 = cashu::CurrencyUnit::Eur;
-        let (info2, _) = factory.generate(unit2.clone(), now, Some(expire1), 0);
+        let info2 = factory.generate(unit2.clone(), now, Some(expire1), 0);
         assert_eq!(info2.unit, unit2);
         assert_ne!(info2.id, info1.id);
         // different expiration
         let expire3 = chrono::DateTime::from_timestamp(3_000_000, 0).unwrap();
-        let (info3, _) = factory.generate(unit1.clone(), now, Some(expire3), 0);
+        let info3 = factory.generate(unit1.clone(), now, Some(expire3), 0);
         assert_eq!(info3.final_expiry, Some(expire3.timestamp() as u64));
         assert_ne!(info3.id, info1.id);
         assert_ne!(info3.id, info2.id);
         // different now
         let now4 = chrono::DateTime::from_timestamp(1_500_000, 0).unwrap();
-        let (info4, _) = factory.generate(unit1.clone(), now4, Some(expire1), 0);
+        let info4 = factory.generate(unit1.clone(), now4, Some(expire1), 0);
         assert_eq!(info4.valid_from, now4.timestamp() as u64);
         assert_ne!(info4.id, info1.id);
         assert_ne!(info4.id, info2.id);
