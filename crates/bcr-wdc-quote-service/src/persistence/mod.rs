@@ -13,6 +13,16 @@ use crate::{
     service::{ListFilters, SortOrder},
 };
 
+#[derive(Debug, Clone)]
+pub struct ExposureReservationInput {
+    pub mint_id: String,
+    pub amount_sat: u64,
+    pub capacity_evidence_id: uuid::Uuid,
+    pub existing_exposure_sat: u64,
+    pub exposure_limit_sat: u64,
+    pub now: chrono::DateTime<chrono::Utc>,
+}
+
 // ----- end imports
 
 #[cfg_attr(test, mockall::automock)]
@@ -23,8 +33,14 @@ pub trait Repository {
     async fn execute_authorization(
         &self,
         quote: Quote,
+        exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt>;
-    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
+    async fn update_status_if_offered(
+        &self,
+        id: uuid::Uuid,
+        quote: Status,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()>;
     async fn update_status_if_accepted(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_failedebillvalidation(
         &self,
@@ -150,6 +166,17 @@ mod tests {
         }
     }
 
+    fn exposure(now: TStamp) -> ExposureReservationInput {
+        ExposureReservationInput {
+            mint_id: String::from("local-wildcat"),
+            amount_sat: 8_000_000,
+            capacity_evidence_id: uuid::Uuid::nil(),
+            existing_exposure_sat: 0,
+            exposure_limit_sat: 40_000_000,
+            now,
+        }
+    }
+
     #[tokio::test]
     async fn authorization_transition_is_atomic_and_idempotent() {
         authorization_transition_is_atomic_and_idempotent_for(init_inmemory_db()).await;
@@ -171,19 +198,113 @@ mod tests {
         quote.authorization_receipt = Some(receipt.clone());
 
         assert_eq!(
-            db.execute_authorization(quote.clone()).await.unwrap(),
+            db.execute_authorization(quote.clone(), exposure(TStamp::default()))
+                .await
+                .unwrap(),
             receipt
         );
         assert_eq!(
-            db.execute_authorization(quote.clone()).await.unwrap(),
+            db.execute_authorization(quote.clone(), exposure(TStamp::default()))
+                .await
+                .unwrap(),
             receipt
         );
 
         quote.authorization_receipt =
             Some(authorization_receipt(&format!("sha256:{}", "d".repeat(64))));
         assert!(matches!(
-            db.execute_authorization(quote).await,
+            db.execute_authorization(quote, exposure(TStamp::default()))
+                .await,
             Err(crate::error::Error::CreditAuthorizationConflict)
+        ));
+    }
+
+    #[tokio::test]
+    async fn exposure_capacity_is_reserved_atomically() {
+        exposure_capacity_is_reserved_atomically_for(init_inmemory_db()).await;
+        exposure_capacity_is_reserved_atomically_for(init_surreal_db().await).await;
+    }
+
+    async fn exposure_capacity_is_reserved_atomically_for(db: impl Repository) {
+        let mut first = pending_quote();
+        let mut second = pending_quote();
+        db.store(first.clone()).await.unwrap();
+        db.store(second.clone()).await.unwrap();
+        first.status = offered_status(&first);
+        second.status = offered_status(&second);
+        first.authorization_receipt =
+            Some(authorization_receipt(&format!("sha256:{}", "c".repeat(64))));
+        second.authorization_receipt =
+            Some(authorization_receipt(&format!("sha256:{}", "d".repeat(64))));
+        let mut first_exposure = exposure(TStamp::default());
+        first_exposure.exposure_limit_sat = 12_000_000;
+        let mut second_exposure = exposure(TStamp::default());
+        second_exposure.exposure_limit_sat = 12_000_000;
+
+        let (first_result, second_result) = tokio::join!(
+            db.execute_authorization(first, first_exposure),
+            db.execute_authorization(second, second_exposure),
+        );
+        assert_eq!(
+            usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()),
+            1
+        );
+        assert!(matches!(
+            first_result.as_ref().err().or(second_result.as_ref().err()),
+            Some(crate::error::Error::CreditCapacityExceeded)
+                | Some(crate::error::Error::QuotesRepository(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn exposure_is_released_on_rejection_and_committed_on_acceptance() {
+        exposure_lifecycle_for(init_inmemory_db()).await;
+        exposure_lifecycle_for(init_surreal_db().await).await;
+    }
+
+    async fn exposure_lifecycle_for(db: impl Repository) {
+        let mut quotes = [pending_quote(), pending_quote(), pending_quote()];
+        for quote in &quotes {
+            db.store(quote.clone()).await.unwrap();
+        }
+        for (index, quote) in quotes.iter_mut().enumerate() {
+            quote.status = offered_status(quote);
+            quote.authorization_receipt =
+                Some(authorization_receipt(&format!("sha256:{:064x}", index + 1)));
+        }
+        let capacity = || ExposureReservationInput {
+            exposure_limit_sat: 8_000_000,
+            ..exposure(TStamp::default())
+        };
+
+        db.execute_authorization(quotes[0].clone(), capacity())
+            .await
+            .unwrap();
+        assert!(matches!(
+            db.execute_authorization(quotes[1].clone(), capacity())
+                .await,
+            Err(crate::error::Error::CreditCapacityExceeded)
+        ));
+        db.update_status_if_offered(
+            quotes[0].id,
+            quotes::Status::Rejected {
+                tstamp: TStamp::default(),
+                discounted: bitcoin::Amount::from_sat(8_000_000),
+            },
+            TStamp::default(),
+        )
+        .await
+        .unwrap();
+        db.execute_authorization(quotes[1].clone(), capacity())
+            .await
+            .unwrap();
+        db.update_status_if_offered(quotes[1].id, accepted_status(), TStamp::default())
+            .await
+            .unwrap();
+        assert!(matches!(
+            db.execute_authorization(quotes[2].clone(), capacity())
+                .await,
+            Err(crate::error::Error::CreditCapacityExceeded)
         ));
     }
 
@@ -254,10 +375,15 @@ mod tests {
     }
     async fn update_status_if_offered_ok(db: impl Repository) {
         let mut quote = pending_quote();
-        quote.status = offered_status(&quote);
         db.store(quote.clone()).await.unwrap();
+        quote.status = offered_status(&quote);
+        quote.authorization_receipt =
+            Some(authorization_receipt(&format!("sha256:{}", "c".repeat(64))));
+        db.execute_authorization(quote.clone(), exposure(TStamp::default()))
+            .await
+            .unwrap();
         let res = db
-            .update_status_if_offered(quote.id, accepted_status())
+            .update_status_if_offered(quote.id, accepted_status(), TStamp::default())
             .await;
         assert!(res.is_ok());
         let updated = db.load(quote.id).await.unwrap().unwrap();
@@ -284,7 +410,7 @@ mod tests {
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
-            .update_status_if_offered(quote.id, offered_status(&quote))
+            .update_status_if_offered(quote.id, offered_status(&quote), TStamp::default())
             .await;
         assert!(res.is_err());
         let content = db.load(quote.id).await.unwrap().unwrap();
