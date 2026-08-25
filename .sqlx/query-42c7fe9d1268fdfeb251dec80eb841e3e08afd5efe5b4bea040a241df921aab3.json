@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE quote_quotes\n            SET status = $2,\n                blob = jsonb_set(blob, '{data,status}', $3, true)\n            WHERE qid = $1 AND status = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "42c7fe9d1268fdfeb251dec80eb841e3e08afd5efe5b4bea040a241df921aab3"
+}

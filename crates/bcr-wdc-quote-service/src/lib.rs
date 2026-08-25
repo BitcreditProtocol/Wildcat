@@ -47,6 +47,8 @@ pub struct AppConfig {
     notification_url: ClientUrl,
     monitor_interval_seconds: u64,
     user_decision_retention_seconds: u64,
+    credit_program_version: String,
+    credit_program_digest: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -64,7 +66,12 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         notification_url,
         monitor_interval_seconds,
         user_decision_retention_seconds,
+        credit_program_version,
+        credit_program_digest,
     } = cfg;
+    let credit_program =
+        quotes::CreditProgramBinding::new(credit_program_version, credit_program_digest)
+            .expect("invalid Mint credit program binding");
     let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
         .await
         .expect("DB connection to quotes failed");
@@ -98,6 +105,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         quotes: Box::new(quotes_repository),
         mint_url: cashu_mint_url,
         user_decision_retention,
+        credit_program,
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
