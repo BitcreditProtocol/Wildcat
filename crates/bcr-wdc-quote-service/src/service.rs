@@ -6,7 +6,10 @@ use bcr_common::{
     cashu,
     core::{BillId, NodeId},
     ecash,
-    wire::{bill as wire_bill, quotes as wire_quotes},
+    wire::{
+        bill as wire_bill,
+        quotes::{self as wire_quotes, SignedCreditQuoteReissuePermit},
+    },
 };
 use bitcoin as btc;
 use uuid::Uuid;
@@ -118,6 +121,7 @@ impl Service {
         bill: BillInfo,
         minting_pub_key: cashu::PublicKey,
         submitted: TStamp,
+        expected_latest: Option<Uuid>,
     ) -> Result<Uuid> {
         let quote = Quote::new(
             bill,
@@ -125,9 +129,7 @@ impl Service {
             submitted,
             self.credit_program.clone(),
         );
-        let qid = quote.id;
-        self.quotes.store(quote).await?;
-        Ok(qid)
+        self.quotes.store_if_latest(expected_latest, quote).await
     }
 
     pub async fn validate_and_decrypt_shared_bill(
@@ -150,7 +152,7 @@ impl Service {
         let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
         // pick the more recent quote for this eBill/endorser
-        quotes.sort_by_key(|q| q.submitted);
+        quotes.sort_by_key(|q| (q.submitted, q.id));
         if let Some(last) = quotes.last_mut() {
             let changed = last.check_expire(submitted);
             if changed {
@@ -181,7 +183,7 @@ impl Service {
                 ..
             }) => {
                 if (submitted - *tstamp) > Self::USER_DECISION_RETENTION {
-                    self.new_quote(bill, pub_key, submitted).await
+                    self.new_quote(bill, pub_key, submitted, Some(*id)).await
                 } else {
                     Ok(*id)
                 }
@@ -211,8 +213,48 @@ impl Service {
                 status: Status::MintingEnabled { .. },
                 ..
             }) => Ok(*id),
-            None => self.new_quote(bill, pub_key, submitted).await,
+            None => self.new_quote(bill, pub_key, submitted, None).await,
         }
+    }
+
+    /**
+     * Creates one fresh Pending quote only when AI authority and the current holder's separately
+     * signed request name the same corrected terminal case. The repository owns one-use and replay
+     * semantics; the legacy enquiry path above intentionally never inspects this permit.
+     */
+    pub async fn reissue_enquire(
+        &self,
+        bill: BillInfo,
+        pub_key: cashu::PublicKey,
+        signed: SignedCreditQuoteReissuePermit,
+        submitted: TStamp,
+    ) -> Result<uuid::Uuid> {
+        let previous_id = signed.permit.previous_mint_quote_id;
+        let previous = self
+            .quotes
+            .load(previous_id)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(previous_id.to_string()))?;
+        let verified = self
+            .authorization_verifier
+            .verify_quote_reissue(signed, &previous, submitted)?;
+        if !same_reissue_bill(&previous.bill, &bill) {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        let credit_program = previous
+            .credit_program()
+            .cloned()
+            .ok_or(Error::CreditProgramNotBound(previous.id))?;
+        let quote = Quote::new_with_id(
+            verified.signed.permit.reissued_mint_quote_id,
+            bill,
+            pub_key,
+            submitted,
+            credit_program,
+        );
+        self.quotes
+            .execute_quote_reissue(verified.signed, quote, submitted)
+            .await
     }
 
     pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
@@ -568,6 +610,17 @@ pub fn calculate_expiration_from_maturity(maturity_date: time::Date) -> time::Da
     maturity_date + time::Duration::days(2)
 }
 
+fn same_reissue_bill(previous: &BillInfo, current: &BillInfo) -> bool {
+    previous.id == current.id
+        && previous.drawee == current.drawee
+        && previous.drawer == current.drawer
+        && previous.payee == current.payee
+        && previous.endorsees == current.endorsees
+        && previous.current_holder == current.current_holder
+        && previous.sum == current.sum
+        && previous.maturity_date == current.maturity_date
+}
+
 async fn mint_fees(
     keyscl: &dyn WdcClient,
     fees_amount: cashu::Amount,
@@ -591,12 +644,16 @@ async fn mint_fees(
     Ok(prfs)
 }
 
-fn validate_basic_ebill_rules(bill: &BillInfo, today: time::Date) -> Result<()> {
+pub(crate) fn validate_basic_ebill_rules(bill: &BillInfo, today: time::Date) -> Result<()> {
     if bill.maturity_date < today {
         return Err(Error::InvalidInput(String::from(
             "maturity date must be >= today",
         )));
     }
+    validate_basic_ebill_amount(bill)
+}
+
+pub(crate) fn validate_basic_ebill_amount(bill: &BillInfo) -> Result<()> {
     if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
         return Err(Error::InvalidInput(format!(
             "{} < bill_amount < {}",
@@ -665,15 +722,16 @@ mod tests {
         let mut quotes = MockRepository::new();
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes
-            .expect_store()
-            .withf(|quote| {
-                quote.credit_program().is_some_and(|binding| {
+            .expect_store_if_latest()
+            .withf(|expected, quote| {
+                expected.is_none()
+                    && quote.credit_program().is_some_and(|binding| {
                     binding.version() == "test-credit-program-v1"
                         && binding.digest()
                             == "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 })
             })
-            .returning(|_| Ok(()));
+            .returning(|_, quote| Ok(quote.id));
         let wdc_client = MockWdcClient::new();
 
         let rnd_bill = generate_random_bill();
@@ -941,7 +999,9 @@ mod tests {
             });
         repo.expect_update_status_if_offered()
             .returning(|_, _, _| Ok(()));
-        repo.expect_store().returning(|_| Ok(()));
+        repo.expect_store_if_latest()
+            .withf(move |expected, _| *expected == Some(id))
+            .returning(|_, quote| Ok(quote.id));
         let wdc_client = MockWdcClient::new();
 
         let service = Service {

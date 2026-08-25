@@ -5,6 +5,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
+use bcr_common::wire::quotes::SignedCreditQuoteReissuePermit;
 use bcr_wdc_utils::postgres;
 use sqlx::{types::Json, PgPool, QueryBuilder};
 use strum::IntoDiscriminant;
@@ -431,6 +432,30 @@ impl persistence::Repository for DBQuotes {
             )));
         }
         Ok(())
+    }
+
+    async fn store_if_latest(
+        &self,
+        _expected_latest: Option<Uuid>,
+        quote: quotes::Quote,
+    ) -> Result<Uuid> {
+        // Quote reissue is deliberately unavailable on this backend, so the cross-path race does
+        // not exist here. Keep the established normal-enquiry insert until SQL gains the complete
+        // permit/receipt transaction rather than implementing half of that protocol.
+        let id = quote.id;
+        self.store(quote).await?;
+        Ok(id)
+    }
+
+    async fn execute_quote_reissue(
+        &self,
+        _signed: SignedCreditQuoteReissuePermit,
+        _quote: quotes::Quote,
+        _consumed_at: crate::TStamp,
+    ) -> Result<Uuid> {
+        // The deployed quote service uses SurrealDB. Do not pretend the dormant SQL backend has
+        // one-use semantics until the receipt and quote creation share a transaction.
+        Err(Error::CreditQuoteReissueUnavailable)
     }
 }
 

@@ -172,6 +172,10 @@ pub fn routes(ctrl: AppController) -> Router {
     let web = Router::new()
         .route("/health", get(get_health))
         .route(quote::web_ep::ENQUIRE_V1, post(web::enquire_quote))
+        .route(
+            quote::web_ep::REISSUE_ENQUIRE_V1,
+            post(web::reissue_enquire_quote),
+        )
         .route(quote::web_ep::LOOKUP_V1, get(web::lookup_quote))
         .route(quote::web_ep::RESOLVE_V1, delete(web::cancel))
         .route(quote::web_ep::RESOLVE_V1, patch(web::resolve_offer));

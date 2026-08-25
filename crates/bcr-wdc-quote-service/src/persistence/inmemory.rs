@@ -5,13 +5,17 @@ use std::sync::{Arc, RwLock};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
+use bcr_common::wire::quotes::SignedCreditQuoteReissuePermit;
 use strum::IntoDiscriminant;
 use uuid::Uuid;
 // ----- local modules
 // ----- local imports
 use crate::{
+    authorization::same_quote_reissue_authority,
     error::{Error, Result},
-    persistence::{ExposureReservationInput, Repository},
+    persistence::{
+        same_executed_quote, same_pending_quote_request, ExposureReservationInput, Repository,
+    },
     quotes,
     service::{ListFilters, SortOrder},
 };
@@ -21,7 +25,19 @@ use crate::{
 pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
     reservations: Arc<RwLock<HashMap<Uuid, bcr_common::wire::quotes::CreditExposureReservation>>>,
+    quote_reissues: Arc<RwLock<HashMap<Uuid, QuoteReissueRecord>>>,
 }
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+struct QuoteReissueRecord {
+    signed: SignedCreditQuoteReissuePermit,
+    quote_id: Uuid,
+    minting_pubkey: bcr_common::cashu::PublicKey,
+    #[allow(dead_code)]
+    consumed_at: crate::TStamp,
+}
+
 #[async_trait]
 impl Repository for QuotesIDMap {
     async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<quotes::Quote>> {
@@ -49,6 +65,105 @@ impl Repository for QuotesIDMap {
         }
         self.quotes.write().unwrap().insert(quote.id, quote);
         Ok(())
+    }
+
+    async fn store_if_latest(
+        &self,
+        expected_latest: Option<Uuid>,
+        quote: quotes::Quote,
+    ) -> Result<Uuid> {
+        if quote.credit_program().is_none() {
+            return Err(Error::CreditProgramNotBound(quote.id));
+        }
+        let holder = quote.bill.current_holder.node_id();
+        let mut stored = self.quotes.write().unwrap();
+        let latest = stored
+            .values()
+            .filter(|candidate| {
+                candidate.bill.id == quote.bill.id
+                    && candidate.bill.current_holder.node_id() == holder
+            })
+            .max_by_key(|candidate| (candidate.submitted, candidate.id));
+        if latest.map(|candidate| candidate.id) != expected_latest {
+            return latest
+                .filter(|candidate| same_pending_quote_request(candidate, &quote))
+                .map(|candidate| candidate.id)
+                .ok_or(Error::CreditQuoteReissueConflict);
+        }
+        let id = quote.id;
+        if stored.insert(id, quote).is_some() {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        Ok(id)
+    }
+
+    async fn execute_quote_reissue(
+        &self,
+        signed: SignedCreditQuoteReissuePermit,
+        quote: quotes::Quote,
+        consumed_at: crate::TStamp,
+    ) -> Result<Uuid> {
+        let previous_quote_id = signed.permit.previous_mint_quote_id;
+        if quote.id != signed.permit.reissued_mint_quote_id {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        let mut records = self.quote_reissues.write().unwrap();
+        let mut stored_quotes = self.quotes.write().unwrap();
+        if let Some(record) = records.get(&previous_quote_id) {
+            let same_permit = record.signed.permit_digest == signed.permit_digest
+                || same_quote_reissue_authority(&record.signed.permit, &signed.permit);
+            return match stored_quotes.get(&record.quote_id) {
+                Some(existing)
+                    if same_permit
+                        && record.quote_id == quote.id
+                        && same_executed_quote(existing, &quote, record.minting_pubkey) =>
+                {
+                    Ok(record.quote_id)
+                }
+                _ => Err(Error::CreditQuoteReissueConflict),
+            };
+        }
+        crate::service::validate_basic_ebill_rules(&quote.bill, consumed_at.date_naive())?;
+        let expires_at = chrono::DateTime::parse_from_rfc3339(&signed.permit.expires_at)
+            .map_err(|_| Error::CreditQuoteReissueInvalid)?
+            .with_timezone(&chrono::Utc);
+        if expires_at <= consumed_at {
+            return Err(Error::CreditQuoteReissueInvalid);
+        }
+        let minting_pubkey = match &quote.status {
+            quotes::Status::Pending { wallet_pubkey } => *wallet_pubkey,
+            _ => return Err(Error::CreditQuoteReissueConflict),
+        };
+        if stored_quotes.contains_key(&quote.id) {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        let holder = quote.bill.current_holder.node_id();
+        let previous = stored_quotes.get(&previous_quote_id);
+        if !matches!(previous, Some(candidate) if matches!(candidate.status, quotes::Status::Denied { .. }))
+        {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        let previous_submitted = previous.expect("matched a denied quote").submitted;
+        if stored_quotes.values().any(|candidate| {
+            candidate.id != previous_quote_id
+                && candidate.bill.id == quote.bill.id
+                && candidate.bill.current_holder.node_id() == holder
+                && candidate.submitted >= previous_submitted
+        }) {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        let id = quote.id;
+        stored_quotes.insert(id, quote);
+        records.insert(
+            previous_quote_id,
+            QuoteReissueRecord {
+                signed,
+                quote_id: id,
+                minting_pubkey,
+                consumed_at,
+            },
+        );
+        Ok(id)
     }
     async fn load(&self, id: uuid::Uuid) -> Result<Option<quotes::Quote>> {
         Ok(self.quotes.read().unwrap().get(&id).cloned())

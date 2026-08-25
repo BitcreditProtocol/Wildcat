@@ -42,6 +42,12 @@ pub enum Error {
     CreditAuthorizationInvalid,
     #[error("credit authorization conflicts with a completed operation")]
     CreditAuthorizationConflict,
+    #[error("quote reissue permit is invalid")]
+    CreditQuoteReissueInvalid,
+    #[error("quote reissue permit conflicts with current Mint state")]
+    CreditQuoteReissueConflict,
+    #[error("quote reissue is unavailable on this repository backend")]
+    CreditQuoteReissueUnavailable,
     #[error("Mint exposure capacity is unavailable")]
     CreditCapacityUnavailable,
     #[error("Mint exposure capacity is exhausted")]
@@ -102,6 +108,18 @@ impl axum::response::IntoResponse for Error {
             Error::CreditAuthorizationConflict => (
                 StatusCode::CONFLICT,
                 String::from("Credit authorization conflicts with a completed operation"),
+            ),
+            Error::CreditQuoteReissueInvalid => (
+                StatusCode::UNAUTHORIZED,
+                String::from("Quote reissue permit is invalid"),
+            ),
+            Error::CreditQuoteReissueConflict => (
+                StatusCode::CONFLICT,
+                String::from("Quote reissue permit conflicts with current Mint state"),
+            ),
+            Error::CreditQuoteReissueUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                String::from("Quote reissue is unavailable"),
             ),
             Error::CreditCapacityUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
