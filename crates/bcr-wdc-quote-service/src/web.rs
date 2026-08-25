@@ -36,6 +36,40 @@ pub async fn enquire_quote(
     Ok(Json(wire_quotes::EnquireReply { id }))
 }
 
+/// Holder-authorized, AI-permitted replacement of one recently denied quote.
+pub async fn reissue_enquire_quote(
+    State(ctrl): State<Arc<Service>>,
+    Json(signed_request): Json<wire_quotes::SignedReissueEnquireRequestV1>,
+) -> Result<Json<wire_quotes::EnquireReply>> {
+    let payload: wire_quotes::ReissueEnquireRequestV1 =
+        deserialize_borsh_msg(&signed_request.content)?;
+    if payload.schema_version != wire_quotes::REISSUE_ENQUIRE_SCHEMA_VERSION
+        || payload.action != wire_quotes::REISSUE_ENQUIRE_ACTION
+        || payload.signed_permit.permit.action != payload.action
+    {
+        return Err(crate::error::Error::CreditQuoteReissueInvalid);
+    }
+    let bill_info = ctrl
+        .validate_and_decrypt_shared_bill(&payload.content)
+        .await?;
+    let holder = bill_info.endorsees.last().unwrap_or(&bill_info.payee);
+    schnorr_verify_b64(
+        &signed_request.content,
+        &signed_request.signature,
+        &holder.node_id().pub_key().x_only_public_key().0,
+    )?;
+    let bill = quotes::convert_to_billinfo(bill_info, payload.content)?;
+    let id = ctrl
+        .reissue_enquire(
+            bill,
+            payload.minting_pubkey,
+            payload.signed_permit,
+            chrono::Utc::now(),
+        )
+        .await?;
+    Ok(Json(wire_quotes::EnquireReply { id }))
+}
+
 /// --------------------------- Look up quote
 fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
     match quote.status {
@@ -130,4 +164,83 @@ pub async fn cancel(
     let quote = ctrl.lookup(id, now).await?;
     let reply = convert_to_enquire_reply(quote);
     Ok(Json(reply))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_common::{
+        cashu,
+        core::{generate_random_keypair, signature::serialize_n_schnorr_sign_borsh_msg},
+        wire::{bill::BillParticipant, test_utils as wire_tests},
+    };
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn reissue_rejects_a_request_not_signed_by_the_current_holder() {
+        let (holder_key, holder) = wire_tests::random_identity_public_data();
+        let (_, drawee) = wire_tests::random_identity_public_data();
+        let (_, drawer) = wire_tests::random_identity_public_data();
+        let bill_id = bcr_common::core_tests::random_bill_id();
+        let shared = wire_quotes::SharedBill {
+            bill_id: bill_id.clone(),
+            data: String::from("encrypted-bill"),
+            file_urls: vec![],
+            hash: String::from("bill-hash"),
+            signature: String::from("bill-signature"),
+            receiver: bitcoin::PublicKey::from_str(
+                "026423b7d36d05b8d50a89a1b4ef2a06c88bcd2c5e650f25e122fa682d3b39686c",
+            )
+            .unwrap(),
+        };
+        let wire_bill = wire_quotes::BillInfo {
+            id: bill_id,
+            drawee,
+            drawer,
+            payee: BillParticipant::Ident(holder),
+            endorsees: vec![],
+            sum: 8_000_000,
+            maturity_date: chrono::Utc::now().date_naive() + chrono::Duration::days(30),
+            file_urls: vec![],
+        };
+        let now = chrono::Utc::now();
+        let previous = quotes::Quote::new(
+            quotes::BillInfo::random(),
+            cashu::PublicKey::from(holder_key.public_key()),
+            now,
+            quotes::test_credit_program_binding(),
+        );
+        let payload = wire_quotes::ReissueEnquireRequestV1 {
+            schema_version: wire_quotes::REISSUE_ENQUIRE_SCHEMA_VERSION.to_owned(),
+            action: wire_quotes::REISSUE_ENQUIRE_ACTION.to_owned(),
+            content: shared,
+            minting_pubkey: cashu::PublicKey::from(holder_key.public_key()),
+            signed_permit: crate::authorization::tests::signed_reissue_for(
+                &previous,
+                uuid::Uuid::new_v4(),
+                now,
+                now + chrono::Duration::hours(1),
+            ),
+        };
+        let attacker = generate_random_keypair();
+        let (content, signature) = serialize_n_schnorr_sign_borsh_msg(&payload, &attacker).unwrap();
+        let mut wdc = crate::service::MockWdcClient::new();
+        wdc.expect_validate_and_decrypt_shared_bill()
+            .return_once(move |_| Ok(wire_bill));
+        let service = Arc::new(Service {
+            wdc_client: Box::new(wdc),
+            quotes: Box::new(crate::persistence::MockRepository::new()),
+            mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
+            credit_program: quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
+        });
+
+        assert!(reissue_enquire_quote(
+            State(service),
+            Json(wire_quotes::SignedReissueEnquireRequestV1 { content, signature }),
+        )
+        .await
+        .is_err());
+    }
 }

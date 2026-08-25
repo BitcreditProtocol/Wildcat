@@ -2,6 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
+use bcr_common::wire::quotes::SignedCreditQuoteReissuePermit;
 // ----- local modules
 pub mod inmemory;
 pub mod sqlx;
@@ -59,6 +60,59 @@ pub trait Repository {
     ) -> Result<Vec<LightQuote>>;
     async fn search_by_bill(&self, bill: &BillId, endorser: &NodeId) -> Result<Vec<Quote>>;
     async fn store(&self, quote: Quote) -> Result<()>;
+    /// Atomically stores a normal enquiry only while the caller's observed bill/holder head is
+    /// still current. A lost race returns the winning quote id instead of creating a duplicate.
+    async fn store_if_latest(
+        &self,
+        expected_latest: Option<uuid::Uuid>,
+        quote: Quote,
+    ) -> Result<uuid::Uuid>;
+    async fn execute_quote_reissue(
+        &self,
+        signed: SignedCreditQuoteReissuePermit,
+        quote: Quote,
+        consumed_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<uuid::Uuid>;
+}
+
+fn same_semantic_quote(stored: &Quote, requested: &Quote) -> bool {
+    stored.bill.id == requested.bill.id
+        && stored.bill.drawee == requested.bill.drawee
+        && stored.bill.drawer == requested.bill.drawer
+        && stored.bill.payee == requested.bill.payee
+        && stored.bill.endorsees == requested.bill.endorsees
+        && stored.bill.current_holder == requested.bill.current_holder
+        && stored.bill.sum == requested.bill.sum
+        && stored.bill.maturity_date == requested.bill.maturity_date
+        && stored.credit_program == requested.credit_program
+}
+
+pub(super) fn same_pending_quote_request(stored: &Quote, requested: &Quote) -> bool {
+    same_semantic_quote(stored, requested)
+        && matches!(
+            (&stored.status, &requested.status),
+            (
+                Status::Pending {
+                    wallet_pubkey: stored_wallet,
+                },
+                Status::Pending {
+                    wallet_pubkey: requested_wallet,
+                }
+            ) if stored_wallet == requested_wallet
+        )
+}
+
+pub(super) fn same_executed_quote(
+    stored: &Quote,
+    requested: &Quote,
+    minting_pubkey: bcr_common::cashu::PublicKey,
+) -> bool {
+    stored.id == requested.id
+        && same_semantic_quote(stored, requested)
+        && matches!(
+            &requested.status,
+            Status::Pending { wallet_pubkey } if *wallet_pubkey == minting_pubkey
+        )
 }
 
 #[cfg(test)]
@@ -70,7 +124,7 @@ mod tests {
     use bcr_wdc_utils::{convert, keys::test_utils as keys_test, surreal as surreal_config};
     use uuid::Uuid;
 
-    async fn init_surreal_db() -> impl Repository {
+    async fn init_surreal_db() -> surreal::DBQuotes {
         surreal::DBQuotes::new(surreal_config::DBConnConfig {
             connection: "mem://".to_string(),
             namespace: "test".to_string(),
@@ -731,5 +785,489 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
+    }
+
+    fn denied_quote(now: TStamp) -> quotes::Quote {
+        let mut quote = pending_quote();
+        quote.bill.sum = bitcoin::Amount::from_sat(8_000_000);
+        quote.bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        quote.submitted = now - chrono::Duration::minutes(1);
+        quote.status = quotes::Status::Denied { tstamp: now };
+        quote
+    }
+
+    fn reissued_quote(
+        previous: &quotes::Quote,
+        id: Uuid,
+        wallet_pubkey: cashu::PublicKey,
+        submitted: TStamp,
+        ciphertext: &str,
+        file_url: &str,
+    ) -> quotes::Quote {
+        let mut bill = previous.bill.clone();
+        bill.shared_bill_data = ciphertext.to_owned();
+        bill.file_urls = vec![url::Url::parse(file_url).unwrap()];
+        quotes::Quote {
+            status: quotes::Status::Pending { wallet_pubkey },
+            id,
+            bill,
+            submitted,
+            credit_program: previous.credit_program.clone(),
+            authorization_receipt: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn quote_reissue_is_atomic_and_semantically_idempotent() {
+        quote_reissue_is_atomic_and_semantically_idempotent_for(init_inmemory_db()).await;
+        quote_reissue_is_atomic_and_semantically_idempotent_for(init_surreal_db().await).await;
+    }
+
+    async fn quote_reissue_is_atomic_and_semantically_idempotent_for(db: impl Repository) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let reissued_id = Uuid::from_u128(0x300);
+        let wallet = keys_test::publics()[0];
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now - chrono::Duration::minutes(1),
+            now + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            wallet,
+            now,
+            "first-randomized-ciphertext",
+            "https://files.invalid/first",
+        );
+        db.store(previous.clone()).await.unwrap();
+
+        let (first, concurrent_retry) = tokio::join!(
+            db.execute_quote_reissue(signed.clone(), quote.clone(), now),
+            db.execute_quote_reissue(signed.clone(), quote.clone(), now),
+        );
+        assert_eq!(first.unwrap(), reissued_id);
+        assert_eq!(concurrent_retry.unwrap(), reissued_id);
+
+        // A lost response can be retried after both challenge expiry and quote progression. Core
+        // re-encrypts bill/file payloads on every call, so replay identity is the validated bill,
+        // exact wallet/program and permit authority rather than ciphertext, URL or timestamp.
+        db.update_status_if_pending(
+            reissued_id,
+            quotes::Status::Denied {
+                tstamp: now + chrono::Duration::minutes(2),
+            },
+        )
+        .await
+        .unwrap();
+        let after_maturity = chrono::DateTime::parse_from_rfc3339("2027-02-07T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let retry = reissued_quote(
+            &previous,
+            reissued_id,
+            wallet,
+            after_maturity,
+            "second-randomized-ciphertext",
+            "https://files.invalid/second",
+        );
+        assert_eq!(
+            db.execute_quote_reissue(signed, retry.clone(), after_maturity)
+                .await
+                .unwrap(),
+            reissued_id
+        );
+
+        // Expiry renewal changes the permit bytes but preserves its immutable authority and qid.
+        let successor = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            after_maturity,
+            after_maturity + chrono::Duration::hours(24),
+        );
+        assert_eq!(
+            db.execute_quote_reissue(successor.clone(), retry.clone(), after_maturity)
+                .await
+                .unwrap(),
+            reissued_id
+        );
+
+        let wrong_wallet = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[1],
+            after_maturity,
+            "third-randomized-ciphertext",
+            "https://files.invalid/third",
+        );
+        assert!(matches!(
+            db.execute_quote_reissue(successor, wrong_wallet, after_maturity)
+                .await,
+            Err(crate::error::Error::CreditQuoteReissueConflict)
+        ));
+    }
+
+    #[tokio::test]
+    async fn quote_reissue_transaction_converges_across_independent_service_handles() {
+        let db = init_surreal_db().await;
+        let other = db.independent_test_handle();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let reissued_id = Uuid::from_u128(0x306);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            now,
+            "ciphertext",
+            "https://files.invalid/concurrent",
+        );
+        db.store(previous).await.unwrap();
+
+        let (left, right) = tokio::join!(
+            db.execute_quote_reissue(signed.clone(), quote.clone(), now),
+            other.execute_quote_reissue(signed, quote, now),
+        );
+        assert_eq!(left.unwrap(), reissued_id);
+        assert_eq!(right.unwrap(), reissued_id);
+        let stored = db.load(reissued_id).await.unwrap().unwrap();
+        assert_eq!(
+            db.search_by_bill(&stored.bill.id, &stored.bill.current_holder.node_id(),)
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|candidate| candidate.id == reissued_id)
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn normal_enquiry_and_permitted_reissue_share_one_atomic_quote_head() {
+        let db = init_surreal_db().await;
+        let other = db.independent_test_handle();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let normal_id = Uuid::from_u128(0x308);
+        let reissued_id = Uuid::from_u128(0x309);
+        let normal_wallet = keys_test::publics()[0];
+        let reissue_wallet = keys_test::publics()[1];
+        let normal = reissued_quote(
+            &previous,
+            normal_id,
+            normal_wallet,
+            now,
+            "normal-ciphertext",
+            "https://files.invalid/normal",
+        );
+        let reissued = reissued_quote(
+            &previous,
+            reissued_id,
+            reissue_wallet,
+            now,
+            "reissue-ciphertext",
+            "https://files.invalid/reissue",
+        );
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        db.store(previous.clone()).await.unwrap();
+
+        let (normal_result, reissue_result) = tokio::join!(
+            db.store_if_latest(Some(previous.id), normal),
+            other.execute_quote_reissue(signed, reissued, now),
+        );
+        match (normal_result, reissue_result) {
+            (Ok(id), Err(crate::error::Error::CreditQuoteReissueConflict)) => {
+                assert_eq!(id, normal_id);
+            }
+            (Err(crate::error::Error::CreditQuoteReissueConflict), Ok(id)) => {
+                assert_eq!(id, reissued_id);
+            }
+            unexpected => panic!("normal/reissue race did not converge: {unexpected:?}"),
+        }
+        let current = db
+            .search_by_bill(&previous.bill.id, &previous.bill.current_holder.node_id())
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|candidate| candidate.id != previous.id)
+            .collect::<Vec<_>>();
+        assert_eq!(current.len(), 1);
+        assert!(current[0].id == normal_id || current[0].id == reissued_id);
+    }
+
+    #[tokio::test]
+    async fn normal_enquiry_never_adopts_a_reissued_quote_for_another_wallet() {
+        normal_enquiry_never_adopts_a_reissued_quote_for_another_wallet_in(init_inmemory_db())
+            .await;
+        normal_enquiry_never_adopts_a_reissued_quote_for_another_wallet_in(init_surreal_db().await)
+            .await;
+    }
+
+    async fn normal_enquiry_never_adopts_a_reissued_quote_for_another_wallet_in(
+        db: impl Repository,
+    ) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let normal = reissued_quote(
+            &previous,
+            Uuid::from_u128(0x30a),
+            keys_test::publics()[0],
+            now,
+            "normal-ciphertext",
+            "https://files.invalid/normal",
+        );
+        let reissued_id = Uuid::from_u128(0x30b);
+        let reissued = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[1],
+            now,
+            "reissue-ciphertext",
+            "https://files.invalid/reissue",
+        );
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        db.store(previous.clone()).await.unwrap();
+        assert_eq!(
+            db.execute_quote_reissue(signed, reissued, now)
+                .await
+                .unwrap(),
+            reissued_id
+        );
+        assert!(matches!(
+            db.store_if_latest(Some(previous.id), normal).await,
+            Err(crate::error::Error::CreditQuoteReissueConflict)
+        ));
+    }
+
+    #[tokio::test]
+    async fn expired_unconsumed_quote_reissue_fails_closed() {
+        expired_unconsumed_quote_reissue_fails_closed_for(init_inmemory_db()).await;
+        expired_unconsumed_quote_reissue_fails_closed_for(init_surreal_db().await).await;
+    }
+
+    async fn expired_unconsumed_quote_reissue_fails_closed_for(db: impl Repository) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let reissued_id = Uuid::from_u128(0x301);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now - chrono::Duration::hours(2),
+            now,
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            now,
+            "ciphertext",
+            "https://files.invalid/expired",
+        );
+        db.store(previous).await.unwrap();
+
+        assert!(matches!(
+            db.execute_quote_reissue(signed, quote, now).await,
+            Err(crate::error::Error::CreditQuoteReissueInvalid)
+        ));
+        assert!(db.load(reissued_id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn matured_unconsumed_quote_reissue_fails_closed() {
+        matured_unconsumed_quote_reissue_fails_closed_for(init_inmemory_db()).await;
+        matured_unconsumed_quote_reissue_fails_closed_for(init_surreal_db().await).await;
+    }
+
+    async fn matured_unconsumed_quote_reissue_fails_closed_for(db: impl Repository) {
+        let denied_at = chrono::DateTime::parse_from_rfc3339("2027-02-05T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let consumed_at = chrono::DateTime::parse_from_rfc3339("2027-02-07T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(denied_at);
+        let reissued_id = Uuid::from_u128(0x305);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            consumed_at,
+            consumed_at + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            consumed_at,
+            "ciphertext",
+            "https://files.invalid/matured",
+        );
+        db.store(previous).await.unwrap();
+
+        assert!(matches!(
+            db.execute_quote_reissue(signed, quote, consumed_at).await,
+            Err(crate::error::Error::InvalidInput(message)) if message.contains("maturity date")
+        ));
+        assert!(db.load(reissued_id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn another_quote_at_the_denial_timestamp_blocks_reissue() {
+        another_quote_at_the_denial_timestamp_blocks_reissue_for(init_inmemory_db()).await;
+        another_quote_at_the_denial_timestamp_blocks_reissue_for(init_surreal_db().await).await;
+    }
+
+    async fn another_quote_at_the_denial_timestamp_blocks_reissue_for(db: impl Repository) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let previous = denied_quote(now);
+        let reissued_id = Uuid::from_u128(0x302);
+        let mut competing = reissued_quote(
+            &previous,
+            Uuid::from_u128(0x303),
+            keys_test::publics()[0],
+            previous.submitted,
+            "competing",
+            "https://files.invalid/competing",
+        );
+        competing.status = quotes::Status::Denied { tstamp: now };
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            now,
+            "candidate",
+            "https://files.invalid/candidate",
+        );
+        db.store(previous).await.unwrap();
+        db.store(competing).await.unwrap();
+
+        assert!(matches!(
+            db.execute_quote_reissue(signed, quote, now).await,
+            Err(crate::error::Error::CreditQuoteReissueConflict)
+        ));
+    }
+
+    #[tokio::test]
+    async fn quote_reissue_requires_the_exact_denied_source_and_preselected_target() {
+        quote_reissue_requires_the_exact_denied_source_and_preselected_target_for(
+            init_inmemory_db(),
+        )
+        .await;
+        quote_reissue_requires_the_exact_denied_source_and_preselected_target_for(
+            init_surreal_db().await,
+        )
+        .await;
+    }
+
+    async fn quote_reissue_requires_the_exact_denied_source_and_preselected_target_for(
+        db: impl Repository,
+    ) {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let mut previous = denied_quote(now);
+        previous.status = quotes::Status::Pending {
+            wallet_pubkey: keys_test::publics()[0],
+        };
+        let reissued_id = Uuid::from_u128(0x307);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            now,
+            "candidate",
+            "https://files.invalid/candidate",
+        );
+        db.store(previous.clone()).await.unwrap();
+        assert!(matches!(
+            db.execute_quote_reissue(signed.clone(), quote.clone(), now)
+                .await,
+            Err(crate::error::Error::CreditQuoteReissueConflict)
+        ));
+
+        db.update_status_if_pending(previous.id, quotes::Status::Denied { tstamp: now })
+            .await
+            .unwrap();
+        let wrong_target = reissued_quote(
+            &previous,
+            Uuid::from_u128(0x308),
+            keys_test::publics()[0],
+            now,
+            "candidate",
+            "https://files.invalid/candidate",
+        );
+        assert!(matches!(
+            db.execute_quote_reissue(signed, wrong_target, now).await,
+            Err(crate::error::Error::CreditQuoteReissueConflict)
+        ));
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn quote_reissue_fails_closed_on_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBQuotes::from_pool(pool);
+        let now = TStamp::default();
+        let previous = denied_quote(now);
+        let reissued_id = Uuid::from_u128(0x304);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &previous,
+            reissued_id,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let quote = reissued_quote(
+            &previous,
+            reissued_id,
+            keys_test::publics()[0],
+            now,
+            "candidate",
+            "https://files.invalid/candidate",
+        );
+        db.store(previous).await.unwrap();
+        assert!(matches!(
+            db.execute_quote_reissue(signed, quote, now).await,
+            Err(crate::error::Error::CreditQuoteReissueUnavailable)
+        ));
     }
 }

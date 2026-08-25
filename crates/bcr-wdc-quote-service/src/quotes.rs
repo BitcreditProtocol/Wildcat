@@ -251,6 +251,23 @@ impl Quote {
         }
     }
 
+    pub(crate) fn new_with_id(
+        id: Uuid,
+        bill: BillInfo,
+        wallet_pubkey: cashu::PublicKey,
+        submitted: TStamp,
+        credit_program: CreditProgramBinding,
+    ) -> Self {
+        Self {
+            status: Status::Pending { wallet_pubkey },
+            id,
+            bill,
+            submitted,
+            credit_program: Some(credit_program),
+            authorization_receipt: None,
+        }
+    }
+
     pub fn credit_program(&self) -> Option<&CreditProgramBinding> {
         self.credit_program.as_ref()
     }

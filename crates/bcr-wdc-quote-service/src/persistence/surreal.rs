@@ -3,6 +3,7 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
+use bcr_common::wire::quotes::SignedCreditQuoteReissuePermit;
 use bcr_wdc_utils::surreal;
 use std::sync::Arc;
 use surrealdb::Result as SurrealResult;
@@ -11,8 +12,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
+    authorization::same_quote_reissue_authority,
     error::{Error, Result},
-    persistence::{ExposureReservationInput, Repository},
+    persistence::{
+        same_executed_quote, same_pending_quote_request, ExposureReservationInput, Repository,
+    },
     quotes,
     service::{ListFilters, SortOrder},
     TStamp,
@@ -30,6 +34,9 @@ struct QuoteDBEntry {
     credit_program: Option<quotes::CreditProgramBinding>,
     #[serde(default)]
     authorization_receipt: Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>,
+    /// Commit-time compare-and-set marker shared by normal and reviewed reissue creation.
+    #[serde(default)]
+    successor_quote_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -62,6 +69,17 @@ struct ExposureEvent {
     recorded_at: crate::TStamp,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuoteReissueRecord {
+    previous_quote_id: uuid::Uuid,
+    reissued_quote_id: uuid::Uuid,
+    permit_digest: String,
+    signed: SignedCreditQuoteReissuePermit,
+    minting_pubkey: bcr_common::cashu::PublicKey,
+    consumed_at: crate::TStamp,
+}
+
 impl From<QuoteDBEntry> for quotes::Quote {
     fn from(dbq: QuoteDBEntry) -> Self {
         Self {
@@ -84,6 +102,7 @@ impl From<quotes::Quote> for QuoteDBEntry {
             status: quote.status,
             credit_program: quote.credit_program,
             authorization_receipt: quote.authorization_receipt,
+            successor_quote_id: None,
         }
     }
 }
@@ -114,6 +133,7 @@ pub struct DBQuotes {
     // ponytail: one lock matches the single quote-service replica deployed today. Move the
     // compare-and-reserve into a serializable external ledger before horizontally scaling it.
     credit_exposure_lock: Arc<Mutex<()>>,
+    quote_reissue_lock: Arc<Mutex<()>>,
 }
 
 macro_rules! add_filter_statement {
@@ -132,6 +152,7 @@ macro_rules! add_filter_statement {
 
 impl DBQuotes {
     const TABLE: &'static str = "quotes";
+    const QUOTE_REISSUE_TABLE: &'static str = "credit_quote_reissue_permits";
 
     pub async fn new(cfg: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -141,7 +162,17 @@ impl DBQuotes {
         Ok(Self {
             db: db_connection,
             credit_exposure_lock: Arc::new(Mutex::new(())),
+            quote_reissue_lock: Arc::new(Mutex::new(())),
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn independent_test_handle(&self) -> Self {
+        Self {
+            db: self.db.clone(),
+            credit_exposure_lock: Arc::new(Mutex::new(())),
+            quote_reissue_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<QuoteDBEntry>> {
@@ -152,6 +183,58 @@ impl DBQuotes {
     async fn store(&self, quote: QuoteDBEntry) -> SurrealResult<Option<QuoteDBEntry>> {
         let rid = surrealdb::RecordId::from_table_key(Self::TABLE, quote.qid);
         self.db.insert(rid).content(quote).await
+    }
+
+    async fn load_quote_reissue_record(
+        &self,
+        previous_quote_id: Uuid,
+    ) -> SurrealResult<Option<QuoteReissueRecord>> {
+        let rid = surrealdb::RecordId::from_table_key(Self::QUOTE_REISSUE_TABLE, previous_quote_id);
+        self.db.select(rid).await
+    }
+
+    async fn resolve_store_conflict(&self, requested: &quotes::Quote) -> Result<Uuid> {
+        self.search_by_bill(&requested.bill.id, &requested.bill.current_holder.node_id())
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .into_iter()
+            .map(quotes::Quote::from)
+            .max_by_key(|candidate| (candidate.submitted, candidate.id))
+            .filter(|candidate| same_pending_quote_request(candidate, requested))
+            .map(|candidate| candidate.id)
+            .ok_or(Error::CreditQuoteReissueConflict)
+    }
+
+    async fn resolve_quote_reissue_receipt(
+        &self,
+        previous_quote_id: Uuid,
+        signed: &SignedCreditQuoteReissuePermit,
+        requested: &quotes::Quote,
+    ) -> Result<Option<Uuid>> {
+        let Some(existing) = self
+            .load_quote_reissue_record(previous_quote_id)
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+        else {
+            return Ok(None);
+        };
+        let same_permit = existing.permit_digest == signed.permit_digest
+            || same_quote_reissue_authority(&existing.signed.permit, &signed.permit);
+        let stored = self
+            .load(existing.reissued_quote_id)
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .map(quotes::Quote::from);
+        match stored {
+            Some(stored)
+                if same_permit
+                    && existing.reissued_quote_id == signed.permit.reissued_mint_quote_id
+                    && same_executed_quote(&stored, requested, existing.minting_pubkey) =>
+            {
+                Ok(Some(existing.reissued_quote_id))
+            }
+            _ => Err(Error::CreditQuoteReissueConflict),
+        }
     }
 
     async fn light_list(
@@ -623,6 +706,221 @@ impl Repository for DBQuotes {
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
         Ok(())
     }
+
+    async fn store_if_latest(
+        &self,
+        expected_latest: Option<Uuid>,
+        quote: quotes::Quote,
+    ) -> Result<Uuid> {
+        if quote.credit_program().is_none() {
+            return Err(Error::CreditProgramNotBound(quote.id));
+        }
+        let quote_id = quote.id;
+        let requested_quote = quote.clone();
+        let quote_record = QuoteDBEntry::from(quote);
+        let quote_rid = surrealdb::RecordId::from_table_key(Self::TABLE, quote_id);
+        let previous_rid =
+            surrealdb::RecordId::from_table_key(Self::TABLE, expected_latest.unwrap_or_default());
+        let response = self
+            .db
+            .query(
+                r#"
+                BEGIN TRANSACTION;
+                LET $head = SELECT qid, submitted FROM type::table($quotes_table)
+                    WHERE bill.id == $bill_id
+                        AND (
+                            bill.current_holder.Anon.node_id == $holder_id
+                            OR bill.current_holder.Ident.node_id == $holder_id
+                        )
+                    ORDER BY submitted DESC, qid DESC
+                    LIMIT 1;
+                IF $expect_empty {
+                    IF array::len($head) > 0 { THROW "CREDIT_QUOTE_HEAD_CONFLICT" };
+                } ELSE {
+                    IF array::len($head) != 1 OR $head[0].qid != $expected_latest {
+                        THROW "CREDIT_QUOTE_HEAD_CONFLICT"
+                    };
+                    LET $claimed = UPDATE $previous_rid SET successor_quote_id = $quote_id
+                        WHERE successor_quote_id == NONE RETURN BEFORE;
+                    IF !$claimed { THROW "CREDIT_QUOTE_HEAD_CONFLICT" };
+                };
+                LET $target = SELECT * FROM ONLY $quote_rid;
+                IF $target { THROW "CREDIT_QUOTE_STORE_CONFLICT" };
+                CREATE $quote_rid CONTENT $quote;
+                COMMIT TRANSACTION;
+                "#,
+            )
+            .bind(("quotes_table", Self::TABLE))
+            .bind(("bill_id", quote_record.bill.id.clone()))
+            .bind(("holder_id", quote_record.bill.current_holder.node_id()))
+            .bind(("expect_empty", expected_latest.is_none()))
+            .bind(("expected_latest", expected_latest.unwrap_or_default()))
+            .bind(("previous_rid", previous_rid))
+            .bind(("quote_id", quote_id))
+            .bind(("quote_rid", quote_rid))
+            .bind(("quote", quote_record.clone()))
+            .await;
+        let mut response = match response {
+            Ok(response) => response,
+            Err(error) if is_transaction_conflict(&error.to_string()) => {
+                return self.resolve_store_conflict(&requested_quote).await;
+            }
+            Err(error) => return Err(Error::QuotesRepository(anyhow!(error))),
+        };
+        let errors = response.take_errors();
+        if errors.is_empty() {
+            return Ok(quote_id);
+        }
+        let message = errors
+            .values()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        if message.contains("CREDIT_QUOTE_HEAD_CONFLICT") {
+            return self.resolve_store_conflict(&requested_quote).await;
+        }
+        Err(Error::QuotesRepository(anyhow!(message)))
+    }
+
+    async fn execute_quote_reissue(
+        &self,
+        signed: SignedCreditQuoteReissuePermit,
+        quote: quotes::Quote,
+        consumed_at: crate::TStamp,
+    ) -> Result<Uuid> {
+        let _guard = self.quote_reissue_lock.lock().await;
+        let previous_quote_id = signed.permit.previous_mint_quote_id;
+        let quote_id = signed.permit.reissued_mint_quote_id;
+        if quote.id != quote_id {
+            return Err(Error::CreditQuoteReissueConflict);
+        }
+        if let Some(id) = self
+            .resolve_quote_reissue_receipt(previous_quote_id, &signed, &quote)
+            .await?
+        {
+            return Ok(id);
+        }
+
+        crate::service::validate_basic_ebill_amount(&quote.bill)?;
+
+        let expires_at = chrono::DateTime::parse_from_rfc3339(&signed.permit.expires_at)
+            .map_err(|_| Error::CreditQuoteReissueInvalid)?
+            .with_timezone(&chrono::Utc);
+        let minting_pubkey = match &quote.status {
+            quotes::Status::Pending { wallet_pubkey } => *wallet_pubkey,
+            _ => return Err(Error::CreditQuoteReissueConflict),
+        };
+        let requested_quote = quote.clone();
+        let quote_record = QuoteDBEntry::from(quote);
+        let receipt = QuoteReissueRecord {
+            previous_quote_id,
+            reissued_quote_id: quote_id,
+            permit_digest: signed.permit_digest.clone(),
+            signed: signed.clone(),
+            minting_pubkey,
+            consumed_at,
+        };
+        let receipt_rid =
+            surrealdb::RecordId::from_table_key(Self::QUOTE_REISSUE_TABLE, previous_quote_id);
+        let previous_rid = surrealdb::RecordId::from_table_key(Self::TABLE, previous_quote_id);
+        let quote_rid = surrealdb::RecordId::from_table_key(Self::TABLE, quote_id);
+        let response = self
+            .db
+            .query(
+                r#"
+                BEGIN TRANSACTION;
+                LET $receipt_before = SELECT * FROM ONLY $receipt_rid;
+                IF $receipt_before { THROW "CREDIT_QUOTE_REISSUE_CONFLICT" };
+                IF $maturity_date < $today { THROW "CREDIT_QUOTE_REISSUE_MATURED" };
+                LET $old = SELECT * FROM ONLY $previous_rid;
+                IF !$old OR $old.status.status != $denied {
+                    THROW "CREDIT_QUOTE_REISSUE_CONFLICT"
+                };
+                LET $claimed = UPDATE $previous_rid SET successor_quote_id = $quote_id
+                    WHERE successor_quote_id == NONE RETURN BEFORE;
+                IF !$claimed { THROW "CREDIT_QUOTE_REISSUE_CONFLICT" };
+                LET $newer = SELECT VALUE qid FROM type::table($quotes_table)
+                    WHERE bill.id == $bill_id
+                        AND (
+                            bill.current_holder.Anon.node_id == $holder_id
+                            OR bill.current_holder.Ident.node_id == $holder_id
+                        )
+                        AND qid != $previous_quote_id
+                        AND submitted >= $old.submitted
+                    LIMIT 1;
+                IF array::len($newer) > 0 { THROW "CREDIT_QUOTE_REISSUE_CONFLICT" };
+                LET $target = SELECT * FROM ONLY $quote_rid;
+                IF $target { THROW "CREDIT_QUOTE_REISSUE_CONFLICT" };
+                IF $expires_at <= $now { THROW "CREDIT_QUOTE_REISSUE_EXPIRED" };
+                CREATE $receipt_rid CONTENT $receipt;
+                CREATE $quote_rid CONTENT $quote;
+                COMMIT TRANSACTION;
+                "#,
+            )
+            .bind(("receipt_rid", receipt_rid))
+            .bind(("previous_rid", previous_rid))
+            .bind(("maturity_date", quote_record.bill.maturity_date))
+            .bind(("today", consumed_at.date_naive()))
+            .bind(("denied", quotes::StatusDiscriminants::Denied))
+            .bind(("quotes_table", Self::TABLE))
+            .bind(("bill_id", quote_record.bill.id.clone()))
+            .bind(("holder_id", quote_record.bill.current_holder.node_id()))
+            .bind(("previous_quote_id", previous_quote_id))
+            .bind(("quote_id", quote_id))
+            .bind(("quote_rid", quote_rid))
+            .bind(("expires_at", expires_at))
+            .bind(("now", consumed_at))
+            .bind(("receipt", receipt))
+            .bind(("quote", quote_record.clone()))
+            .await;
+        let mut response = match response {
+            Ok(response) => response,
+            Err(error) if is_transaction_conflict(&error.to_string()) => {
+                if let Some(id) = self
+                    .resolve_quote_reissue_receipt(previous_quote_id, &signed, &requested_quote)
+                    .await?
+                {
+                    return Ok(id);
+                }
+                return Err(Error::CreditQuoteReissueConflict);
+            }
+            Err(error) => return Err(Error::QuotesRepository(anyhow!(error))),
+        };
+        let errors = response.take_errors();
+        if errors.is_empty() {
+            return Ok(quote_id);
+        }
+        let message = errors
+            .values()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        // A concurrent first execution or a dropped response resolves through the durable receipt.
+        if let Some(id) = self
+            .resolve_quote_reissue_receipt(previous_quote_id, &signed, &requested_quote)
+            .await?
+        {
+            return Ok(id);
+        }
+        if message.contains("CREDIT_QUOTE_REISSUE_MATURED") {
+            Err(Error::InvalidInput(String::from(
+                "maturity date must be >= today",
+            )))
+        } else if message.contains("CREDIT_QUOTE_REISSUE_EXPIRED") {
+            Err(Error::CreditQuoteReissueInvalid)
+        } else if message.contains("CREDIT_QUOTE_REISSUE_CONFLICT")
+            || is_transaction_conflict(&message)
+        {
+            Err(Error::CreditQuoteReissueConflict)
+        } else {
+            Err(Error::QuotesRepository(anyhow!(message)))
+        }
+    }
+}
+
+fn is_transaction_conflict(message: &str) -> bool {
+    message.contains("read or write conflict") || message.contains("transaction can be retried")
 }
 
 #[cfg(test)]
