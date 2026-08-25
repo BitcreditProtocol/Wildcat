@@ -44,6 +44,7 @@ pub trait Repository: Send + Sync {
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
     async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
+    #[allow(clippy::too_many_arguments)]
     async fn commitment_store(
         &self,
         inputs: Vec<cashu::PublicKey>,
