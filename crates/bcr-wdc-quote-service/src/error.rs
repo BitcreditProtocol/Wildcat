@@ -42,6 +42,10 @@ pub enum Error {
     CreditAuthorizationInvalid,
     #[error("credit authorization conflicts with a completed operation")]
     CreditAuthorizationConflict,
+    #[error("Mint exposure capacity is unavailable")]
+    CreditCapacityUnavailable,
+    #[error("Mint exposure capacity is exhausted")]
+    CreditCapacityExceeded,
     #[error("resource not found: resource id {0}")]
     ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
@@ -98,6 +102,14 @@ impl axum::response::IntoResponse for Error {
             Error::CreditAuthorizationConflict => (
                 StatusCode::CONFLICT,
                 String::from("Credit authorization conflicts with a completed operation"),
+            ),
+            Error::CreditCapacityUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                String::from("Current verified Mint exposure capacity is unavailable"),
+            ),
+            Error::CreditCapacityExceeded => (
+                StatusCode::CONFLICT,
+                String::from("The quote exceeds current available Mint exposure capacity"),
             ),
 
             Error::Chrono(e) => {

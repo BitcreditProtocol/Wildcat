@@ -4,13 +4,15 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
 use bcr_wdc_utils::surreal;
+use std::sync::Arc;
 use surrealdb::Result as SurrealResult;
 use surrealdb::{engine::any::Any, Surreal};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::Repository,
+    persistence::{ExposureReservationInput, Repository},
     quotes,
     service::{ListFilters, SortOrder},
     TStamp,
@@ -28,6 +30,36 @@ struct QuoteDBEntry {
     credit_program: Option<quotes::CreditProgramBinding>,
     #[serde(default)]
     authorization_receipt: Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExposureReservationRecord {
+    reservation_version: String,
+    reservation_id: uuid::Uuid,
+    mint_id: String,
+    quote_id: uuid::Uuid,
+    amount_sat: String,
+    amount: u64,
+    capacity_evidence_id: uuid::Uuid,
+    state: String,
+    created_at: crate::TStamp,
+    updated_at: crate::TStamp,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExposureEvent {
+    event_version: String,
+    event_id: uuid::Uuid,
+    quote_id: uuid::Uuid,
+    reservation_id: uuid::Uuid,
+    mint_id: String,
+    amount_sat: String,
+    from_state: Option<String>,
+    to_state: String,
+    capacity_evidence_id: uuid::Uuid,
+    recorded_at: crate::TStamp,
 }
 
 impl From<QuoteDBEntry> for quotes::Quote {
@@ -79,6 +111,9 @@ impl From<LightQuoteDBEntry> for quotes::LightQuote {
 #[derive(Debug, Clone)]
 pub struct DBQuotes {
     db: Surreal<surrealdb::engine::any::Any>,
+    // ponytail: one lock matches the single quote-service replica deployed today. Move the
+    // compare-and-reserve into a serializable external ledger before horizontally scaling it.
+    credit_exposure_lock: Arc<Mutex<()>>,
 }
 
 macro_rules! add_filter_statement {
@@ -103,7 +138,10 @@ impl DBQuotes {
         db_connection.connect(cfg.connection).await?;
         db_connection.use_ns(cfg.namespace).await?;
         db_connection.use_db(cfg.database).await?;
-        Ok(Self { db: db_connection })
+        Ok(Self {
+            db: db_connection,
+            credit_exposure_lock: Arc::new(Mutex::new(())),
+        })
     }
 
     async fn load(&self, qid: Uuid) -> SurrealResult<Option<QuoteDBEntry>> {
@@ -241,26 +279,114 @@ impl Repository for DBQuotes {
     async fn execute_authorization(
         &self,
         quote: quotes::Quote,
+        exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
+        let _exposure_guard = self.credit_exposure_lock.lock().await;
         let receipt = quote
             .authorization_receipt
             .clone()
             .ok_or(Error::CreditAuthorizationInvalid)?;
         let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, quote.id);
-        let updated: Option<QuoteDBEntry> = self
+        let reservation_id = uuid::Uuid::new_v4();
+        let reservation_rid = surrealdb::RecordId::from_table_key(
+            crate::credit_evidence::Store::RESERVATION_TABLE,
+            quote.id,
+        );
+        let ledger_rid = surrealdb::RecordId::from_table_key(
+            "credit_exposure_ledgers",
+            exposure.mint_id.clone(),
+        );
+        let event_rid =
+            surrealdb::RecordId::from_table_key("credit_exposure_events", uuid::Uuid::new_v4());
+        let reservation = ExposureReservationRecord {
+            reservation_version: String::from("credit-exposure-reservation-v1"),
+            reservation_id,
+            mint_id: exposure.mint_id.clone(),
+            quote_id: quote.id,
+            amount_sat: exposure.amount_sat.to_string(),
+            amount: exposure.amount_sat,
+            capacity_evidence_id: exposure.capacity_evidence_id,
+            state: String::from("reserved"),
+            created_at: exposure.now,
+            updated_at: exposure.now,
+        };
+        let event = ExposureEvent {
+            event_version: String::from("credit-exposure-event-v1"),
+            event_id: uuid::Uuid::new_v4(),
+            quote_id: quote.id,
+            reservation_id,
+            mint_id: exposure.mint_id.clone(),
+            amount_sat: exposure.amount_sat.to_string(),
+            from_state: None,
+            to_state: String::from("reserved"),
+            capacity_evidence_id: exposure.capacity_evidence_id,
+            recorded_at: exposure.now,
+        };
+        // Create the single Mint ledger record before the transactional compare-and-increment.
+        // A shared, pre-existing key is what lets SurrealDB detect concurrent write conflicts;
+        // creating it inside both snapshots would permit a first-write race on an empty database.
+        self.db
+            .query(
+                r#"UPSERT $ledger_rid SET
+                    activeAmount = IF activeAmount == NONE THEN 0 ELSE activeAmount END,
+                    revision = IF revision == NONE THEN 0 ELSE revision END,
+                    mintId = $mint_id,
+                    updatedAt = $now"#,
+            )
+            .bind(("ledger_rid", ledger_rid.clone()))
+            .bind(("mint_id", exposure.mint_id.clone()))
+            .bind(("now", exposure.now))
+            .await
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
+            .check()
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        let mut response = self
             .db
             .query(
-                "UPDATE $rid SET status = $new, authorization_receipt = $receipt WHERE status.status == $status AND authorization_receipt == NONE RETURN AFTER",
+                r#"
+                BEGIN TRANSACTION;
+                LET $updated = UPDATE $rid SET status = $new, authorization_receipt = $receipt
+                    WHERE status.status == $status AND authorization_receipt == NONE RETURN AFTER;
+                IF !$updated { THROW "CREDIT_AUTHORIZATION_CONFLICT" };
+                LET $ledger = UPDATE $ledger_rid
+                    SET activeAmount += $amount, revision += 1, updatedAt = $now
+                    WHERE $existing + activeAmount + $amount <= $limit RETURN AFTER;
+                IF !$ledger { THROW "CREDIT_CAPACITY_EXCEEDED" };
+                CREATE $reservation_rid CONTENT $reservation;
+                CREATE $event_rid CONTENT $event;
+                COMMIT TRANSACTION;
+                "#,
             )
             .bind(("rid", recordid))
             .bind(("new", quote.status))
             .bind(("receipt", receipt.clone()))
             .bind(("status", quotes::StatusDiscriminants::Pending))
+            .bind(("mint_id", exposure.mint_id))
+            .bind(("existing", exposure.existing_exposure_sat))
+            .bind(("amount", exposure.amount_sat))
+            .bind(("limit", exposure.exposure_limit_sat))
+            .bind(("ledger_rid", ledger_rid))
+            .bind(("now", exposure.now))
+            .bind(("reservation_rid", reservation_rid))
+            .bind(("reservation", reservation))
+            .bind(("event_rid", event_rid))
+            .bind(("event", event))
             .await
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .take(0)
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
-        if updated.is_some() {
+        let errors = response.take_errors();
+        if !errors.is_empty() {
+            let message = errors
+                .values()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ");
+            if message.contains("CREDIT_CAPACITY_EXCEEDED") {
+                return Err(Error::CreditCapacityExceeded);
+            }
+            if !message.contains("CREDIT_AUTHORIZATION_CONFLICT") {
+                return Err(Error::QuotesRepository(anyhow!(message)));
+            }
+        } else {
             return Ok(receipt);
         }
         let stored = self
@@ -279,28 +405,80 @@ impl Repository for DBQuotes {
         }
     }
 
-    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
+    async fn update_status_if_offered(
+        &self,
+        qid: uuid::Uuid,
+        new: quotes::Status,
+        now: crate::TStamp,
+    ) -> Result<()> {
+        let _exposure_guard = self.credit_exposure_lock.lock().await;
+        let target_state = match &new {
+            quotes::Status::Accepted { .. } => "committed",
+            quotes::Status::Rejected { .. } | quotes::Status::OfferExpired { .. } => "released",
+            _ => {
+                return Err(Error::QuotesRepository(anyhow!(
+                    "offered quote transition has no exposure lifecycle"
+                )))
+            }
+        };
         let recordid = surrealdb::RecordId::from_table_key(Self::TABLE, qid);
-        let before: Option<QuoteDBEntry> = self
+        let reservation_rid = surrealdb::RecordId::from_table_key(
+            crate::credit_evidence::Store::RESERVATION_TABLE,
+            qid,
+        );
+        let event_rid =
+            surrealdb::RecordId::from_table_key("credit_exposure_events", uuid::Uuid::new_v4());
+        let response = self
             .db
-            .query("UPDATE $rid SET status = $new WHERE status.status == $status RETURN BEFORE")
+            .query(
+                r#"
+                BEGIN TRANSACTION;
+                LET $reservation = SELECT * FROM ONLY $reservation_rid;
+                IF !$reservation OR $reservation.state != "reserved" {
+                    THROW "CREDIT_EXPOSURE_RESERVATION_CONFLICT"
+                };
+                LET $updated = UPDATE $rid SET status = $new
+                    WHERE status.status == $status RETURN BEFORE;
+                IF !$updated { THROW "CREDIT_QUOTE_STATUS_CONFLICT" };
+                UPDATE $reservation_rid SET state = $target_state, updatedAt = $now;
+                IF $target_state == "released" {
+                    LET $ledger = UPDATE type::thing("credit_exposure_ledgers", $reservation.mintId)
+                        SET activeAmount -= $reservation.amount, revision += 1, updatedAt = $now
+                        WHERE activeAmount >= $reservation.amount RETURN AFTER;
+                    IF !$ledger { THROW "CREDIT_EXPOSURE_LEDGER_CONFLICT" };
+                } ELSE {
+                    UPDATE type::thing("credit_exposure_ledgers", $reservation.mintId)
+                        SET revision += 1, updatedAt = $now;
+                };
+                CREATE $event_rid SET
+                    eventVersion = "credit-exposure-event-v1",
+                    eventId = $event_id,
+                    quoteId = $qid,
+                    reservationId = $reservation.reservationId,
+                    mintId = $reservation.mintId,
+                    amountSat = $reservation.amountSat,
+                    fromState = "reserved",
+                    toState = $target_state,
+                    capacityEvidenceId = $reservation.capacityEvidenceId,
+                    recordedAt = $now;
+                COMMIT TRANSACTION;
+                "#,
+            )
             .bind(("rid", recordid))
             .bind(("new", new))
             .bind(("status", quotes::StatusDiscriminants::Offered))
+            .bind(("reservation_rid", reservation_rid))
+            .bind(("target_state", target_state))
+            .bind(("now", now))
+            .bind(("event_rid", event_rid))
+            .bind(("event_id", uuid::Uuid::new_v4()))
+            .bind(("qid", qid))
             .await
-            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        match before {
-            Some(QuoteDBEntry {
-                status: quotes::Status::Offered { .. },
-                ..
-            }) => Ok(()),
-            Some(_) => Err(Error::QuotesRepository(anyhow!("Quote not offered"))),
-            None => Err(Error::QuotesRepository(anyhow!(
-                "Quote not found or not offered"
-            ))),
-        }
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
+        response
+            .check()
+            .map(|_| ())
+            .map_err(|error| Error::QuotesRepository(anyhow!(error)))
     }
 
     async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {

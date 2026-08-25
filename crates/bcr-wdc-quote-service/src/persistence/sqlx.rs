@@ -12,7 +12,8 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, quotes, service, TStamp,
+    persistence::{self, ExposureReservationInput},
+    quotes, service, TStamp,
 };
 
 // ----- end imports
@@ -259,52 +260,19 @@ impl persistence::Repository for DBQuotes {
 
     async fn execute_authorization(
         &self,
-        quote: quotes::Quote,
+        _quote: quotes::Quote,
+        _exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
-        let receipt = quote
-            .authorization_receipt
-            .clone()
-            .ok_or(Error::CreditAuthorizationInvalid)?;
-        let row = quote_to_row(quote)?;
-        let blob = serde_json::to_value(row.blob.0)
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
-        let rows = sqlx::query(
-            r#"
-            UPDATE quote_quotes
-            SET status = $2, blob = $3
-            WHERE qid = $1 AND status = $4
-              AND (blob->'data'->'authorization_receipt') IS NULL
-            "#,
-        )
-        .bind(row.qid)
-        .bind(row.status)
-        .bind(blob)
-        .bind(quotes::StatusDiscriminants::Pending.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-        .rows_affected();
-        if rows == 1 {
-            return Ok(receipt);
-        }
-        let stored = <Self as persistence::Repository>::load(self, row.qid)
-            .await?
-            .ok_or_else(|| Error::ResourceNotFound(row.qid.to_string()))?;
-        match stored.authorization_receipt {
-            Some(existing)
-                if existing.operation_id == receipt.operation_id
-                    && existing.authorization_digest == receipt.authorization_digest =>
-            {
-                Ok(existing)
-            }
-            _ => Err(Error::CreditAuthorizationConflict),
-        }
+        // ponytail: the deployed quote service uses SurrealDB; keep the dormant SQL backend
+        // fail-closed until it gains the same transactional exposure ledger.
+        Err(Error::CreditCapacityUnavailable)
     }
 
     async fn update_status_if_offered(
         &self,
         id: uuid::Uuid,
         new_status: quotes::Status,
+        _now: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
         self.update_status_if(id, quotes::StatusDiscriminants::Offered, new_status)
             .await

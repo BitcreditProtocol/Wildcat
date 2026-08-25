@@ -120,6 +120,7 @@ pub async fn list_quotes(
 fn convert_to_info_reply(
     quote: quotes::Quote,
     credit_evidence: Option<wire_quotes::MintCreditEvidence>,
+    credit_exposure_reservation: Option<wire_quotes::CreditExposureReservation>,
 ) -> wire_quotes::AdminInfoReply {
     let credit_program_version = quote
         .credit_program()
@@ -210,6 +211,7 @@ fn convert_to_info_reply(
         credit_program_digest,
         credit_authorization_receipt,
         credit_evidence,
+        credit_exposure_reservation,
     }
 }
 
@@ -223,7 +225,8 @@ pub async fn lookup_quote(
     let now = chrono::Utc::now();
     let quote = ctrl.quote.lookup(id, now).await?;
     let credit_evidence = ctrl.credit_evidence.for_quote(&quote).await?;
-    let response = convert_to_info_reply(quote, Some(credit_evidence));
+    let credit_exposure_reservation = ctrl.credit_evidence.reservation_for_quote(id).await?;
+    let response = convert_to_info_reply(quote, Some(credit_evidence), credit_exposure_reservation);
     Ok(Json(response))
 }
 
@@ -342,7 +345,8 @@ mod tests {
 
     #[test]
     fn admin_quote_json_exposes_top_level_credit_program_binding() {
-        let value = serde_json::to_value(convert_to_info_reply(pending_quote(), None)).unwrap();
+        let value =
+            serde_json::to_value(convert_to_info_reply(pending_quote(), None, None)).unwrap();
 
         assert_eq!(value["status"], "Pending");
         assert_eq!(value["credit_program_version"], "test-credit-program-v1");
@@ -359,7 +363,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.authorization_receipt = Some(authorization_receipt());
 
-        let value = serde_json::to_value(convert_to_info_reply(quote, None)).unwrap();
+        let value = serde_json::to_value(convert_to_info_reply(quote, None, None)).unwrap();
         let receipt = &value["credit_authorization_receipt"];
 
         assert_eq!(receipt["receiptVersion"], "credit-authorization-receipt-v1");
@@ -373,7 +377,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.credit_program = None;
 
-        let value = serde_json::to_value(convert_to_info_reply(quote, None)).unwrap();
+        let value = serde_json::to_value(convert_to_info_reply(quote, None, None)).unwrap();
 
         assert!(value["credit_program_version"].is_null());
         assert!(value["credit_program_digest"].is_null());
