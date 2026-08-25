@@ -337,12 +337,17 @@ impl Service {
             .load(qid)
             .await?
             .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
-        let verified = verifier.verify(signed, &quote, now)?;
-        if let Some(existing) = quote.authorization_receipt() {
+        let existing = quote.authorization_receipt().cloned();
+        let verified = if existing.is_some() {
+            verifier.verify_replay(signed, &quote)?
+        } else {
+            verifier.verify(signed, &quote, now)?
+        };
+        if let Some(existing) = existing {
             return if existing.operation_id == verified.operation_id
                 && existing.authorization_digest == verified.authorization_digest
             {
-                Ok(existing.clone())
+                Ok(existing)
             } else {
                 Err(Error::CreditAuthorizationConflict)
             };
@@ -638,6 +643,50 @@ mod tests {
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
             .await;
         assert!(test.is_ok());
+    }
+
+    #[tokio::test]
+    async fn completed_authorization_replays_after_envelope_expiry() {
+        let mut bill = generate_random_bill();
+        bill.sum = btc::Amount::from_sat(8_000_000);
+        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let qid = quote.id;
+        let signed = crate::authorization::tests::signed_for(&quote);
+        let db = crate::persistence::inmemory::QuotesIDMap::default();
+        db.store(quote).await.unwrap();
+
+        let mut wdc_client = MockWdcClient::new();
+        wdc_client
+            .expect_get_keyset_with_expiration_date()
+            .times(1)
+            .returning(|_| Ok(core_tests::generate_random_ecash_keyset().0.id));
+        let service = Service {
+            quotes: Box::new(db),
+            wdc_client: Box::new(wdc_client),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+        };
+        let issued = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:05:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let first = service
+            .authorize_offer(qid, signed.clone(), issued)
+            .await
+            .unwrap();
+
+        let replayed = service
+            .authorize_offer(qid, signed, issued + chrono::Duration::days(3))
+            .await
+            .unwrap();
+
+        assert_eq!(replayed, first);
     }
 
     #[tokio::test]
