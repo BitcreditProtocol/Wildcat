@@ -41,12 +41,15 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!("Error: {}", self);
+        let message = self.to_string();
         let resp = match self {
             Error::CoreClient(CoreClientError::ResourceNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
             Error::TreasuryClient(TreasuryClientError::ResourceNotFound(e)) => {
+                (StatusCode::NOT_FOUND, e.to_string())
+            }
+            Error::EBillClient(EbillClientError::ResourceNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
             Error::QuotesClient(QuotesClientError::ResourceNotFound(e)) => {
@@ -59,8 +62,28 @@ impl axum::response::IntoResponse for Error {
             Error::QuotesClient(QuotesClientError::InvalidRequest(e)) => {
                 (StatusCode::BAD_REQUEST, e.to_string())
             }
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, message.clone()),
         };
+        if resp.0.is_server_error() {
+            tracing::error!("Error: {message}");
+        } else {
+            tracing::debug!("Error: {message}");
+        }
         resp.into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::response::IntoResponse;
+
+    use super::*;
+
+    #[test]
+    fn ebill_resource_not_found_is_not_an_internal_error() {
+        let response =
+            Error::EBillClient(EbillClientError::ResourceNotFound("bill".into())).into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
