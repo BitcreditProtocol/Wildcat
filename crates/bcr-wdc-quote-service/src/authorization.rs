@@ -1,5 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
-use bcr_common::wire::quotes as wire_quotes;
+use bcr_common::wire::quotes::{
+    self as wire_quotes, CreditQuoteReissuePermit as QuoteReissuePermit,
+    SignedCreditQuoteReissuePermit as SignedQuoteReissuePermit,
+};
 use bitcoin::{
     hashes::{sha256, Hash as _},
     Amount,
@@ -16,6 +19,14 @@ use crate::{
 
 const MAX_SATOSHIS: u64 = 2_100_000_000_000_000;
 pub const AUTHORIZATION_ACTION: &str = "request_to_mint";
+pub const QUOTE_REISSUE_ACTION: &str = wire_quotes::REISSUE_ENQUIRE_ACTION;
+const MAX_QUOTE_REISSUE_PERMIT_TTL: chrono::Duration = chrono::Duration::days(1);
+const QUOTE_REISSUE_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+
+#[derive(Clone, Debug)]
+pub struct VerifiedQuoteReissuePermit {
+    pub signed: SignedQuoteReissuePermit,
+}
 
 #[derive(Clone, Debug)]
 pub struct AuthorizationVerifier {
@@ -160,6 +171,113 @@ impl AuthorizationVerifier {
             authorization,
         })
     }
+
+    pub fn verify_quote_reissue(
+        &self,
+        signed: SignedQuoteReissuePermit,
+        previous: &Quote,
+        now: TStamp,
+    ) -> Result<VerifiedQuoteReissuePermit> {
+        let permit = &signed.permit;
+        for text in [
+            &permit.schema_version,
+            &permit.key_id,
+            &permit.mint_id,
+            &permit.credit_program_version,
+            &permit.case_id,
+            &permit.bill_id,
+            &permit.holder_ref,
+            &permit.action,
+        ] {
+            validate_text(text).map_err(|_| invalid_reissue())?;
+        }
+        for value in [
+            &permit.credit_program_digest,
+            &permit.bill_state_digest,
+            &permit.contested_decision_result_digest,
+            &permit.corrected_submission_digest,
+        ] {
+            validate_digest(value).map_err(|_| invalid_reissue())?;
+        }
+        if signed.signature_algorithm != "Ed25519"
+            || permit.schema_version != "credit-quote-reissue-permit-v1"
+            || permit.key_id != self.key_id
+            || permit.mint_id != self.mint_id
+            || permit.action != QUOTE_REISSUE_ACTION
+            || !permit.synthetic
+            || permit.previous_mint_quote_id == permit.reissued_mint_quote_id
+        {
+            return Err(invalid_reissue());
+        }
+
+        let canonical = canonical_quote_reissue_permit(permit);
+        let expected_digest = digest(&canonical);
+        if signed.permit_digest != expected_digest {
+            return Err(invalid_reissue());
+        }
+        let signature_bytes = general_purpose::STANDARD
+            .decode(&signed.signature)
+            .map_err(|_| invalid_reissue())?;
+        let signature = Signature::from_slice(&signature_bytes).map_err(|_| invalid_reissue())?;
+        self.public_key
+            .verify(&canonical, &signature)
+            .map_err(|_| invalid_reissue())?;
+
+        let issued_at = parse_datetime(&permit.issued_at).map_err(|_| invalid_reissue())?;
+        let expires_at = parse_datetime(&permit.expires_at).map_err(|_| invalid_reissue())?;
+        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != permit.issued_at
+            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != permit.expires_at
+            || issued_at > now + QUOTE_REISSUE_CLOCK_SKEW
+            || expires_at <= issued_at
+            || expires_at - issued_at > MAX_QUOTE_REISSUE_PERMIT_TTL
+        {
+            return Err(invalid_reissue());
+        }
+
+        let credit_program = previous
+            .credit_program()
+            .ok_or(Error::CreditProgramNotBound(previous.id))?;
+        let bill_id = previous.bill.id.to_string();
+        let holder_ref = previous.bill.current_holder.node_id().to_string();
+        let acceptor_ref = previous.bill.drawee.node_id.to_string();
+        let bill_state_digest = digest(&canonical_bill_state(
+            &bill_id,
+            &holder_ref,
+            &acceptor_ref,
+            &previous.bill.sum.to_sat().to_string(),
+            &previous.bill.maturity_date.to_string(),
+        ));
+        if permit.previous_mint_quote_id != previous.id
+            || permit.bill_id != bill_id
+            || permit.holder_ref != holder_ref
+            || permit.bill_state_digest != bill_state_digest
+            || permit.credit_program_version != credit_program.version()
+            || permit.credit_program_digest != credit_program.digest()
+        {
+            return Err(invalid_reissue());
+        }
+
+        Ok(VerifiedQuoteReissuePermit { signed })
+    }
+}
+
+pub fn same_quote_reissue_authority(left: &QuoteReissuePermit, right: &QuoteReissuePermit) -> bool {
+    left.schema_version == right.schema_version
+        && left.key_id == right.key_id
+        && left.mint_id == right.mint_id
+        && left.previous_mint_quote_id == right.previous_mint_quote_id
+        && left.reissued_mint_quote_id == right.reissued_mint_quote_id
+        && left.credit_program_version == right.credit_program_version
+        && left.credit_program_digest == right.credit_program_digest
+        && left.case_id == right.case_id
+        && left.bill_id == right.bill_id
+        && left.bill_state_digest == right.bill_state_digest
+        && left.holder_ref == right.holder_ref
+        && left.review_request_id == right.review_request_id
+        && left.contested_decision_result_digest == right.contested_decision_result_digest
+        && left.corrected_submission_digest == right.corrected_submission_digest
+        && left.action == right.action
+        && left.synthetic == right.synthetic
 }
 
 #[cfg(test)]
@@ -174,6 +292,10 @@ pub(crate) fn test_authorization_verifier() -> AuthorizationVerifier {
 
 fn invalid() -> Error {
     Error::CreditAuthorizationInvalid
+}
+
+fn invalid_reissue() -> Error {
+    Error::CreditQuoteReissueInvalid
 }
 
 fn validate_text(value: &str) -> Result<()> {
@@ -358,6 +480,31 @@ fn canonical_bill_state(
     ])
 }
 
+fn canonical_quote_reissue_permit(value: &QuoteReissuePermit) -> Vec<u8> {
+    encode_fields(&[
+        "AI-CREDIT-QUOTE-REISSUE-PERMIT-V1",
+        &value.schema_version,
+        &value.key_id,
+        &value.mint_id,
+        &value.previous_mint_quote_id.to_string(),
+        &value.reissued_mint_quote_id.to_string(),
+        &value.credit_program_version,
+        &value.credit_program_digest,
+        &value.case_id,
+        &value.bill_id,
+        &value.bill_state_digest,
+        &value.holder_ref,
+        &value.review_request_id.to_string(),
+        &value.contested_decision_result_digest,
+        &value.corrected_submission_digest,
+        &value.issued_at,
+        &value.expires_at,
+        &value.nonce.to_string(),
+        &value.action,
+        "true",
+    ])
+}
+
 pub fn offer_result_digest(quote_id: uuid::Uuid, discounted: Amount, expiration: TStamp) -> String {
     digest(&encode_fields(&[
         "AI-CREDIT-WILDCAT-OFFER-RESULT-V1",
@@ -458,6 +605,51 @@ pub(crate) mod tests {
         }
     }
 
+    pub(crate) fn signed_reissue_for(
+        quote: &Quote,
+        reissued_id: uuid::Uuid,
+        issued_at: TStamp,
+        expires_at: TStamp,
+    ) -> wire_quotes::SignedCreditQuoteReissuePermit {
+        let bill_id = quote.bill.id.to_string();
+        let holder_ref = quote.bill.current_holder.node_id().to_string();
+        let acceptor_ref = quote.bill.drawee.node_id.to_string();
+        let permit = wire_quotes::CreditQuoteReissuePermit {
+            schema_version: String::from("credit-quote-reissue-permit-v1"),
+            key_id: String::from("synthetic-ed25519-v1"),
+            mint_id: String::from("local-wildcat"),
+            previous_mint_quote_id: quote.id,
+            reissued_mint_quote_id: reissued_id,
+            credit_program_version: quote.credit_program().unwrap().version().to_owned(),
+            credit_program_digest: quote.credit_program().unwrap().digest().to_owned(),
+            case_id: String::from("synthetic-case-a"),
+            bill_id: bill_id.clone(),
+            bill_state_digest: digest(&canonical_bill_state(
+                &bill_id,
+                &holder_ref,
+                &acceptor_ref,
+                &quote.bill.sum.to_sat().to_string(),
+                &quote.bill.maturity_date.to_string(),
+            )),
+            holder_ref,
+            review_request_id: uuid::Uuid::from_u128(1),
+            contested_decision_result_digest: format!("sha256:{}", "b".repeat(64)),
+            corrected_submission_digest: format!("sha256:{}", "d".repeat(64)),
+            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            nonce: uuid::Uuid::from_u128(2),
+            action: String::from(QUOTE_REISSUE_ACTION),
+            synthetic: true,
+        };
+        let bytes = canonical_quote_reissue_permit(&permit);
+        wire_quotes::SignedCreditQuoteReissuePermit {
+            permit,
+            permit_digest: digest(&bytes),
+            signature_algorithm: String::from("Ed25519"),
+            signature: general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes()),
+        }
+    }
+
     #[test]
     fn verifies_frozen_vector_bytes_and_rejects_tampering() {
         let vector: serde_json::Value = serde_json::from_str(include_str!(
@@ -474,6 +666,140 @@ pub(crate) mod tests {
         assert_eq!(
             digest(&bytes),
             vector["expected"]["authorizationDigest"].as_str().unwrap()
+        );
+        let signature = general_purpose::STANDARD
+            .decode(vector["expected"]["signature"].as_str().unwrap())
+            .unwrap();
+        signing_key()
+            .verifying_key()
+            .verify(&bytes, &Signature::from_slice(&signature).unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    fn quote_reissue_verifier_binds_ai_signature_bill_program_and_ttl_shape() {
+        let mut bill = crate::quotes::BillInfo::random();
+        bill.sum = Amount::from_sat(8_000_000);
+        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let issued = DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let signed = signed_reissue_for(
+            &quote,
+            uuid::Uuid::from_u128(3),
+            issued,
+            issued + chrono::Duration::hours(24),
+        );
+        test_authorization_verifier()
+            .verify_quote_reissue(signed.clone(), &quote, issued)
+            .unwrap();
+        // Expiry gates only first repository consumption. Static verification remains available
+        // so a durable consumed receipt can be replayed after its original challenge expired.
+        test_authorization_verifier()
+            .verify_quote_reissue(signed.clone(), &quote, issued + chrono::Duration::days(2))
+            .unwrap();
+
+        let resign = |mut candidate: wire_quotes::SignedCreditQuoteReissuePermit| {
+            let bytes = canonical_quote_reissue_permit(&candidate.permit);
+            candidate.permit_digest = digest(&bytes);
+            candidate.signature =
+                general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes());
+            candidate
+        };
+
+        let mut tampered = signed.clone();
+        tampered.permit.corrected_submission_digest = format!("sha256:{}", "e".repeat(64));
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(tampered, &quote, issued),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        let mut wrong_mint = signed.clone();
+        wrong_mint.permit.mint_id = String::from("another-mint");
+        let wrong_mint = resign(wrong_mint);
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(wrong_mint, &quote, issued),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        let mut wrong_bill = signed.clone();
+        wrong_bill.permit.bill_id = String::from("another-bill");
+        let wrong_bill = resign(wrong_bill);
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(wrong_bill, &quote, issued),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        let mut wrong_program = signed.clone();
+        wrong_program.permit.credit_program_version = String::from("another-program-v1");
+        let wrong_program = resign(wrong_program);
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(wrong_program, &quote, issued),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        let issued_too_far_ahead = signed_reissue_for(
+            &quote,
+            uuid::Uuid::from_u128(4),
+            issued + chrono::Duration::seconds(31),
+            issued + chrono::Duration::hours(1),
+        );
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(
+                issued_too_far_ahead,
+                &quote,
+                issued
+            ),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        let ttl_too_long = signed_reissue_for(
+            &quote,
+            uuid::Uuid::from_u128(5),
+            issued,
+            issued + chrono::Duration::hours(24) + chrono::Duration::milliseconds(1),
+        );
+        assert!(matches!(
+            test_authorization_verifier().verify_quote_reissue(ttl_too_long, &quote, issued),
+            Err(Error::CreditQuoteReissueInvalid)
+        ));
+
+        for non_canonical in ["2026-08-10T12:00:00Z", "2026-08-10T12:00:00.00Z"] {
+            let mut timestamp = signed.clone();
+            timestamp.permit.issued_at = String::from(non_canonical);
+            let timestamp = resign(timestamp);
+            assert!(matches!(
+                test_authorization_verifier().verify_quote_reissue(timestamp, &quote, issued),
+                Err(Error::CreditQuoteReissueInvalid)
+            ));
+        }
+    }
+
+    #[test]
+    fn verifies_ts_issued_quote_reissue_permit_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/authorization/quote-reissue-permit-v1.json"
+        ))
+        .unwrap();
+        let permit: wire_quotes::CreditQuoteReissuePermit =
+            serde_json::from_value(vector["permit"].clone()).unwrap();
+        let bytes = canonical_quote_reissue_permit(&permit);
+        let expected_base64 = vector["expected"]["canonicalBase64"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|chunk| chunk.as_str().unwrap())
+            .collect::<String>();
+        assert_eq!(general_purpose::STANDARD.encode(&bytes), expected_base64);
+        assert_eq!(
+            digest(&bytes),
+            vector["expected"]["permitDigest"].as_str().unwrap()
         );
         let signature = general_purpose::STANDARD
             .decode(vector["expected"]["signature"].as_str().unwrap())

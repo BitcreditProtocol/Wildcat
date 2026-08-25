@@ -1,0 +1,50 @@
+{
+  "description": "Synthetic TS-issued Ed25519 quote-reissue permit conformance vector. The key is public test material only.",
+  "testKey": {
+    "keyId": "synthetic-ed25519-v1",
+    "publicKeyJwk": {
+      "crv": "Ed25519",
+      "x": "jn__htbnO4jauBDTN5Oeby-2uOylC6skT2-jm8mXiNc",
+      "kty": "OKP"
+    }
+  },
+  "permit": {
+    "schemaVersion": "credit-quote-reissue-permit-v1",
+    "keyId": "synthetic-ed25519-v1",
+    "mintId": "local-wildcat",
+    "previousMintQuoteId": "00000000-0000-4000-8000-000000000101",
+    "reissuedMintQuoteId": "00000000-0000-4000-8000-000000000102",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
+    "creditProgramDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "caseId": "synthetic-case-reissue-a",
+    "billId": "synthetic-bill-reissue-a",
+    "billStateDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "holderRef": "synthetic-holder-reissue-a",
+    "reviewRequestId": "00000000-0000-4000-8000-000000000103",
+    "contestedDecisionResultDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "correctedSubmissionDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "issuedAt": "2026-08-10T12:00:00.000Z",
+    "expiresAt": "2026-08-11T12:00:00.000Z",
+    "nonce": "00000000-0000-4000-8000-000000000104",
+    "action": "reissue_denied_quote_after_reviewed_correction",
+    "synthetic": true
+  },
+  "expected": {
+    "canonicalBase64": [
+      "AAAAIUFJLUNSRURJVC1RVU9URS1SRUlTU1VFLVBFUk1JVC1WMQAAAB5jcmVkaXQtcXVvdGUtcmVpc3N1ZS1wZXJtaXQtdjEA",
+      "AAAUc3ludGhldGljLWVkMjU1MTktdjEAAAANbG9jYWwtd2lsZGNhdAAAACQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAw",
+      "MDAwMDAxMDEAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMTAyAAAAJXN5bnRoZXRpYy1ndWF0ZW1hbGEt",
+      "Y29mZmVlLXByb2dyYW0tdjEAAABHc2hhMjU2OjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEx",
+      "MTExMTExMTExMTExMTExMTExMTEAAAAYc3ludGhldGljLWNhc2UtcmVpc3N1ZS1hAAAAGHN5bnRoZXRpYy1iaWxsLXJlaXNz",
+      "dWUtYQAAAEdzaGEyNTY6MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy",
+      "MjIyMjIyMgAAABpzeW50aGV0aWMtaG9sZGVyLXJlaXNzdWUtYQAAACQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAw",
+      "MDAxMDMAAABHc2hhMjU2OjMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMz",
+      "MzMzMzMzMzMAAABHc2hhMjU2OjQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0",
+      "NDQ0NDQ0NDQ0NDQAAAAYMjAyNi0wOC0xMFQxMjowMDowMC4wMDBaAAAAGDIwMjYtMDgtMTFUMTI6MDA6MDAuMDAwWgAAACQw",
+      "MDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAxMDQAAAAucmVpc3N1ZV9kZW5pZWRfcXVvdGVfYWZ0ZXJfcmV2aWV3",
+      "ZWRfY29ycmVjdGlvbgAAAAR0cnVl"
+    ],
+    "permitDigest": "sha256:e33e5f1ba72f45320f658dc9f125d3b2d5b6bb0550b308b17bee5beb86d7711a",
+    "signature": "LiAAFdUqqUjq1insXXGmxxGy0zCh9T61kebL5nSGkb7ty8Cn6o494XHZZfENHTpmMJEFzZzDL3xk5zoksKo+Bw=="
+  }
+}
