@@ -21,7 +21,7 @@
     "holderRef": "synthetic-holder-a",
     "acceptorRef": "synthetic-cooperativa-a",
     "decisionSnapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
-    "decisionResultDigest": "sha256:c2701c525942f50df28d0021a3096ead5d27bf17e730a4404988a6d0a056bdd3",
+    "decisionResultDigest": "sha256:8ab78c6652a3fecbd625828c8b6b6ad7edf6841ec0e86fb16c91c9e5464c9c43",
     "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
     "policyPackVersion": "synthetic-guatemala-coffee-v11",
     "calculationVersion": "deterministic-credit-core-v9",
@@ -57,7 +57,7 @@
     "holderRef": "synthetic-holder-a",
     "acceptorRef": "synthetic-cooperativa-a",
     "decision": {
-      "schemaVersion": "decision-result-v9",
+      "schemaVersion": "decision-result-v10",
       "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
       "mintId": "synthetic-mint-guatemala",
       "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
@@ -420,21 +420,25 @@
     "operatorId": "synthetic-operator-a"
   },
   "expected": {
-    "canonicalBase64": "AAAAGkFJLUNSRURJVC1BVVRIT1JJWkFUSU9OLVY3AAAAF2NyZWRpdC1hdXRob3JpemF0aW9uLXY3AAAAFHN5bnRoZXRpYy1lZDI1NTE5LXYxAAAAGHN5bnRoZXRpYy1taW50LWd1YXRlbWFsYQAAABFzeW50aGV0aWMtcXVvdGUtYQAAACVzeW50aGV0aWMtZ3VhdGVtYWxhLWNvZmZlZS1wcm9ncmFtLXYxAAAAR3NoYTI1NjpkOGY2NWMyNjBhOWRjNzBhMTRhZmFiMmE2N2E5MDk3NzZiYjA5NTJkZmYwZmY4MTM2YjU5NWYxMjM3NGViYTdjAAAAEHN5bnRoZXRpYy1jYXNlLWEAAAAQc3ludGhldGljLWJpbGwtYQAAAEdzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQAAABJzeW50aGV0aWMtaG9sZGVyLWEAAAAXc3ludGhldGljLWNvb3BlcmF0aXZhLWEAAABHc2hhMjU2OmY1ZDg5N2E4NDRkZTQ5NmExMTg0Y2RhNjZkOGJkMDY4ZTA0ZDNlNDYzYjcyZmIxMmUwOWE0OTVlYjY2ZjYwNjcAAABHc2hhMjU2OmMyNzAxYzUyNTk0MmY1MGRmMjhkMDAyMWEzMDk2ZWFkNWQyN2JmMTdlNzMwYTQ0MDQ5ODhhNmQwYTA1NmJkZDMAAABHc2hhMjU2OjgwZGFjNjJhYTFhYjY1ZjcyYWU0OGM2ZjA1YTVjZGMyZTAwMWQ5NzIwYzBmYzU1ZTIwNDcwYWFmMTU0ZDljNDYAAAAec3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtdjExAAAAHGRldGVybWluaXN0aWMtY3JlZGl0LWNvcmUtdjkAAAAHODAwMDAwMAAAAAc3NzM0MDAwAAAABjIxNjAwMAAAAAU1MDAwMAAAAAYyNjYwMDAAAAAHODAwMDAwMAAAAAoyMDI3LTAyLTA2AAAACjIwMjYtMDgtMTIAAAADMTgwAAAAAzU0MAAAAAM2ODgAAAADMzMzAAAAFHN5bnRoZXRpYy1vcGVyYXRvci1hAAAAGDIwMjYtMDgtMTBUMTI6MDA6MDAuMDAwWgAAABgyMDI2LTA4LTEwVDEyOjE1OjAwLjAwMFoAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxAAAAD3JlcXVlc3RfdG9fbWludAAAAAR0cnVl",
-    "authorizationDigest": "sha256:80a5a26840eed1f07b20f42fd613b9de5cdd684a52399b0ee224c5208bfbd95b",
+    "canonicalBase64": "AAAAGkFJLUNSRURJVC1BVVRIT1JJWkFUSU9OLVY3AAAAF2NyZWRpdC1hdXRob3JpemF0aW9uLXY3AAAAFHN5bnRoZXRpYy1lZDI1NTE5LXYxAAAAGHN5bnRoZXRpYy1taW50LWd1YXRlbWFsYQAAABFzeW50aGV0aWMtcXVvdGUtYQAAACVzeW50aGV0aWMtZ3VhdGVtYWxhLWNvZmZlZS1wcm9ncmFtLXYxAAAAR3NoYTI1NjpkOGY2NWMyNjBhOWRjNzBhMTRhZmFiMmE2N2E5MDk3NzZiYjA5NTJkZmYwZmY4MTM2YjU5NWYxMjM3NGViYTdjAAAAEHN5bnRoZXRpYy1jYXNlLWEAAAAQc3ludGhldGljLWJpbGwtYQAAAEdzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQAAABJzeW50aGV0aWMtaG9sZGVyLWEAAAAXc3ludGhldGljLWNvb3BlcmF0aXZhLWEAAABHc2hhMjU2OmY1ZDg5N2E4NDRkZTQ5NmExMTg0Y2RhNjZkOGJkMDY4ZTA0ZDNlNDYzYjcyZmIxMmUwOWE0OTVlYjY2ZjYwNjcAAABHc2hhMjU2OjhhYjc4YzY2NTJhM2ZlY2JkNjI1ODI4YzhiNmI2YWQ3ZWRmNjg0MWVjMGU4NmZiMTZjOTFjOWU1NDY0YzljNDMAAABHc2hhMjU2OjgwZGFjNjJhYTFhYjY1ZjcyYWU0OGM2ZjA1YTVjZGMyZTAwMWQ5NzIwYzBmYzU1ZTIwNDcwYWFmMTU0ZDljNDYAAAAec3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtdjExAAAAHGRldGVybWluaXN0aWMtY3JlZGl0LWNvcmUtdjkAAAAHODAwMDAwMAAAAAc3NzM0MDAwAAAABjIxNjAwMAAAAAU1MDAwMAAAAAYyNjYwMDAAAAAHODAwMDAwMAAAAAoyMDI3LTAyLTA2AAAACjIwMjYtMDgtMTIAAAADMTgwAAAAAzU0MAAAAAM2ODgAAAADMzMzAAAAFHN5bnRoZXRpYy1vcGVyYXRvci1hAAAAGDIwMjYtMDgtMTBUMTI6MDA6MDAuMDAwWgAAABgyMDI2LTA4LTEwVDEyOjE1OjAwLjAwMFoAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxAAAAD3JlcXVlc3RfdG9fbWludAAAAAR0cnVl",
+    "authorizationDigest": "sha256:70abf8987ac403c6518229d9f2b4b2542a24bd8a7619e5c57dab1aab4cd8ca7e",
     "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
-    "signature": "HI6dfrEBs3dggKfSmf7NeajRCmRsAD/nOvou482lNTX24ux/YAZQmUbbvE2Lig72lPmf3AdRMR3mgJ2aZ+fgBA=="
+    "signature": "JDJuIXQ47E62bs1+L9Fl7yBoT5U423XrL8H812zcBlrVtRPvJKNvweyDaN7gGG3gwLj1aR2bg2fOzrezto1ZCw=="
   },
   "negativeEnvelopes": [
     {
       "name": "changed quote without resigning",
-      "authorizationPatch": { "mintQuoteId": "synthetic-quote-b" },
+      "authorizationPatch": {
+        "mintQuoteId": "synthetic-quote-b"
+      },
       "resign": false,
       "expectedReason": "digest_mismatch"
     },
     {
       "name": "validly signed wrong quote",
-      "authorizationPatch": { "mintQuoteId": "synthetic-quote-b" },
+      "authorizationPatch": {
+        "mintQuoteId": "synthetic-quote-b"
+      },
       "resign": true,
       "expectedReason": "wrong_quote"
     },
@@ -474,7 +478,7 @@
       "name": "wrong mint",
       "patch": {
         "decision": {
-          "schemaVersion": "decision-result-v9",
+          "schemaVersion": "decision-result-v10",
           "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
           "mintId": "synthetic-mint-b",
           "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
@@ -875,7 +879,7 @@
   "completionReceipt": {
     "receiptVersion": "credit-authorization-receipt-v1",
     "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
-    "authorizationDigest": "sha256:80a5a26840eed1f07b20f42fd613b9de5cdd684a52399b0ee224c5208bfbd95b",
+    "authorizationDigest": "sha256:70abf8987ac403c6518229d9f2b4b2542a24bd8a7619e5c57dab1aab4cd8ca7e",
     "caseId": "synthetic-case-a",
     "status": "completed",
     "mintId": "synthetic-mint-guatemala",
