@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     error::{Error, Result},
     persistence::Repository,
-    quotes::{BillInfo, LightQuote, Quote, Status, StatusDiscriminants},
+    quotes::{BillInfo, CreditProgramBinding, LightQuote, Quote, Status, StatusDiscriminants},
     TStamp,
 };
 
@@ -87,6 +87,7 @@ pub struct Service {
     pub wdc_client: Box<dyn WdcClient + Send + Sync>,
     pub quotes: Box<dyn Repository + Send + Sync>,
     pub mint_url: cashu::MintUrl,
+    pub credit_program: CreditProgramBinding,
 }
 
 impl Service {
@@ -113,7 +114,12 @@ impl Service {
         minting_pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<Uuid> {
-        let quote = Quote::new(bill, minting_pub_key, submitted);
+        let quote = Quote::new(
+            bill,
+            minting_pub_key,
+            submitted,
+            self.credit_program.clone(),
+        );
         let qid = quote.id;
         self.quotes.store(quote).await?;
         Ok(qid)
@@ -298,6 +304,7 @@ impl Service {
         ttl: Option<TStamp>,
     ) -> Result<(btc::Amount, TStamp)> {
         let mut quote = self._lookup(qid, submitted).await?;
+        quote.require_credit_program()?;
         let Status::Pending { .. } = quote.status else {
             return Err(Error::InvalidQuoteStatus(
                 qid,
@@ -562,7 +569,16 @@ mod tests {
     async fn test_new_quote_request_quote_not_present() {
         let mut quotes = MockRepository::new();
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
-        quotes.expect_store().returning(|_| Ok(()));
+        quotes
+            .expect_store()
+            .withf(|quote| {
+                quote.credit_program().is_some_and(|binding| {
+                    binding.version() == "test-credit-program-v1"
+                        && binding.digest()
+                            == "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                })
+            })
+            .returning(|_| Ok(()));
         let wdc_client = MockWdcClient::new();
 
         let rnd_bill = generate_random_bill();
@@ -570,6 +586,7 @@ mod tests {
             quotes: Box::new(quotes),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let test = service
             .enquire(
@@ -599,6 +616,7 @@ mod tests {
                     id,
                     bill: cloned.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -608,6 +626,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, time::OffsetDateTime::now_utc())
@@ -635,6 +654,7 @@ mod tests {
                     id,
                     bill: cloned.clone(),
                     submitted: now,
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -644,6 +664,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -674,6 +695,7 @@ mod tests {
                     id,
                     bill: cloned.clone(),
                     submitted: now,
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -683,6 +705,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -713,6 +736,7 @@ mod tests {
                     id,
                     bill: cloned.clone(),
                     submitted: now,
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }])
             });
         repo.expect_update_status_if_offered()
@@ -723,6 +747,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, now + time::Duration::seconds(1))
@@ -756,6 +781,7 @@ mod tests {
                     id,
                     bill: cloned.clone(),
                     submitted: now,
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }])
             });
         repo.expect_update_status_if_offered()
@@ -767,6 +793,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let submitted = now + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
@@ -788,6 +815,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -811,6 +839,7 @@ mod tests {
                     status: Status::Pending { wallet_pubkey },
                     bill: rnd_bill.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }))
             });
 
@@ -820,6 +849,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -839,6 +869,7 @@ mod tests {
             generate_random_bill(),
             keys_utils::publics()[0],
             time::OffsetDateTime::now_utc(),
+            crate::quotes::test_credit_program_binding(),
         );
         quote.id = qid;
         let (_keyset_info, signing_keyset) = core_tests::generate_random_ecash_keyset();
@@ -875,6 +906,7 @@ mod tests {
                     },
                     bill: quote.bill.clone(),
                     submitted: time::OffsetDateTime::now_utc(),
+                    credit_program: Some(crate::quotes::test_credit_program_binding()),
                 }))
             });
         repo.expect_update_status_if_failedebillvalidation()
@@ -937,6 +969,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());
