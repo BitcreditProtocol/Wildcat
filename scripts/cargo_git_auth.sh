@@ -16,7 +16,7 @@ if [[ -f /run/secrets/gh_token ]]; then
   git config --global --add url."https://github.com/".insteadOf "git://github.com/"
   git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
   unset GH_TOKEN
-elif [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
+elif [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
   mkdir -p -m 0700 "$tmp/.ssh"
   ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> "$tmp/.ssh/known_hosts"
   chmod 0644 "$tmp/.ssh/known_hosts"
