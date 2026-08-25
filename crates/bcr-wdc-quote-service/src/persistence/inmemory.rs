@@ -176,6 +176,28 @@ impl Repository for QuotesIDMap {
         )))
     }
 
+    async fn release_committed_exposure(
+        &self,
+        qid: uuid::Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        let mut reservations = self.reservations.write().unwrap();
+        let reservation = reservations.get_mut(&qid).ok_or_else(|| {
+            Error::QuotesRepository(anyhow!("quote {qid} has no exposure reservation"))
+        })?;
+        match reservation.state.as_str() {
+            "released" => Ok(()),
+            "committed" => {
+                reservation.state = String::from("released");
+                reservation.updated_at = now;
+                Ok(())
+            }
+            _ => Err(Error::QuotesRepository(anyhow!(
+                "quote {qid} exposure reservation is not committed"
+            ))),
+        }
+    }
+
     async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
