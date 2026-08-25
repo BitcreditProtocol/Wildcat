@@ -123,6 +123,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
@@ -215,6 +216,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
+            credit_evidence: None,
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
