@@ -183,6 +183,19 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
+    # The digest build-push reports is the one GAR stored; GHCR keeps its own for the
+    # same build, so attesting the reported digest against GHCR looks up a manifest
+    # that is not there. Ask the registry what it actually has.
+    - name: Resolve the GHCR digest
+      id: ghcr
+      continue-on-error: true
+      env:
+        META_TAGS: ${{ steps.meta.outputs.tags }}
+      run: |
+        ref=$(printf '%s\n' "$META_TAGS" | grep '^ghcr\.io/' | head -n1)
+        digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
     # ─────────────────────────────
     # provenance
     # ─────────────────────────────
@@ -198,5 +211,5 @@ jobs:
       continue-on-error: true
       with:
         subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}
-        subject-digest: ${{ steps.push.outputs.digest }}
+        subject-digest: ${{ steps.ghcr.outputs.digest }}
         push-to-registry: true
