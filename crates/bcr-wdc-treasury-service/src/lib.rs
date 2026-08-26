@@ -51,6 +51,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
+        clowder_nkey_seed,
         cache_expiry_sec,
     } = cfg;
 
@@ -58,11 +59,12 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     let core_client = Arc::new(CoreClient::new(core_url));
     let ebill_client = EbClient::new(ebill_url);
     let clowder_client = Arc::new(ClowderClient::new(clowder_rest_url));
-    let nats_cl = ClowderNatsClient::new(clowder_nats_url.clone())
+    let nkey_seed = clowder_nkey_seed.as_deref();
+    let nats_cl = ClowderNatsClient::new(clowder_nats_url.clone(), nkey_seed)
         .await
         .expect("Failed to create clowder nats client");
     let clowder_nats_client = Arc::new(nats_cl);
-    let signer_cl = SignatoryNatsClient::new(clowder_nats_url, None)
+    let signer_cl = SignatoryNatsClient::new(clowder_nats_url, None, nkey_seed)
         .await
         .expect("Failed to create signatory nats client");
 
