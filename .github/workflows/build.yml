@@ -28,6 +28,7 @@ jobs:
 # build base image, cache, upload local artifact
 # ───────────────────────────────
   base-image:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
 
     steps:
@@ -100,6 +101,7 @@ jobs:
 # ───────────────────────────────
   wildcat-images:
     needs: base-image
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       contents: read
