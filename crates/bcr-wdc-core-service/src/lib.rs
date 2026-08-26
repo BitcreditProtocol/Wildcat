@@ -32,6 +32,7 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 pub struct AppController {
     pub keys: Arc<keys::service::Service>,
     pub swap: Arc<swap::service::Service>,
+    pub service: Arc<service::Service>,
     pub cache: Arc<dyn nut19::Cache>,
 }
 
@@ -75,7 +76,7 @@ impl AppController {
         let keys_service = keys::service::Service {
             repository: repository.clone(),
             clowder: Box::new(clowder_for_keys),
-            keygen,
+            keygen: keygen.clone(),
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
         };
         let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
@@ -86,16 +87,33 @@ impl AppController {
         let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
             .expect("secp256k1::PublicKey == cashu::PublicKey");
         let clowder_for_swap = swap::ClowderCl {
+            nats: clowder_cl.clone(),
+            rest: clowder_rest.clone(),
+        };
+        let clowder_for_service = clients::ClowderCl {
             nats: clowder_cl,
             rest: clowder_rest,
         };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
         let treasury_cl = TreasuryClient::new(treasury_url);
         let treasury_for_swap = swap::TreasuryCl {
+            cl: Box::new(treasury_cl.clone()),
+        };
+        let treasury_for_service = swap::TreasuryCl {
             cl: Box::new(treasury_cl),
         };
         let settle_window_tout =
             chrono::Utc::now() + chrono::Duration::seconds(settle_window_sec as i64);
+        let service = service::Service {
+            repository: repository.clone(),
+            clowder: Box::new(clowder_for_service),
+            treasury: Box::new(treasury_for_service),
+            keygen,
+            min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
+            max_expiry,
+            alpha_id,
+            settle_window_deadline: settle_window_tout,
+        };
         let swap_service = swap::service::Service {
             repository,
             clowder: Box::new(clowder_for_swap),
@@ -109,6 +127,7 @@ impl AppController {
         Self {
             keys: Arc::new(keys_service),
             swap: Arc::new(swap_service),
+            service: Arc::new(service),
             cache,
         }
     }
@@ -168,14 +187,24 @@ pub mod test_utils {
         let keygen = keys::factory::Factory::new(&seed, derivation_path);
         let keysrv = keys::service::Service {
             repository: repository.clone(),
-            keygen,
+            keygen: keygen.clone(),
             clowder: Box::new(keys::DummyClowderClient),
             min_keyset_fees_ppk: Default::default(),
         };
         let swprv = swap::service::Service {
-            repository,
+            repository: repository.clone(),
             clowder: Box::new(swap::test_utils::DummyClowderClient),
             treasury: Box::new(swap::test_utils::DummyTreasuryClient),
+            max_expiry: chrono::Duration::seconds(3600),
+            alpha_id: mint_kp().public_key(),
+            settle_window_deadline: TStamp::default(),
+        };
+        let service = service::Service {
+            repository,
+            clowder: Box::new(clients::DummyClowderClient),
+            treasury: Box::new(swap::test_utils::DummyTreasuryClient),
+            keygen,
+            min_keyset_fees_ppk: Default::default(),
             max_expiry: chrono::Duration::seconds(3600),
             alpha_id: mint_kp().public_key(),
             settle_window_deadline: TStamp::default(),
@@ -183,6 +212,7 @@ pub mod test_utils {
         AppController {
             keys: Arc::new(keysrv),
             swap: Arc::new(swprv),
+            service: Arc::new(service),
             cache: Arc::new(nut19::Dummy),
         }
     }
