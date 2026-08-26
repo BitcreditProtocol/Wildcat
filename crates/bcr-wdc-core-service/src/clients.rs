@@ -187,3 +187,57 @@ impl ClowderClient for ClowderCl {
         Err(Error::InvalidInput(BRError::Unknown))
     }
 }
+
+#[cfg(feature = "test-utils")]
+pub struct DummyClowderClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl ClowderClient for DummyClowderClient {
+    async fn mint_ebill(
+        &self,
+        _keyset_id: cashu::Id,
+        _quote_id: uuid::Uuid,
+        _amount: cashu::Amount,
+        _bill_id: BillId,
+        signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        Ok(signatures)
+    }
+
+    async fn new_keyset(&self, _keyset: ecash::KeySet) -> Result<()> {
+        Ok(())
+    }
+
+    async fn commit_to_swap(
+        &self,
+        request: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, schnorr::Signature)> {
+        let mint_kp = crate::test_utils::mint_kp();
+        signature::serialize_n_schnorr_sign_borsh_msg(&request, &mint_kp)
+            .map_err(|e| Error::Internal(format!("failed to sign commitment: {e}")))
+    }
+
+    async fn signal_swap_event(
+        &self,
+        _inputs: Vec<cashu::Proof>,
+        _outputs: Vec<cashu::BlindedMessage>,
+        _fees: Vec<cashu::BlindSignature>,
+        _commitment: schnorr::Signature,
+        _signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn authenticate_attestation(
+        &self,
+        _alpha_id: &PublicKey,
+        _inputs: &AttestedFingerprints,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn verify_pk(&self, _mint_pk: &PublicKey) -> Result<PublicKeyOwner> {
+        Ok(PublicKeyOwner::Beta)
+    }
+}
