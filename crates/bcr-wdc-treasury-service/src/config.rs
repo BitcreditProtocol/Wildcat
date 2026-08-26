@@ -16,6 +16,8 @@ pub struct App {
     pub ebill_url: ClientUrl,
     pub clowder_rest_url: ClientUrl,
     pub clowder_nats_url: ClientUrl,
+    #[serde(default)]
+    pub clowder_nkey_seed: Option<String>,
     pub cache_expiry_sec: u64,
 }
 

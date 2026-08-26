@@ -41,6 +41,7 @@ impl AppController {
             repository,
             repository_new,
             clowder_url,
+            clowder_nkey_seed,
             treasury_url,
             clowder_rest_url,
             starting_derivation_path,
@@ -63,9 +64,10 @@ impl AppController {
             repository
         };
         let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
-        let clowder_cl = client::clowder::ClowderNatsClient::new(clowder_url)
-            .await
-            .expect("Failed to create clowder client");
+        let clowder_cl =
+            client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
+                .await
+                .expect("Failed to create clowder client");
         let clowder_cl = Arc::new(clowder_cl);
         let clowder_for_keys = keys::ClowderCl {
             nats: clowder_cl.clone(),
