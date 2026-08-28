@@ -13,6 +13,7 @@ use bcr_common::{
         ebill::Client as EbillClient, quote::Client as QuoteClient,
         treasury::Client as TreasuryClient, Url as ClientUrl,
     },
+    ecash,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, keys as wire_keys, quotes as wire_quotes,
@@ -232,11 +233,11 @@ pub fn routes(ctrl: AppController) -> Router {
     components(schemas(
         wire_info::WildcatInfo,
         // common
-        wire_common::PaginatedResponse<cashu::KeySetInfo>,
+        wire_common::PaginatedResponse<ecash::KeySetInfo>,
         wire_common::PaginatedResponse<wire_quotes::LightInfo>,
         // core service
         cashu::Id,
-        cashu::KeySetInfo,
+        ecash::KeySetInfo,
         // quotes service
         wire_quotes::ListSort,
         wire_quotes::InfoReply,
