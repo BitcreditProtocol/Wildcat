@@ -6,6 +6,7 @@ use bcr_common::{
     cashu,
     client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
+    ecash,
     wire::{
         attestation as wire_attestation, clowder as wire_clowder, exchange as wire_exchange,
         keys as wire_keys, swap as wire_swap,
@@ -30,7 +31,7 @@ impl foreign::KeysClient for CoreCl {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet> {
+    ) -> Result<ecash::KeySet> {
         let kinfo = self
             .core
             .get_or_create_keyset_with_expiration(expiration)
@@ -140,7 +141,7 @@ impl foreign::ClowderClient for ClowderCl {
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
-    ) -> Result<cashu::KeySetInfo> {
+    ) -> Result<ecash::KeySetInfo> {
         let cashu::KeysetResponse { mut keysets } =
             self.rest.get_keyset_info(alpha_pk, kid).await?;
         if keysets.is_empty() {
@@ -148,21 +149,21 @@ impl foreign::ClowderClient for ClowderCl {
                 "No keyset info found for given kid",
             )));
         }
-        Ok(keysets.remove(0))
+        Ok(keysets.remove(0).into())
     }
 
     async fn get_keyset(
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
-    ) -> Result<cashu::KeySet> {
+    ) -> Result<ecash::KeySet> {
         let cashu::KeysResponse { mut keysets } = self.rest.get_keyset(alpha_pk, kid).await?;
         if keysets.is_empty() {
             return Err(Error::InvalidInput(String::from(
                 "No keyset info found for given kid",
             )));
         }
-        Ok(keysets.remove(0))
+        Ok(keysets.remove(0).into())
     }
 
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
@@ -317,12 +318,12 @@ impl ForeignClient for MintClient {
         Ok(states)
     }
 
-    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
+    async fn get_keyset(&self, kid: cashu::Id) -> Result<ecash::KeySet> {
         let keys = self.foreign_cl.keys(kid).await?;
         Ok(keys)
     }
 
-    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>> {
+    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, ecash::KeySetInfo>> {
         let kinfos = self.foreign_cl.list_keyset_info(Default::default()).await?;
         let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
         Ok(map)

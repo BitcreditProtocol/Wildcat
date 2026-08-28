@@ -7,6 +7,7 @@ use bcr_common::{
     client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
     core::signature,
+    ecash,
     wire::{
         attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
         melt as wire_melt, mint as wire_mint,
@@ -50,12 +51,12 @@ impl WildcatClient for WildcatCl {
         Ok(())
     }
 
-    async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo> {
+    async fn keyset_info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo> {
         let info = self.core_cl.keyset_info(kid).await?;
         Ok(info)
     }
 
-    async fn keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet> {
+    async fn keyset(&self, kid: cashu::Id) -> Result<ecash::KeySet> {
         let keyset = self.core_cl.keys(kid).await?;
         Ok(keyset)
     }
