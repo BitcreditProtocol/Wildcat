@@ -3,7 +3,7 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_common::{
-    cashu, cdk_common,
+    cashu, ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bcr_wdc_utils::nut19;
@@ -53,19 +53,41 @@ pub async fn list_keysets(
 
 /// --------------------------- Look up keys
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
-pub async fn lookup_keys(
+pub async fn lookup_keys_v1(
     State(ctrl): State<Arc<keys::service::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<cashu::KeysResponse>> {
     let mint_keyset = ctrl.keys(kid).await?;
-    let cmint_keyset = cdk_common::MintKeySet::from(mint_keyset);
-    let keyset = bcr_common::core::keys::to_keyset(&cmint_keyset, None);
+    let c_keyset = cashu::KeySet {
+        active: None,
+        keys: cashu::Keys::from(mint_keyset.keys),
+        final_expiry: mint_keyset.final_expiry,
+        unit: mint_keyset.unit,
+        id: mint_keyset.id,
+        input_fee_ppk: mint_keyset.input_fee_ppk,
+    };
     let response = cashu::KeysResponse {
-        keysets: vec![keyset],
+        keysets: vec![c_keyset],
     };
     Ok(Json(response))
 }
 
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn lookup_keys_v2(
+    State(ctrl): State<Arc<keys::service::Service>>,
+    Path(kid): Path<cashu::Id>,
+) -> Result<Json<ecash::KeySet>> {
+    let mint_keyset = ctrl.keys(kid).await?;
+    let keyset = ecash::KeySet {
+        active: None,
+        keys: cashu::Keys::from(mint_keyset.keys),
+        final_expiry: mint_keyset.final_expiry,
+        unit: mint_keyset.unit,
+        id: mint_keyset.id,
+        input_fee_ppk: mint_keyset.input_fee_ppk,
+    };
+    Ok(Json(keyset))
+}
 /// --------------------------- Restore signatures
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn restore(

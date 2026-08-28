@@ -39,7 +39,7 @@ impl Repository {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         ys: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (inputs, _, _, _, _, _)) in locked.iter() {
+        for (inputs, _, _, _, _, _) in locked.values() {
             for y in ys {
                 if inputs.contains(y) {
                     return Ok(true);
@@ -53,7 +53,7 @@ impl Repository {
         locked: &MutexGuard<HashMap<schnorr::Signature, Commitment>>,
         secrets: &[cashu::PublicKey],
     ) -> Result<bool> {
-        for (_, (_, outputs, _, _, _, _)) in locked.iter() {
+        for (_, outputs, _, _, _, _) in locked.values() {
             for secret in secrets {
                 if outputs.contains(secret) {
                     return Ok(true);
