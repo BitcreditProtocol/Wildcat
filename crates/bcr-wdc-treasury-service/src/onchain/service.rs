@@ -330,7 +330,7 @@ impl Service {
         let fees_pre = generate_fee_premints(&self.wdc, &inputs, op.fees).await?;
         let fees_signatures = self.wdc.sign(fees_pre.blinded_messages()).await?;
         let keyset = self.wdc.keyset(fees_pre.keyset_id).await?;
-        let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset)?;
+        let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset.into())?;
         let network_fee = op
             .network_fee()
             .ok_or_else(|| Error::Internal(format!("meltop {qid} has inconsistent amounts")))?;
@@ -441,7 +441,7 @@ fn extract_proofs(
 mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
-    use bcr_common::{core, core_tests, wire::clowder as wire_clowder};
+    use bcr_common::{core, core_tests, ecash, wire::clowder as wire_clowder};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::hashes::Hash;
     use cashu::Amount;
@@ -774,7 +774,7 @@ mod tests {
             .returning(|addr| Ok(addr.assume_checked()));
         wdc.expect_keyset_info()
             .times(1)
-            .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
+            .returning(move |_| Ok(kinfo.clone().into()));
         let cloned_keyset = keyset.clone();
         wdc.expect_keyset().times(2).returning(move |_| {
             Ok(bcr_wdc_utils::keys::to_keyset(
@@ -1019,8 +1019,8 @@ mod tests {
             .returning(|addr| Ok(addr.assume_checked()));
         wdc.expect_keyset_info()
             .times(1)
-            .returning(move |_| Ok(cashu::KeySetInfo::from(kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&keyset.clone().into(), Some(true));
+            .returning(move |_| Ok(ecash::KeySetInfo::from(kinfo.clone())));
+        let cloned_keyset = ecash::KeySet::from(keyset.clone());
         wdc.expect_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_keyset.clone()));
@@ -1168,8 +1168,9 @@ mod tests {
             .create_onchain_melt_quote(request, chrono::Utc::now())
             .await
             .unwrap_err();
-        let Error::InvalidInput(msg) = err else {
-            panic!("expected InvalidInput");
+        let msg = match err {
+            Error::InvalidInput(msg) => msg,
+            _ => panic!("expected InvalidInput"),
         };
         assert!(msg.contains("1024"), "{msg}");
         assert!(msg.contains("800"), "{msg}");
@@ -1197,8 +1198,9 @@ mod tests {
             .create_onchain_melt_quote(request, chrono::Utc::now())
             .await
             .unwrap_err();
-        let Error::InvalidInput(msg) = err else {
-            panic!("expected InvalidInput");
+        let msg = match err {
+            Error::InvalidInput(msg) => msg,
+            _ => panic!("expected InvalidInput"),
         };
         assert!(msg.contains("dust"), "{msg}");
     }
@@ -1217,8 +1219,9 @@ mod tests {
             .create_onchain_melt_quote(request, chrono::Utc::now())
             .await
             .unwrap_err();
-        let Error::InvalidInput(msg) = err else {
-            panic!("expected InvalidInput");
+        let msg = match err {
+            Error::InvalidInput(msg) => msg,
+            _ => panic!("expected InvalidInput"),
         };
         assert!(msg.contains("215"), "{msg}");
         assert!(msg.contains("216"), "{msg}");

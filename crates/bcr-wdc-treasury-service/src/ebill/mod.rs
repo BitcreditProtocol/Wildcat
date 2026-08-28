@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, core::BillId};
+use bcr_common::{cashu, core::BillId, ecash};
 use uuid::Uuid;
 // ----- local modules
 mod client;
@@ -42,7 +42,7 @@ pub trait Repository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
-    async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
+    async fn info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;

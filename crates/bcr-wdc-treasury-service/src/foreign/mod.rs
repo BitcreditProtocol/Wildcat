@@ -3,9 +3,10 @@ use std::collections::{HashMap, HashSet};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu,
+    cashu, ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
+use bcr_wdc_utils::keys as keys_utils;
 pub use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1};
 use tracing::warn;
 // ----- local modules
@@ -89,7 +90,7 @@ pub trait KeysClient: Send + Sync {
     async fn get_keyset_with_expiration(
         &self,
         expiration: chrono::NaiveDate,
-    ) -> Result<cashu::KeySet>;
+    ) -> Result<ecash::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     /// Retires proofs this mint issued, so unbacked eCash stops circulating.
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
@@ -115,12 +116,12 @@ pub trait ClowderClient: Send + Sync {
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
-    ) -> Result<cashu::KeySetInfo>;
+    ) -> Result<ecash::KeySetInfo>;
     async fn get_keyset(
         &self,
         alpha_pk: &secp256k1::PublicKey,
         kid: &cashu::Id,
-    ) -> Result<cashu::KeySet>;
+    ) -> Result<ecash::KeySet>;
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool>;
     async fn check_htlc_proofs(
         &self,
@@ -192,8 +193,8 @@ pub trait ForeignClient: Send + Sync {
     ) -> Result<Vec<cashu::BlindSignature>>;
 
     async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>>;
-    async fn get_keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
-    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, cashu::KeySetInfo>>;
+    async fn get_keyset(&self, kid: cashu::Id) -> Result<ecash::KeySet>;
+    async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, ecash::KeySetInfo>>;
 
     fn get_foreign_pk(&self) -> secp256k1::PublicKey;
 }
@@ -246,7 +247,7 @@ async fn signed_swap_with_foreign(
     // prepare the swap plan
     let swap_plan =
         bcr_common::core::swap::wallet::prepare_signed_swap(&foreign_proofs, &foreign_kinfos)?;
-    let mut foreign_keysets_map: HashMap<cashu::Id, cashu::KeySet> = HashMap::new();
+    let mut foreign_keysets_map: HashMap<cashu::Id, ecash::KeySet> = HashMap::new();
     let mut premint_secrets: Vec<cashu::PreMintSecrets> = Vec::with_capacity(swap_plan.len());
     for (kid, amount) in swap_plan {
         let keyset = clowder.get_keyset(&foreign_id, &kid).await?;
@@ -254,7 +255,7 @@ async fn signed_swap_with_foreign(
             kid,
             amount,
             &cashu::amount::SplitTarget::None,
-            &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+            &keys_utils::to_fee_and_amounts(&keyset),
         )?;
         premint_secrets.push(premint);
         foreign_keysets_map.insert(kid, keyset);
