@@ -4,13 +4,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    client::clowder::ClowderNatsClient,
     client::{
-        admin::clowder::Client as ClowderRestClient, core::Client as CoreClient,
-        ebill::Client as EbillClient,
+        admin::clowder::Client as ClowderRestClient, clowder::ClowderNatsClient,
+        core::Client as CoreClient, ebill::Client as EbillClient,
     },
     clowder::taproot,
     core::{self, BillId},
+    ecash,
     wire::{bill as wire_bill, clowder as wire_clowder},
 };
 use bitcoin::hashes::Hash;
@@ -108,7 +108,7 @@ pub struct WildcatCl {
 
 #[async_trait]
 impl ebill::WildcatClient for WildcatCl {
-    async fn info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo> {
+    async fn info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo> {
         let kinfo = self.core.keyset_info(kid).await?;
         Ok(kinfo)
     }
