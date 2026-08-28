@@ -9,6 +9,7 @@ use bcr_common::{
         treasury::{Client as TreasuryClient, Error as TreasuryError},
     },
     core::BillId,
+    ecash,
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use uuid::Uuid;
@@ -39,7 +40,7 @@ impl WdcClient for WildcatCl {
         Ok(kinfo.id)
     }
 
-    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet> {
+    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet> {
         let keyset = self.core.keys(keyset_id).await?;
         Ok(keyset)
     }
