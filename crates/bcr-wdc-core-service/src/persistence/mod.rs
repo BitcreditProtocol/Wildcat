@@ -1174,11 +1174,10 @@ mod tests {
                 .into_iter()
                 .map(|b| b.0)
                 .collect();
-        let c_keyset = keyset.clone().into();
         let signatures = blinds
             .iter()
             .map(|b| {
-                let signature = bcr_common::core::signature::sign_ecash(&c_keyset, b).unwrap();
+                let signature = bcr_common::core::signature::sign_ecash(&keyset, b).unwrap();
                 StoredSignature {
                     y: b.blinded_secret,
                     signature,

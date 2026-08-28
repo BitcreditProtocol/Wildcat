@@ -8,7 +8,7 @@ use std::{
 };
 // ----- extra library imports
 use bcr_common::{
-    cashu, cdk_common,
+    cashu,
     client::admin::core::{BRError, RNFError},
     core::{
         keys as core_keys,
@@ -156,13 +156,13 @@ impl Service {
         let Some(first_blind) = blinds.first() else {
             return Ok(Vec::new());
         };
-        let mut keyset: cdk_common::MintKeySet = self.keys(first_blind.keyset_id).await?.into();
+        let mut keyset = self.keys(first_blind.keyset_id).await?;
         let mut signatures = Vec::with_capacity(blinds.len());
         for blind in blinds {
             let current_keyset = if blind.keyset_id == keyset.id {
                 &keyset
             } else {
-                keyset = self.keys(blind.keyset_id).await?.into();
+                keyset = self.keys(blind.keyset_id).await?;
                 &keyset
             };
             signatures.push(sign_ecash(current_keyset, blind)?);
@@ -271,10 +271,7 @@ impl Service {
             .await?;
         let kinfos = self.list_info(ListFilters::default()).await?;
         let kinfos = keys_utils::kinfos_list_to_map(kinfos);
-        let kinfos = kinfos
-            .into_iter()
-            .map(|(kid, kinfo)| (kid, kinfo.into()))
-            .collect::<HashMap<_, _>>();
+        let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
         let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
         if !self
@@ -369,10 +366,7 @@ impl Service {
             SignatureOwner::Unsigned => swap::mint::FeePolicy::Apply,
         };
         let kinfo = keys_utils::kinfos_list_to_map(kinfos.clone());
-        let kinfos = kinfo
-            .into_iter()
-            .map(|(kid, kinfo)| (kid, kinfo.into()))
-            .collect::<HashMap<_, _>>();
+        let kinfos = kinfo.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         let signatures = self.generate_signatures(&outputs).await?;
         let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
@@ -422,7 +416,7 @@ impl Service {
             if inputs_amount <= outputs_amount {
                 continue;
             }
-            let keyset = self.keys(kid).await?.into();
+            let keyset = self.keys(kid).await?;
             let c_keyset = core_keys::to_keyset(&keyset, None);
             let premint = cashu::PreMintSecrets::random(
                 kid,
