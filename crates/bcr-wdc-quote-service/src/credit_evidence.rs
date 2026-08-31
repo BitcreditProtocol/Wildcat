@@ -12,19 +12,13 @@ use crate::{
     quotes::Quote,
 };
 
-const MAX_SATOSHIS: u64 = 2_100_000_000_000_000;
-
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub mint_id: String,
     pub risk_methodology_version: String,
     pub risk_assessed_by: String,
-    pub capacity_methodology_version: String,
-    pub capacity_assessed_by: String,
     pub risk_authority_key_id: String,
     pub risk_authority_public_key: String,
-    pub capacity_authority_key_id: String,
-    pub capacity_authority_public_key: String,
     pub allow_synthetic: bool,
 }
 
@@ -38,22 +32,8 @@ impl Settings {
             200,
         )?;
         bounded(&self.risk_assessed_by, "risk assessor", 1, 200)?;
-        bounded(
-            &self.capacity_methodology_version,
-            "capacity methodology version",
-            1,
-            200,
-        )?;
-        bounded(&self.capacity_assessed_by, "capacity assessor", 1, 200)?;
         bounded(&self.risk_authority_key_id, "risk authority key id", 1, 200)?;
         parse_public_key(&self.risk_authority_public_key)?;
-        bounded(
-            &self.capacity_authority_key_id,
-            "capacity authority key id",
-            1,
-            200,
-        )?;
-        parse_public_key(&self.capacity_authority_public_key)?;
         Ok(self)
     }
 }
@@ -76,25 +56,6 @@ fn bounded(value: &str, field: &str, min: usize, max: usize) -> Result<()> {
         )));
     }
     Ok(())
-}
-
-fn satoshis(value: &str, field: &str) -> Result<u64> {
-    if value != "0" && value.starts_with('0') {
-        return Err(Error::InvalidInput(format!(
-            "{field} must be a canonical non-negative satoshi string"
-        )));
-    }
-    let amount = value.parse::<u64>().map_err(|_| {
-        Error::InvalidInput(format!(
-            "{field} must be a canonical non-negative satoshi string"
-        ))
-    })?;
-    if amount > MAX_SATOSHIS {
-        return Err(Error::InvalidInput(format!(
-            "{field} exceeds the maximum satoshi supply"
-        )));
-    }
-    Ok(amount)
 }
 
 fn basis_digest(value: &str) -> String {
@@ -148,26 +109,6 @@ fn risk_bytes(value: &wire_quotes::AcceptorRiskAuthorityEvidence) -> Vec<u8> {
     encode_fields(&fields.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
-fn capacity_bytes(value: &wire_quotes::MintCapacityAuthorityEvidence) -> Vec<u8> {
-    let mut fields = vec![
-        String::from("BITCREDIT-MINT-CAPACITY-EVIDENCE-V1"),
-        value.schema_version.clone(),
-        value.key_id.clone(),
-        value.mint_id.clone(),
-        value.existing_exposure_sat.clone(),
-        value.exposure_limit_sat.clone(),
-        value.evidence_state.clone(),
-        value.methodology_version.clone(),
-        value.assessed_by.clone(),
-        value.assessed_at.to_string(),
-        value.valid_through.to_string(),
-        value.synthetic.to_string(),
-        value.evidence_refs.len().to_string(),
-    ];
-    fields.extend(value.evidence_refs.iter().cloned());
-    encode_fields(&fields.iter().map(String::as_str).collect::<Vec<_>>())
-}
-
 fn verify_signature(
     bytes: &[u8],
     digest: &str,
@@ -209,8 +150,6 @@ fn validate_evidence_refs(values: &[String]) -> Result<()> {
 
 impl Store {
     const ACCEPTOR_TABLE: &'static str = "credit_acceptor_risk_evidence";
-    const CAPACITY_TABLE: &'static str = "credit_mint_capacity_evidence";
-    pub(crate) const RESERVATION_TABLE: &'static str = "credit_exposure_reservations";
 
     pub async fn new(cfg: surreal::DBConnConfig, settings: Settings) -> surrealdb::Result<Self> {
         let db = Surreal::<Any>::init();
@@ -231,20 +170,6 @@ impl Store {
             .await
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
             .take::<Vec<wire_quotes::AcceptorRiskEvidence>>(0)
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))
-            .map(|records| records.into_iter().next())
-    }
-
-    pub(crate) async fn latest_capacity(
-        &self,
-    ) -> Result<Option<wire_quotes::MintCapacityEvidence>> {
-        self.db
-            .query("SELECT schemaVersion, evidenceId, signedEvidence, operatorId, writtenBasisDigest, recordedAt, verifiedAt FROM type::table($table) WHERE signedEvidence.evidence.mintId == $mint_id ORDER BY recordedAt DESC LIMIT 1")
-            .bind(("table", Self::CAPACITY_TABLE))
-            .bind(("mint_id", self.settings.mint_id.clone()))
-            .await
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .take::<Vec<wire_quotes::MintCapacityEvidence>>(0)
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))
             .map(|records| records.into_iter().next())
     }
@@ -288,89 +213,17 @@ impl Store {
         )
     }
 
-    fn verify_capacity(
-        &self,
-        signed: &wire_quotes::SignedMintCapacityEvidence,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
-        let evidence = &signed.evidence;
-        let _existing = satoshis(&evidence.existing_exposure_sat, "existing exposure")?;
-        let limit = satoshis(&evidence.exposure_limit_sat, "exposure limit")?;
-        if evidence.schema_version != "mint-capacity-authority-evidence-v1"
-            || evidence.key_id != self.settings.capacity_authority_key_id
-            || evidence.mint_id != self.settings.mint_id
-            || evidence.evidence_state != "corroborated"
-            || evidence.methodology_version != self.settings.capacity_methodology_version
-            || evidence.assessed_by != self.settings.capacity_assessed_by
-            || (evidence.synthetic && !self.settings.allow_synthetic)
-            || limit == 0
-        {
-            return Err(Error::InvalidInput(String::from(
-                "Mint capacity authority evidence does not match the Mint trust policy",
-            )));
-        }
-        validate_evidence_refs(&evidence.evidence_refs)?;
-        if evidence.assessed_at > now.date_naive()
-            || evidence.valid_through < now.date_naive()
-            || evidence.valid_through < evidence.assessed_at
-        {
-            return Err(Error::InvalidInput(String::from(
-                "Mint capacity authority evidence is not currently valid",
-            )));
-        }
-        verify_signature(
-            &capacity_bytes(evidence),
-            &signed.evidence_digest,
-            &signed.signature_algorithm,
-            &signed.signature,
-            &parse_public_key(&self.settings.capacity_authority_public_key)?,
-        )
-    }
-
-    pub(crate) async fn current_capacity(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<wire_quotes::MintCapacityEvidence> {
-        let record = self
-            .latest_capacity()
-            .await?
-            .ok_or(Error::CreditCapacityUnavailable)?;
-        self.verify_capacity(&record.signed_evidence, now)
-            .map_err(|_| Error::CreditCapacityUnavailable)?;
-        Ok(record)
-    }
-
-    pub(crate) async fn reservation_for_quote(
-        &self,
-        quote_id: uuid::Uuid,
-    ) -> Result<Option<wire_quotes::CreditExposureReservation>> {
-        self.db
-            .query("SELECT reservationVersion, reservationId, mintId, quoteId, amountSat, capacityEvidenceId, state, createdAt, updatedAt FROM type::table($table) WHERE quoteId == $quote_id LIMIT 1")
-            .bind(("table", Self::RESERVATION_TABLE))
-            .bind(("quote_id", quote_id))
-            .await
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .take::<Vec<wire_quotes::CreditExposureReservation>>(0)
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))
-            .map(|records| records.into_iter().next())
-    }
-
     pub async fn for_quote(&self, quote: &Quote) -> Result<wire_quotes::MintCreditEvidence> {
         let acceptor_ref = quote.bill.drawee.node_id.to_string();
-        let (acceptor_risk, mint_capacity) =
-            tokio::try_join!(self.latest_acceptor(&acceptor_ref), self.latest_capacity())?;
+        let acceptor_risk = self.latest_acceptor(&acceptor_ref).await?;
         if let Some(record) = &acceptor_risk {
             self.verify_risk(&record.signed_evidence, &acceptor_ref, chrono::Utc::now())?;
-        }
-        if let Some(record) = &mint_capacity {
-            self.verify_capacity(&record.signed_evidence, chrono::Utc::now())?;
         }
         Ok(wire_quotes::MintCreditEvidence {
             schema_version: String::from("mint-credit-evidence-v2"),
             mint_id: self.settings.mint_id.clone(),
             acceptor_ref,
             acceptor_risk,
-            mint_capacity,
         })
     }
 
@@ -416,47 +269,6 @@ impl Store {
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
         Ok(record)
     }
-
-    pub async fn record_capacity(
-        &self,
-        command: wire_quotes::MintCapacityEvidenceCommand,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<wire_quotes::MintCapacityEvidence> {
-        let request = command.request;
-        bounded(&command.operator_id, "operator id", 1, 200)?;
-        bounded(&request.written_basis, "written basis", 20, 2_000)?;
-        let signed = request.signed_evidence;
-        self.verify_capacity(&signed, now)?;
-        let written_basis_digest = basis_digest(&request.written_basis);
-        if let Some(existing) = self.latest_capacity().await? {
-            if existing.operator_id == command.operator_id
-                && existing.signed_evidence.evidence_digest == signed.evidence_digest
-                && existing.written_basis_digest == written_basis_digest
-            {
-                return Ok(existing);
-            }
-        }
-        let evidence_id = uuid::Uuid::new_v4();
-        let record = wire_quotes::MintCapacityEvidence {
-            schema_version: String::from("mint-capacity-record-v2"),
-            evidence_id,
-            signed_evidence: signed,
-            operator_id: command.operator_id,
-            written_basis_digest,
-            recorded_at: now,
-            verified_at: now,
-        };
-        let rid = surrealdb::RecordId::from_table_key(Self::CAPACITY_TABLE, evidence_id);
-        self.db
-            .query("CREATE $rid CONTENT $record")
-            .bind(("rid", rid))
-            .bind(("record", record.clone()))
-            .await
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .check()
-            .map_err(|error| Error::QuotesRepository(anyhow!(error)))?;
-        Ok(record)
-    }
 }
 
 #[cfg(test)]
@@ -465,8 +277,7 @@ mod tests {
     use base64::engine::general_purpose;
     use bcr_common::wire::quotes::{
         AcceptorRiskAuthorityEvidence, AcceptorRiskEvidenceCommand, AcceptorRiskEvidenceRequest,
-        MintCapacityAuthorityEvidence, MintCapacityEvidenceCommand, MintCapacityEvidenceRequest,
-        SignedAcceptorRiskEvidence, SignedMintCapacityEvidence,
+        SignedAcceptorRiskEvidence,
     };
     use bcr_wdc_utils::keys::test_utils as keys_test;
     use ed25519_dalek::{Signer as _, SigningKey};
@@ -488,13 +299,8 @@ mod tests {
                 mint_id: String::from("local-wildcat"),
                 risk_methodology_version: String::from("risk-v1"),
                 risk_assessed_by: String::from("risk-owner"),
-                capacity_methodology_version: String::from("capacity-v1"),
-                capacity_assessed_by: String::from("mint-owner"),
                 risk_authority_key_id: String::from("testnet-risk-authority-v1"),
                 risk_authority_public_key: general_purpose::URL_SAFE_NO_PAD
-                    .encode(signing_key().verifying_key().as_bytes()),
-                capacity_authority_key_id: String::from("testnet-capacity-authority-v1"),
-                capacity_authority_public_key: general_purpose::URL_SAFE_NO_PAD
                     .encode(signing_key().verifying_key().as_bytes()),
                 allow_synthetic: true,
             },
@@ -523,30 +329,6 @@ mod tests {
         };
         let bytes = risk_bytes(&evidence);
         SignedAcceptorRiskEvidence {
-            evidence,
-            evidence_digest: basis_digest_bytes(&bytes),
-            signature_algorithm: String::from("Ed25519"),
-            signature: general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes()),
-        }
-    }
-
-    fn signed_capacity(now: chrono::DateTime<chrono::Utc>) -> SignedMintCapacityEvidence {
-        let evidence = MintCapacityAuthorityEvidence {
-            schema_version: String::from("mint-capacity-authority-evidence-v1"),
-            key_id: String::from("testnet-capacity-authority-v1"),
-            mint_id: String::from("local-wildcat"),
-            existing_exposure_sat: String::from("1000000"),
-            exposure_limit_sat: String::from("40000000"),
-            evidence_state: String::from("corroborated"),
-            methodology_version: String::from("capacity-v1"),
-            assessed_by: String::from("mint-owner"),
-            assessed_at: now.date_naive(),
-            valid_through: now.date_naive() + chrono::Days::new(30),
-            evidence_refs: vec![String::from("mint-book-2026-08")],
-            synthetic: true,
-        };
-        let bytes = capacity_bytes(&evidence);
-        SignedMintCapacityEvidence {
             evidence,
             evidence_digest: basis_digest_bytes(&bytes),
             signature_algorithm: String::from("Ed25519"),
@@ -585,32 +367,12 @@ mod tests {
             .unwrap();
         assert_eq!(first.evidence_id, replay.evidence_id);
 
-        store
-            .record_capacity(
-                MintCapacityEvidenceCommand {
-                    operator_id: String::from("operator-a"),
-                    request: MintCapacityEvidenceRequest {
-                        signed_evidence: signed_capacity(now),
-                        written_basis: String::from(
-                            "Reconciled against the current Mint exposure ledger.",
-                        ),
-                    },
-                },
-                now,
-            )
-            .await
-            .unwrap();
-
         let snapshot = store.for_quote(&quote).await.unwrap();
         let json = serde_json::to_value(&snapshot).unwrap();
         assert_eq!(json["schemaVersion"], "mint-credit-evidence-v2");
         assert_eq!(
             json["acceptorRisk"]["schemaVersion"],
             "mint-acceptor-risk-record-v2"
-        );
-        assert_eq!(
-            json["mintCapacity"]["signedEvidence"]["evidence"]["existingExposureSat"],
-            "1000000"
         );
         assert!(json.get("acceptor_risk").is_none());
         assert_eq!(
@@ -621,15 +383,6 @@ mod tests {
                 .evidence
                 .probability_of_default_bps,
             600
-        );
-        assert_eq!(
-            snapshot
-                .mint_capacity
-                .unwrap()
-                .signed_evidence
-                .evidence
-                .existing_exposure_sat,
-            "1000000"
         );
     }
 
