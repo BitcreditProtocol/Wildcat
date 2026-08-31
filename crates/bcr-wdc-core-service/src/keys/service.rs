@@ -180,7 +180,7 @@ mod tests {
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo.id))
-            .returning(move |_| Ok(Some(keyset.clone().into())));
+            .returning(move |_| Ok(Some(keyset.clone())));
         repository
             .expect_signature_store()
             .times(amounts.len())
@@ -213,12 +213,12 @@ mod tests {
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo1.id))
-            .returning(move |_| Ok(Some(keyset1.clone().into())));
+            .returning(move |_| Ok(Some(keyset1.clone())));
         repository
             .expect_keys_load()
             .times(1)
             .with(eq(kinfo2.id))
-            .returning(move |_| Ok(Some(keyset2.clone().into())));
+            .returning(move |_| Ok(Some(keyset2.clone())));
         repository
             .expect_signature_store()
             .times(4)
