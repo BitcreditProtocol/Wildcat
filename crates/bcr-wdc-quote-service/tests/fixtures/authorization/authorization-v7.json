@@ -69,38 +69,27 @@
         {
           "axis": "instrument_eligibility",
           "status": "pass",
-          "reasonCodes": [
-            "accepted_bill_eligible"
-          ]
+          "reasonCodes": ["accepted_bill_eligible"]
         },
         {
           "axis": "acceptor_repayment_risk",
           "status": "pass",
-          "reasonCodes": [
-            "acceptor_loss_parameters_verified"
-          ]
+          "reasonCodes": ["acceptor_loss_parameters_verified"]
         },
         {
           "axis": "transaction_integrity",
           "status": "pass",
-          "reasonCodes": [
-            "duplicate_check_clear",
-            "bill_and_invoice_consistent"
-          ]
+          "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
         },
         {
           "axis": "applicant_recourse_risk",
           "status": "pass",
-          "reasonCodes": [
-            "whole_face_recourse_acknowledged"
-          ]
+          "reasonCodes": ["whole_face_recourse_acknowledged"]
         },
         {
           "axis": "evidence_sufficiency",
           "status": "pass",
-          "reasonCodes": [
-            "evidence_admissible"
-          ]
+          "reasonCodes": ["evidence_admissible"]
         },
         {
           "axis": "mint_exposure_capacity",
@@ -123,9 +112,7 @@
         "feeRatioBps": 333
       },
       "verificationRequests": [],
-      "reasonCodes": [
-        "governed_terms_available"
-      ],
+      "reasonCodes": ["governed_terms_available"],
       "assessmentTrace": [
         {
           "ruleId": "accepted_bill_eligible",
@@ -476,38 +463,27 @@
             {
               "axis": "instrument_eligibility",
               "status": "pass",
-              "reasonCodes": [
-                "accepted_bill_eligible"
-              ]
+              "reasonCodes": ["accepted_bill_eligible"]
             },
             {
               "axis": "acceptor_repayment_risk",
               "status": "pass",
-              "reasonCodes": [
-                "acceptor_loss_parameters_verified"
-              ]
+              "reasonCodes": ["acceptor_loss_parameters_verified"]
             },
             {
               "axis": "transaction_integrity",
               "status": "pass",
-              "reasonCodes": [
-                "duplicate_check_clear",
-                "bill_and_invoice_consistent"
-              ]
+              "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
             },
             {
               "axis": "applicant_recourse_risk",
               "status": "pass",
-              "reasonCodes": [
-                "whole_face_recourse_acknowledged"
-              ]
+              "reasonCodes": ["whole_face_recourse_acknowledged"]
             },
             {
               "axis": "evidence_sufficiency",
               "status": "pass",
-              "reasonCodes": [
-                "evidence_admissible"
-              ]
+              "reasonCodes": ["evidence_admissible"]
             },
             {
               "axis": "mint_exposure_capacity",
@@ -530,9 +506,7 @@
             "feeRatioBps": 333
           },
           "verificationRequests": [],
-          "reasonCodes": [
-            "governed_terms_available"
-          ],
+          "reasonCodes": ["governed_terms_available"],
           "assessmentTrace": [
             {
               "ruleId": "accepted_bill_eligible",

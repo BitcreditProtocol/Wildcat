@@ -1500,50 +1500,25 @@ pub(crate) mod tests {
 
     #[test]
     fn applicant_action_command_matches_typescript_golden_vector() {
-        let repeated_digest =
-            |character: char| format!("sha256:{}", character.to_string().repeat(64));
-        let command = CreditApplicantActionCommandV1 {
-            schema_version: String::from("credit-applicant-action-command-v1"),
-            key_id: String::from("test-key"),
-            mint_id: String::from("local-wildcat"),
-            mint_quote_id: String::from("11111111-1111-4111-8111-111111111111"),
-            credit_program_version: String::from("synthetic-v1"),
-            credit_program_digest: repeated_digest('1'),
-            case_id: String::from("22222222-2222-4222-8222-222222222222"),
-            bill_id: String::from("bill-1"),
-            bill_state_digest: repeated_digest('2'),
-            holder_ref: String::from("holder-1"),
-            applicant_action: ApplicantActionCommandValue::ClarificationRequired,
-            request_id: repeated_digest('4'),
-            request_digest: repeated_digest('5'),
-            request_snapshot_digest: repeated_digest('6'),
-            request_result_digest: repeated_digest('7'),
-            expected_revision_digest: None,
-            revision_digest: String::from(
-                "sha256:bd5e1d7173da0b8299fda6a518118813671b2954b4d4a43d8ddfe5082e916e18",
-            ),
-            operation_id: String::from(
-                "sha256:9e38d673566e81f33582a27a94b391c8325c82ecbf797c320869d9d9f28c81cb",
-            ),
-            issued_at: String::from("2026-08-29T10:00:00.000Z"),
-            expires_at: String::from("2026-08-29T11:00:00.000Z"),
-            nonce: String::from("33333333-3333-4333-8333-333333333333"),
-            action: String::from("project_applicant_action"),
-            synthetic: true,
-        };
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/authorization/credit-applicant-action-command-v1.json"
+        ))
+        .unwrap();
+        let command: CreditApplicantActionCommandV1 =
+            serde_json::from_value(vector["command"].clone()).unwrap();
 
         assert_eq!(
             applicant_action_revision_digest(&command),
-            command.revision_digest
+            vector["expected"]["revisionDigest"].as_str().unwrap()
         );
         assert_eq!(
             digest(&canonical_applicant_action_projection_operation(&command)),
-            command.operation_id
+            vector["expected"]["operationId"].as_str().unwrap()
         );
         let canonical = canonical_applicant_action_projection_command(&command);
         assert_eq!(
             digest(&canonical),
-            "sha256:a39c8536ad7c45b46ab522626842fa484ea931541dca2c4367145af6f14e945e"
+            vector["expected"]["commandDigest"].as_str().unwrap()
         );
         assert_eq!(
             general_purpose::STANDARD.encode(signing_key().sign(&canonical).to_bytes()),
