@@ -120,7 +120,6 @@ pub async fn list_quotes(
 fn convert_to_info_reply(
     quote: quotes::Quote,
     credit_evidence: Option<wire_quotes::MintCreditEvidence>,
-    credit_exposure_reservation: Option<wire_quotes::CreditExposureReservation>,
 ) -> wire_quotes::AdminInfoReply {
     let credit_program_version = quote
         .credit_program()
@@ -211,7 +210,6 @@ fn convert_to_info_reply(
         credit_program_digest,
         credit_authorization_receipt,
         credit_evidence,
-        credit_exposure_reservation,
     }
 }
 
@@ -225,8 +223,7 @@ pub async fn lookup_quote(
     let now = chrono::Utc::now();
     let quote = ctrl.quote.lookup(id, now).await?;
     let credit_evidence = ctrl.credit_evidence.for_quote(&quote).await?;
-    let credit_exposure_reservation = ctrl.credit_evidence.reservation_for_quote(id).await?;
-    let response = convert_to_info_reply(quote, Some(credit_evidence), credit_exposure_reservation);
+    let response = convert_to_info_reply(quote, Some(credit_evidence));
     Ok(Json(response))
 }
 
@@ -240,18 +237,6 @@ pub async fn record_acceptor_risk_evidence(
     Ok(Json(
         ctrl.credit_evidence
             .record_acceptor(&quote, command, chrono::Utc::now())
-            .await?,
-    ))
-}
-
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, command))]
-pub async fn record_mint_capacity_evidence(
-    State(ctrl): State<AppController>,
-    Json(command): Json<wire_quotes::MintCapacityEvidenceCommand>,
-) -> Result<Json<wire_quotes::MintCapacityEvidence>> {
-    Ok(Json(
-        ctrl.credit_evidence
-            .record_capacity(command, chrono::Utc::now())
             .await?,
     ))
 }
@@ -296,6 +281,17 @@ pub async fn deny_governed_quote(
     Json(command): Json<crate::authorization::SignedCreditQuoteDenialCommandV1>,
 ) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
     Ok(Json(ctrl.deny_governed(command, chrono::Utc::now()).await?))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, command))]
+pub async fn apply_applicant_action_projection(
+    State(ctrl): State<Arc<Service>>,
+    Json(command): Json<crate::authorization::SignedCreditApplicantActionCommandV1>,
+) -> Result<Json<wire_quotes::CreditApplicantActionReceipt>> {
+    let receipt = ctrl
+        .apply_applicant_action_projection(command, chrono::Utc::now())
+        .await?;
+    Ok(Json(receipt))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
@@ -353,8 +349,7 @@ mod tests {
 
     #[test]
     fn admin_quote_json_exposes_top_level_credit_program_binding() {
-        let value =
-            serde_json::to_value(convert_to_info_reply(pending_quote(), None, None)).unwrap();
+        let value = serde_json::to_value(convert_to_info_reply(pending_quote(), None)).unwrap();
 
         assert_eq!(value["status"], "Pending");
         assert_eq!(value["credit_program_version"], "test-credit-program-v1");
@@ -371,7 +366,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.authorization_receipt = Some(authorization_receipt());
 
-        let value = serde_json::to_value(convert_to_info_reply(quote, None, None)).unwrap();
+        let value = serde_json::to_value(convert_to_info_reply(quote, None)).unwrap();
         let receipt = &value["credit_authorization_receipt"];
 
         assert_eq!(receipt["receiptVersion"], "credit-authorization-receipt-v1");
@@ -385,7 +380,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.credit_program = None;
 
-        let value = serde_json::to_value(convert_to_info_reply(quote, None, None)).unwrap();
+        let value = serde_json::to_value(convert_to_info_reply(quote, None)).unwrap();
 
         assert!(value["credit_program_version"].is_null());
         assert!(value["credit_program_digest"].is_null());

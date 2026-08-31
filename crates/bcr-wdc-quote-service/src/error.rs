@@ -54,10 +54,12 @@ pub enum Error {
     CreditQuoteDenialConflict,
     #[error("governed quote denial is unavailable on this repository backend")]
     CreditQuoteDenialUnavailable,
-    #[error("Mint exposure capacity is unavailable")]
-    CreditCapacityUnavailable,
-    #[error("Mint exposure capacity is exhausted")]
-    CreditCapacityExceeded,
+    #[error("applicant action projection command is invalid")]
+    ApplicantActionProjectionInvalid,
+    #[error("applicant action projection conflicts with current Mint state")]
+    ApplicantActionProjectionConflict,
+    #[error("applicant action projection is unavailable on this repository backend")]
+    ApplicantActionProjectionUnavailable,
     #[error("resource not found: resource id {0}")]
     ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
@@ -139,15 +141,18 @@ impl axum::response::IntoResponse for Error {
                 StatusCode::SERVICE_UNAVAILABLE,
                 String::from("Governed quote denial is unavailable"),
             ),
-            Error::CreditCapacityUnavailable => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                String::from("Current verified Mint exposure capacity is unavailable"),
+            Error::ApplicantActionProjectionInvalid => (
+                StatusCode::UNAUTHORIZED,
+                String::from("Applicant action projection command is invalid"),
             ),
-            Error::CreditCapacityExceeded => (
+            Error::ApplicantActionProjectionConflict => (
                 StatusCode::CONFLICT,
-                String::from("The quote exceeds current available Mint exposure capacity"),
+                String::from("Applicant action projection conflicts with current Mint state"),
             ),
-
+            Error::ApplicantActionProjectionUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                String::from("Applicant action projection is unavailable"),
+            ),
             Error::Chrono(e) => {
                 let v = serde_json::Value::String(format!("Malformed datetime: {e}"));
                 let j = serde_json::to_string(&v).unwrap_or_default();

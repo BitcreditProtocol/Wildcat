@@ -167,7 +167,7 @@ async fn can_mint_ebill(cfg: &MainConfig) {
         }
     }
 
-    let mint_quote_status_reply = user_service.lookup_credit_quote(quote_id).await;
+    let mint_quote_status_reply = user_service.lookup_credit_quote(quote_id).await.quote;
     info!(quote_id=?quote_id, "Getting mint quote status for quote");
 
     let offered_discount;

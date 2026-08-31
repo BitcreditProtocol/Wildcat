@@ -35,6 +35,8 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
 const GOVERNED_QUOTE_DENIAL_PATH: &str = "/v1/internal/credit/quote/deny";
 const GOVERNED_QUOTE_DENIAL_BODY_LIMIT: usize = 16 * 1024;
+const APPLICANT_ACTION_PROJECTION_PATH: &str = "/v1/internal/credit/quote/applicant-action";
+const APPLICANT_ACTION_PROJECTION_BODY_LIMIT: usize = 16 * 1024;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -51,12 +53,8 @@ pub struct AppConfig {
     credit_authorization_public_key: String,
     credit_evidence_risk_methodology_version: String,
     credit_evidence_risk_assessed_by: String,
-    credit_evidence_capacity_methodology_version: String,
-    credit_evidence_capacity_assessed_by: String,
     credit_evidence_risk_authority_key_id: String,
     credit_evidence_risk_authority_public_key: String,
-    credit_evidence_capacity_authority_key_id: String,
-    credit_evidence_capacity_authority_public_key: String,
     credit_evidence_allow_synthetic: bool,
 }
 
@@ -81,12 +79,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         credit_authorization_public_key,
         credit_evidence_risk_methodology_version,
         credit_evidence_risk_assessed_by,
-        credit_evidence_capacity_methodology_version,
-        credit_evidence_capacity_assessed_by,
         credit_evidence_risk_authority_key_id,
         credit_evidence_risk_authority_public_key,
-        credit_evidence_capacity_authority_key_id,
-        credit_evidence_capacity_authority_public_key,
         credit_evidence_allow_synthetic,
     } = cfg;
     let credit_program =
@@ -106,12 +100,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
                 mint_id: credit_evidence_mint_id,
                 risk_methodology_version: credit_evidence_risk_methodology_version,
                 risk_assessed_by: credit_evidence_risk_assessed_by,
-                capacity_methodology_version: credit_evidence_capacity_methodology_version,
-                capacity_assessed_by: credit_evidence_capacity_assessed_by,
                 risk_authority_key_id: credit_evidence_risk_authority_key_id,
                 risk_authority_public_key: credit_evidence_risk_authority_public_key,
-                capacity_authority_key_id: credit_evidence_capacity_authority_key_id,
-                capacity_authority_public_key: credit_evidence_capacity_authority_public_key,
                 allow_synthetic: credit_evidence_allow_synthetic,
             }
             .validate()
@@ -150,7 +140,6 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         mint_url: cashu_mint_url,
         credit_program,
         authorization_verifier,
-        credit_evidence: Some(credit_evidence.clone()),
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
@@ -192,10 +181,6 @@ pub fn routes(ctrl: AppController) -> Router {
             put(admin::record_acceptor_risk_evidence),
         )
         .route(
-            quote::admin_ep::MINT_CAPACITY_EVIDENCE,
-            put(admin::record_mint_capacity_evidence),
-        )
-        .route(
             quote::admin_ep::ENABLE_MINTING,
             patch(admin::enable_minting),
         )
@@ -203,7 +188,7 @@ pub fn routes(ctrl: AppController) -> Router {
             quote::admin_ep::SHARED_EBILL_HISTORY,
             get(admin::get_shared_ebill_history),
         );
-    let internal = governed_quote_denial_routes::<AppController>();
+    let internal = governed_credit_routes::<AppController>();
 
     Router::new()
         .merge(web)
@@ -212,14 +197,21 @@ pub fn routes(ctrl: AppController) -> Router {
         .with_state(ctrl)
 }
 
-fn governed_quote_denial_routes<S>() -> Router<S>
+fn governed_credit_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     Arc<service::Service>: FromRef<S>,
 {
     Router::new()
         .route(GOVERNED_QUOTE_DENIAL_PATH, post(admin::deny_governed_quote))
-        .layer(DefaultBodyLimit::max(GOVERNED_QUOTE_DENIAL_BODY_LIMIT))
+        .route(
+            APPLICANT_ACTION_PROJECTION_PATH,
+            post(admin::apply_applicant_action_projection),
+        )
+        .layer(DefaultBodyLimit::max(std::cmp::max(
+            GOVERNED_QUOTE_DENIAL_BODY_LIMIT,
+            APPLICANT_ACTION_PROJECTION_BODY_LIMIT,
+        )))
 }
 
 async fn get_health() -> &'static str {
@@ -238,9 +230,8 @@ mod tests {
             mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: authorization::test_authorization_verifier(),
-            credit_evidence: None,
         });
-        let app = governed_quote_denial_routes::<Arc<service::Service>>().with_state(service);
+        let app = governed_credit_routes::<Arc<service::Service>>().with_state(service);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await });

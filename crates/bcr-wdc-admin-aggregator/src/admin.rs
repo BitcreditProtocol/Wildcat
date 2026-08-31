@@ -302,32 +302,6 @@ pub async fn record_acceptor_risk_evidence(
     ))
 }
 
-#[utoipa::path(
-    put,
-    path = endpoints::RECORD_MINT_CAPACITY_EVIDENCE,
-    request_body(content = wire_quotes::MintCapacityEvidenceRequest, content_type = "application/json"),
-    responses(
-        (status = 200, description = "Mint-owned capacity evidence recorded", body = wire_quotes::MintCapacityEvidence),
-        (status = 400, description = "Invalid evidence"),
-        (status = 403, description = "Approver role required"),
-    )
-)]
-pub async fn record_mint_capacity_evidence(
-    State(ctrl): State<AppController>,
-    headers: HeaderMap,
-    Json(request): Json<wire_quotes::MintCapacityEvidenceRequest>,
-) -> Result<Json<wire_quotes::MintCapacityEvidence>> {
-    let operator_id = verified_approver(&headers)?;
-    Ok(Json(
-        ctrl.quotes_cl
-            .record_mint_capacity_evidence(wire_quotes::MintCapacityEvidenceCommand {
-                operator_id,
-                request,
-            })
-            .await?,
-    ))
-}
-
 #[cfg(test)]
 mod credit_evidence_auth_tests {
     use super::*;

@@ -1,4 +1,5 @@
 // ----- standard library imports
+#[cfg(test)]
 use std::sync::Arc;
 // ----- extra library imports
 use async_trait::async_trait;
@@ -15,12 +16,12 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     authorization::{
-        denial_result_digest, offer_result_digest, AuthorizationVerifier,
+        denial_result_digest, offer_result_digest, ApplicantActionCommandValue,
+        AuthorizationVerifier, SignedCreditApplicantActionCommandV1,
         SignedCreditQuoteDenialCommandV1,
     },
-    credit_evidence,
     error::{Error, Result},
-    persistence::{ExposureReservationInput, GovernedDenialInput, Repository},
+    persistence::{ApplicantActionProjectionMutation, GovernedDenialInput, Repository},
     quotes::{BillInfo, CreditProgramBinding, LightQuote, Quote, Status, StatusDiscriminants},
     TStamp,
 };
@@ -95,7 +96,6 @@ pub struct Service {
     pub mint_url: cashu::MintUrl,
     pub credit_program: CreditProgramBinding,
     pub(crate) authorization_verifier: AuthorizationVerifier,
-    pub(crate) credit_evidence: Option<Arc<credit_evidence::Store>>,
 }
 
 impl Service {
@@ -110,7 +110,7 @@ impl Service {
         let changed = quote.check_expire(now);
         if changed {
             self.quotes
-                .update_status_if_offered(quote.id, quote.status.clone(), now)
+                .update_status_if_offered(quote.id, quote.status.clone())
                 .await?;
         }
         Ok(quote)
@@ -157,7 +157,7 @@ impl Service {
             let changed = last.check_expire(submitted);
             if changed {
                 self.quotes
-                    .update_status_if_offered(last.id, last.status.clone(), submitted)
+                    .update_status_if_offered(last.id, last.status.clone())
                     .await?;
             }
         }
@@ -325,6 +325,58 @@ impl Service {
             .await
     }
 
+    pub async fn apply_applicant_action_projection(
+        &self,
+        signed: SignedCreditApplicantActionCommandV1,
+        now: TStamp,
+    ) -> Result<wire_quotes::CreditApplicantActionReceipt> {
+        let qid = uuid::Uuid::parse_str(&signed.command.mint_quote_id)
+            .map_err(|_| Error::ApplicantActionProjectionInvalid)?;
+        let quote = self
+            .quotes
+            .load(qid)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        let verified = self
+            .authorization_verifier
+            .verify_applicant_action_projection(signed, &quote, now)?;
+        let projection = match verified.command.applicant_action {
+            ApplicantActionCommandValue::ClarificationRequired => {
+                Some(wire_quotes::ApplicantActionProjection {
+                    kind: wire_quotes::ApplicantActionKind::Clarification,
+                    revision_digest: verified.command.revision_digest.clone(),
+                })
+            }
+            ApplicantActionCommandValue::None => None,
+        };
+        let receipt = wire_quotes::CreditApplicantActionReceipt {
+            schema_version: String::from("credit-applicant-action-receipt-v1"),
+            operation_id: verified.command.operation_id.clone(),
+            mint_quote_id: qid,
+            credit_program_version: verified.command.credit_program_version.clone(),
+            credit_program_digest: verified.command.credit_program_digest.clone(),
+            revision_digest: verified.command.revision_digest.clone(),
+            expected_revision_digest: verified.command.expected_revision_digest.clone(),
+            applicant_action: verified.command.applicant_action,
+            action: verified.command.action.clone(),
+            status: String::from("completed"),
+            completed_at: now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        };
+        self.quotes
+            .apply_applicant_action_projection(ApplicantActionProjectionMutation {
+                quote_id: qid,
+                expected_revision_digest: verified.command.expected_revision_digest,
+                revision_digest: verified.command.revision_digest,
+                projection,
+                operation_id: verified.command.operation_id,
+                command_digest: verified.command_digest,
+                applied_at: now,
+                expires_at: verified.expires_at,
+                receipt,
+            })
+            .await
+    }
+
     pub async fn reject(&self, id: uuid::Uuid, tstamp: TStamp) -> Result<()> {
         let old = self.quotes.load(id).await?;
         if old.is_none() {
@@ -333,7 +385,7 @@ impl Service {
         let mut quote = old.unwrap();
         quote.reject(tstamp)?;
         self.quotes
-            .update_status_if_offered(quote.id, quote.status, tstamp)
+            .update_status_if_offered(quote.id, quote.status)
             .await?;
         Ok(())
     }
@@ -346,7 +398,7 @@ impl Service {
         let mut quote = old.unwrap();
         quote.accept(submitted)?;
         self.quotes
-            .update_status_if_offered(quote.id, quote.status, submitted)
+            .update_status_if_offered(quote.id, quote.status)
             .await?;
         Ok(())
     }
@@ -354,6 +406,13 @@ impl Service {
     pub async fn lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
         let quote = self._lookup(qid, now).await?;
         Ok(quote)
+    }
+
+    pub async fn lookup_applicant_action_projection(
+        &self,
+        qid: uuid::Uuid,
+    ) -> Result<Option<wire_quotes::ApplicantActionProjection>> {
+        self.quotes.load_applicant_action_projection(qid).await
     }
 
     pub async fn list_light(
@@ -376,7 +435,7 @@ impl Service {
                 let changed = quote.check_expire(now);
                 if changed {
                     self.quotes
-                        .update_status_if_offered(light.id, quote.status.clone(), now)
+                        .update_status_if_offered(light.id, quote.status.clone())
                         .await?;
                     light.status = StatusDiscriminants::from(quote.status.clone());
                 }
@@ -464,44 +523,7 @@ impl Service {
             synthetic: true,
         };
         quote.authorization_receipt = Some(receipt);
-        let amount_sat = verified
-            .authorization
-            .terms
-            .endorsement_exposure_sat
-            .parse()
-            .map_err(|_| Error::CreditCapacityUnavailable)?;
-        let exposure = match &self.credit_evidence {
-            Some(store) => {
-                let capacity = store.current_capacity(now).await?;
-                let evidence = &capacity.signed_evidence.evidence;
-                ExposureReservationInput {
-                    mint_id: evidence.mint_id.clone(),
-                    amount_sat,
-                    capacity_evidence_id: capacity.evidence_id,
-                    existing_exposure_sat: evidence
-                        .existing_exposure_sat
-                        .parse()
-                        .map_err(|_| Error::CreditCapacityUnavailable)?,
-                    exposure_limit_sat: evidence
-                        .exposure_limit_sat
-                        .parse()
-                        .map_err(|_| Error::CreditCapacityUnavailable)?,
-                    now,
-                }
-            }
-            #[cfg(test)]
-            None => ExposureReservationInput {
-                mint_id: String::from("local-wildcat"),
-                amount_sat,
-                capacity_evidence_id: uuid::Uuid::nil(),
-                existing_exposure_sat: 0,
-                exposure_limit_sat: u64::MAX,
-                now,
-            },
-            #[cfg(not(test))]
-            None => return Err(Error::CreditCapacityUnavailable),
-        };
-        self.quotes.execute_authorization(quote, exposure).await
+        self.quotes.execute_authorization(quote).await
     }
 
     pub async fn set_failed_ebill_validation(&self, qid: uuid::Uuid) -> Result<()> {
@@ -781,7 +803,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let test = service
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
@@ -816,7 +837,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let issued = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:05:00.000Z")
             .unwrap()
@@ -862,7 +882,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
 
         let consumed_at = issued + chrono::Duration::microseconds(123);
@@ -915,7 +934,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         });
 
         let (unsigned, governed) =
@@ -964,7 +982,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, chrono::Utc::now())
@@ -1005,7 +1022,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -1049,7 +1065,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -1085,7 +1100,7 @@ mod tests {
                 }])
             });
         repo.expect_update_status_if_offered()
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let wdc_client = MockWdcClient::new();
 
         let service = Service {
@@ -1094,7 +1109,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, now + chrono::Duration::seconds(1))
@@ -1133,7 +1147,7 @@ mod tests {
                 }])
             });
         repo.expect_update_status_if_offered()
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         repo.expect_store_if_latest()
             .withf(move |expected, _| *expected == Some(id))
             .returning(|_, quote| Ok(quote.id));
@@ -1145,7 +1159,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
@@ -1169,7 +1182,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -1206,7 +1218,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -1329,7 +1340,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());

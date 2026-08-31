@@ -2,7 +2,10 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
-use bcr_common::wire::quotes::{CreditAuthorizationReceipt, SignedCreditQuoteReissuePermit};
+use bcr_common::wire::quotes::{
+    ApplicantActionProjection, CreditApplicantActionReceipt, CreditAuthorizationReceipt,
+    SignedCreditQuoteReissuePermit,
+};
 // ----- local modules
 pub mod inmemory;
 pub mod sqlx;
@@ -15,21 +18,36 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ExposureReservationInput {
-    pub mint_id: String,
-    pub amount_sat: u64,
-    pub capacity_evidence_id: uuid::Uuid,
-    pub existing_exposure_sat: u64,
-    pub exposure_limit_sat: u64,
-    pub now: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Clone)]
 pub struct GovernedDenialInput {
     pub quote_id: uuid::Uuid,
     pub receipt: CreditAuthorizationReceipt,
     pub denied_at: chrono::DateTime<chrono::Utc>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApplicantActionProjectionMutation {
+    pub quote_id: uuid::Uuid,
+    pub expected_revision_digest: Option<String>,
+    pub revision_digest: String,
+    pub projection: Option<ApplicantActionProjection>,
+    pub operation_id: String,
+    pub command_digest: String,
+    pub applied_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub receipt: CreditApplicantActionReceipt,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicantActionProjectionState {
+    pub quote_id: uuid::Uuid,
+    pub projection: Option<ApplicantActionProjection>,
+    /// Retained after clear so an old initial-set command cannot resurrect a stale action.
+    pub last_revision_digest: Option<String>,
+    pub last_operation_id: String,
+    pub last_command_digest: String,
+    pub receipt: CreditApplicantActionReceipt,
 }
 
 // ----- end imports
@@ -38,27 +56,24 @@ pub struct GovernedDenialInput {
 #[async_trait]
 pub trait Repository {
     async fn load(&self, id: uuid::Uuid) -> Result<Option<Quote>>;
+    async fn load_applicant_action_projection(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<ApplicantActionProjection>>;
+    async fn apply_applicant_action_projection(
+        &self,
+        mutation: ApplicantActionProjectionMutation,
+    ) -> Result<CreditApplicantActionReceipt>;
     async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn execute_authorization(
         &self,
         quote: Quote,
-        exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt>;
     async fn execute_governed_denial(
         &self,
         input: GovernedDenialInput,
     ) -> Result<CreditAuthorizationReceipt>;
-    async fn update_status_if_offered(
-        &self,
-        id: uuid::Uuid,
-        quote: Status,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()>;
-    async fn release_committed_exposure(
-        &self,
-        id: uuid::Uuid,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()>;
+    async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_accepted(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_failedebillvalidation(
         &self,
@@ -198,6 +213,29 @@ mod tests {
         }
     }
 
+    fn applicant_action_receipt(
+        quote_id: Uuid,
+        operation_id: String,
+        revision_digest: String,
+        expected_revision_digest: Option<String>,
+        applicant_action: bcr_common::wire::quotes::CreditApplicantAction,
+        completed_at: TStamp,
+    ) -> bcr_common::wire::quotes::CreditApplicantActionReceipt {
+        bcr_common::wire::quotes::CreditApplicantActionReceipt {
+            schema_version: String::from("credit-applicant-action-receipt-v1"),
+            operation_id,
+            mint_quote_id: quote_id,
+            credit_program_version: String::from("synthetic-credit-v1"),
+            credit_program_digest: format!("sha256:{}", "0".repeat(64)),
+            revision_digest,
+            expected_revision_digest,
+            applicant_action,
+            action: String::from("project_applicant_action"),
+            status: String::from("completed"),
+            completed_at: completed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        }
+    }
+
     #[tokio::test]
     async fn test_store_load_preserves_credit_program() {
         store_load_preserves_credit_program(init_inmemory_db()).await;
@@ -218,6 +256,219 @@ mod tests {
         let stored = db.load(quote.id).await.unwrap().unwrap();
 
         assert_eq!(stored.credit_program(), expected.as_ref());
+    }
+
+    #[tokio::test]
+    async fn applicant_action_projection_sets_clears_dedupes_and_preserves_quote_status() {
+        applicant_action_projection_roundtrip(init_inmemory_db()).await;
+        applicant_action_projection_roundtrip(init_surreal_db().await).await;
+    }
+
+    async fn applicant_action_projection_roundtrip(db: impl Repository) {
+        let quote = pending_quote();
+        let quote_id = quote.id;
+        db.store(quote).await.unwrap();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-29T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let revision_a = format!("sha256:{}", "a".repeat(64));
+        let projection_a = bcr_common::wire::quotes::ApplicantActionProjection {
+            kind: bcr_common::wire::quotes::ApplicantActionKind::Clarification,
+            revision_digest: revision_a.clone(),
+        };
+        let operation_a = format!("sha256:{}", "5".repeat(64));
+        let receipt_a = applicant_action_receipt(
+            quote_id,
+            operation_a.clone(),
+            revision_a.clone(),
+            None,
+            bcr_common::wire::quotes::CreditApplicantAction::ClarificationRequired,
+            now,
+        );
+        let set_a = ApplicantActionProjectionMutation {
+            quote_id,
+            expected_revision_digest: None,
+            revision_digest: revision_a.clone(),
+            projection: Some(projection_a.clone()),
+            operation_id: operation_a,
+            command_digest: format!("sha256:{}", "1".repeat(64)),
+            applied_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            receipt: receipt_a.clone(),
+        };
+        assert_eq!(
+            db.apply_applicant_action_projection(set_a.clone())
+                .await
+                .unwrap(),
+            receipt_a.clone()
+        );
+        let mut renewed_delivery = set_a.clone();
+        renewed_delivery.command_digest = format!("sha256:{}", "9".repeat(64));
+        renewed_delivery.applied_at = now + chrono::Duration::hours(2);
+        assert_eq!(
+            db.apply_applicant_action_projection(renewed_delivery)
+                .await
+                .unwrap(),
+            receipt_a.clone()
+        );
+        assert_eq!(
+            db.apply_applicant_action_projection(set_a.clone())
+                .await
+                .unwrap(),
+            receipt_a.clone()
+        );
+        let stale = ApplicantActionProjectionMutation {
+            quote_id,
+            expected_revision_digest: None,
+            revision_digest: format!("sha256:{}", "b".repeat(64)),
+            projection: Some(bcr_common::wire::quotes::ApplicantActionProjection {
+                kind: bcr_common::wire::quotes::ApplicantActionKind::Clarification,
+                revision_digest: format!("sha256:{}", "b".repeat(64)),
+            }),
+            operation_id: format!("sha256:{}", "6".repeat(64)),
+            command_digest: format!("sha256:{}", "2".repeat(64)),
+            applied_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            receipt: applicant_action_receipt(
+                quote_id,
+                format!("sha256:{}", "6".repeat(64)),
+                format!("sha256:{}", "b".repeat(64)),
+                None,
+                bcr_common::wire::quotes::CreditApplicantAction::ClarificationRequired,
+                now,
+            ),
+        };
+        assert!(matches!(
+            db.apply_applicant_action_projection(stale).await,
+            Err(crate::error::Error::ApplicantActionProjectionConflict)
+        ));
+
+        let revision_b = format!("sha256:{}", "c".repeat(64));
+        let operation_b = format!("sha256:{}", "7".repeat(64));
+        let receipt_b = applicant_action_receipt(
+            quote_id,
+            operation_b.clone(),
+            revision_b.clone(),
+            Some(revision_a.clone()),
+            bcr_common::wire::quotes::CreditApplicantAction::None,
+            now,
+        );
+        let clear = ApplicantActionProjectionMutation {
+            quote_id,
+            expected_revision_digest: Some(revision_a.clone()),
+            revision_digest: revision_b.clone(),
+            projection: None,
+            operation_id: operation_b,
+            command_digest: format!("sha256:{}", "3".repeat(64)),
+            applied_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            receipt: receipt_b.clone(),
+        };
+        assert_eq!(
+            db.apply_applicant_action_projection(clear.clone())
+                .await
+                .unwrap(),
+            receipt_b.clone()
+        );
+        assert_eq!(
+            db.apply_applicant_action_projection(clear.clone())
+                .await
+                .unwrap(),
+            receipt_b
+        );
+        // The clear is public as no action, while its r2 tombstone remains the CAS head.
+        assert_eq!(
+            db.load_applicant_action_projection(quote_id).await.unwrap(),
+            None
+        );
+        let revision_c = format!("sha256:{}", "d".repeat(64));
+        let projection_c = bcr_common::wire::quotes::ApplicantActionProjection {
+            kind: bcr_common::wire::quotes::ApplicantActionKind::Clarification,
+            revision_digest: revision_c.clone(),
+        };
+        let operation_c = format!("sha256:{}", "8".repeat(64));
+        let receipt_c = applicant_action_receipt(
+            quote_id,
+            operation_c.clone(),
+            revision_c.clone(),
+            Some(revision_b.clone()),
+            bcr_common::wire::quotes::CreditApplicantAction::ClarificationRequired,
+            now,
+        );
+        let set_c = ApplicantActionProjectionMutation {
+            quote_id,
+            expected_revision_digest: Some(revision_b),
+            revision_digest: revision_c.clone(),
+            projection: Some(projection_c.clone()),
+            operation_id: operation_c,
+            command_digest: format!("sha256:{}", "4".repeat(64)),
+            applied_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            receipt: receipt_c.clone(),
+        };
+        assert_eq!(
+            db.apply_applicant_action_projection(set_c.clone())
+                .await
+                .unwrap(),
+            receipt_c.clone()
+        );
+        // A delayed replay of none(r2, r1) cannot clear required(r3, r2).
+        assert!(matches!(
+            db.apply_applicant_action_projection(clear).await,
+            Err(crate::error::Error::ApplicantActionProjectionConflict)
+        ));
+        assert!(matches!(
+            db.apply_applicant_action_projection(set_a).await,
+            Err(crate::error::Error::ApplicantActionProjectionConflict)
+        ));
+        assert_eq!(
+            db.load_applicant_action_projection(quote_id).await.unwrap(),
+            Some(projection_c.clone())
+        );
+        let stored = db.load(quote_id).await.unwrap().unwrap();
+        db.update_status_if_pending(quote_id, offered_status(&stored))
+            .await
+            .unwrap();
+        // Exact idempotent replay remains available after the lifecycle moves on.
+        assert_eq!(
+            db.apply_applicant_action_projection(set_c).await.unwrap(),
+            receipt_c
+        );
+        let revision_d = format!("sha256:{}", "e".repeat(64));
+        let operation_d = format!("sha256:{}", "9".repeat(64));
+        assert!(matches!(
+            db.apply_applicant_action_projection(ApplicantActionProjectionMutation {
+                quote_id,
+                expected_revision_digest: Some(revision_c),
+                revision_digest: revision_d.clone(),
+                projection: Some(bcr_common::wire::quotes::ApplicantActionProjection {
+                    kind: bcr_common::wire::quotes::ApplicantActionKind::Clarification,
+                    revision_digest: revision_d.clone(),
+                }),
+                operation_id: operation_d.clone(),
+                command_digest: format!("sha256:{}", "a".repeat(64)),
+                applied_at: now,
+                expires_at: now + chrono::Duration::hours(1),
+                receipt: applicant_action_receipt(
+                    quote_id,
+                    operation_d,
+                    revision_d,
+                    Some(projection_c.revision_digest.clone()),
+                    bcr_common::wire::quotes::CreditApplicantAction::ClarificationRequired,
+                    now,
+                ),
+            })
+            .await,
+            Err(crate::error::Error::ApplicantActionProjectionConflict)
+        ));
+        assert_eq!(
+            db.load_applicant_action_projection(quote_id).await.unwrap(),
+            Some(projection_c)
+        );
+        assert!(matches!(
+            db.load(quote_id).await.unwrap().unwrap().status,
+            quotes::Status::Offered { .. }
+        ));
     }
 
     #[tokio::test]
@@ -255,17 +506,6 @@ mod tests {
         }
     }
 
-    fn exposure(now: TStamp) -> ExposureReservationInput {
-        ExposureReservationInput {
-            mint_id: String::from("local-wildcat"),
-            amount_sat: 8_000_000,
-            capacity_evidence_id: uuid::Uuid::nil(),
-            existing_exposure_sat: 0,
-            exposure_limit_sat: 40_000_000,
-            now,
-        }
-    }
-
     fn authorized_offer_candidate(quote: &quotes::Quote, operation_id: &str) -> quotes::Quote {
         let mut offered = quote.clone();
         offered.status = offered_status(&offered);
@@ -300,9 +540,8 @@ mod tests {
         quote.authorization_receipt = Some(authorization_receipt("sqlx-operation"));
 
         assert!(matches!(
-            db.execute_authorization(quote, exposure(TStamp::default()))
-                .await,
-            Err(crate::error::Error::CreditCapacityUnavailable)
+            db.execute_authorization(quote).await,
+            Err(crate::error::Error::InternalServer(_))
         ));
     }
 
@@ -314,23 +553,18 @@ mod tests {
         quote.authorization_receipt = Some(receipt.clone());
 
         assert_eq!(
-            db.execute_authorization(quote.clone(), exposure(TStamp::default()))
-                .await
-                .unwrap(),
+            db.execute_authorization(quote.clone()).await.unwrap(),
             receipt
         );
         assert_eq!(
-            db.execute_authorization(quote.clone(), exposure(TStamp::default()))
-                .await
-                .unwrap(),
+            db.execute_authorization(quote.clone()).await.unwrap(),
             receipt
         );
 
         quote.authorization_receipt =
             Some(authorization_receipt(&format!("sha256:{}", "d".repeat(64))));
         assert!(matches!(
-            db.execute_authorization(quote, exposure(TStamp::default()))
-                .await,
+            db.execute_authorization(quote).await,
             Err(crate::error::Error::CreditAuthorizationConflict)
         ));
     }
@@ -473,18 +707,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn governed_denial_and_offer_have_one_pending_transition_and_exposure() {
-        governed_denial_and_offer_have_one_pending_transition_and_exposure_for(init_inmemory_db())
-            .await;
-        governed_denial_and_offer_have_one_pending_transition_and_exposure_for(
-            init_surreal_db().await,
-        )
-        .await;
+    async fn governed_denial_and_offer_have_one_pending_transition() {
+        governed_denial_and_offer_have_one_pending_transition_for(init_inmemory_db()).await;
+        governed_denial_and_offer_have_one_pending_transition_for(init_surreal_db().await).await;
     }
 
-    async fn governed_denial_and_offer_have_one_pending_transition_and_exposure_for(
-        db: impl Repository,
-    ) {
+    async fn governed_denial_and_offer_have_one_pending_transition_for(db: impl Repository) {
         let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -501,13 +729,8 @@ mod tests {
             now,
             now + chrono::Duration::hours(1),
         );
-        let capacity = || ExposureReservationInput {
-            exposure_limit_sat: 8_000_000,
-            ..exposure(now)
-        };
-
         let (offer_result, denial_result) = tokio::join!(
-            db.execute_authorization(offered.clone(), capacity()),
+            db.execute_authorization(offered.clone()),
             db.execute_governed_denial(denial.clone()),
         );
         assert_eq!(
@@ -519,37 +742,28 @@ mod tests {
             (Ok(offer_receipt), Err(crate::error::Error::CreditQuoteDenialConflict)) => {
                 assert!(matches!(stored.status, quotes::Status::Offered { .. }));
                 assert_eq!(stored.authorization_receipt(), Some(&offer_receipt));
-                assert!(matches!(
-                    db.execute_authorization(fallback_offer, capacity()).await,
-                    Err(crate::error::Error::CreditCapacityExceeded)
-                ));
+                db.execute_authorization(fallback_offer)
+                    .await
+                    .expect("a separate quote remains independently authorizable");
             }
             (Err(crate::error::Error::CreditAuthorizationConflict), Ok(denial_receipt)) => {
                 assert!(matches!(stored.status, quotes::Status::Denied { .. }));
                 assert_eq!(stored.authorization_receipt(), Some(&denial_receipt));
-                db.execute_authorization(fallback_offer, capacity())
+                db.execute_authorization(fallback_offer)
                     .await
-                    .expect("a winning denial must not reserve exposure");
+                    .expect("a winning denial must not affect another quote");
             }
             unexpected => panic!("incoherent offer/denial race result: {unexpected:?}"),
         }
     }
 
     #[tokio::test]
-    async fn governed_denial_and_cancel_have_one_pending_transition_without_exposure() {
-        governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
-            init_inmemory_db(),
-        )
-        .await;
-        governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
-            init_surreal_db().await,
-        )
-        .await;
+    async fn governed_denial_and_cancel_have_one_pending_transition() {
+        governed_denial_and_cancel_have_one_pending_transition_for(init_inmemory_db()).await;
+        governed_denial_and_cancel_have_one_pending_transition_for(init_surreal_db().await).await;
     }
 
-    async fn governed_denial_and_cancel_have_one_pending_transition_without_exposure_for(
-        db: impl Repository,
-    ) {
+    async fn governed_denial_and_cancel_have_one_pending_transition_for(db: impl Repository) {
         let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -588,15 +802,9 @@ mod tests {
 
         let fallback_offer =
             authorized_offer_candidate(&fallback, &format!("sha256:{}", "f".repeat(64)));
-        db.execute_authorization(
-            fallback_offer,
-            ExposureReservationInput {
-                exposure_limit_sat: 8_000_000,
-                ..exposure(now)
-            },
-        )
-        .await
-        .expect("cancel and denial must not reserve exposure");
+        db.execute_authorization(fallback_offer)
+            .await
+            .expect("cancel and denial must not affect another quote");
     }
 
     #[tokio::test]
@@ -646,104 +854,6 @@ mod tests {
         let stored = db.load(quote.id).await.unwrap().unwrap();
         assert!(matches!(stored.status, quotes::Status::Pending { .. }));
         assert!(stored.authorization_receipt().is_none());
-    }
-
-    #[tokio::test]
-    async fn exposure_capacity_is_reserved_atomically() {
-        exposure_capacity_is_reserved_atomically_for(init_inmemory_db()).await;
-        exposure_capacity_is_reserved_atomically_for(init_surreal_db().await).await;
-    }
-
-    async fn exposure_capacity_is_reserved_atomically_for(db: impl Repository) {
-        let mut first = pending_quote();
-        let mut second = pending_quote();
-        db.store(first.clone()).await.unwrap();
-        db.store(second.clone()).await.unwrap();
-        first.status = offered_status(&first);
-        second.status = offered_status(&second);
-        first.authorization_receipt =
-            Some(authorization_receipt(&format!("sha256:{}", "c".repeat(64))));
-        second.authorization_receipt =
-            Some(authorization_receipt(&format!("sha256:{}", "d".repeat(64))));
-        let mut first_exposure = exposure(TStamp::default());
-        first_exposure.exposure_limit_sat = 12_000_000;
-        let mut second_exposure = exposure(TStamp::default());
-        second_exposure.exposure_limit_sat = 12_000_000;
-
-        let (first_result, second_result) = tokio::join!(
-            db.execute_authorization(first, first_exposure),
-            db.execute_authorization(second, second_exposure),
-        );
-        assert_eq!(
-            usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()),
-            1
-        );
-        assert!(matches!(
-            first_result.as_ref().err().or(second_result.as_ref().err()),
-            Some(crate::error::Error::CreditCapacityExceeded)
-                | Some(crate::error::Error::QuotesRepository(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn exposure_is_released_on_rejection_and_committed_on_acceptance() {
-        exposure_lifecycle_for(init_inmemory_db()).await;
-        exposure_lifecycle_for(init_surreal_db().await).await;
-    }
-
-    async fn exposure_lifecycle_for(db: impl Repository) {
-        let mut quotes = [pending_quote(), pending_quote(), pending_quote()];
-        for quote in &quotes {
-            db.store(quote.clone()).await.unwrap();
-        }
-        for (index, quote) in quotes.iter_mut().enumerate() {
-            quote.status = offered_status(quote);
-            quote.authorization_receipt =
-                Some(authorization_receipt(&format!("sha256:{:064x}", index + 1)));
-        }
-        let capacity = || ExposureReservationInput {
-            exposure_limit_sat: 8_000_000,
-            ..exposure(TStamp::default())
-        };
-
-        db.execute_authorization(quotes[0].clone(), capacity())
-            .await
-            .unwrap();
-        assert!(matches!(
-            db.execute_authorization(quotes[1].clone(), capacity())
-                .await,
-            Err(crate::error::Error::CreditCapacityExceeded)
-        ));
-        db.update_status_if_offered(
-            quotes[0].id,
-            quotes::Status::Rejected {
-                tstamp: TStamp::default(),
-                discounted: bitcoin::Amount::from_sat(8_000_000),
-            },
-            TStamp::default(),
-        )
-        .await
-        .unwrap();
-        db.execute_authorization(quotes[1].clone(), capacity())
-            .await
-            .unwrap();
-        db.update_status_if_offered(quotes[1].id, accepted_status(), TStamp::default())
-            .await
-            .unwrap();
-        assert!(matches!(
-            db.execute_authorization(quotes[2].clone(), capacity())
-                .await,
-            Err(crate::error::Error::CreditCapacityExceeded)
-        ));
-        db.release_committed_exposure(quotes[1].id, TStamp::default())
-            .await
-            .unwrap();
-        db.release_committed_exposure(quotes[1].id, TStamp::default())
-            .await
-            .unwrap();
-        db.execute_authorization(quotes[2].clone(), capacity())
-            .await
-            .unwrap();
     }
 
     #[tokio::test]
@@ -815,7 +925,7 @@ mod tests {
             .await
             .unwrap();
 
-        db.update_status_if_offered(quote.id, accepted_status(), TStamp::default())
+        db.update_status_if_offered(quote.id, accepted_status())
             .await
             .unwrap();
 
@@ -828,11 +938,9 @@ mod tests {
         quote.status = offered_status(&quote);
         quote.authorization_receipt =
             Some(authorization_receipt(&format!("sha256:{}", "c".repeat(64))));
-        db.execute_authorization(quote.clone(), exposure(TStamp::default()))
-            .await
-            .unwrap();
+        db.execute_authorization(quote.clone()).await.unwrap();
         let res = db
-            .update_status_if_offered(quote.id, accepted_status(), TStamp::default())
+            .update_status_if_offered(quote.id, accepted_status())
             .await;
         assert!(res.is_ok());
         let updated = db.load(quote.id).await.unwrap().unwrap();
@@ -859,7 +967,7 @@ mod tests {
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
-            .update_status_if_offered(quote.id, offered_status(&quote), TStamp::default())
+            .update_status_if_offered(quote.id, offered_status(&quote))
             .await;
         assert!(res.is_err());
         let content = db.load(quote.id).await.unwrap().unwrap();

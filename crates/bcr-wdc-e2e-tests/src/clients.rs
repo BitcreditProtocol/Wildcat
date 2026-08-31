@@ -147,7 +147,7 @@ impl Service<UserService> {
             .unwrap()
     }
 
-    pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> wire_quotes::StatusReply {
+    pub async fn lookup_credit_quote(&self, quote_id: Uuid) -> wire_quotes::QuoteStatusReply {
         self.mint_cl.lookup(quote_id).await.unwrap()
     }
 

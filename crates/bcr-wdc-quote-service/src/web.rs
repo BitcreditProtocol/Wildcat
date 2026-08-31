@@ -125,15 +125,32 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
     }
 }
 
+fn public_applicant_action(
+    quote: &quotes::Quote,
+    action: Option<wire_quotes::ApplicantActionProjection>,
+) -> Option<wire_quotes::ApplicantActionProjection> {
+    matches!(quote.status, quotes::Status::Pending { .. })
+        .then_some(action)
+        .flatten()
+}
+
 pub async fn lookup_quote(
     State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<wire_quotes::StatusReply>> {
+) -> Result<Json<wire_quotes::QuoteStatusReply>> {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
     let now = chrono::Utc::now();
     let quote = ctrl.lookup(id, now).await?;
-    Ok(Json(convert_to_enquire_reply(quote)))
+    let applicant_action = if matches!(quote.status, quotes::Status::Pending { .. }) {
+        public_applicant_action(&quote, ctrl.lookup_applicant_action_projection(id).await?)
+    } else {
+        None
+    };
+    Ok(Json(wire_quotes::QuoteStatusReply {
+        quote: convert_to_enquire_reply(quote),
+        applicant_action,
+    }))
 }
 
 /// --------------------------- Resolve quote offer
@@ -156,14 +173,17 @@ pub async fn resolve_offer(
 pub async fn cancel(
     State(ctrl): State<Arc<Service>>,
     Path(id): Path<uuid::Uuid>,
-) -> Result<Json<wire_quotes::StatusReply>> {
+) -> Result<Json<wire_quotes::QuoteStatusReply>> {
     tracing::debug!("Received mint quote cancel request for id: {}", id);
 
     let now = chrono::Utc::now();
     ctrl.cancel(id, now).await?;
     let quote = ctrl.lookup(id, now).await?;
-    let reply = convert_to_enquire_reply(quote);
-    Ok(Json(reply))
+    let applicant_action = None;
+    Ok(Json(wire_quotes::QuoteStatusReply {
+        quote: convert_to_enquire_reply(quote),
+        applicant_action,
+    }))
 }
 
 #[cfg(test)]
@@ -175,6 +195,27 @@ mod tests {
         wire::{bill::BillParticipant, test_utils as wire_tests},
     };
     use std::str::FromStr;
+
+    #[test]
+    fn public_projection_is_visible_only_while_quote_is_pending() {
+        let now = chrono::Utc::now();
+        let mut quote = quotes::Quote::new(
+            quotes::BillInfo::random(),
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            now,
+            quotes::test_credit_program_binding(),
+        );
+        let action = wire_quotes::ApplicantActionProjection {
+            kind: wire_quotes::ApplicantActionKind::Clarification,
+            revision_digest: format!("sha256:{}", "a".repeat(64)),
+        };
+        assert_eq!(
+            public_applicant_action(&quote, Some(action.clone())),
+            Some(action.clone())
+        );
+        quote.status = quotes::Status::Denied { tstamp: now };
+        assert_eq!(public_applicant_action(&quote, Some(action)), None);
+    }
 
     #[tokio::test]
     async fn reissue_rejects_a_request_not_signed_by_the_current_holder() {
@@ -233,7 +274,6 @@ mod tests {
             mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
-            credit_evidence: None,
         });
 
         assert!(reissue_enquire_quote(
