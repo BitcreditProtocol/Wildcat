@@ -22,10 +22,14 @@ pub const AUTHORIZATION_ACTION: &str = "request_to_mint";
 pub const QUOTE_REISSUE_ACTION: &str = wire_quotes::REISSUE_ENQUIRE_ACTION;
 pub const QUOTE_DENIAL_ACTION: &str = "deny_governed_quote";
 pub const QUOTE_DENIAL_SCHEMA_VERSION: &str = "credit-quote-denial-command-v1";
+pub const APPLICANT_ACTION_COMMAND_ACTION: &str = "project_applicant_action";
+pub const APPLICANT_ACTION_COMMAND_SCHEMA_VERSION: &str = "credit-applicant-action-command-v1";
 const MAX_QUOTE_REISSUE_PERMIT_TTL: chrono::Duration = chrono::Duration::days(1);
 const QUOTE_REISSUE_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
 const MAX_QUOTE_DENIAL_COMMAND_TTL: chrono::Duration = chrono::Duration::days(1);
 const QUOTE_DENIAL_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+const MAX_APPLICANT_ACTION_PROJECTION_TTL: chrono::Duration = chrono::Duration::days(1);
+const APPLICANT_ACTION_PROJECTION_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -63,6 +67,45 @@ pub struct SignedCreditQuoteDenialCommandV1 {
     pub signature: String,
 }
 
+pub type ApplicantActionCommandValue = wire_quotes::CreditApplicantAction;
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreditApplicantActionCommandV1 {
+    pub schema_version: String,
+    pub key_id: String,
+    pub mint_id: String,
+    pub mint_quote_id: String,
+    pub credit_program_version: String,
+    pub credit_program_digest: String,
+    pub case_id: String,
+    pub bill_id: String,
+    pub bill_state_digest: String,
+    pub holder_ref: String,
+    pub applicant_action: ApplicantActionCommandValue,
+    pub request_id: String,
+    pub request_digest: String,
+    pub request_snapshot_digest: String,
+    pub request_result_digest: String,
+    pub expected_revision_digest: Option<String>,
+    pub revision_digest: String,
+    pub operation_id: String,
+    pub issued_at: String,
+    pub expires_at: String,
+    pub nonce: String,
+    pub action: String,
+    pub synthetic: bool,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SignedCreditApplicantActionCommandV1 {
+    pub command: CreditApplicantActionCommandV1,
+    pub command_digest: String,
+    pub signature_algorithm: String,
+    pub signature: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct VerifiedQuoteReissuePermit {
     pub signed: SignedQuoteReissuePermit,
@@ -73,6 +116,13 @@ pub struct VerifiedQuoteDenial {
     pub command: CreditQuoteDenialCommandV1,
     pub command_digest: String,
     pub operation_id: String,
+    pub expires_at: TStamp,
+}
+
+#[derive(Clone, Debug)]
+pub struct VerifiedApplicantAction {
+    pub command: CreditApplicantActionCommandV1,
+    pub command_digest: String,
     pub expires_at: TStamp,
 }
 
@@ -409,6 +459,121 @@ impl AuthorizationVerifier {
             expires_at,
         })
     }
+
+    pub fn verify_applicant_action_projection(
+        &self,
+        signed: SignedCreditApplicantActionCommandV1,
+        quote: &Quote,
+        now: TStamp,
+    ) -> Result<VerifiedApplicantAction> {
+        let command = signed.command;
+        for text in [
+            &command.schema_version,
+            &command.key_id,
+            &command.mint_id,
+            &command.credit_program_version,
+            &command.bill_id,
+            &command.holder_ref,
+            &command.action,
+        ] {
+            validate_text(text).map_err(|_| invalid_applicant_action_projection())?;
+        }
+        for value in [
+            Some(&command.credit_program_digest),
+            Some(&command.bill_state_digest),
+            Some(&command.request_digest),
+            Some(&command.request_snapshot_digest),
+            Some(&command.request_result_digest),
+            Some(&command.request_id),
+            command.expected_revision_digest.as_ref(),
+            Some(&command.revision_digest),
+            Some(&command.operation_id),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_digest(value).map_err(|_| invalid_applicant_action_projection())?;
+        }
+        let quote_id = parse_canonical_uuid(&command.mint_quote_id)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        parse_canonical_uuid(&command.case_id)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        parse_canonical_uuid(&command.nonce).map_err(|_| invalid_applicant_action_projection())?;
+        let operation_shape_is_valid = command.applicant_action
+            != ApplicantActionCommandValue::None
+            || command.expected_revision_digest.is_some();
+        if signed.signature_algorithm != "Ed25519"
+            || command.schema_version != APPLICANT_ACTION_COMMAND_SCHEMA_VERSION
+            || command.key_id != self.key_id
+            || command.mint_id != self.mint_id
+            || command.action != APPLICANT_ACTION_COMMAND_ACTION
+            || !command.synthetic
+            || quote_id != quote.id
+            || !operation_shape_is_valid
+        {
+            return Err(invalid_applicant_action_projection());
+        }
+
+        let canonical = canonical_applicant_action_projection_command(&command);
+        let expected_digest = digest(&canonical);
+        let operation_id = digest(&canonical_applicant_action_projection_operation(&command));
+        let revision_digest = applicant_action_revision_digest(&command);
+        if signed.command_digest != expected_digest
+            || command.operation_id != operation_id
+            || command.revision_digest != revision_digest
+        {
+            return Err(invalid_applicant_action_projection());
+        }
+        let signature_bytes = general_purpose::STANDARD
+            .decode(&signed.signature)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        let signature = Signature::from_slice(&signature_bytes)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        self.public_key
+            .verify(&canonical, &signature)
+            .map_err(|_| invalid_applicant_action_projection())?;
+
+        let issued_at = parse_datetime(&command.issued_at)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        let expires_at = parse_datetime(&command.expires_at)
+            .map_err(|_| invalid_applicant_action_projection())?;
+        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.issued_at
+            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.expires_at
+            || issued_at > now + APPLICANT_ACTION_PROJECTION_CLOCK_SKEW
+            || expires_at <= issued_at
+            || expires_at - issued_at > MAX_APPLICANT_ACTION_PROJECTION_TTL
+        {
+            return Err(invalid_applicant_action_projection());
+        }
+
+        let credit_program = quote
+            .credit_program()
+            .ok_or(Error::CreditProgramNotBound(quote.id))?;
+        let bill_id = quote.bill.id.to_string();
+        let holder_ref = quote.bill.current_holder.node_id().to_string();
+        let acceptor_ref = quote.bill.drawee.node_id.to_string();
+        let bill_state_digest = digest(&canonical_bill_state(
+            &bill_id,
+            &holder_ref,
+            &acceptor_ref,
+            &quote.bill.sum.to_sat().to_string(),
+            &quote.bill.maturity_date.to_string(),
+        ));
+        if command.credit_program_version != credit_program.version()
+            || command.credit_program_digest != credit_program.digest()
+            || command.bill_id != bill_id
+            || command.bill_state_digest != bill_state_digest
+            || command.holder_ref != holder_ref
+        {
+            return Err(invalid_applicant_action_projection());
+        }
+
+        Ok(VerifiedApplicantAction {
+            command,
+            command_digest: signed.command_digest,
+            expires_at,
+        })
+    }
 }
 
 pub fn same_quote_reissue_authority(left: &QuoteReissuePermit, right: &QuoteReissuePermit) -> bool {
@@ -450,6 +615,10 @@ fn invalid_reissue() -> Error {
 
 fn invalid_denial() -> Error {
     Error::CreditQuoteDenialInvalid
+}
+
+fn invalid_applicant_action_projection() -> Error {
+    Error::ApplicantActionProjectionInvalid
 }
 
 fn validate_text(value: &str) -> Result<()> {
@@ -719,6 +888,70 @@ fn canonical_quote_denial_operation(value: &CreditQuoteDenialCommandV1) -> Vec<u
     ])
 }
 
+fn canonical_applicant_action_projection_command(
+    value: &CreditApplicantActionCommandV1,
+) -> Vec<u8> {
+    let mut fields = vec![String::from("AI-CREDIT-APPLICANT-ACTION-COMMAND-V1")];
+    fields.extend(applicant_action_revision_fields(value));
+    fields.extend([
+        value.revision_digest.clone(),
+        value.key_id.clone(),
+        value.operation_id.clone(),
+        value.issued_at.clone(),
+        value.expires_at.clone(),
+        value.nonce.clone(),
+    ]);
+    encode_owned_fields(&fields)
+}
+
+fn canonical_applicant_action_projection_operation(
+    value: &CreditApplicantActionCommandV1,
+) -> Vec<u8> {
+    let mut fields = vec![String::from("AI-CREDIT-APPLICANT-ACTION-OPERATION-V1")];
+    fields.extend(applicant_action_revision_fields(value));
+    fields.push(value.revision_digest.clone());
+    encode_owned_fields(&fields)
+}
+
+fn applicant_action_revision_digest(value: &CreditApplicantActionCommandV1) -> String {
+    let mut fields = vec![String::from("AI-CREDIT-APPLICANT-ACTION-REVISION-V1")];
+    fields.extend(applicant_action_revision_fields(value));
+    digest(&encode_owned_fields(&fields))
+}
+
+fn applicant_action_revision_fields(value: &CreditApplicantActionCommandV1) -> Vec<String> {
+    let applicant_action = match value.applicant_action {
+        ApplicantActionCommandValue::ClarificationRequired => "clarification_required",
+        ApplicantActionCommandValue::None => "none",
+    };
+    vec![
+        value.schema_version.clone(),
+        value.mint_id.clone(),
+        value.mint_quote_id.clone(),
+        value.credit_program_version.clone(),
+        value.credit_program_digest.clone(),
+        value.case_id.clone(),
+        value.bill_id.clone(),
+        value.bill_state_digest.clone(),
+        value.holder_ref.clone(),
+        value.request_id.clone(),
+        value.request_digest.clone(),
+        value.request_snapshot_digest.clone(),
+        value.request_result_digest.clone(),
+        String::from(applicant_action),
+        value
+            .expected_revision_digest
+            .clone()
+            .unwrap_or_else(|| String::from("none")),
+        value.action.clone(),
+        String::from("true"),
+    ]
+}
+
+fn encode_owned_fields(fields: &[String]) -> Vec<u8> {
+    encode_fields(&fields.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
 pub fn offer_result_digest(quote_id: uuid::Uuid, discounted: Amount, expiration: TStamp) -> String {
     digest(&encode_fields(&[
         "AI-CREDIT-WILDCAT-OFFER-RESULT-V1",
@@ -921,6 +1154,63 @@ pub(crate) mod tests {
             expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             nonce: uuid::Uuid::from_u128(11).to_string(),
             action: String::from(QUOTE_DENIAL_ACTION),
+            synthetic: true,
+        })
+    }
+
+    fn sign_applicant_action_projection_command(
+        mut command: CreditApplicantActionCommandV1,
+    ) -> SignedCreditApplicantActionCommandV1 {
+        command.revision_digest = applicant_action_revision_digest(&command);
+        command.operation_id = digest(&canonical_applicant_action_projection_operation(&command));
+        let bytes = canonical_applicant_action_projection_command(&command);
+        SignedCreditApplicantActionCommandV1 {
+            command,
+            command_digest: digest(&bytes),
+            signature_algorithm: String::from("Ed25519"),
+            signature: general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes()),
+        }
+    }
+
+    pub(crate) fn signed_applicant_action_projection_for(
+        quote: &Quote,
+        applicant_action: ApplicantActionCommandValue,
+        expected_revision_digest: Option<String>,
+        issued_at: TStamp,
+        expires_at: TStamp,
+    ) -> SignedCreditApplicantActionCommandV1 {
+        let bill_id = quote.bill.id.to_string();
+        let holder_ref = quote.bill.current_holder.node_id().to_string();
+        let acceptor_ref = quote.bill.drawee.node_id.to_string();
+        sign_applicant_action_projection_command(CreditApplicantActionCommandV1 {
+            schema_version: String::from(APPLICANT_ACTION_COMMAND_SCHEMA_VERSION),
+            key_id: String::from("synthetic-ed25519-v1"),
+            mint_id: String::from("local-wildcat"),
+            mint_quote_id: quote.id.to_string(),
+            credit_program_version: quote.credit_program().unwrap().version().to_owned(),
+            credit_program_digest: quote.credit_program().unwrap().digest().to_owned(),
+            case_id: uuid::Uuid::from_u128(20).to_string(),
+            bill_id: bill_id.clone(),
+            bill_state_digest: digest(&canonical_bill_state(
+                &bill_id,
+                &holder_ref,
+                &acceptor_ref,
+                &quote.bill.sum.to_sat().to_string(),
+                &quote.bill.maturity_date.to_string(),
+            )),
+            holder_ref,
+            applicant_action,
+            request_id: format!("sha256:{}", "4".repeat(64)),
+            request_digest: format!("sha256:{}", "7".repeat(64)),
+            request_snapshot_digest: format!("sha256:{}", "8".repeat(64)),
+            request_result_digest: format!("sha256:{}", "9".repeat(64)),
+            expected_revision_digest,
+            revision_digest: String::new(),
+            operation_id: String::new(),
+            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            nonce: uuid::Uuid::new_v4().to_string(),
+            action: String::from(APPLICANT_ACTION_COMMAND_ACTION),
             synthetic: true,
         })
     }
@@ -1145,6 +1435,120 @@ pub(crate) mod tests {
             test_authorization_verifier().verify_quote_denial(ttl_too_long, &quote, issued),
             Err(Error::CreditQuoteDenialInvalid)
         ));
+    }
+
+    #[test]
+    fn applicant_action_projection_verifier_binds_pointer_and_quote_authority() {
+        let quote = Quote::new(
+            crate::quotes::BillInfo::random(),
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::default(),
+            crate::quotes::test_credit_program_binding(),
+        );
+        let now = DateTime::parse_from_rfc3339("2026-08-29T12:00:00.000Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let signed = signed_applicant_action_projection_for(
+            &quote,
+            ApplicantActionCommandValue::ClarificationRequired,
+            None,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        let verified = test_authorization_verifier()
+            .verify_applicant_action_projection(signed.clone(), &quote, now)
+            .unwrap();
+        assert_eq!(
+            verified.command.revision_digest,
+            applicant_action_revision_digest(&verified.command)
+        );
+
+        let mut tampered = signed.clone();
+        tampered.command.request_result_digest = format!("sha256:{}", "b".repeat(64));
+        assert!(matches!(
+            test_authorization_verifier().verify_applicant_action_projection(tampered, &quote, now),
+            Err(Error::ApplicantActionProjectionInvalid)
+        ));
+
+        let invalid_clear = signed_applicant_action_projection_for(
+            &quote,
+            ApplicantActionCommandValue::None,
+            None,
+            now,
+            now + chrono::Duration::hours(1),
+        );
+        assert!(matches!(
+            test_authorization_verifier().verify_applicant_action_projection(
+                invalid_clear,
+                &quote,
+                now
+            ),
+            Err(Error::ApplicantActionProjectionInvalid)
+        ));
+
+        let mut wrong_quote = signed.command;
+        wrong_quote.mint_quote_id = uuid::Uuid::new_v4().to_string();
+        assert!(matches!(
+            test_authorization_verifier().verify_applicant_action_projection(
+                sign_applicant_action_projection_command(wrong_quote),
+                &quote,
+                now
+            ),
+            Err(Error::ApplicantActionProjectionInvalid)
+        ));
+    }
+
+    #[test]
+    fn applicant_action_command_matches_typescript_golden_vector() {
+        let repeated_digest =
+            |character: char| format!("sha256:{}", character.to_string().repeat(64));
+        let command = CreditApplicantActionCommandV1 {
+            schema_version: String::from("credit-applicant-action-command-v1"),
+            key_id: String::from("test-key"),
+            mint_id: String::from("local-wildcat"),
+            mint_quote_id: String::from("11111111-1111-4111-8111-111111111111"),
+            credit_program_version: String::from("synthetic-v1"),
+            credit_program_digest: repeated_digest('1'),
+            case_id: String::from("22222222-2222-4222-8222-222222222222"),
+            bill_id: String::from("bill-1"),
+            bill_state_digest: repeated_digest('2'),
+            holder_ref: String::from("holder-1"),
+            applicant_action: ApplicantActionCommandValue::ClarificationRequired,
+            request_id: repeated_digest('4'),
+            request_digest: repeated_digest('5'),
+            request_snapshot_digest: repeated_digest('6'),
+            request_result_digest: repeated_digest('7'),
+            expected_revision_digest: None,
+            revision_digest: String::from(
+                "sha256:bd5e1d7173da0b8299fda6a518118813671b2954b4d4a43d8ddfe5082e916e18",
+            ),
+            operation_id: String::from(
+                "sha256:9e38d673566e81f33582a27a94b391c8325c82ecbf797c320869d9d9f28c81cb",
+            ),
+            issued_at: String::from("2026-08-29T10:00:00.000Z"),
+            expires_at: String::from("2026-08-29T11:00:00.000Z"),
+            nonce: String::from("33333333-3333-4333-8333-333333333333"),
+            action: String::from("project_applicant_action"),
+            synthetic: true,
+        };
+
+        assert_eq!(
+            applicant_action_revision_digest(&command),
+            command.revision_digest
+        );
+        assert_eq!(
+            digest(&canonical_applicant_action_projection_operation(&command)),
+            command.operation_id
+        );
+        let canonical = canonical_applicant_action_projection_command(&command);
+        assert_eq!(
+            digest(&canonical),
+            "sha256:a39c8536ad7c45b46ab522626842fa484ea931541dca2c4367145af6f14e945e"
+        );
+        assert_eq!(
+            general_purpose::STANDARD.encode(signing_key().sign(&canonical).to_bytes()),
+            "kH/l5UjCcXMhzSJeuyw4XsLMSNJGLSaxcC/T3BUlL4b/PV38t4ovh73ikBsXargCD5Wn/i3rff8wfjzqQZquBg=="
+        );
     }
 
     #[test]

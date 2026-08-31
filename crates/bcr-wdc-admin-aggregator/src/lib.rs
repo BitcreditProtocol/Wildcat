@@ -103,7 +103,6 @@ pub mod endpoints {
     pub const UPDATE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}";
     pub const AUTHORIZE_CREDIT_QUOTE: &str = "/v1/admin/credit/quote/{qid}/authorization";
     pub const RECORD_ACCEPTOR_RISK_EVIDENCE: &str = "/v1/admin/credit/quote/{qid}/acceptor-risk";
-    pub const RECORD_MINT_CAPACITY_EVIDENCE: &str = "/v1/admin/credit/mint-capacity";
     pub const GET_SHARED_EBILL_HISTORY: &str = "/v1/admin/credit/quote/{qid}/ebill/history";
     pub const ENABLE_QUOTE_MINTING: &str = "/v1/admin/credit/quote/enable_mint/{qid}";
     // EBills-Client
@@ -161,10 +160,6 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(
             endpoints::RECORD_ACCEPTOR_RISK_EVIDENCE,
             put(admin::record_acceptor_risk_evidence),
-        )
-        .route(
-            endpoints::RECORD_MINT_CAPACITY_EVIDENCE,
-            put(admin::record_mint_capacity_evidence),
         )
         .route(
             endpoints::ENABLE_QUOTE_MINTING,
@@ -284,8 +279,6 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_quotes::CreditAuthorizationReceipt,
         wire_quotes::AcceptorRiskEvidence,
         wire_quotes::AcceptorRiskEvidenceRequest,
-        wire_quotes::MintCapacityEvidence,
-        wire_quotes::MintCapacityEvidenceRequest,
         wire_quotes::MintCreditEvidence,
         wire_bill::BillHistoryBlock,
         wire_quotes::EnableMintingResponse,
@@ -333,7 +326,6 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::update_quote,
         admin::authorize_quote,
         admin::record_acceptor_risk_evidence,
-        admin::record_mint_capacity_evidence,
         admin::get_shared_ebill_history,
         admin::patch_enable_quote_minting,
         // ebills service
