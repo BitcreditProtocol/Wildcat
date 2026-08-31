@@ -389,7 +389,7 @@ mod tests {
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
         let inputs = vec![
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset.clone().into(),
+                &foreign_keyset.clone(),
                 cashu::Amount::from(512),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -397,7 +397,7 @@ mod tests {
             )
             .0,
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset.clone().into(),
+                &foreign_keyset.clone(),
                 cashu::Amount::from(256),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -485,8 +485,7 @@ mod tests {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
                 signatures.push(
-                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
-                        .unwrap(),
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone(), blind).unwrap(),
                 );
             }
             Ok(signatures)
@@ -520,7 +519,7 @@ mod tests {
         foreign_info.final_expiry = Some(expiration.timestamp() as u64);
         let originals = [
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset.clone().into(),
+                &foreign_keyset.clone(),
                 cashu::Amount::from(512),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -528,7 +527,7 @@ mod tests {
             )
             .0,
             generate_htlc_proof_for_online_exchange(
-                &foreign_keyset.clone().into(),
+                &foreign_keyset.clone(),
                 cashu::Amount::from(256),
                 chrono::Utc::now() + chrono::TimeDelta::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
@@ -571,8 +570,7 @@ mod tests {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
                 signatures.push(
-                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
-                        .unwrap(),
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone(), blind).unwrap(),
                 );
             }
             Ok(signatures)
@@ -762,7 +760,7 @@ mod tests {
         let myself_kp = core::generate_random_keypair();
         let (foreign_kinfo, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let (foreign_proof, preimage) = generate_htlc_proof_for_online_exchange(
-            &foreign_keyset.clone().into(),
+            &foreign_keyset.clone(),
             cashu::Amount::from(256),
             chrono::Utc::now() + chrono::TimeDelta::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
@@ -902,7 +900,7 @@ mod tests {
         let myself_kp = core::generate_random_keypair();
         let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
         let (foreign_proof, _) = generate_htlc_proof_for_online_exchange(
-            &foreign_keyset.clone().into(),
+            &foreign_keyset.clone(),
             cashu::Amount::from(256),
             chrono::Utc::now() + chrono::TimeDelta::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
