@@ -13,7 +13,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::{self, ExposureReservationInput, GovernedDenialInput},
+    persistence::{self, GovernedDenialInput},
     quotes, service, TStamp,
 };
 
@@ -250,6 +250,22 @@ impl persistence::Repository for DBQuotes {
         Ok(Some(quote))
     }
 
+    async fn load_applicant_action_projection(
+        &self,
+        _id: uuid::Uuid,
+    ) -> Result<Option<bcr_common::wire::quotes::ApplicantActionProjection>> {
+        Err(Error::ApplicantActionProjectionUnavailable)
+    }
+
+    async fn apply_applicant_action_projection(
+        &self,
+        _mutation: crate::persistence::ApplicantActionProjectionMutation,
+    ) -> Result<bcr_common::wire::quotes::CreditApplicantActionReceipt> {
+        // The deployed quote service uses SurrealDB. Keep the dormant SQL backend fail-closed
+        // until it has the same durable tombstone and compare-and-set semantics.
+        Err(Error::ApplicantActionProjectionUnavailable)
+    }
+
     async fn update_status_if_pending(
         &self,
         id: uuid::Uuid,
@@ -262,11 +278,12 @@ impl persistence::Repository for DBQuotes {
     async fn execute_authorization(
         &self,
         _quote: quotes::Quote,
-        _exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
         // ponytail: the deployed quote service uses SurrealDB; keep the dormant SQL backend
-        // fail-closed until it gains the same transactional exposure ledger.
-        Err(Error::CreditCapacityUnavailable)
+        // fail-closed until it gains the same atomic authorization transition.
+        Err(Error::InternalServer(String::from(
+            "Credit authorization is unavailable on the SQL backend",
+        )))
     }
 
     async fn execute_governed_denial(
@@ -282,18 +299,9 @@ impl persistence::Repository for DBQuotes {
         &self,
         id: uuid::Uuid,
         new_status: quotes::Status,
-        _now: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
         self.update_status_if(id, quotes::StatusDiscriminants::Offered, new_status)
             .await
-    }
-
-    async fn release_committed_exposure(
-        &self,
-        _id: uuid::Uuid,
-        _now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
-        Err(Error::CreditCapacityUnavailable)
     }
 
     async fn update_status_if_accepted(

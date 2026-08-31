@@ -13,18 +13,18 @@
     "keyId": "synthetic-ed25519-v1",
     "mintId": "synthetic-mint-guatemala",
     "mintQuoteId": "synthetic-quote-a",
-    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
-    "creditProgramDigest": "sha256:d8f65c260a9dc70a14afab2a67a909776bb0952dff0ff8136b595f12374eba7c",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v2",
+    "creditProgramDigest": "sha256:969d20972e556cac9682041688dd18e24d030aa7bc14a1384eb8c3377247aa9e",
     "caseId": "synthetic-case-a",
     "billId": "synthetic-bill-a",
     "billStateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "holderRef": "synthetic-holder-a",
     "acceptorRef": "synthetic-cooperativa-a",
-    "decisionSnapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
-    "decisionResultDigest": "sha256:8ab78c6652a3fecbd625828c8b6b6ad7edf6841ec0e86fb16c91c9e5464c9c43",
-    "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
-    "policyPackVersion": "synthetic-guatemala-coffee-v11",
-    "calculationVersion": "deterministic-credit-core-v9",
+    "decisionSnapshotDigest": "sha256:3a23fdc902bf25c689da681270adbf721800bf7b61a884ac858444ee9b49ff83",
+    "decisionResultDigest": "sha256:7181dd4a741319508efd3abbe1e90ea50a01db96d2e8254dc27eca0a667b03dc",
+    "policyPackDigest": "sha256:d0a748815ba104951f970cbcb47628c7b94d82a230c721d12c614e78dca41360",
+    "policyPackVersion": "synthetic-guatemala-coffee-v12",
+    "calculationVersion": "deterministic-credit-core-v10",
     "terms": {
       "billSumSat": "8000000",
       "discountedSat": "7734000",
@@ -49,8 +49,8 @@
   "verificationContext": {
     "now": "2026-08-10T12:05:00.000Z",
     "mintQuoteId": "synthetic-quote-a",
-    "creditProgramVersion": "synthetic-guatemala-coffee-program-v1",
-    "creditProgramDigest": "sha256:d8f65c260a9dc70a14afab2a67a909776bb0952dff0ff8136b595f12374eba7c",
+    "creditProgramVersion": "synthetic-guatemala-coffee-program-v2",
+    "creditProgramDigest": "sha256:969d20972e556cac9682041688dd18e24d030aa7bc14a1384eb8c3377247aa9e",
     "action": "request_to_mint",
     "billId": "synthetic-bill-a",
     "billStateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -58,43 +58,54 @@
     "acceptorRef": "synthetic-cooperativa-a",
     "decision": {
       "schemaVersion": "decision-result-v10",
-      "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
+      "snapshotDigest": "sha256:3a23fdc902bf25c689da681270adbf721800bf7b61a884ac858444ee9b49ff83",
       "mintId": "synthetic-mint-guatemala",
-      "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
-      "policyPackVersion": "synthetic-guatemala-coffee-v11",
-      "calculationVersion": "deterministic-credit-core-v9",
+      "policyPackDigest": "sha256:d0a748815ba104951f970cbcb47628c7b94d82a230c721d12c614e78dca41360",
+      "policyPackVersion": "synthetic-guatemala-coffee-v12",
+      "calculationVersion": "deterministic-credit-core-v10",
       "assessmentStatus": "ready_for_decision",
       "recommendation": "offer_available",
       "axes": [
         {
           "axis": "instrument_eligibility",
           "status": "pass",
-          "reasonCodes": ["accepted_bill_eligible"]
+          "reasonCodes": [
+            "accepted_bill_eligible"
+          ]
         },
         {
           "axis": "acceptor_repayment_risk",
           "status": "pass",
-          "reasonCodes": ["acceptor_loss_parameters_verified"]
+          "reasonCodes": [
+            "acceptor_loss_parameters_verified"
+          ]
         },
         {
           "axis": "transaction_integrity",
           "status": "pass",
-          "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
+          "reasonCodes": [
+            "duplicate_check_clear",
+            "bill_and_invoice_consistent"
+          ]
         },
         {
           "axis": "applicant_recourse_risk",
           "status": "pass",
-          "reasonCodes": ["whole_face_recourse_acknowledged"]
+          "reasonCodes": [
+            "whole_face_recourse_acknowledged"
+          ]
         },
         {
           "axis": "evidence_sufficiency",
           "status": "pass",
-          "reasonCodes": ["evidence_admissible"]
+          "reasonCodes": [
+            "evidence_admissible"
+          ]
         },
         {
           "axis": "mint_exposure_capacity",
-          "status": "pass",
-          "reasonCodes": ["mint_capacity_available"]
+          "status": "not_assessed",
+          "reasonCodes": []
         }
       ],
       "terms": {
@@ -112,7 +123,9 @@
         "feeRatioBps": 333
       },
       "verificationRequests": [],
-      "reasonCodes": ["governed_terms_available"],
+      "reasonCodes": [
+        "governed_terms_available"
+      ],
       "assessmentTrace": [
         {
           "ruleId": "accepted_bill_eligible",
@@ -272,11 +285,9 @@
           "observed": {
             "invoiceEvidenceState": "independently_verified",
             "acceptorEvidenceState": "independently_verified",
-            "mintCapacityEvidenceState": "independently_verified",
             "invoiceEvidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab",
             "acceptorEvidenceRefs": "synthetic-case-a-acceptor-loss-parameters",
-            "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check",
-            "mintCapacityEvidenceRefs": "synthetic-case-a-mint-capacity"
+            "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check"
           },
           "policy": {
             "requiredEvidenceStates": "corroborated,independently_verified",
@@ -285,31 +296,6 @@
           "effect": {
             "findingStatus": "pass",
             "assessmentMayProceed": true
-          }
-        },
-        {
-          "ruleId": "mint_capacity_available",
-          "subject": "mint_exposure_capacity",
-          "outcome": "pass",
-          "reasonCode": "mint_capacity_available",
-          "observed": {
-            "existingExposureSat": "8000000",
-            "proposedExposureSat": "8000000",
-            "resultingExposureSat": "16000000",
-            "evidenceState": "independently_verified",
-            "methodologyVersion": "synthetic-mint-capacity-v1",
-            "assessedBy": "synthetic_fixture_mint",
-            "assessedAt": "2026-08-10",
-            "validThrough": "2026-11-08",
-            "evidenceRefs": "synthetic-case-a-mint-capacity"
-          },
-          "policy": {
-            "exposureLimitSat": "40000000",
-            "remainingCapacityAfterSat": "24000000"
-          },
-          "effect": {
-            "findingStatus": "pass",
-            "capacityAvailable": true
           }
         },
         {
@@ -420,10 +406,10 @@
     "operatorId": "synthetic-operator-a"
   },
   "expected": {
-    "canonicalBase64": "AAAAGkFJLUNSRURJVC1BVVRIT1JJWkFUSU9OLVY3AAAAF2NyZWRpdC1hdXRob3JpemF0aW9uLXY3AAAAFHN5bnRoZXRpYy1lZDI1NTE5LXYxAAAAGHN5bnRoZXRpYy1taW50LWd1YXRlbWFsYQAAABFzeW50aGV0aWMtcXVvdGUtYQAAACVzeW50aGV0aWMtZ3VhdGVtYWxhLWNvZmZlZS1wcm9ncmFtLXYxAAAAR3NoYTI1NjpkOGY2NWMyNjBhOWRjNzBhMTRhZmFiMmE2N2E5MDk3NzZiYjA5NTJkZmYwZmY4MTM2YjU5NWYxMjM3NGViYTdjAAAAEHN5bnRoZXRpYy1jYXNlLWEAAAAQc3ludGhldGljLWJpbGwtYQAAAEdzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQAAABJzeW50aGV0aWMtaG9sZGVyLWEAAAAXc3ludGhldGljLWNvb3BlcmF0aXZhLWEAAABHc2hhMjU2OmY1ZDg5N2E4NDRkZTQ5NmExMTg0Y2RhNjZkOGJkMDY4ZTA0ZDNlNDYzYjcyZmIxMmUwOWE0OTVlYjY2ZjYwNjcAAABHc2hhMjU2OjhhYjc4YzY2NTJhM2ZlY2JkNjI1ODI4YzhiNmI2YWQ3ZWRmNjg0MWVjMGU4NmZiMTZjOTFjOWU1NDY0YzljNDMAAABHc2hhMjU2OjgwZGFjNjJhYTFhYjY1ZjcyYWU0OGM2ZjA1YTVjZGMyZTAwMWQ5NzIwYzBmYzU1ZTIwNDcwYWFmMTU0ZDljNDYAAAAec3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtdjExAAAAHGRldGVybWluaXN0aWMtY3JlZGl0LWNvcmUtdjkAAAAHODAwMDAwMAAAAAc3NzM0MDAwAAAABjIxNjAwMAAAAAU1MDAwMAAAAAYyNjYwMDAAAAAHODAwMDAwMAAAAAoyMDI3LTAyLTA2AAAACjIwMjYtMDgtMTIAAAADMTgwAAAAAzU0MAAAAAM2ODgAAAADMzMzAAAAFHN5bnRoZXRpYy1vcGVyYXRvci1hAAAAGDIwMjYtMDgtMTBUMTI6MDA6MDAuMDAwWgAAABgyMDI2LTA4LTEwVDEyOjE1OjAwLjAwMFoAAAAkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxAAAAD3JlcXVlc3RfdG9fbWludAAAAAR0cnVl",
-    "authorizationDigest": "sha256:70abf8987ac403c6518229d9f2b4b2542a24bd8a7619e5c57dab1aab4cd8ca7e",
+    "canonicalBase64": "AAAAGkFJLUNSRURJVC1BVVRIT1JJWkFUSU9OLVY3AAAAF2NyZWRpdC1hdXRob3JpemF0aW9uLXY3AAAAFHN5bnRoZXRpYy1lZDI1NTE5LXYxAAAAGHN5bnRoZXRpYy1taW50LWd1YXRlbWFsYQAAABFzeW50aGV0aWMtcXVvdGUtYQAAACVzeW50aGV0aWMtZ3VhdGVtYWxhLWNvZmZlZS1wcm9ncmFtLXYyAAAAR3NoYTI1Njo5NjlkMjA5NzJlNTU2Y2FjOTY4MjA0MTY4OGRkMThlMjRkMDMwYWE3YmMxNGExMzg0ZWI4YzMzNzcyNDdhYTllAAAAEHN5bnRoZXRpYy1jYXNlLWEAAAAQc3ludGhldGljLWJpbGwtYQAAAEdzaGEyNTY6YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQAAABJzeW50aGV0aWMtaG9sZGVyLWEAAAAXc3ludGhldGljLWNvb3BlcmF0aXZhLWEAAABHc2hhMjU2OjNhMjNmZGM5MDJiZjI1YzY4OWRhNjgxMjcwYWRiZjcyMTgwMGJmN2I2MWE4ODRhYzg1ODQ0NGVlOWI0OWZmODMAAABHc2hhMjU2OjcxODFkZDRhNzQxMzE5NTA4ZWZkM2FiYmUxZTkwZWE1MGEwMWRiOTZkMmU4MjU0ZGMyN2VjYTBhNjY3YjAzZGMAAABHc2hhMjU2OmQwYTc0ODgxNWJhMTA0OTUxZjk3MGNiY2I0NzYyOGM3Yjk0ZDgyYTIzMGM3MjFkMTJjNjE0ZTc4ZGNhNDEzNjAAAAAec3ludGhldGljLWd1YXRlbWFsYS1jb2ZmZWUtdjEyAAAAHWRldGVybWluaXN0aWMtY3JlZGl0LWNvcmUtdjEwAAAABzgwMDAwMDAAAAAHNzczNDAwMAAAAAYyMTYwMDAAAAAFNTAwMDAAAAAGMjY2MDAwAAAABzgwMDAwMDAAAAAKMjAyNy0wMi0wNgAAAAoyMDI2LTA4LTEyAAAAAzE4MAAAAAM1NDAAAAADNjg4AAAAAzMzMwAAABRzeW50aGV0aWMtb3BlcmF0b3ItYQAAABgyMDI2LTA4LTEwVDEyOjAwOjAwLjAwMFoAAAAYMjAyNi0wOC0xMFQxMjoxNTowMC4wMDBaAAAAJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMQAAAA9yZXF1ZXN0X3RvX21pbnQAAAAEdHJ1ZQ==",
+    "authorizationDigest": "sha256:07f4754201beafefb3b7c87323a7be7624d45306ab077e217b31eeb7a4e6b856",
     "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
-    "signature": "JDJuIXQ47E62bs1+L9Fl7yBoT5U423XrL8H812zcBlrVtRPvJKNvweyDaN7gGG3gwLj1aR2bg2fOzrezto1ZCw=="
+    "signature": "7/63lfyvOzHkh01y598k6b/dAiKZyEnLT8lTseBZVzkP8oiUM/xiFgsXvkhyY83mBGd+iubbAbwtswkIgfOVDA=="
   },
   "negativeEnvelopes": [
     {
@@ -479,43 +465,54 @@
       "patch": {
         "decision": {
           "schemaVersion": "decision-result-v10",
-          "snapshotDigest": "sha256:f5d897a844de496a1184cda66d8bd068e04d3e463b72fb12e09a495eb66f6067",
+          "snapshotDigest": "sha256:3a23fdc902bf25c689da681270adbf721800bf7b61a884ac858444ee9b49ff83",
           "mintId": "synthetic-mint-b",
-          "policyPackDigest": "sha256:80dac62aa1ab65f72ae48c6f05a5cdc2e001d9720c0fc55e20470aaf154d9c46",
-          "policyPackVersion": "synthetic-guatemala-coffee-v11",
-          "calculationVersion": "deterministic-credit-core-v9",
+          "policyPackDigest": "sha256:d0a748815ba104951f970cbcb47628c7b94d82a230c721d12c614e78dca41360",
+          "policyPackVersion": "synthetic-guatemala-coffee-v12",
+          "calculationVersion": "deterministic-credit-core-v10",
           "assessmentStatus": "ready_for_decision",
           "recommendation": "offer_available",
           "axes": [
             {
               "axis": "instrument_eligibility",
               "status": "pass",
-              "reasonCodes": ["accepted_bill_eligible"]
+              "reasonCodes": [
+                "accepted_bill_eligible"
+              ]
             },
             {
               "axis": "acceptor_repayment_risk",
               "status": "pass",
-              "reasonCodes": ["acceptor_loss_parameters_verified"]
+              "reasonCodes": [
+                "acceptor_loss_parameters_verified"
+              ]
             },
             {
               "axis": "transaction_integrity",
               "status": "pass",
-              "reasonCodes": ["duplicate_check_clear", "bill_and_invoice_consistent"]
+              "reasonCodes": [
+                "duplicate_check_clear",
+                "bill_and_invoice_consistent"
+              ]
             },
             {
               "axis": "applicant_recourse_risk",
               "status": "pass",
-              "reasonCodes": ["whole_face_recourse_acknowledged"]
+              "reasonCodes": [
+                "whole_face_recourse_acknowledged"
+              ]
             },
             {
               "axis": "evidence_sufficiency",
               "status": "pass",
-              "reasonCodes": ["evidence_admissible"]
+              "reasonCodes": [
+                "evidence_admissible"
+              ]
             },
             {
               "axis": "mint_exposure_capacity",
-              "status": "pass",
-              "reasonCodes": ["mint_capacity_available"]
+              "status": "not_assessed",
+              "reasonCodes": []
             }
           ],
           "terms": {
@@ -533,7 +530,9 @@
             "feeRatioBps": 333
           },
           "verificationRequests": [],
-          "reasonCodes": ["governed_terms_available"],
+          "reasonCodes": [
+            "governed_terms_available"
+          ],
           "assessmentTrace": [
             {
               "ruleId": "accepted_bill_eligible",
@@ -693,11 +692,9 @@
               "observed": {
                 "invoiceEvidenceState": "independently_verified",
                 "acceptorEvidenceState": "independently_verified",
-                "mintCapacityEvidenceState": "independently_verified",
                 "invoiceEvidenceRefs": "synthetic-invoice-a,sha256:abababababababababababababababababababababababababababababababab",
                 "acceptorEvidenceRefs": "synthetic-case-a-acceptor-loss-parameters",
-                "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check",
-                "mintCapacityEvidenceRefs": "synthetic-case-a-mint-capacity"
+                "duplicateCheckEvidenceRefs": "synthetic-case-a-duplicate-check"
               },
               "policy": {
                 "requiredEvidenceStates": "corroborated,independently_verified",
@@ -706,31 +703,6 @@
               "effect": {
                 "findingStatus": "pass",
                 "assessmentMayProceed": true
-              }
-            },
-            {
-              "ruleId": "mint_capacity_available",
-              "subject": "mint_exposure_capacity",
-              "outcome": "pass",
-              "reasonCode": "mint_capacity_available",
-              "observed": {
-                "existingExposureSat": "8000000",
-                "proposedExposureSat": "8000000",
-                "resultingExposureSat": "16000000",
-                "evidenceState": "independently_verified",
-                "methodologyVersion": "synthetic-mint-capacity-v1",
-                "assessedBy": "synthetic_fixture_mint",
-                "assessedAt": "2026-08-10",
-                "validThrough": "2026-11-08",
-                "evidenceRefs": "synthetic-case-a-mint-capacity"
-              },
-              "policy": {
-                "exposureLimitSat": "40000000",
-                "remainingCapacityAfterSat": "24000000"
-              },
-              "effect": {
-                "findingStatus": "pass",
-                "capacityAvailable": true
               }
             },
             {
@@ -879,7 +851,7 @@
   "completionReceipt": {
     "receiptVersion": "credit-authorization-receipt-v1",
     "operationId": "sha256:483c6400937355bb9c9c306dcdc2c949ad5921f7d1999dfea0bdc02be4d4cd21",
-    "authorizationDigest": "sha256:70abf8987ac403c6518229d9f2b4b2542a24bd8a7619e5c57dab1aab4cd8ca7e",
+    "authorizationDigest": "sha256:07f4754201beafefb3b7c87323a7be7624d45306ab077e217b31eeb7a4e6b856",
     "caseId": "synthetic-case-a",
     "status": "completed",
     "mintId": "synthetic-mint-guatemala",

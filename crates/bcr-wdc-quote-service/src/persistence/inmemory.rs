@@ -15,7 +15,7 @@ use crate::{
     error::{Error, Result},
     persistence::{
         same_executed_quote, same_governed_denial_authority, same_pending_quote_request,
-        ExposureReservationInput, GovernedDenialInput, Repository,
+        GovernedDenialInput, Repository,
     },
     quotes,
     service::{ListFilters, SortOrder},
@@ -25,10 +25,11 @@ use crate::{
 #[derive(Default, Clone, Debug)]
 pub struct QuotesIDMap {
     quotes: Arc<RwLock<HashMap<Uuid, quotes::Quote>>>,
-    reservations: Arc<RwLock<HashMap<Uuid, bcr_common::wire::quotes::CreditExposureReservation>>>,
     quote_reissues: Arc<RwLock<HashMap<Uuid, QuoteReissueRecord>>>,
     governed_denials:
         Arc<RwLock<HashMap<Uuid, bcr_common::wire::quotes::CreditAuthorizationReceipt>>>,
+    applicant_actions:
+        Arc<RwLock<HashMap<Uuid, crate::persistence::ApplicantActionProjectionState>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -172,6 +173,105 @@ impl Repository for QuotesIDMap {
         Ok(self.quotes.read().unwrap().get(&id).cloned())
     }
 
+    async fn load_applicant_action_projection(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<bcr_common::wire::quotes::ApplicantActionProjection>> {
+        if !self.quotes.read().unwrap().contains_key(&id) {
+            return Err(Error::ResourceNotFound(id.to_string()));
+        }
+        Ok(self
+            .applicant_actions
+            .read()
+            .unwrap()
+            .get(&id)
+            .and_then(|state| state.projection.clone()))
+    }
+
+    async fn apply_applicant_action_projection(
+        &self,
+        mutation: crate::persistence::ApplicantActionProjectionMutation,
+    ) -> Result<bcr_common::wire::quotes::CreditApplicantActionReceipt> {
+        let mut states = self.applicant_actions.write().unwrap();
+        if let Some(current) = states.get(&mutation.quote_id) {
+            if current.last_operation_id == mutation.operation_id {
+                return Ok(current.receipt.clone());
+            }
+            if current.last_revision_digest != mutation.expected_revision_digest {
+                return Err(Error::ApplicantActionProjectionConflict);
+            }
+        } else if mutation.expected_revision_digest.is_some() {
+            return Err(Error::ApplicantActionProjectionConflict);
+        }
+        let stored_quotes = self.quotes.read().unwrap();
+        let quote = stored_quotes
+            .get(&mutation.quote_id)
+            .ok_or_else(|| Error::ResourceNotFound(mutation.quote_id.to_string()))?;
+        if !matches!(quote.status, quotes::Status::Pending { .. }) {
+            return Err(Error::ApplicantActionProjectionConflict);
+        }
+        if mutation.expires_at <= mutation.applied_at {
+            return Err(Error::ApplicantActionProjectionInvalid);
+        }
+        if mutation
+            .projection
+            .as_ref()
+            .is_some_and(|projection| projection.revision_digest != mutation.revision_digest)
+        {
+            return Err(Error::ApplicantActionProjectionInvalid);
+        }
+        if mutation.receipt.schema_version != "credit-applicant-action-receipt-v1"
+            || mutation.receipt.operation_id != mutation.operation_id
+            || mutation.receipt.mint_quote_id != mutation.quote_id
+            || mutation.receipt.revision_digest != mutation.revision_digest
+            || mutation.receipt.expected_revision_digest != mutation.expected_revision_digest
+            || mutation.receipt.action != crate::authorization::APPLICANT_ACTION_COMMAND_ACTION
+            || mutation.receipt.status != "completed"
+            || matches!(
+                (&mutation.receipt.applicant_action, &mutation.projection),
+                (
+                    bcr_common::wire::quotes::CreditApplicantAction::ClarificationRequired,
+                    None
+                ) | (
+                    bcr_common::wire::quotes::CreditApplicantAction::None,
+                    Some(_)
+                )
+            )
+        {
+            return Err(Error::ApplicantActionProjectionInvalid);
+        }
+        match (states.get(&mutation.quote_id), &mutation.projection) {
+            (Some(current), Some(projection))
+                if current.last_revision_digest.as_ref() == Some(&projection.revision_digest) =>
+            {
+                return Err(Error::ApplicantActionProjectionConflict);
+            }
+            (Some(current), None) if current.projection.is_none() => {
+                return Err(Error::ApplicantActionProjectionConflict);
+            }
+            (None, None) => return Err(Error::ApplicantActionProjectionConflict),
+            _ => {}
+        }
+        if mutation.expected_revision_digest.as_ref() == Some(&mutation.revision_digest) {
+            return Err(Error::ApplicantActionProjectionConflict);
+        }
+        let last_revision_digest = Some(mutation.revision_digest);
+        let projection = mutation.projection;
+        states.insert(
+            mutation.quote_id,
+            crate::persistence::ApplicantActionProjectionState {
+                quote_id: mutation.quote_id,
+                projection: projection.clone(),
+                last_revision_digest,
+                last_operation_id: mutation.operation_id,
+                last_command_digest: mutation.command_digest,
+                receipt: mutation.receipt.clone(),
+            },
+        );
+        drop(stored_quotes);
+        Ok(mutation.receipt)
+    }
+
     async fn update_status_if_pending(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
         let result = m.get_mut(&qid);
@@ -189,14 +289,12 @@ impl Repository for QuotesIDMap {
     async fn execute_authorization(
         &self,
         quote: quotes::Quote,
-        exposure: ExposureReservationInput,
     ) -> Result<bcr_common::wire::quotes::CreditAuthorizationReceipt> {
         let receipt = quote
             .authorization_receipt
             .clone()
             .ok_or(Error::CreditAuthorizationInvalid)?;
         let mut quotes = self.quotes.write().unwrap();
-        let mut reservations = self.reservations.write().unwrap();
         let stored = quotes
             .get_mut(&quote.id)
             .ok_or_else(|| Error::ResourceNotFound(quote.id.to_string()))?;
@@ -212,44 +310,8 @@ impl Repository for QuotesIDMap {
         if !matches!(stored.status, quotes::Status::Pending { .. }) {
             return Err(Error::CreditAuthorizationConflict);
         }
-        let active = reservations
-            .values()
-            .filter(|reservation| {
-                reservation.mint_id == exposure.mint_id
-                    && matches!(reservation.state.as_str(), "reserved" | "committed")
-            })
-            .try_fold(0_u64, |total, reservation| {
-                reservation
-                    .amount_sat
-                    .parse::<u64>()
-                    .ok()
-                    .and_then(|amount| total.checked_add(amount))
-            })
-            .ok_or(Error::CreditCapacityUnavailable)?;
-        if exposure
-            .existing_exposure_sat
-            .checked_add(active)
-            .and_then(|total| total.checked_add(exposure.amount_sat))
-            .is_none_or(|total| total > exposure.exposure_limit_sat)
-        {
-            return Err(Error::CreditCapacityExceeded);
-        }
         stored.status = quote.status;
         stored.authorization_receipt = Some(receipt.clone());
-        reservations.insert(
-            quote.id,
-            bcr_common::wire::quotes::CreditExposureReservation {
-                reservation_version: String::from("credit-exposure-reservation-v1"),
-                reservation_id: uuid::Uuid::new_v4(),
-                mint_id: exposure.mint_id,
-                quote_id: quote.id,
-                amount_sat: exposure.amount_sat.to_string(),
-                capacity_evidence_id: exposure.capacity_evidence_id,
-                state: String::from("reserved"),
-                created_at: exposure.now,
-                updated_at: exposure.now,
-            },
-        );
         Ok(receipt)
     }
 
@@ -295,38 +357,11 @@ impl Repository for QuotesIDMap {
         Ok(input.receipt)
     }
 
-    async fn update_status_if_offered(
-        &self,
-        qid: uuid::Uuid,
-        new: quotes::Status,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
+    async fn update_status_if_offered(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
         let mut m = self.quotes.write().unwrap();
-        let mut reservations = self.reservations.write().unwrap();
         let result = m.get_mut(&qid);
         if let Some(old) = result {
             if matches!(old.status, quotes::Status::Offered { .. }) {
-                let target = match &new {
-                    quotes::Status::Accepted { .. } => "committed",
-                    quotes::Status::Rejected { .. } | quotes::Status::OfferExpired { .. } => {
-                        "released"
-                    }
-                    _ => {
-                        return Err(Error::QuotesRepository(anyhow!(
-                            "offered quote transition has no exposure lifecycle"
-                        )))
-                    }
-                };
-                let reservation = reservations.get_mut(&qid).ok_or_else(|| {
-                    Error::QuotesRepository(anyhow!("quote {qid} has no exposure reservation"))
-                })?;
-                if reservation.state != "reserved" {
-                    return Err(Error::QuotesRepository(anyhow!(
-                        "quote {qid} exposure reservation is not reserved"
-                    )));
-                }
-                reservation.state = String::from(target);
-                reservation.updated_at = now;
                 old.status = new;
                 return Ok(());
             }
@@ -334,28 +369,6 @@ impl Repository for QuotesIDMap {
         Err(Error::QuotesRepository(anyhow!(
             "quote {qid} not found or not offered"
         )))
-    }
-
-    async fn release_committed_exposure(
-        &self,
-        qid: uuid::Uuid,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
-        let mut reservations = self.reservations.write().unwrap();
-        let reservation = reservations.get_mut(&qid).ok_or_else(|| {
-            Error::QuotesRepository(anyhow!("quote {qid} has no exposure reservation"))
-        })?;
-        match reservation.state.as_str() {
-            "released" => Ok(()),
-            "committed" => {
-                reservation.state = String::from("released");
-                reservation.updated_at = now;
-                Ok(())
-            }
-            _ => Err(Error::QuotesRepository(anyhow!(
-                "quote {qid} exposure reservation is not committed"
-            ))),
-        }
     }
 
     async fn update_status_if_accepted(&self, qid: uuid::Uuid, new: quotes::Status) -> Result<()> {
