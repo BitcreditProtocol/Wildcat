@@ -510,8 +510,7 @@ mod tests {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
                 signatures.push(
-                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
-                        .unwrap(),
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone(), blind).unwrap(),
                 );
             }
             Ok(signatures)
@@ -600,8 +599,7 @@ mod tests {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
                 signatures.push(
-                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
-                        .unwrap(),
+                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone(), blind).unwrap(),
                 );
             }
             Ok(signatures)
