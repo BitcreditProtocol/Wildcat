@@ -162,6 +162,17 @@ impl Service {
             }
         }
         match quotes.last() {
+            // A governed denial is not an ordinary user-decision timeout. It remains the latest
+            // quote until the reviewed-correction endpoint consumes a signed reissue permit that
+            // binds the old denial, corrected case, current holder, and preselected new quote id.
+            // Letting the legacy enquiry path create a fresh quote after one day would bypass that
+            // governed reassessment boundary.
+            Some(Quote {
+                id,
+                status: Status::Denied { .. },
+                authorization_receipt: Some(receipt),
+                ..
+            }) if receipt.action == crate::authorization::QUOTE_DENIAL_ACTION => Ok(*id),
             Some(Quote {
                 id,
                 status: Status::Canceled { tstamp },
@@ -1025,6 +1036,92 @@ mod tests {
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
+    }
+
+    #[tokio::test]
+    async fn legacy_denial_can_be_reenquired_after_user_decision_retention() {
+        let id = Uuid::new_v4();
+        let rnd_bill = generate_random_bill();
+        let public_key = keys_utils::publics()[0];
+        let cloned = rnd_bill.clone();
+        let denied_at = TStamp::from_timestamp(10_000, 0).unwrap();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by_bill().returning(move |_, _| {
+            Ok(vec![Quote {
+                status: Status::Denied { tstamp: denied_at },
+                id,
+                bill: cloned.clone(),
+                submitted: denied_at,
+                credit_program: Some(crate::quotes::test_credit_program_binding()),
+                authorization_receipt: None,
+            }])
+        });
+        repo.expect_store_if_latest()
+            .withf(move |expected, _| *expected == Some(id))
+            .returning(|_, quote| Ok(quote.id));
+        let service = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(MockWdcClient::new()),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+        };
+
+        let submitted = denied_at + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let reissued = service
+            .enquire(rnd_bill, public_key, submitted)
+            .await
+            .unwrap();
+
+        assert_ne!(reissued, id);
+    }
+
+    #[tokio::test]
+    async fn governed_denial_cannot_be_bypassed_by_legacy_reenquiry() {
+        let id = Uuid::new_v4();
+        let rnd_bill = generate_random_bill();
+        let public_key = keys_utils::publics()[0];
+        let cloned = rnd_bill.clone();
+        let denied_at = TStamp::from_timestamp(10_000, 0).unwrap();
+        let mut repo = MockRepository::new();
+        repo.expect_search_by_bill().returning(move |_, _| {
+            Ok(vec![Quote {
+                status: Status::Denied { tstamp: denied_at },
+                id,
+                bill: cloned.clone(),
+                submitted: denied_at,
+                credit_program: Some(crate::quotes::test_credit_program_binding()),
+                authorization_receipt: Some(wire_quotes::CreditAuthorizationReceipt {
+                    receipt_version: String::from("credit-authorization-receipt-v1"),
+                    operation_id: format!("sha256:{}", "a".repeat(64)),
+                    authorization_digest: format!("sha256:{}", "b".repeat(64)),
+                    case_id: uuid::Uuid::from_u128(10).to_string(),
+                    status: String::from("completed"),
+                    mint_id: String::from("local-wildcat"),
+                    bill_id: cloned.id.to_string(),
+                    action: String::from(crate::authorization::QUOTE_DENIAL_ACTION),
+                    effect_id: id.to_string(),
+                    result_digest: format!("sha256:{}", "c".repeat(64)),
+                    completed_at: denied_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    synthetic: true,
+                }),
+            }])
+        });
+        let service = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(MockWdcClient::new()),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+        };
+
+        let submitted = denied_at + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let returned = service
+            .enquire(rnd_bill, public_key, submitted)
+            .await
+            .unwrap();
+
+        assert_eq!(returned, id);
     }
 
     #[tokio::test]
