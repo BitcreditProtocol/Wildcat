@@ -216,9 +216,15 @@ impl Store {
     pub async fn for_quote(&self, quote: &Quote) -> Result<wire_quotes::MintCreditEvidence> {
         let acceptor_ref = quote.bill.drawee.node_id.to_string();
         let acceptor_risk = self.latest_acceptor(&acceptor_ref).await?;
-        if let Some(record) = &acceptor_risk {
-            self.verify_risk(&record.signed_evidence, &acceptor_ref, chrono::Utc::now())?;
-        }
+
+        // Quote lookup is a historical read. Keep the exact record that was accepted under the
+        // trust policy in force at `verified_at` readable after its validity window ends or the
+        // Mint rotates its authority key/methodology. Re-verifying it against today's policy here
+        // would make the quote itself unreadable and erase the operator's provenance trail.
+        //
+        // This deliberately does not make the record usable for a new governed decision: writes
+        // still pass through `verify_risk`, and decision/authorization consumers must independently
+        // validate the signed evidence against their current trust policy and decision time.
         Ok(wire_quotes::MintCreditEvidence {
             schema_version: String::from("mint-credit-evidence-v2"),
             mint_id: self.settings.mint_id.clone(),
@@ -336,6 +342,19 @@ mod tests {
         }
     }
 
+    fn acceptor_command(
+        quote: &Quote,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AcceptorRiskEvidenceCommand {
+        AcceptorRiskEvidenceCommand {
+            operator_id: String::from("operator-a"),
+            request: AcceptorRiskEvidenceRequest {
+                signed_evidence: signed_risk(quote, now),
+                written_basis: String::from("Reviewed against the current Mint risk book."),
+            },
+        }
+    }
+
     fn quote() -> Quote {
         Quote::new(
             crate::quotes::BillInfo::random(),
@@ -350,13 +369,7 @@ mod tests {
         let store = store().await;
         let quote = quote();
         let now = chrono::Utc::now();
-        let acceptor = AcceptorRiskEvidenceCommand {
-            operator_id: String::from("operator-a"),
-            request: AcceptorRiskEvidenceRequest {
-                signed_evidence: signed_risk(&quote, now),
-                written_basis: String::from("Reviewed against the current Mint risk book."),
-            },
-        };
+        let acceptor = acceptor_command(&quote, now);
         let first = store
             .record_acceptor(&quote, acceptor.clone(), now)
             .await
@@ -408,5 +421,80 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, Error::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn keeps_expired_evidence_readable_as_historical_provenance() {
+        let store = store().await;
+        let quote = quote();
+        let recorded_at = chrono::Utc::now() - chrono::Duration::days(31);
+        let record = store
+            .record_acceptor(&quote, acceptor_command(&quote, recorded_at), recorded_at)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            store.verify_risk(
+                &record.signed_evidence,
+                &quote.bill.drawee.node_id.to_string(),
+                chrono::Utc::now()
+            ),
+            Err(Error::InvalidInput(_))
+        ));
+
+        let snapshot = store.for_quote(&quote).await.unwrap();
+        let historical = snapshot.acceptor_risk.unwrap();
+        assert_eq!(historical.evidence_id, record.evidence_id);
+        assert_eq!(
+            historical.signed_evidence.evidence.valid_through,
+            recorded_at.date_naive() + chrono::Days::new(30)
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_rotated_authority_evidence_readable_as_historical_provenance() {
+        let store = store().await;
+        let quote = quote();
+        let now = chrono::Utc::now();
+        let record = store
+            .record_acceptor(&quote, acceptor_command(&quote, now), now)
+            .await
+            .unwrap();
+        let rotated_signing_key = SigningKey::from_bytes(
+            &sha256::Hash::hash(b"rotated local testnet credit evidence authority").to_byte_array(),
+        );
+        let rotated = Store {
+            db: store.db.clone(),
+            settings: Settings {
+                mint_id: store.settings.mint_id.clone(),
+                risk_methodology_version: String::from("risk-v2"),
+                risk_assessed_by: store.settings.risk_assessed_by.clone(),
+                risk_authority_key_id: String::from("testnet-risk-authority-v2"),
+                risk_authority_public_key: general_purpose::URL_SAFE_NO_PAD
+                    .encode(rotated_signing_key.verifying_key().as_bytes()),
+                allow_synthetic: store.settings.allow_synthetic,
+            },
+        };
+
+        assert!(matches!(
+            rotated.verify_risk(
+                &record.signed_evidence,
+                &quote.bill.drawee.node_id.to_string(),
+                now
+            ),
+            Err(Error::InvalidInput(_))
+        ));
+
+        let snapshot = rotated.for_quote(&quote).await.unwrap();
+        let historical = snapshot.acceptor_risk.unwrap();
+        assert_eq!(historical.evidence_id, record.evidence_id);
+        assert_eq!(
+            historical.signed_evidence.evidence.key_id,
+            "testnet-risk-authority-v1"
+        );
+        assert_eq!(
+            historical.signed_evidence.evidence.methodology_version,
+            "risk-v1"
+        );
     }
 }
