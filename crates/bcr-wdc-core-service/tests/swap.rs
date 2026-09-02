@@ -35,7 +35,7 @@ async fn swap() {
         keys: keyset.keys.clone(),
     };
     controller
-        .keys
+        .service
         .repository
         .keys_store(entry)
         .await
@@ -90,7 +90,7 @@ async fn swap_p2pk() {
         keys: mint_keyset.keys.clone(),
     };
     controller
-        .keys
+        .service
         .repository
         .keys_store(entry)
         .await

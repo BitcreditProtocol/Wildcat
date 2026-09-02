@@ -7,13 +7,13 @@ use bcr_common::{
     wire::{keys as wire_keys, swap as wire_swap},
 };
 // ----- local imports
-use crate::{error::Result, keys, swap};
+use crate::{error::Result, service};
 
 // ----- end imports
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn new_keyset(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_keys::NewKeysetRequest>,
 ) -> Result<Json<ecash::KeySetInfo>> {
     let now = chrono::Utc::now();
@@ -28,17 +28,17 @@ pub async fn new_keyset(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn sign_blind(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(blinds): Json<Vec<cashu::BlindedMessage>>,
 ) -> Result<Json<Vec<cashu::BlindSignature>>> {
     tracing::debug!("Received sign blind request");
 
-    ctrl.sign_blinds(blinds.iter()).await.map(Json)
+    ctrl.sign_blinds(&blinds).await.map(Json)
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn verify_proof(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(proof): Json<cashu::Proof>,
 ) -> Result<()> {
     tracing::debug!("Received verify proof request");
@@ -48,7 +48,7 @@ pub async fn verify_proof(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn verify_fingerprint(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(fp): Json<wire_keys::ProofFingerprint>,
 ) -> Result<()> {
     tracing::debug!("Received verify fingerprint request");
@@ -58,28 +58,26 @@ pub async fn verify_fingerprint(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn recover_tokens(
-    State(ctrl): State<Arc<swap::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::RecoverRequest>,
 ) -> Result<Json<wire_swap::RecoverResponse>> {
     ctrl.recover(&request.proofs).await?;
     Ok(Json(wire_swap::RecoverResponse {}))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn burn_tokens(
-    State(ctrl): State<Arc<swap::service::Service>>,
-    State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::BurnRequest>,
 ) -> Result<Json<wire_swap::BurnResponse>> {
-    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let wire_swap::BurnRequest { proofs } = request;
-    let ys = ctrl.burn(&signsrvc, proofs).await?;
+    let ys = ctrl.burn(proofs).await?;
     Ok(Json(wire_swap::BurnResponse { ys }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(swap_srvc))]
 pub async fn reserve_ys(
-    State(swap_srvc): State<Arc<swap::service::Service>>,
+    State(swap_srvc): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::ReserveRequest>,
 ) -> Result<()> {
     swap_srvc.reserve(request.ys, request.deadline).await

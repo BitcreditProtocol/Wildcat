@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{
-        admin::{clowder as clowder_rest, core::BRError},
+        admin::{clowder as clowder_rest, core::BRError, treasury::Client as TreasuryClient},
         clowder::ClowderNatsClient,
     },
     core::{signature, BillId},
@@ -239,5 +239,34 @@ impl ClowderClient for DummyClowderClient {
 
     async fn verify_pk(&self, _mint_pk: &PublicKey) -> Result<PublicKeyOwner> {
         Ok(PublicKeyOwner::Beta)
+    }
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait TreasuryService: Send + Sync {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+}
+
+pub struct TreasuryCl {
+    pub cl: Box<TreasuryClient>,
+}
+
+#[async_trait]
+impl TreasuryService for TreasuryCl {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.cl.fees_store_proofs(proofs).await?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyTreasuryClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl TreasuryService for DummyTreasuryClient {
+    async fn store_proofs(&self, _proofs: Vec<cashu::Proof>) -> Result<()> {
+        Ok(())
     }
 }

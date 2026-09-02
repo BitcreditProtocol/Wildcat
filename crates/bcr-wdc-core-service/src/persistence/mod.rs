@@ -100,7 +100,7 @@ pub struct StoredCommitment {
 mod tests {
     use super::*;
     use crate::error::Error;
-    use bcr_common::{cashu::ProofsMethods, cdk_common, core, core_tests};
+    use bcr_common::{cashu::ProofsMethods, core, core_tests};
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{
         key::rand,
@@ -1174,7 +1174,7 @@ mod tests {
                 .into_iter()
                 .map(|b| b.0)
                 .collect();
-        let c_keyset = cdk_common::MintKeySet::from(keyset.clone());
+        let c_keyset = keyset.clone().into();
         let signatures = blinds
             .iter()
             .map(|b| {

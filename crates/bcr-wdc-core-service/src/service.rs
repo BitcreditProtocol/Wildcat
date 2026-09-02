@@ -27,11 +27,10 @@ use itertools::izip;
 use secp256k1::schnorr;
 // ----- local imports
 use crate::{
-    clients::ClowderClient,
+    clients::{ClowderClient, TreasuryService},
     error::{Error, Result},
-    keys::factory::Factory,
+    factory::Factory,
     persistence::{Repository, SignatureOwner, StoredCommitment, StoredSignature},
-    swap::TreasuryService,
     TStamp,
 };
 
@@ -157,16 +156,14 @@ impl Service {
         let Some(first_blind) = blinds.first() else {
             return Ok(Vec::new());
         };
-        let keyset = self.keys(first_blind.keyset_id).await?;
-        let mut c_keyset = cashu::MintKeySet::from(keyset);
+        let mut keyset: cdk_common::MintKeySet = self.keys(first_blind.keyset_id).await?.into();
         let mut signatures = Vec::with_capacity(blinds.len());
         for blind in blinds {
-            let current_keyset = if blind.keyset_id == c_keyset.id {
-                &c_keyset
+            let current_keyset = if blind.keyset_id == keyset.id {
+                &keyset
             } else {
-                let keyset = self.keys(blind.keyset_id).await?;
-                c_keyset = cashu::MintKeySet::from(keyset);
-                &c_keyset
+                keyset = self.keys(blind.keyset_id).await?.into();
+                &keyset
             };
             signatures.push(sign_ecash(current_keyset, blind)?);
         }
@@ -425,8 +422,7 @@ impl Service {
             if inputs_amount <= outputs_amount {
                 continue;
             }
-            let keyset = self.keys(kid).await?;
-            let keyset = cdk_common::MintKeySet::from(keyset);
+            let keyset = self.keys(kid).await?.into();
             let c_keyset = core_keys::to_keyset(&keyset, None);
             let premint = cashu::PreMintSecrets::random(
                 kid,
@@ -447,7 +443,7 @@ impl Service {
             stored_signatures: Vec::with_capacity(total_len),
         };
         for premint in premints {
-            let keyset = self.keys(premint.keyset_id).await?;
+            let keyset = self.keys(premint.keyset_id).await?.into();
             let blinded_messages = premint.blinded_messages();
             let signatures = self.generate_signatures(&blinded_messages).await?;
             generated
@@ -463,8 +459,7 @@ impl Service {
                 .into_iter()
                 .map(|premint| (premint.r, premint.secret))
                 .unzip();
-            let c_keyset = cdk_common::MintKeySet::from(keyset);
-            let c_keys = core_keys::to_keyset(&c_keyset, None).keys;
+            let c_keys = core_keys::to_keyset(&keyset, None).keys;
             let proofs = cashu::dhke::construct_proofs(signatures.clone(), rs, secrets, &c_keys)?;
             generated.signatures.extend(signatures);
             generated.proofs.extend(proofs);
@@ -519,7 +514,10 @@ mod tests {
     use bitcoin::bip32::DerivationPath;
 
     use super::*;
-    use crate::{clients::MockClowderClient, persistence::inmemory, swap::MockTreasuryService};
+    use crate::{
+        clients::{MockClowderClient, MockTreasuryService},
+        persistence::inmemory,
+    };
 
     fn seed() -> [u8; 64] {
         bip39::Mnemonic::from_str(

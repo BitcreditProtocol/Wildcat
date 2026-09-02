@@ -16,10 +16,9 @@ mod admin;
 pub mod clients;
 pub mod config;
 pub mod error;
-pub mod keys;
+pub mod factory;
 pub mod persistence;
 pub mod service;
-pub mod swap;
 mod web;
 // local imports
 use crate::persistence::Repository;
@@ -30,8 +29,6 @@ type TStamp = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
-    pub keys: Arc<keys::service::Service>,
-    pub swap: Arc<swap::service::Service>,
     pub service: Arc<service::Service>,
     pub cache: Arc<dyn nut19::Cache>,
 }
@@ -64,21 +61,12 @@ impl AppController {
             let repository: Arc<dyn Repository> = Arc::new(db);
             repository
         };
-        let keygen = keys::factory::Factory::new(seed, starting_derivation_path);
+        let keygen = factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl =
             client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
                 .await
                 .expect("Failed to create clowder client");
         let clowder_cl = Arc::new(clowder_cl);
-        let clowder_for_keys = keys::ClowderCl {
-            nats: clowder_cl.clone(),
-        };
-        let keys_service = keys::service::Service {
-            repository: repository.clone(),
-            clowder: Box::new(clowder_for_keys),
-            keygen: keygen.clone(),
-            min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
-        };
         let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
         let info = clowder_rest
             .get_info()
@@ -86,38 +74,22 @@ impl AppController {
             .expect("Failed to get clowder info");
         let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
             .expect("secp256k1::PublicKey == cashu::PublicKey");
-        let clowder_for_swap = swap::ClowderCl {
-            nats: clowder_cl.clone(),
-            rest: clowder_rest.clone(),
-        };
-        let clowder_for_service = clients::ClowderCl {
+        let clowder = clients::ClowderCl {
             nats: clowder_cl,
             rest: clowder_rest,
         };
         let max_expiry = chrono::Duration::seconds(max_expiry_sec as i64);
-        let treasury_cl = TreasuryClient::new(treasury_url);
-        let treasury_for_swap = swap::TreasuryCl {
-            cl: Box::new(treasury_cl.clone()),
-        };
-        let treasury_for_service = swap::TreasuryCl {
-            cl: Box::new(treasury_cl),
+        let treasury = clients::TreasuryCl {
+            cl: Box::new(TreasuryClient::new(treasury_url)),
         };
         let settle_window_tout =
             chrono::Utc::now() + chrono::Duration::seconds(settle_window_sec as i64);
         let service = service::Service {
             repository: repository.clone(),
-            clowder: Box::new(clowder_for_service),
-            treasury: Box::new(treasury_for_service),
+            clowder: Box::new(clowder),
+            treasury: Box::new(treasury),
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
-            max_expiry,
-            alpha_id,
-            settle_window_deadline: settle_window_tout,
-        };
-        let swap_service = swap::service::Service {
-            repository,
-            clowder: Box::new(clowder_for_swap),
-            treasury: Box::new(treasury_for_swap),
             max_expiry,
             alpha_id,
             settle_window_deadline: settle_window_tout,
@@ -125,8 +97,6 @@ impl AppController {
         let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
         let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
         Self {
-            keys: Arc::new(keys_service),
-            swap: Arc::new(swap_service),
             service: Arc::new(service),
             cache,
         }
@@ -136,8 +106,7 @@ impl AppController {
 pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
 where
     Cntrlr: Send + Sync + Clone + 'static,
-    Arc<keys::service::Service>: FromRef<Cntrlr>,
-    Arc<swap::service::Service>: FromRef<Cntrlr>,
+    Arc<service::Service>: FromRef<Cntrlr>,
     Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
     let web = Router::new()
@@ -184,25 +153,11 @@ pub mod test_utils {
         let seed = [0u8; 32];
         let derivation_path = btc32::DerivationPath::default();
         let repository = Arc::new(persistence::inmemory::Repository::default());
-        let keygen = keys::factory::Factory::new(&seed, derivation_path);
-        let keysrv = keys::service::Service {
-            repository: repository.clone(),
-            keygen: keygen.clone(),
-            clowder: Box::new(keys::DummyClowderClient),
-            min_keyset_fees_ppk: Default::default(),
-        };
-        let swprv = swap::service::Service {
-            repository: repository.clone(),
-            clowder: Box::new(swap::test_utils::DummyClowderClient),
-            treasury: Box::new(swap::test_utils::DummyTreasuryClient),
-            max_expiry: chrono::Duration::seconds(3600),
-            alpha_id: mint_kp().public_key(),
-            settle_window_deadline: TStamp::default(),
-        };
+        let keygen = factory::Factory::new(&seed, derivation_path);
         let service = service::Service {
             repository,
             clowder: Box::new(clients::DummyClowderClient),
-            treasury: Box::new(swap::test_utils::DummyTreasuryClient),
+            treasury: Box::new(clients::DummyTreasuryClient),
             keygen,
             min_keyset_fees_ppk: Default::default(),
             max_expiry: chrono::Duration::seconds(3600),
@@ -210,8 +165,6 @@ pub mod test_utils {
             settle_window_deadline: TStamp::default(),
         };
         AppController {
-            keys: Arc::new(keysrv),
-            swap: Arc::new(swprv),
             service: Arc::new(service),
             cache: Arc::new(nut19::Dummy),
         }
@@ -264,7 +217,7 @@ pub mod test_utils {
         let cntrl = test_controller();
         if let Some(entry) = keyset {
             cntrl
-                .keys
+                .service
                 .repository
                 .keys_store(entry)
                 .await
@@ -302,12 +255,12 @@ mod tests {
             keys: keyset.keys.clone(),
         };
         controller
-            .keys
+            .service
             .repository
             .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.keys.info(kinfo.id).await.is_ok());
+        assert!(controller.service.info(kinfo.id).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
         let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
             .into_iter()
@@ -330,12 +283,9 @@ mod tests {
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
-        let signsrvc = crate::swap::KeysSignService {
-            srvc: controller.keys.clone(),
-        };
         let (content, commitment) = controller
-            .swap
-            .commit_to_swap(&signsrvc, request, now)
+            .service
+            .commit_to_swap(request, now)
             .await
             .unwrap();
         core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
@@ -359,12 +309,12 @@ mod tests {
             keys: keyset.keys.clone(),
         };
         controller
-            .keys
+            .service
             .repository
             .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.keys.info(kinfo.id).await.is_ok());
+        assert!(controller.service.info(kinfo.id).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
         let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
             .into_iter()
@@ -387,20 +337,17 @@ mod tests {
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
-        let signsrvc = crate::swap::KeysSignService {
-            srvc: controller.keys.clone(),
-        };
         let (content, commitment) = controller
-            .swap
-            .commit_to_swap(&signsrvc, request, now)
+            .service
+            .commit_to_swap(request, now)
             .await
             .unwrap();
         core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
             .unwrap();
 
         controller
-            .swap
-            .swap(&signsrvc, proofs, blinds, commitment, now)
+            .service
+            .swap(proofs, blinds, commitment, now)
             .await
             .unwrap();
     }
@@ -423,7 +370,7 @@ mod tests {
             keys: mint_keyset.keys.clone(),
         };
         controller
-            .keys
+            .service
             .repository
             .keys_store(entry)
             .await
@@ -494,26 +441,23 @@ mod tests {
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
-        let signsrvc = crate::swap::KeysSignService {
-            srvc: controller.keys.clone(),
-        };
         let (_, commitment) = controller
-            .swap
-            .commit_to_swap(&signsrvc, request, now)
+            .service
+            .commit_to_swap(request, now)
             .await
             .unwrap();
 
         let res = controller
-            .swap
-            .swap(&signsrvc, proofs.clone(), blinds.clone(), commitment, now)
+            .service
+            .swap(proofs.clone(), blinds.clone(), commitment, now)
             .await;
         assert!(res.is_err());
         for p in proofs.iter_mut() {
             let _ = p.sign_p2pk(p2pk_secret.clone());
         }
         controller
-            .swap
-            .swap(&signsrvc, proofs.clone(), blinds, commitment, now)
+            .service
+            .swap(proofs.clone(), blinds, commitment, now)
             .await
             .unwrap();
     }

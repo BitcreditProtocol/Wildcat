@@ -27,7 +27,7 @@ async fn checkstate() {
         keys: set.keys.clone(),
     };
     controller
-        .keys
+        .service
         .repository
         .keys_store(entry)
         .await
