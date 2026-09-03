@@ -3,19 +3,19 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
 use bcr_common::{
-    cashu, cdk_common,
+    cashu,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bcr_wdc_utils::nut19;
 // ----- local imports
-use crate::{error::Result, keys, swap};
+use crate::{error::Result, service};
 
 // ----- end imports
 
 /// --------------------------- Look up keysets info
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_keyset(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<cashu::KeySetInfo>> {
     tracing::debug!("Received keyset lookup request");
@@ -25,8 +25,8 @@ pub async fn lookup_keyset(
 }
 
 /// --------------------------- list keysets info
-fn convert_keyset_filters(filters: wire_keys::KeysetInfoFilters) -> keys::service::ListFilters {
-    keys::service::ListFilters {
+fn convert_keyset_filters(filters: wire_keys::KeysetInfoFilters) -> service::ListFilters {
+    service::ListFilters {
         unit: filters.unit,
         min_expiration: filters.min_expiration,
         max_expiration: filters.max_expiration,
@@ -35,7 +35,7 @@ fn convert_keyset_filters(filters: wire_keys::KeysetInfoFilters) -> keys::servic
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn list_keysets(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Query(filters): Query<wire_keys::KeysetInfoFilters>,
 ) -> Result<Json<cashu::KeysetResponse>> {
     tracing::debug!("Received keysets list request");
@@ -54,12 +54,11 @@ pub async fn list_keysets(
 /// --------------------------- Look up keys
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn lookup_keys(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Path(kid): Path<cashu::Id>,
 ) -> Result<Json<cashu::KeysResponse>> {
-    let mint_keyset = ctrl.keys(kid).await?;
-    let cmint_keyset = cdk_common::MintKeySet::from(mint_keyset);
-    let keyset = bcr_common::core::keys::to_keyset(&cmint_keyset, None);
+    let mint_keyset = ctrl.keys(kid).await?.into();
+    let keyset = bcr_common::core::keys::to_keyset(&mint_keyset, None);
     let response = cashu::KeysResponse {
         keysets: vec![keyset],
     };
@@ -69,7 +68,7 @@ pub async fn lookup_keys(
 /// --------------------------- Restore signatures
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn restore(
-    State(ctrl): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(req): Json<cashu::RestoreRequest>,
 ) -> Result<Json<cashu::RestoreResponse>> {
     tracing::debug!("Received wallet restore request");
@@ -88,10 +87,9 @@ pub async fn restore(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(keys, swap, cache))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, cache))]
 pub async fn commit_to_swap(
-    State(keys): State<Arc<keys::service::Service>>,
-    State(swap): State<Arc<swap::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
@@ -101,8 +99,7 @@ pub async fn commit_to_swap(
         let response = nut19::swap_commitment::blob_to_response(blob);
         return Ok(Json(response));
     }
-    let signsrvc = swap::KeysSignService { srvc: keys };
-    let (content, commitment) = swap.commit_to_swap(&signsrvc, request, now).await?;
+    let (content, commitment) = ctrl.commit_to_swap(request, now).await?;
     let response = wire_swap::SwapCommitmentResponse {
         content,
         commitment,
@@ -112,10 +109,9 @@ pub async fn commit_to_swap(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, keys_srvc, cache))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, cache))]
 pub async fn swap_tokens(
-    State(ctrl): State<Arc<swap::service::Service>>,
-    State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
@@ -125,15 +121,8 @@ pub async fn swap_tokens(
         let response = nut19::swap::blob_to_response(blob);
         return Ok(Json(response));
     }
-    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
     let signatures = ctrl
-        .swap(
-            &signsrvc,
-            request.inputs,
-            request.outputs,
-            request.commitment,
-            now,
-        )
+        .swap(request.inputs, request.outputs, request.commitment, now)
         .await?;
     let response = wire_swap::SwapResponse { signatures };
     let blob = nut19::swap::response_to_blob(&response);
@@ -141,10 +130,9 @@ pub async fn swap_tokens(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(swap_srvc, keys_srvc, cache))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, cache))]
 pub async fn signed_commit_to_swap(
-    State(swap_srvc): State<Arc<swap::service::Service>>,
-    State(keys_srvc): State<Arc<keys::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SignedSwapCommitmentRequest>,
 ) -> Result<Json<wire_swap::SwapCommitmentResponse>> {
@@ -154,9 +142,8 @@ pub async fn signed_commit_to_swap(
         let response = nut19::swap_commitment::blob_to_response(blob);
         return Ok(Json(response));
     }
-    let signsrvc = swap::KeysSignService { srvc: keys_srvc };
-    let (content, commitment) = swap_srvc
-        .signed_commit_to_swap(&signsrvc, request.payload, request.signature, now)
+    let (content, commitment) = ctrl
+        .signed_commit_to_swap(request.payload, request.signature, now)
         .await?;
     let response = wire_swap::SwapCommitmentResponse {
         content,
@@ -169,7 +156,7 @@ pub async fn signed_commit_to_swap(
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
 pub async fn check_state(
-    State(ctrl): State<Arc<swap::service::Service>>,
+    State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<cashu::CheckStateRequest>,
 ) -> Result<Json<cashu::CheckStateResponse>> {
     let now = chrono::Utc::now();
