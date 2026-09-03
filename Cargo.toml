@@ -8,13 +8,11 @@ resolver = "2"
 
 members = [
     "crates/bcr-wdc-admin-aggregator",
-    "crates/bcr-wdc-e2e-tests",
     "crates/bcr-wdc-core-service",
     "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-treasury-service",
     "crates/bcr-wdc-utils",
     "crates/bcr-wdc-wallet-aggregator",
-    "crates/bcr-wdc-webapi",
 ]
 
 [workspace.dependencies]
