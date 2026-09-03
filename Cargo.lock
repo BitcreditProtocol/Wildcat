@@ -753,25 +753,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bcr-wdc-e2e-tests"
-version = "0.5.0-alpha"
-dependencies = [
- "anyhow",
- "bcr-common",
- "bcr-wdc-utils",
- "bcr-wdc-webapi",
- "bitcoin",
- "chrono",
- "config",
- "reqwest 0.13.4",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "bcr-wdc-quote-service"
 version = "0.5.0-alpha"
 dependencies = [
@@ -878,21 +859,6 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "bcr-wdc-webapi"
-version = "0.5.0-alpha"
-dependencies = [
- "bcr-common",
- "bcr-ebill-core",
- "bcr-wdc-utils",
- "bitcoin",
- "chrono",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "uuid",
 ]
 
 [[package]]
@@ -7088,7 +7054,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [
  "nu-ansi-term",
- "serde",
  "sharded-slab",
  "smallvec",
  "thread_local",
