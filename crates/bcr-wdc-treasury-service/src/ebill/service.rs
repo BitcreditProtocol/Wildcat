@@ -39,12 +39,9 @@ impl Service {
         pub_key: cashu::PublicKey,
         amount: cashu::Amount,
         bill_id: BillId,
-        now: TStamp,
+        _now: TStamp,
     ) -> Result<()> {
-        let kinfo = self.wildcatcl.info(kid).await?;
-        if kinfo.final_expiry.unwrap_or(u64::MAX) < now.timestamp() as u64 {
-            return Err(Error::InvalidInput(String::from("keyset expired")));
-        }
+        let _kinfo = self.wildcatcl.info(kid).await?;
         let new = MintOperation {
             uid,
             kid,
@@ -55,10 +52,11 @@ impl Service {
         };
         if let Some(existing) = self.repo.mint_lookup_by_bill(new.bill_id.clone()).await? {
             if !is_same_op(&existing, &new) {
-                return Err(Error::AlreadyExists(format!(
+                let msg = format!(
                     "bill {} already bound to mint operation {}",
                     new.bill_id, existing.uid
-                )));
+                );
+                return Err(Error::AlreadyExists(msg));
             }
         } else if let Err(e) = self.repo.mint_store(new.clone()).await {
             match e {
