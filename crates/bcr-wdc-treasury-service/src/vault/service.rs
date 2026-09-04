@@ -45,7 +45,6 @@ impl Service {
                 }
             })
             .collect();
-
         self.repo.store_proofs(filtered).await?;
         Ok(())
     }
@@ -84,7 +83,6 @@ mod tests {
             bitcoin::Network::Regtest,
         );
         let unit = cashu::CurrencyUnit::Custom(String::from("crsat"));
-
         let mut repo = MockRepository::new();
         let mut wdc_cl = MockWildcatClient::new();
         let ys = proofs.ys().unwrap();
@@ -110,18 +108,15 @@ mod tests {
         wdc_cl
             .expect_unit()
             .returning(move || expected_unit.clone());
-
         let service = Service {
             repo: Box::new(repo),
             wdc_cl: Box::new(wdc_cl),
             my_url: cashu::MintUrl::from_str("http://localhost:4343").unwrap(),
             mint_id: mint_id.clone(),
         };
-
         let now = chrono::Utc::now();
         let token = service.generate_token(now).await.unwrap();
         let encoded = token.to_string();
-
         assert!(encoded.starts_with("bitcrrC"), "{encoded}");
         assert_eq!(Token::from_str(&encoded).unwrap(), token);
         assert_eq!(token.mint_id(), Some(&mint_id));
@@ -136,7 +131,6 @@ mod tests {
             Some(format!("Treasury token generated at {now}").as_str())
         );
         assert_eq!(token.value().unwrap(), cashu::Amount::from(9_u64));
-
         let mut recovered: Vec<cashu::Proof> = token
             .proofs(&[cashu::KeySetInfo::from(keyset_info).into()])
             .unwrap()
