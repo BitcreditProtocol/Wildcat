@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use bcr_common::{
     cashu::{self, nut10 as cdk10},
     core::signature::unblind_ecash_signature,
+    ecash,
 };
+use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 // ----- local imports
 use crate::{
@@ -107,7 +109,7 @@ pub async fn generate_htlc_proofs(
     hash: Sha256Hash,
     pk: cashu::PublicKey,
     refund: cashu::PublicKey,
-    keyset: &cashu::KeySet,
+    keyset: &ecash::KeySet,
     keycl: &dyn KeysClient,
 ) -> Result<Vec<cashu::Proof>> {
     let spending_conds = generate_htlc_conditions(locktime, hash, pk, refund)?;
@@ -116,7 +118,7 @@ pub async fn generate_htlc_proofs(
         amount,
         &cashu::amount::SplitTarget::None,
         &spending_conds,
-        &bcr_wdc_utils::keys::to_fee_and_amounts(keyset),
+        &keys_utils::to_fee_and_amounts(keyset),
     )?;
     let blinds = premints.blinded_messages();
     let signatures = keycl.sign(&blinds).await?;
@@ -140,7 +142,7 @@ pub async fn generate_online_exchange_htlc_proofs(
     keycl: &dyn KeysClient,
 ) -> Result<Vec<cashu::Proof>> {
     // estimate fees for foreign swap of htlc proofs
-    let mut foreign_kinfos: HashMap<cashu::Id, cashu::KeySetInfo> = HashMap::new();
+    let mut foreign_kinfos: HashMap<cashu::Id, ecash::KeySetInfo> = HashMap::new();
     let mut max_fee_rate = 0;
     let mut totals: HashMap<cashu::Id, cashu::Amount> = HashMap::new();
     for p in inputs {

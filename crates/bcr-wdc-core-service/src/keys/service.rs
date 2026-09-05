@@ -126,7 +126,7 @@ impl Service {
         let Some(first_b) = blinds.next() else {
             return Ok(Vec::new());
         };
-        let mut keyset = self.keys(first_b.keyset_id).await?.into();
+        let mut keyset = self.keys(first_b.keyset_id).await?;
         let first_s = sign_ecash(&keyset, first_b)?;
         self.repository
             .signature_store(first_b.blinded_secret, first_s.clone())
@@ -136,7 +136,7 @@ impl Service {
             let cur_keyset = if blind.keyset_id == keyset.id {
                 &keyset
             } else {
-                keyset = self.keys(blind.keyset_id).await?.into();
+                keyset = self.keys(blind.keyset_id).await?;
                 &keyset
             };
             let signature = sign_ecash(cur_keyset, blind)?;

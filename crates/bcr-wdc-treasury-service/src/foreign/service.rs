@@ -83,7 +83,7 @@ impl Service {
                 for part in amount
                     .split_targeted(
                         &cashu::amount::SplitTarget::None,
-                        &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
+                        &core::keys::to_fee_and_amounts(&keyset),
                     )
                     .map_err(|e| Error::InvalidInput(e.to_string()))?
                 {
@@ -320,24 +320,23 @@ mod tests {
 
     use super::*;
     use bcr_common::{
-        core, core_tests,
+        core, core_tests, ecash,
         wire::{
             attestation::{self as wire_attestation, IssuanceAttestation},
             swap as wire_swap,
         },
     };
-    use bcr_wdc_utils::signatures::test_utils as signature_tests;
+    use bcr_wdc_utils::{keys as keys_utils, signatures::test_utils as signature_tests};
     use bitcoin::hex::prelude::*;
     use mockall::predicate::*;
 
     fn generate_htlc_proof_for_online_exchange(
-        keyset: &bcr_common::ecash::MintKeySet,
+        keyset: &ecash::MintKeySet,
         amount: cashu::Amount,
         locktime: TStamp,
         wpk: cashu::PublicKey,
         mint: cashu::PublicKey,
     ) -> (cashu::Proof, String) {
-        let keyset: cashu::MintKeySet = keyset.clone().into();
         let preimage: [u8; 32] = rand::random();
         let preimage = format!("{:x}", preimage.as_hex());
         let conditions = cashu::SpendingConditions::new_htlc(
@@ -355,9 +354,7 @@ mod tests {
             amount,
             &cashu::amount::SplitTarget::None,
             &conditions,
-            &bcr_wdc_utils::keys::to_fee_and_amounts(&bcr_wdc_utils::keys::to_keyset(
-                &keyset, None,
-            )),
+            &keys_utils::to_fee_and_amounts(&core::keys::to_keyset(&keyset, None)),
         )
         .unwrap();
         assert_eq!(premints.blinded_messages().len(), 1);
@@ -453,7 +450,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
         let foreign_kid = foreign_keyset.id;
-        let foreign_info = cashu::KeySetInfo::from(foreign_info);
+        let foreign_info = ecash::KeySetInfo::from(foreign_info);
         clowder
             .expect_get_keyset_info()
             .with(eq(foreign_pk), eq(foreign_kid))
@@ -553,7 +550,7 @@ mod tests {
             .returning(move |_| Ok((cloned_url.clone(), foreign_pk)));
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
-        let foreign_info = cashu::KeySetInfo::from(foreign_info);
+        let foreign_info = ecash::KeySetInfo::from(foreign_info);
         clowder
             .expect_get_keyset_info()
             .with(eq(foreign_pk), eq(foreign_kid))
@@ -803,8 +800,8 @@ mod tests {
             .expect_get_keyset_info()
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
             .times(1)
-            .returning(move |_, _| Ok(cashu::KeySetInfo::from(foreign_kinfo.clone())));
-        let cloned_keyset = bcr_common::core::keys::to_keyset(&foreign_keyset.clone().into(), None);
+            .returning(move |_, _| Ok(ecash::KeySetInfo::from(foreign_kinfo.clone())));
+        let cloned_keyset = keys_utils::to_keyset(&foreign_keyset, None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_kp.public_key()), eq(foreign_keyset.id))
@@ -923,7 +920,7 @@ mod tests {
             .returning(move |_| Ok(Some(search_response.clone())));
         let foreign_kid = foreign_keyset.id;
         let foreign_pk = foreign_kp.public_key();
-        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&foreign_keyset.into(), None);
+        let cloned_keyset = keys_utils::to_keyset(&foreign_keyset, None);
         clowder
             .expect_get_keyset()
             .with(eq(foreign_pk), eq(foreign_kid))

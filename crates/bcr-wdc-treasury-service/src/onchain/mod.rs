@@ -2,7 +2,7 @@
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
-    cashu,
+    cashu, ecash,
     wire::{
         attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
         melt as wire_melt, mint as wire_mint,
@@ -38,8 +38,8 @@ pub trait WildcatClient: Send + Sync {
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, inputs: Vec<cashu::Proof>) -> Result<()>;
     async fn reserve_inputs(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
-    async fn keyset_info(&self, kid: cashu::Id) -> Result<cashu::KeySetInfo>;
-    async fn keyset(&self, kid: cashu::Id) -> Result<cashu::KeySet>;
+    async fn keyset_info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo>;
+    async fn keyset(&self, kid: cashu::Id) -> Result<ecash::KeySet>;
     async fn get_active_keyset(&self) -> Result<cashu::Id>;
 }
 

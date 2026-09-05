@@ -520,10 +520,12 @@ mod tests {
                 })
             });
         let kid = keyset.id;
-        let cloned = cashu::KeySetInfo::from(kinfo);
-        sign_service
-            .expect_list_kinfos()
-            .returning(move || Ok(std::collections::HashMap::from([(kid, cloned.clone())])));
+        sign_service.expect_list_kinfos().returning(move || {
+            Ok(std::collections::HashMap::from([(
+                kid,
+                kinfo.clone().into(),
+            )]))
+        });
         sign_service
             .expect_verify_proofs()
             .times(1)
@@ -533,20 +535,18 @@ mod tests {
             .times(1)
             .with(eq(vec![]))
             .returning(move |_| Ok(vec![]));
-        let cashu_keyset: cashu::MintKeySet = keyset.clone().into();
-        let cloned_set = bcr_common::core::keys::to_keyset(&cashu_keyset, Some(true));
+        let cloned_set = core::keys::to_keyset(&keyset, Some(true));
         sign_service
             .expect_get_keyset()
             .times(2)
             .returning(move |_| Ok(cloned_set.clone()));
-        let cloned_set: cashu::MintKeySet = keyset.into();
         sign_service
             .expect_sign_blinds()
             .times(1)
             .returning(move |bs| {
                 let mut signs = Vec::with_capacity(bs.len());
                 for b in bs {
-                    let sign = bcr_common::core::signature::sign_ecash(&cloned_set, b).unwrap();
+                    let sign = core::signature::sign_ecash(&keyset.clone().into(), b).unwrap();
                     signs.push(sign);
                 }
                 Ok(signs)

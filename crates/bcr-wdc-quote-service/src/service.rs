@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     core::{BillId, NodeId},
+    ecash,
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use bitcoin as btc;
@@ -50,7 +51,7 @@ pub trait WdcClient: Send + Sync {
         &self,
         expiration_date: chrono::NaiveDate,
     ) -> Result<cashu::Id>;
-    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<cashu::KeySet>;
+    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet>;
     async fn add_new_mint_operation(
         &self,
         qid: Uuid,
@@ -417,7 +418,7 @@ impl Service {
         bill_id: BillId,
     ) -> Result<()> {
         let keys = self.wdc_client.get_keys(keyset_id).await?;
-        let fees = mint_fees(self.wdc_client.as_ref(), fees_amount, keys).await?;
+        let fees = mint_fees(self.wdc_client.as_ref(), fees_amount, &keys).await?;
         let discounted_amount = cashu::Amount::from(discounted.to_sat());
         self.wdc_client
             .add_new_mint_operation(qid, keyset_id, wallet_pubkey, discounted_amount, bill_id)
@@ -466,13 +467,13 @@ pub fn calculate_expiration_from_maturity(maturity_date: chrono::NaiveDate) -> c
 async fn mint_fees(
     keyscl: &dyn WdcClient,
     fees_amount: cashu::Amount,
-    keys: cashu::KeySet,
+    keys: &ecash::KeySet,
 ) -> Result<Vec<cashu::Proof>> {
     let premint = cashu::PreMintSecrets::random(
         keys.id,
         fees_amount,
         &cashu::amount::SplitTarget::None,
-        &bcr_wdc_utils::keys::to_fee_and_amounts(&keys),
+        &bcr_wdc_utils::keys::to_fee_and_amounts(keys),
     )
     .map_err(|e| Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}")))?;
     let signatures = keyscl.sign(&premint.blinded_messages()).await?;
@@ -833,7 +834,7 @@ mod tests {
         );
         quote.id = qid;
         let (_keyset_info, signing_keyset) = core_tests::generate_random_ecash_keyset();
-        let keyset = cashu::KeySet {
+        let keyset = ecash::KeySet {
             id: signing_keyset.id,
             unit: signing_keyset.unit.clone(),
             active: None,

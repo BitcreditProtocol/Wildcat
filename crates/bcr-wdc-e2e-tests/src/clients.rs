@@ -8,6 +8,7 @@ use bcr_common::{
         core::Client as CoreClient, ebill::Client as EbillClient, mint::Client as MintClient,
         quote::Client as QuoteClient,
     },
+    ecash,
     wire::{identity as wire_identity, quotes as wire_quotes, swap as wire_swap},
 };
 use reqwest::Client as HttpClient;
@@ -151,14 +152,14 @@ impl Service<UserService> {
         self.mint_cl.lookup(quote_id).await.unwrap()
     }
 
-    pub async fn list_keysets(&self) -> Vec<cashu::KeySetInfo> {
+    pub async fn list_keysets(&self) -> Vec<ecash::KeySetInfo> {
         self.core_cl
             .list_keyset_info(Default::default())
             .await
             .unwrap()
     }
 
-    pub async fn list_keys(&self, kid: cashu::Id) -> cashu::KeySet {
+    pub async fn list_keys(&self, kid: cashu::Id) -> ecash::KeySet {
         self.core_cl.keys(kid).await.unwrap()
     }
 

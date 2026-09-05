@@ -8,7 +8,7 @@ use std::{
 };
 // ----- extra library imports
 use bcr_common::{
-    cashu, cdk_common,
+    cashu,
     client::admin::core::{BRError, RNFError},
     core::{
         keys as core_keys,
@@ -157,16 +157,14 @@ impl Service {
         let Some(first_blind) = blinds.first() else {
             return Ok(Vec::new());
         };
-        let keyset = self.keys(first_blind.keyset_id).await?;
-        let mut c_keyset = cashu::MintKeySet::from(keyset);
+        let mut keyset = self.keys(first_blind.keyset_id).await?;
         let mut signatures = Vec::with_capacity(blinds.len());
         for blind in blinds {
-            let current_keyset = if blind.keyset_id == c_keyset.id {
-                &c_keyset
+            let current_keyset = if blind.keyset_id == keyset.id {
+                &keyset
             } else {
-                let keyset = self.keys(blind.keyset_id).await?;
-                c_keyset = cashu::MintKeySet::from(keyset);
-                &c_keyset
+                keyset = self.keys(blind.keyset_id).await?;
+                &keyset
             };
             signatures.push(sign_ecash(current_keyset, blind)?);
         }
@@ -274,10 +272,7 @@ impl Service {
             .await?;
         let kinfos = self.list_info(ListFilters::default()).await?;
         let kinfos = keys_utils::kinfos_list_to_map(kinfos);
-        let kinfos = kinfos
-            .into_iter()
-            .map(|(kid, kinfo)| (kid, kinfo.into()))
-            .collect::<HashMap<_, _>>();
+        let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
         let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
         if !self
@@ -372,10 +367,7 @@ impl Service {
             SignatureOwner::Unsigned => swap::mint::FeePolicy::Apply,
         };
         let kinfo = keys_utils::kinfos_list_to_map(kinfos.clone());
-        let kinfos = kinfo
-            .into_iter()
-            .map(|(kid, kinfo)| (kid, kinfo.into()))
-            .collect::<HashMap<_, _>>();
+        let kinfos = kinfo.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         let signatures = self.generate_signatures(&outputs).await?;
         let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
@@ -426,7 +418,6 @@ impl Service {
                 continue;
             }
             let keyset = self.keys(kid).await?;
-            let keyset = cdk_common::MintKeySet::from(keyset);
             let c_keyset = core_keys::to_keyset(&keyset, None);
             let premint = cashu::PreMintSecrets::random(
                 kid,
@@ -463,8 +454,7 @@ impl Service {
                 .into_iter()
                 .map(|premint| (premint.r, premint.secret))
                 .unzip();
-            let c_keyset = cdk_common::MintKeySet::from(keyset);
-            let c_keys = core_keys::to_keyset(&c_keyset, None).keys;
+            let c_keys = core_keys::to_keyset(&keyset, None).keys;
             let proofs = cashu::dhke::construct_proofs(signatures.clone(), rs, secrets, &c_keys)?;
             generated.signatures.extend(signatures);
             generated.proofs.extend(proofs);

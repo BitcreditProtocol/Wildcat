@@ -9,6 +9,7 @@ use bcr_common::{
     cashu,
     client::ebill::Error as EbillClientError,
     core::BillId,
+    ecash,
     wire::{
         bill as wire_bill, clowder as wire_clowder, common as wire_common,
         identity as wire_identity, info as wire_info, quotes as wire_quotes,
@@ -54,7 +55,7 @@ pub async fn get_health() -> &'static str {
 pub async fn get_keyset_info(
     State(ctrl): State<AppController>,
     Path(kid): Path<cashu::Id>,
-) -> Result<Json<cashu::KeySetInfo>> {
+) -> Result<Json<ecash::KeySetInfo>> {
     tracing::debug!("Received keyset info request for {kid}");
 
     let info = ctrl.core_cl.keyset_info(kid).await?;
@@ -73,7 +74,7 @@ pub async fn get_keyset_info(
 pub async fn list_keyset_infos(
     State(ctrl): State<AppController>,
     Query(pagination): Query<wire_common::Pagination>,
-) -> Result<Json<wire_common::PaginatedResponse<cashu::KeySetInfo>>> {
+) -> Result<Json<wire_common::PaginatedResponse<ecash::KeySetInfo>>> {
     tracing::debug!("Received list keyset info request");
 
     let infos = ctrl.core_cl.list_keyset_info(Default::default()).await?;
