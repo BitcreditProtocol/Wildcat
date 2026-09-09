@@ -20,7 +20,7 @@ mod admin;
 pub mod config;
 pub mod ebill;
 mod error;
-mod foreign;
+pub mod foreign;
 pub mod onchain;
 pub mod persistence;
 pub mod vault;
@@ -237,7 +237,16 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     (app_ctrl, monitors)
 }
 
-pub fn routes(app: AppController) -> Router {
+pub fn routes<Cntrlr>(app: Cntrlr) -> Router
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<ebill::Service>: FromRef<Cntrlr>,
+    Arc<onchain::Service>: FromRef<Cntrlr>,
+    Arc<foreign::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<ClowderNatsClient>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
     let web = Router::new()
         .route(
             cl_treasury::web_ep::EXCHANGE_ONLINE_V1,
