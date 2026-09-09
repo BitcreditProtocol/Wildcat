@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "core-migrate"
+path = "src/bin/migrate.rs"
+
 [features]
 test-utils = ["axum-test", "bcr-wdc-utils/test-utils"]
 

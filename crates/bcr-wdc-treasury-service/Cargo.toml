@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "treasury-migrate"
+path = "src/bin/migrate.rs"
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
