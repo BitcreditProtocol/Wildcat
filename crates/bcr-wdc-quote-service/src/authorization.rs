@@ -1516,14 +1516,49 @@ pub(crate) mod tests {
             vector["expected"]["operationId"].as_str().unwrap()
         );
         let canonical = canonical_applicant_action_projection_command(&command);
+        let expected_canonical = general_purpose::STANDARD
+            .decode(
+                vector["expected"]["canonicalBase64Chunks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|chunk| chunk.as_str().unwrap())
+                    .collect::<String>(),
+            )
+            .unwrap();
+        assert_eq!(canonical, expected_canonical);
         assert_eq!(
             digest(&canonical),
             vector["expected"]["commandDigest"].as_str().unwrap()
         );
+        let expected_signature = vector["expected"]["signature"].as_str().unwrap();
         assert_eq!(
             general_purpose::STANDARD.encode(signing_key().sign(&canonical).to_bytes()),
-            "kH/l5UjCcXMhzSJeuyw4XsLMSNJGLSaxcC/T3BUlL4b/PV38t4ovh73ikBsXargCD5Wn/i3rff8wfjzqQZquBg=="
+            expected_signature
         );
+        let signature_bytes = general_purpose::STANDARD
+            .decode(expected_signature)
+            .unwrap();
+        let signature = Signature::from_slice(&signature_bytes).unwrap();
+        let verifier = test_authorization_verifier();
+        assert_eq!(command.key_id, verifier.key_id);
+        verifier.public_key.verify(&canonical, &signature).unwrap();
+
+        let mut tampered_bytes = canonical;
+        tampered_bytes[0] ^= 1;
+        assert!(verifier
+            .public_key
+            .verify(&tampered_bytes, &signature)
+            .is_err());
+        let mut tampered_signature = signature_bytes;
+        tampered_signature[0] ^= 1;
+        assert!(verifier
+            .public_key
+            .verify(
+                &expected_canonical,
+                &Signature::from_slice(&tampered_signature).unwrap()
+            )
+            .is_err());
     }
 
     #[test]
