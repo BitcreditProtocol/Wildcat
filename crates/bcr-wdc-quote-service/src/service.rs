@@ -84,11 +84,10 @@ pub struct Service {
     pub wdc_client: Box<dyn WdcClient + Send + Sync>,
     pub quotes: Box<dyn Repository + Send + Sync>,
     pub mint_url: cashu::MintUrl,
+    pub user_decision_retention: chrono::Duration,
 }
 
 impl Service {
-    pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
-
     async fn _lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
         let mut quote = self
             .quotes
@@ -166,7 +165,7 @@ impl Service {
                 status: Status::Rejected { tstamp, .. },
                 ..
             }) => {
-                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                if (submitted - tstamp) > self.user_decision_retention {
                     self.new_quote(bill, pub_key, submitted).await
                 } else {
                     Ok(*id)
@@ -565,6 +564,7 @@ mod tests {
             quotes: Box::new(quotes),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let test = service
             .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
@@ -599,6 +599,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, chrono::Utc::now())
@@ -635,6 +636,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -674,6 +676,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -714,6 +717,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, now + chrono::Duration::seconds(1))
@@ -758,8 +762,9 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
-        let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let submitted = now + service.user_decision_retention + chrono::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
@@ -779,6 +784,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -811,6 +817,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -928,6 +935,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());

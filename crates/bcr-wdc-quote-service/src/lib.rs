@@ -40,6 +40,7 @@ pub struct AppConfig {
     ebill_url: ClientUrl,
     clowder_url: reqwest::Url,
     monitor_interval_seconds: u64,
+    user_decision_retention_seconds: u64,
 }
 
 #[derive(Clone, FromRef)]
@@ -55,6 +56,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         ebill_url,
         clowder_url,
         monitor_interval_seconds,
+        user_decision_retention_seconds,
     } = cfg;
     let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
         .await
@@ -80,10 +82,12 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     };
     let cashu_mint_url =
         cashu::MintUrl::from_str(mint_url.as_ref()).expect("cashu::MintUrl == reqwest::Url");
+    let user_decision_retention = chrono::Duration::seconds(user_decision_retention_seconds as i64);
     let quoting_service = service::Service {
         wdc_client: Box::new(wdc_cl),
         quotes: Box::new(quotes_repository),
         mint_url: cashu_mint_url,
+        user_decision_retention,
     };
     let quote = Arc::new(quoting_service);
     let monitor = monitor::EbillMonitor {
