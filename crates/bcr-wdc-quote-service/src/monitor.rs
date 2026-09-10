@@ -119,6 +119,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
@@ -207,6 +208,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: chrono::Duration::days(1),
         };
         let monitor = EbillMonitor {
             srvc: Arc::new(serv),
