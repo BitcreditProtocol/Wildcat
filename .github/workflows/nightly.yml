@@ -1,4 +1,5 @@
 name: build and push nightly Docker images
+run-name: "Nightly images | candidate ${{ inputs.candidate_run_id || 'push' }} | ${{ inputs.expected_sha || github.sha }}"
 
 on:
   push:
@@ -6,10 +7,23 @@ on:
       - master
 
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact master SHA captured by the candidate
+        type: string
+        required: true
+      candidate_run_id:
+        description: Original central candidate run ID
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - '.github/workflows/nightly.yml'
+      - '.github/scripts/test_nightly.py'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ inputs.candidate_run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
@@ -25,11 +39,22 @@ env:
     BASE_TAR: "base-image.tar"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 .github/scripts/test_nightly.py
+
 
 # ───────────────────────────────
 # detect code changes
 # ───────────────────────────────
   changes:
+    if: github.event_name != 'pull_request'
+    needs: test
     timeout-minutes: 15
     runs-on: ubuntu-latest
     outputs:
@@ -39,6 +64,19 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+
+    - name: Verify candidate source
+      env:
+        EXPECTED_SHA: ${{ inputs.expected_sha }}
+        CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      run: |
+        set -euo pipefail
+        test "$GITHUB_REF" = refs/heads/master || exit 1
+        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          test "$GITHUB_SHA" = "$EXPECTED_SHA" || exit 1
+        fi
 
     - name: Detect code changes
       id: filter
@@ -60,7 +98,7 @@ jobs:
 # ───────────────────────────────
   base-image:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
     timeout-minutes: 25
     runs-on: ubuntu-latest
 
@@ -71,6 +109,7 @@ jobs:
       with:
         app-id: ${{ vars.PRIVATE_REPO_ACCESS_APP_ID }}
         private-key: ${{ secrets.PRIVATE_REPO_ACCESS_APP_PRIVATE_KEY }}
+        permission-contents: read
         owner: BitcreditProtocol
 
     - name: Git auth with app token
@@ -137,7 +176,7 @@ jobs:
     needs:
       - changes
       - base-image
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -211,6 +250,7 @@ jobs:
           ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}
         tags: |
           type=raw,value=nightly
+          type=raw,value=source-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - id: push
       name: Build & push ${{ matrix.service.name }}
@@ -222,18 +262,40 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
-    # The digest build-push reports is the one GAR stored; GHCR keeps its own for the
-    # same build, so attesting the reported digest against GHCR looks up a manifest
-    # that is not there. Ask the registry what it actually has.
-    - name: Resolve the GHCR digest
-      id: ghcr
-      continue-on-error: true
+    - name: Record source-specific image digests
+      id: resolved
       env:
-        META_TAGS: ${{ steps.meta.outputs.tags }}
+        IMAGE_NAME: ${{ matrix.service.name }}
+        CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       run: |
-        ref=$(printf '%s\n' "$META_TAGS" | grep '^ghcr\.io/' | head -n1)
-        digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
-        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+        python3 - <<'PY_IMAGE'
+        import json, os, pathlib, re, subprocess
+        e = os.environ
+        tag = f"source-{e['GITHUB_SHA']}-{e['GITHUB_RUN_ID']}-{e['GITHUB_RUN_ATTEMPT']}"
+        references = {}
+        for registry, prefix in (("gar", e["GAR_PATH"]), ("ghcr", "ghcr.io/" + e["GITHUB_REPOSITORY_OWNER"].lower())):
+            image = prefix + "/" + e["IMAGE_NAME"]
+            data = json.loads(subprocess.check_output(["docker", "buildx", "imagetools", "inspect", image + ":" + tag, "--format", "{{json .Manifest}}"], text=True))
+            digest = data.get("digest")
+            if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                raise SystemExit("Registry returned an invalid image digest")
+            references[registry] = image + "@" + digest
+            with open(e["GITHUB_OUTPUT"], "a") as output:
+                output.write(f"{registry}_digest={digest}\n")
+        manifest = dict(schema=1, repository=e["GITHUB_REPOSITORY"], sha=e["GITHUB_SHA"],
+                        run_id=e["GITHUB_RUN_ID"], run_attempt=int(e["GITHUB_RUN_ATTEMPT"]),
+                        candidate_run_id=e.get("CANDIDATE_RUN_ID", ""), image=e["IMAGE_NAME"],
+                        source_tag=tag, references=references)
+        pathlib.Path("nightly-image.json").write_text(json.dumps(manifest, sort_keys=True) + "\n")
+        PY_IMAGE
+
+    - name: Save the image result
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: nightly-image-${{ matrix.service.name }}-${{ github.run_attempt }}
+        path: nightly-image.json
+        if-no-files-found: error
+        retention-days: 90
 
     # ─────────────────────────────
     # provenance
@@ -242,7 +304,7 @@ jobs:
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-name: ${{ env.GAR_PATH }}/${{ matrix.service.name }}
-        subject-digest: ${{ steps.push.outputs.digest }}
+        subject-digest: ${{ steps.resolved.outputs.gar_digest }}
         push-to-registry: true
 
     - name: Attest GHCR image
@@ -250,5 +312,5 @@ jobs:
       continue-on-error: true
       with:
         subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.service.name }}
-        subject-digest: ${{ steps.ghcr.outputs.digest }}
+        subject-digest: ${{ steps.resolved.outputs.ghcr_digest }}
         push-to-registry: true
