@@ -13,7 +13,7 @@ axum = {workspace = true, features = ["macros"]}
 bcr-common = {workspace = true, features = ["clwdr-client"]}
 bcr-wdc-utils = {workspace = true}
 borsh = {workspace = true}
-chrono = {workspace = true, features = ["serde"]}
+time = {workspace = true}
 config = {workspace = true}
 serde.workspace = true
 thiserror.workspace = true

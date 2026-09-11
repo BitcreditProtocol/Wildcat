@@ -24,7 +24,8 @@ pub struct BillInfo {
     pub endorsees: Vec<BillParticipant>,
     pub current_holder: BillParticipant,
     pub sum: Amount,
-    pub maturity_date: chrono::NaiveDate,
+    #[serde(with = "bcr_common::wire::bill_date")]
+    pub maturity_date: time::Date,
     pub file_urls: Vec<url::Url>,
     pub shared_bill_data: String, // The base58 encoded, encrypted, borshed BillBlockPlaintextWrappers of the bill
 }
@@ -89,7 +90,7 @@ impl BillInfo {
                 convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
             ),
             sum: bitcoin::Amount::arbitrary(&mut seed).unwrap(),
-            maturity_date: chrono::NaiveDate::default(),
+            maturity_date: time::macros::date!(1970 - 01 - 01),
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
         }
@@ -112,23 +113,28 @@ pub enum Status {
         wallet_pubkey: cashu::PublicKey,
     },
     Canceled {
+        #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Denied {
+        #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Offered {
         keyset_id: cashu::Id,
+        #[serde(with = "time::serde::rfc3339")]
         ttl: TStamp,
         discounted: bitcoin::Amount,
         wallet_pubkey: cashu::PublicKey,
     },
     OfferExpired {
         discounted: bitcoin::Amount,
+        #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Rejected {
         discounted: bitcoin::Amount,
+        #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Accepted {
@@ -161,7 +167,7 @@ pub struct LightQuote {
     pub id: Uuid,
     pub status: StatusDiscriminants,
     pub sum: Amount,
-    pub maturity_date: chrono::NaiveDate,
+    pub maturity_date: time::Date,
 }
 
 impl Quote {

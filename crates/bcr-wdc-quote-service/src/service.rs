@@ -22,8 +22,10 @@ use crate::{
 // ---------- required traits
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ListFilters {
-    pub bill_maturity_date_from: Option<chrono::NaiveDate>,
-    pub bill_maturity_date_to: Option<chrono::NaiveDate>,
+    #[serde(with = "bcr_common::wire::bill_date::option")]
+    pub bill_maturity_date_from: Option<time::Date>,
+    #[serde(with = "bcr_common::wire::bill_date::option")]
+    pub bill_maturity_date_to: Option<time::Date>,
     pub status: Option<StatusDiscriminants>,
     pub bill_id: Option<BillId>,
     pub bill_drawee_id: Option<NodeId>,
@@ -49,7 +51,7 @@ pub enum MintingStatus {
 pub trait WdcClient: Send + Sync {
     async fn get_keyset_with_expiration_date(
         &self,
-        expiration_date: chrono::NaiveDate,
+        expiration_date: time::Date,
     ) -> Result<cashu::Id>;
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet>;
     async fn add_new_mint_operation(
@@ -88,7 +90,7 @@ pub struct Service {
 }
 
 impl Service {
-    pub(crate) const USER_DECISION_RETENTION: chrono::Duration = chrono::Duration::days(1);
+    pub(crate) const USER_DECISION_RETENTION: time::Duration = time::Duration::days(1);
 
     async fn _lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
         let mut quote = self
@@ -132,7 +134,7 @@ impl Service {
         pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
-        validate_basic_ebill_rules(&bill, chrono::Utc::now().date_naive())?;
+        validate_basic_ebill_rules(&bill, time::OffsetDateTime::now_utc().date())?;
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
         let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
@@ -167,7 +169,7 @@ impl Service {
                 status: Status::Rejected { tstamp, .. },
                 ..
             }) => {
-                if (submitted - tstamp) > Self::USER_DECISION_RETENTION {
+                if (submitted - *tstamp) > Self::USER_DECISION_RETENTION {
                     self.new_quote(bill, pub_key, submitted).await
                 } else {
                     Ok(*id)
@@ -457,11 +459,11 @@ impl Service {
 }
 
 pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
-    now + chrono::Duration::days(2)
+    now + time::Duration::days(2)
 }
 
-pub fn calculate_expiration_from_maturity(maturity_date: chrono::NaiveDate) -> chrono::NaiveDate {
-    maturity_date + chrono::Duration::days(2)
+pub fn calculate_expiration_from_maturity(maturity_date: time::Date) -> time::Date {
+    maturity_date + time::Duration::days(2)
 }
 
 async fn mint_fees(
@@ -487,7 +489,7 @@ async fn mint_fees(
     Ok(prfs)
 }
 
-fn validate_basic_ebill_rules(bill: &BillInfo, today: chrono::NaiveDate) -> Result<()> {
+fn validate_basic_ebill_rules(bill: &BillInfo, today: time::Date) -> Result<()> {
     if bill.maturity_date < today {
         return Err(Error::InvalidInput(String::from(
             "maturity date must be >= today",
@@ -535,8 +537,9 @@ mod tests {
             current_holder: BillParticipant::Ident(holder),
             endorsees: Default::default(),
             sum: btc::Amount::from_sat(rng.gen_range(1000..100000)),
-            maturity_date: (chrono::Utc::now() + chrono::Duration::days(rng.gen_range(10..30)))
-                .date_naive(),
+            maturity_date: (time::OffsetDateTime::now_utc()
+                + time::Duration::days(rng.gen_range(10..30)))
+            .date(),
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
         }
@@ -544,13 +547,14 @@ mod tests {
 
     #[test]
     fn test_validate_basic_ebill_rules_maturity_date() {
-        let today = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let today =
+            time::Date::from_calendar_date(2026, time::Month::try_from(1u8).unwrap(), 1).unwrap();
         let mut bill = generate_random_bill();
 
         bill.maturity_date = today;
         assert!(validate_basic_ebill_rules(&bill, today).is_ok());
 
-        bill.maturity_date = today - chrono::Duration::days(1);
+        bill.maturity_date = today - time::Duration::days(1);
         assert!(validate_basic_ebill_rules(&bill, today).is_err());
     }
 
@@ -568,7 +572,11 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test = service
-            .enquire(rnd_bill, keys_utils::publics()[0], chrono::Utc::now())
+            .enquire(
+                rnd_bill,
+                keys_utils::publics()[0],
+                time::OffsetDateTime::now_utc(),
+            )
             .await;
         assert!(test.is_ok());
     }
@@ -590,7 +598,7 @@ mod tests {
                     status: Status::Pending { wallet_pubkey },
                     id,
                     bill: cloned.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: time::OffsetDateTime::now_utc(),
                 }])
             });
         repo.expect_store().returning(|_| Ok(()));
@@ -602,7 +610,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
-            .enquire(rnd_bill, wallet_pubkey, chrono::Utc::now())
+            .enquire(rnd_bill, wallet_pubkey, time::OffsetDateTime::now_utc())
             .await;
         assert!(test_id.is_ok());
         assert_eq!(id, test_id.unwrap());
@@ -614,7 +622,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
-        let now = TStamp::from_timestamp(10000, 0).unwrap();
+        let now = TStamp::from_unix_timestamp(10000).unwrap();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
             .with(
@@ -647,7 +655,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
-        let now = TStamp::from_timestamp(10000, 0).unwrap();
+        let now = TStamp::from_unix_timestamp(10000).unwrap();
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill()
@@ -659,7 +667,7 @@ mod tests {
                 Ok(vec![Quote {
                     status: Status::Offered {
                         keyset_id,
-                        ttl: now + chrono::Duration::days(1),
+                        ttl: now + time::Duration::days(1),
                         discounted: rnd_bill.sum,
                         wallet_pubkey,
                     },
@@ -688,7 +696,7 @@ mod tests {
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
-        let now = TStamp::from_timestamp(10000, 0).unwrap();
+        let now = TStamp::from_unix_timestamp(10000).unwrap();
         repo.expect_search_by_bill()
             .with(
                 eq(rnd_bill.id.clone()),
@@ -717,7 +725,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
         let test_id = service
-            .enquire(rnd_bill, wallet_pubkey, now + chrono::Duration::seconds(1))
+            .enquire(rnd_bill, wallet_pubkey, now + time::Duration::seconds(1))
             .await
             .unwrap();
         assert_eq!(id, test_id);
@@ -731,7 +739,7 @@ mod tests {
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_utils::publics()[0];
         let mut repo = MockRepository::new();
-        let now = TStamp::from_timestamp(10000, 0).unwrap();
+        let now = TStamp::from_unix_timestamp(10000).unwrap();
         repo.expect_search_by_bill()
             .with(
                 eq(rnd_bill.id.clone()),
@@ -760,7 +768,7 @@ mod tests {
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
         };
-        let submitted = now + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let submitted = now + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
@@ -802,7 +810,7 @@ mod tests {
                     id: qid,
                     status: Status::Pending { wallet_pubkey },
                     bill: rnd_bill.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: time::OffsetDateTime::now_utc(),
                 }))
             });
 
@@ -830,7 +838,7 @@ mod tests {
         let mut quote = Quote::new(
             generate_random_bill(),
             keys_utils::publics()[0],
-            chrono::Utc::now(),
+            time::OffsetDateTime::now_utc(),
         );
         quote.id = qid;
         let (_keyset_info, signing_keyset) = core_tests::generate_random_ecash_keyset();
@@ -866,7 +874,7 @@ mod tests {
                         wallet_pubkey,
                     },
                     bill: quote.bill.clone(),
-                    submitted: chrono::Utc::now(),
+                    submitted: time::OffsetDateTime::now_utc(),
                 }))
             });
         repo.expect_update_status_if_failedebillvalidation()

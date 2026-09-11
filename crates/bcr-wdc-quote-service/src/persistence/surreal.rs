@@ -22,6 +22,7 @@ use crate::{
 struct QuoteDBEntry {
     qid: surrealdb::Uuid, // can't be `id`, reserved word in surreal
     bill: quotes::BillInfo,
+    #[serde(with = "time::serde::rfc3339")]
     submitted: TStamp,
     status: quotes::Status,
 }
@@ -53,8 +54,10 @@ struct LightQuoteDBEntry {
     qid: uuid::Uuid,
     status: quotes::StatusDiscriminants,
     sum: bitcoin::Amount,
-    maturity_date: chrono::NaiveDate,
+    #[serde(with = "bcr_common::wire::bill_date")]
+    maturity_date: time::Date,
     #[allow(dead_code)]
+    #[serde(with = "time::serde::rfc3339")]
     submitted: TStamp,
 }
 impl From<LightQuoteDBEntry> for quotes::LightQuote {

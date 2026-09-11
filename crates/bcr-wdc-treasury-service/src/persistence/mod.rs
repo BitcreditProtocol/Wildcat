@@ -124,7 +124,7 @@ mod tests {
     async fn foreign_online_issued_by_hash(db: impl foreign::OnlineRepository) {
         let unlocked = bitcoin::hashes::sha256::Hash::const_hash(b"unlocked");
         let abandoned = bitcoin::hashes::sha256::Hash::const_hash(b"abandoned");
-        let locktime = chrono::Utc::now() - chrono::TimeDelta::hours(1);
+        let locktime = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
         let unlocked_proofs = generate_test_proofs(2);
         let abandoned_proofs = generate_test_proofs(1);
         db.store_issued(unlocked, locktime, unlocked_proofs)
@@ -133,7 +133,7 @@ mod tests {
         db.store_issued(abandoned, locktime, abandoned_proofs.clone())
             .await
             .unwrap();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         assert_eq!(db.list_expired_issued(now).await.unwrap().len(), 3);
 
         db.remove_issued_by_hash(&unlocked).await.unwrap();
@@ -156,14 +156,14 @@ mod tests {
     // eCash the recipient can still unlock is never offered up for reclaim.
     async fn foreign_online_issued_locktime(db: impl foreign::OnlineRepository) {
         let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-locktime");
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let proofs = generate_test_proofs(2);
-        db.store_issued(hash, now + chrono::TimeDelta::hours(1), proofs.clone())
+        db.store_issued(hash, now + time::Duration::hours(1), proofs.clone())
             .await
             .unwrap();
         assert!(db.list_expired_issued(now).await.unwrap().is_empty());
         assert_eq!(
-            db.list_expired_issued(now + chrono::TimeDelta::hours(2))
+            db.list_expired_issued(now + time::Duration::hours(2))
                 .await
                 .unwrap()
                 .len(),
@@ -171,7 +171,7 @@ mod tests {
         );
         db.remove_issued(&[proofs[0].y().unwrap()]).await.unwrap();
         assert_eq!(
-            db.list_expired_issued(now + chrono::TimeDelta::hours(2))
+            db.list_expired_issued(now + time::Duration::hours(2))
                 .await
                 .unwrap(),
             vec![proofs[1].clone()]
@@ -597,7 +597,7 @@ mod tests {
             kid,
             target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
-            expiry: chrono::Utc::now() + chrono::Duration::hours(1),
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
             status: onchain::MintStatus::Pending { blinds },
         };
         db.store_mintop(op.clone()).await.unwrap();
@@ -623,7 +623,7 @@ mod tests {
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let blinds = signature_tests::generate_blinds(kid, &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
@@ -633,7 +633,7 @@ mod tests {
             kid,
             target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
-            expiry: now + chrono::Duration::hours(1),
+            expiry: now + time::Duration::hours(1),
             status: onchain::MintStatus::Pending { blinds },
         };
         db.store_mintop(op.clone()).await.unwrap();
@@ -661,7 +661,7 @@ mod tests {
         ];
         let wallet_key = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let commitment = signature_tests::random_schnorr_signature();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let meltop = onchain::MeltOperation {
             qid,
             target: bitcoin::Amount::from_sat(1000),
@@ -670,7 +670,7 @@ mod tests {
             address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
             wallet_key,
             commitment,
-            expiry: now + chrono::Duration::hours(1),
+            expiry: now + time::Duration::hours(1),
             fp_digest: [7u8; 32],
             input_ys,
             status: onchain::MeltStatus::Pending,

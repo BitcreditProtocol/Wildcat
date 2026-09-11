@@ -139,7 +139,10 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
         };
-        handler.run_task(chrono::Utc::now()).await.unwrap();
+        handler
+            .run_task(time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
     }
 
     // Nothing to reclaim: no burn attempted, rows still go.
@@ -167,7 +170,10 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
         };
-        handler.run_task(chrono::Utc::now()).await.unwrap();
+        handler
+            .run_task(time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
     }
 
     // A proof mid-transaction is neither burned nor forgotten.
@@ -195,7 +201,10 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
         };
-        handler.run_task(chrono::Utc::now()).await.unwrap();
+        handler
+            .run_task(time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
     }
 
     // A failed burn keeps its rows, so the value stays reclaimable.
@@ -225,6 +234,9 @@ mod tests {
             keys: Arc::new(keys),
             clowder: Arc::new(clowder),
         };
-        handler.run_task(chrono::Utc::now()).await.unwrap();
+        handler
+            .run_task(time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
     }
 }

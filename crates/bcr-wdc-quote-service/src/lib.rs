@@ -28,7 +28,7 @@ mod web;
 
 // ----- end imports
 
-type TStamp = chrono::DateTime<chrono::Utc>;
+use bcr_common::TStamp;
 
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
 

@@ -39,8 +39,8 @@ use crate::{
 #[derive(Default)]
 pub struct ListFilters {
     pub unit: Option<cashu::CurrencyUnit>,
-    pub min_expiration: Option<chrono::NaiveDate>,
-    pub max_expiration: Option<chrono::NaiveDate>,
+    pub min_expiration: Option<time::Date>,
+    pub max_expiration: Option<time::Date>,
 }
 
 pub struct Service {
@@ -49,7 +49,7 @@ pub struct Service {
     pub treasury: Box<dyn TreasuryService>,
     pub keygen: Factory,
     pub min_keyset_fees_ppk: AtomicU64,
-    pub max_expiry: chrono::Duration,
+    pub max_expiry: time::Duration,
     pub alpha_id: PublicKey,
     pub settle_window_deadline: TStamp,
 }
@@ -120,10 +120,10 @@ impl Service {
     pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<ecash::MintKeySetInfo>> {
         let min_tstamp = filters
             .min_expiration
-            .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
         let max_tstamp = filters
             .max_expiration
-            .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc().timestamp() as u64);
+            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
         self.repository
             .keys_list_info(filters.unit, min_tstamp, max_tstamp)
             .await
@@ -249,7 +249,7 @@ impl Service {
         signed: SignatureOwner,
     ) -> Result<(String, schnorr::Signature)> {
         let expiry =
-            chrono::DateTime::from_timestamp(request.expiry as i64, 0).ok_or_else(|| {
+            time::OffsetDateTime::from_unix_timestamp(request.expiry as i64).map_err(|_| {
                 Error::InvalidInput(BRError::Generic(String::from("invalid expiry timestamp")))
             })?;
         if expiry < now {
@@ -542,7 +542,7 @@ mod tests {
             .map(|generated| generated.0)
             .collect::<Vec<_>>();
         let commitment = schnorr::Signature::from_slice(&[17u8; 64]).unwrap();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let fp_digest = wire_attestation::fp_digest(
             &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
         );
@@ -550,7 +550,7 @@ mod tests {
             .commitment_store(
                 proofs.iter().map(|proof| proof.y().unwrap()).collect(),
                 outputs.iter().map(|blind| blind.blinded_secret).collect(),
-                now + chrono::Duration::minutes(1),
+                now + time::Duration::minutes(1),
                 bcr_common::core::generate_random_keypair()
                     .public_key()
                     .into(),
@@ -574,9 +574,9 @@ mod tests {
             treasury: Box::new(treasury),
             keygen: Factory::new(&seed(), DerivationPath::default()),
             min_keyset_fees_ppk: AtomicU64::default(),
-            max_expiry: chrono::Duration::hours(1),
+            max_expiry: time::Duration::hours(1),
             alpha_id: bcr_common::core::generate_random_keypair().public_key(),
-            settle_window_deadline: TStamp::default(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
         }
     }
 
