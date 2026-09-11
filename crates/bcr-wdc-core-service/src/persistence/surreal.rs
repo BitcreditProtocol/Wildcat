@@ -599,7 +599,50 @@ struct CommitmentDBEntry {
     signed: SignatureOwner,
 }
 
+/// A whole `commitments` row, as needed to re-insert it into another repository.
+///
+/// `CommitmentDBEntry` is private and keeps the commitment signature in the record
+/// key, while `persistence::StoredCommitment` drops `wallet_key`. Migration needs
+/// both, hence this type.
+#[derive(Debug, Clone)]
+pub struct DumpedCommitment {
+    pub signature: schnorr::Signature,
+    pub inputs: Vec<cashu::PublicKey>,
+    pub outputs: Vec<cashu::PublicKey>,
+    pub expiration: TStamp,
+    pub wallet_key: cashu::PublicKey,
+    pub fp_digest: [u8; 32],
+    pub signed: persistence::SignatureOwner,
+}
+
 impl Repository {
+    pub async fn dump_commitments(&self) -> Result<Vec<DumpedCommitment>> {
+        let entries: Vec<CommitmentDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", COMMITMENTS_TABLE))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        entries
+            .into_iter()
+            .map(|entry| {
+                let signature = schnorr::Signature::from_str(&entry.id.key().to_string())
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+                Ok(DumpedCommitment {
+                    signature,
+                    inputs: entry.inputs,
+                    outputs: entry.outputs,
+                    expiration: entry.expiration,
+                    wallet_key: entry.wallet_key,
+                    fp_digest: entry.fp_digest,
+                    signed: entry.signed.into(),
+                })
+            })
+            .collect()
+    }
+
     async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
         self.db
             .query("DELETE FROM type::table($table) WHERE expiration < $now")
@@ -747,6 +790,25 @@ struct ReservedYsDBEntry {
 }
 
 impl Repository {
+    pub async fn dump_reserved_ys(&self) -> Result<Vec<(cashu::PublicKey, TStamp)>> {
+        let entries: Vec<ReservedYsDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", RESERVED_YS_TABLE))
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        entries
+            .into_iter()
+            .map(|entry| {
+                let y = cashu::PublicKey::from_str(&entry.id.key().to_string())
+                    .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+                Ok((y, entry.deadline))
+            })
+            .collect()
+    }
+
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
         let mut entries = Vec::with_capacity(inputs.len());
         for y in inputs {
