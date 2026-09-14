@@ -127,7 +127,16 @@ impl ClowderClient for ClowderCl {
             .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
         let request = wire_clowder::SwapCommitmentRequest {
             inputs: request.inputs,
-            outputs: request.outputs,
+            outputs: request
+                .outputs
+                .iter()
+                .map(|m| cashu::BlindedMessage {
+                    amount: m.amount,
+                    keyset_id: m.keyset_id,
+                    blinded_secret: m.blinded_secret,
+                    witness: m.witness.clone(),
+                })
+                .collect::<Vec<_>>(),
             expiry: request.expiry,
             wallet_key: request.wallet_key.into(),
         };

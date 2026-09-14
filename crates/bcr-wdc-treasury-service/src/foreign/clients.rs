@@ -37,11 +37,16 @@ impl foreign::KeysClient for CoreCl {
         Ok(keyset)
     }
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core.sign(blinds).await?;
-        Ok(signatures)
+        let signatures = self
+            .core
+            .sign(&blinds.iter().cloned().map(Into::into).collect::<Vec<_>>())
+            .await?;
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core.burn(proofs).await?;
+        self.core
+            .burn(proofs.into_iter().map(Into::into).collect())
+            .await?;
         Ok(())
     }
     async fn proof_states(
@@ -280,7 +285,7 @@ impl ForeignClient for MintClient {
             .await?;
         let request = bcr_common::client::mint::Client::prepare_swap_commitment_request(
             fps,
-            outputs,
+            outputs.into_iter().map(Into::into).collect(),
             expiry.unix_timestamp() as u64,
             self.my_pk,
             attestation,
@@ -307,7 +312,7 @@ impl ForeignClient for MintClient {
         commitment: secp256k1::schnorr::Signature,
     ) -> Result<Vec<cashu::BlindSignature>> {
         let signatures = self.foreign_cl.swap(inputs, outputs, commitment).await?;
-        Ok(signatures)
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
 
     async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>> {

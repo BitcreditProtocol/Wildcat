@@ -59,7 +59,14 @@ pub async fn recover_tokens(
     State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::RecoverRequest>,
 ) -> Result<Json<wire_swap::RecoverResponse>> {
-    ctrl.recover(&request.proofs).await?;
+    ctrl.recover(
+        &request
+            .proofs
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     Ok(Json(wire_swap::RecoverResponse {}))
 }
 
@@ -69,8 +76,12 @@ pub async fn burn_tokens(
     Json(request): Json<wire_swap::BurnRequest>,
 ) -> Result<Json<wire_swap::BurnResponse>> {
     let wire_swap::BurnRequest { proofs } = request;
-    let ys = ctrl.burn(proofs).await?;
-    Ok(Json(wire_swap::BurnResponse { ys }))
+    let ys = ctrl
+        .burn(proofs.into_iter().map(Into::into).collect())
+        .await?;
+    Ok(Json(wire_swap::BurnResponse {
+        ys: ys.into_iter().map(|key| *key).collect(),
+    }))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(swap_srvc))]
@@ -78,5 +89,10 @@ pub async fn reserve_ys(
     State(swap_srvc): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::ReserveRequest>,
 ) -> Result<()> {
-    swap_srvc.reserve(request.ys, request.deadline).await
+    swap_srvc
+        .reserve(
+            request.ys.into_iter().map(Into::into).collect(),
+            request.deadline,
+        )
+        .await
 }

@@ -32,22 +32,31 @@ pub struct WildcatCl {
 #[async_trait]
 impl WildcatClient for WildcatCl {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core_cl.sign(&blinds).await?;
-        Ok(signatures)
+        let signatures = self
+            .core_cl
+            .sign(&blinds.into_iter().map(Into::into).collect::<Vec<_>>())
+            .await?;
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
 
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()> {
-        self.core_cl.burn(inputs).await?;
+        self.core_cl
+            .burn(inputs.into_iter().map(Into::into).collect())
+            .await?;
         Ok(())
     }
 
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core_cl.recover(proofs).await?;
+        self.core_cl
+            .recover(proofs.into_iter().map(Into::into).collect())
+            .await?;
         Ok(())
     }
 
     async fn reserve_inputs(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
-        self.core_cl.reserve(inputs, deadline).await?;
+        self.core_cl
+            .reserve(inputs.into_iter().map(|key| *key).collect(), deadline)
+            .await?;
         Ok(())
     }
 
@@ -90,7 +99,7 @@ impl WildcatClient for WildcatCl {
 
     async fn verify_proofs(&self, ps: &[cashu::Proof]) -> Result<()> {
         for p in ps {
-            self.core_cl.verify_proof(p).await?;
+            self.core_cl.verify_proof(&p.clone().into()).await?;
         }
         Ok(())
     }

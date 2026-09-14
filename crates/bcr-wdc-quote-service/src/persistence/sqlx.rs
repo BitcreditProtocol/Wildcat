@@ -493,7 +493,7 @@ mod tests {
         quotes::Quote::new(
             quotes::BillInfo::random(),
             keys_test::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             quotes::test_credit_program_binding(),
         )
     }
@@ -520,7 +520,7 @@ mod tests {
 
         let mut restored = quote_from_row(row).unwrap();
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
-        let result = restored.offer(keyset_id, TStamp::default(), bitcoin::Amount::from_sat(1));
+        let result = restored.offer(keyset_id, TStamp::UNIX_EPOCH, bitcoin::Amount::from_sat(1));
 
         assert!(restored.credit_program().is_none());
         assert!(matches!(result, Err(Error::CreditProgramNotBound(_))));

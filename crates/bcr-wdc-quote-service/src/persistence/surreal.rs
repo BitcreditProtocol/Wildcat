@@ -867,9 +867,12 @@ impl Repository for DBQuotes {
 
         crate::service::validate_basic_ebill_amount(&quote.bill)?;
 
-        let expires_at = chrono::DateTime::parse_from_rfc3339(&signed.permit.expires_at)
-            .map_err(|_| Error::CreditQuoteReissueInvalid)?
-            .with_timezone(&chrono::Utc);
+        let expires_at = time::OffsetDateTime::parse(
+            &signed.permit.expires_at,
+            &time::format_description::well_known::Rfc3339,
+        )
+        .map_err(|_| Error::CreditQuoteReissueInvalid)?
+        .to_offset(time::UtcOffset::UTC);
         let minting_pubkey = match &quote.status {
             quotes::Status::Pending { wallet_pubkey } => *wallet_pubkey,
             _ => return Err(Error::CreditQuoteReissueConflict),
@@ -924,7 +927,7 @@ impl Repository for DBQuotes {
             .bind(("receipt_rid", receipt_rid))
             .bind(("previous_rid", previous_rid))
             .bind(("maturity_date", quote_record.bill.maturity_date))
-            .bind(("today", consumed_at.date_naive()))
+            .bind(("today", consumed_at.date()))
             .bind(("denied", quotes::StatusDiscriminants::Denied))
             .bind(("quotes_table", Self::TABLE))
             .bind(("bill_id", quote_record.bill.id.clone()))
@@ -997,7 +1000,7 @@ mod tests {
         let quote = quotes::Quote::new(
             quotes::BillInfo::random(),
             keys_test::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             quotes::test_credit_program_binding(),
         );
         let mut value = serde_json::to_value(QuoteDBEntry::from(quote)).unwrap();

@@ -60,7 +60,7 @@ async fn swap() {
     let (_, commitment) = client
         .commit_swap(
             proof_fps.clone(),
-            blinds.clone(),
+            blinds.iter().cloned().map(Into::into).collect(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -163,7 +163,7 @@ async fn swap_p2pk() {
     let (_, commitment) = client
         .commit_swap(
             correct_fps.clone(),
-            blinds.clone(),
+            blinds.iter().cloned().map(Into::into).collect(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,

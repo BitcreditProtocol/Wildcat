@@ -114,17 +114,24 @@ impl ebill::WildcatClient for WildcatCl {
     }
 
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let res = self.core.sign(blinds).await?;
-        Ok(res)
+        let signatures = self
+            .core
+            .sign(&blinds.iter().cloned().map(Into::into).collect::<Vec<_>>())
+            .await?;
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
 
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core.burn(proofs).await?;
+        self.core
+            .burn(proofs.into_iter().map(Into::into).collect())
+            .await?;
         Ok(())
     }
 
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core.recover(proofs).await?;
+        self.core
+            .recover(proofs.into_iter().map(Into::into).collect())
+            .await?;
         Ok(())
     }
 

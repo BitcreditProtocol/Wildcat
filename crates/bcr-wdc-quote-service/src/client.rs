@@ -60,8 +60,11 @@ impl WdcClient for WildcatCl {
     }
 
     async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core.sign(msgs).await?;
-        Ok(signatures)
+        let signatures = self
+            .core
+            .sign(&msgs.iter().cloned().map(Into::into).collect::<Vec<_>>())
+            .await?;
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
 
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {

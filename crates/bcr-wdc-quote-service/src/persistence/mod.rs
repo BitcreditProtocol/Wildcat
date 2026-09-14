@@ -21,8 +21,8 @@ use crate::{
 pub struct GovernedDenialInput {
     pub quote_id: uuid::Uuid,
     pub receipt: CreditAuthorizationReceipt,
-    pub denied_at: chrono::DateTime<chrono::Utc>,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub denied_at: time::OffsetDateTime,
+    pub expires_at: time::OffsetDateTime,
 }
 
 #[derive(Debug, Clone)]
@@ -33,8 +33,8 @@ pub struct ApplicantActionProjectionMutation {
     pub projection: Option<ApplicantActionProjection>,
     pub operation_id: String,
     pub command_digest: String,
-    pub applied_at: chrono::DateTime<chrono::Utc>,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub applied_at: time::OffsetDateTime,
+    pub expires_at: time::OffsetDateTime,
     pub receipt: CreditApplicantActionReceipt,
 }
 
@@ -98,7 +98,7 @@ pub trait Repository {
         &self,
         signed: SignedCreditQuoteReissuePermit,
         quote: Quote,
-        consumed_at: chrono::DateTime<chrono::Utc>,
+        consumed_at: time::OffsetDateTime,
     ) -> Result<uuid::Uuid>;
 }
 
@@ -232,7 +232,12 @@ mod tests {
             applicant_action,
             action: String::from("project_applicant_action"),
             status: String::from("completed"),
-            completed_at: completed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            completed_at: completed_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
         }
     }
 
@@ -268,9 +273,12 @@ mod tests {
         let quote = pending_quote();
         let quote_id = quote.id;
         db.store(quote).await.unwrap();
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-29T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-29T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let revision_a = format!("sha256:{}", "a".repeat(64));
         let projection_a = bcr_common::wire::quotes::ApplicantActionProjection {
             kind: bcr_common::wire::quotes::ApplicantActionKind::Clarification,
@@ -293,7 +301,7 @@ mod tests {
             operation_id: operation_a,
             command_digest: format!("sha256:{}", "1".repeat(64)),
             applied_at: now,
-            expires_at: now + chrono::Duration::hours(1),
+            expires_at: now + time::Duration::hours(1),
             receipt: receipt_a.clone(),
         };
         assert_eq!(
@@ -304,7 +312,7 @@ mod tests {
         );
         let mut renewed_delivery = set_a.clone();
         renewed_delivery.command_digest = format!("sha256:{}", "9".repeat(64));
-        renewed_delivery.applied_at = now + chrono::Duration::hours(2);
+        renewed_delivery.applied_at = now + time::Duration::hours(2);
         assert_eq!(
             db.apply_applicant_action_projection(renewed_delivery)
                 .await
@@ -328,7 +336,7 @@ mod tests {
             operation_id: format!("sha256:{}", "6".repeat(64)),
             command_digest: format!("sha256:{}", "2".repeat(64)),
             applied_at: now,
-            expires_at: now + chrono::Duration::hours(1),
+            expires_at: now + time::Duration::hours(1),
             receipt: applicant_action_receipt(
                 quote_id,
                 format!("sha256:{}", "6".repeat(64)),
@@ -361,7 +369,7 @@ mod tests {
             operation_id: operation_b,
             command_digest: format!("sha256:{}", "3".repeat(64)),
             applied_at: now,
-            expires_at: now + chrono::Duration::hours(1),
+            expires_at: now + time::Duration::hours(1),
             receipt: receipt_b.clone(),
         };
         assert_eq!(
@@ -403,7 +411,7 @@ mod tests {
             operation_id: operation_c,
             command_digest: format!("sha256:{}", "4".repeat(64)),
             applied_at: now,
-            expires_at: now + chrono::Duration::hours(1),
+            expires_at: now + time::Duration::hours(1),
             receipt: receipt_c.clone(),
         };
         assert_eq!(
@@ -448,7 +456,7 @@ mod tests {
                 operation_id: operation_d.clone(),
                 command_digest: format!("sha256:{}", "a".repeat(64)),
                 applied_at: now,
-                expires_at: now + chrono::Duration::hours(1),
+                expires_at: now + time::Duration::hours(1),
                 receipt: applicant_action_receipt(
                     quote_id,
                     operation_d,
@@ -575,7 +583,12 @@ mod tests {
         now: TStamp,
         expires_at: TStamp,
     ) -> GovernedDenialInput {
-        let completed_at = now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let completed_at = now
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component");
         GovernedDenialInput {
             receipt: bcr_common::wire::quotes::CreditAuthorizationReceipt {
                 receipt_version: String::from("credit-authorization-receipt-v1"),
@@ -604,24 +617,27 @@ mod tests {
     }
 
     async fn governed_denial_is_atomic_and_replays_after_expiry_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         db.store(quote.clone()).await.unwrap();
         let first = denial_input(
             &quote,
             &format!("sha256:{}", "c".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
 
         let receipt = db.execute_governed_denial(first.clone()).await.unwrap();
         let mut renewed = denial_input(
             &quote,
             &first.receipt.operation_id,
-            now + chrono::Duration::days(2),
-            now + chrono::Duration::days(3),
+            now + time::Duration::days(2),
+            now + time::Duration::days(3),
         );
         renewed.receipt.authorization_digest = format!("sha256:{}", "d".repeat(64));
         assert_eq!(db.execute_governed_denial(renewed).await.unwrap(), receipt);
@@ -633,7 +649,7 @@ mod tests {
             &quote,
             &format!("sha256:{}", "e".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         assert!(matches!(
             db.execute_governed_denial(conflict).await,
@@ -648,9 +664,12 @@ mod tests {
     }
 
     async fn expired_governed_denial_does_not_mutate_quote_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         db.store(quote.clone()).await.unwrap();
         let expired = denial_input(&quote, &format!("sha256:{}", "c".repeat(64)), now, now);
@@ -672,22 +691,25 @@ mod tests {
 
     async fn governed_denial_concurrent_commands_have_one_authority_for(db: impl Repository) {
         let backend = std::any::type_name_of_val(&db);
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         db.store(quote.clone()).await.unwrap();
         let left = denial_input(
             &quote,
             &format!("sha256:{}", "c".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let right = denial_input(
             &quote,
             &format!("sha256:{}", "d".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
 
         let (left, right) = tokio::join!(
@@ -713,9 +735,12 @@ mod tests {
     }
 
     async fn governed_denial_and_offer_have_one_pending_transition_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         let fallback = pending_quote();
         db.store(quote.clone()).await.unwrap();
@@ -727,7 +752,7 @@ mod tests {
             &quote,
             &format!("sha256:{}", "d".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let (offer_result, denial_result) = tokio::join!(
             db.execute_authorization(offered.clone()),
@@ -764,9 +789,12 @@ mod tests {
     }
 
     async fn governed_denial_and_cancel_have_one_pending_transition_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         let fallback = pending_quote();
         db.store(quote.clone()).await.unwrap();
@@ -775,7 +803,7 @@ mod tests {
             &quote,
             &format!("sha256:{}", "d".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let canceled = quotes::Status::Canceled { tstamp: now };
 
@@ -811,16 +839,19 @@ mod tests {
     async fn governed_denial_durable_record_replays_from_another_surreal_handle() {
         let db = init_surreal_db().await;
         let other = db.independent_test_handle();
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         db.store(quote.clone()).await.unwrap();
         let input = denial_input(
             &quote,
             &format!("sha256:{}", "c".repeat(64)),
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
 
         let committed = db.execute_governed_denial(input.clone()).await.unwrap();
@@ -835,9 +866,12 @@ mod tests {
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn governed_denial_is_fail_closed_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let quote = pending_quote();
         db.store(quote.clone()).await.unwrap();
 
@@ -846,7 +880,7 @@ mod tests {
                 &quote,
                 &format!("sha256:{}", "c".repeat(64)),
                 now,
-                now + chrono::Duration::hours(1),
+                now + time::Duration::hours(1),
             ))
             .await,
             Err(crate::error::Error::CreditQuoteDenialUnavailable)
@@ -1286,8 +1320,9 @@ mod tests {
     fn denied_quote(now: TStamp) -> quotes::Quote {
         let mut quote = pending_quote();
         quote.bill.sum = bitcoin::Amount::from_sat(8_000_000);
-        quote.bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
-        quote.submitted = now - chrono::Duration::minutes(1);
+        quote.bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
+        quote.submitted = now - time::Duration::minutes(1);
         quote.status = quotes::Status::Denied { tstamp: now };
         quote
     }
@@ -1320,17 +1355,20 @@ mod tests {
     }
 
     async fn quote_reissue_is_atomic_and_semantically_idempotent_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let reissued_id = Uuid::from_u128(0x300);
         let wallet = keys_test::publics()[0];
         let signed = crate::authorization::tests::signed_reissue_for(
             &previous,
             reissued_id,
-            now - chrono::Duration::minutes(1),
-            now + chrono::Duration::hours(1),
+            now - time::Duration::minutes(1),
+            now + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,
@@ -1355,14 +1393,17 @@ mod tests {
         db.update_status_if_pending(
             reissued_id,
             quotes::Status::Denied {
-                tstamp: now + chrono::Duration::minutes(2),
+                tstamp: now + time::Duration::minutes(2),
             },
         )
         .await
         .unwrap();
-        let after_maturity = chrono::DateTime::parse_from_rfc3339("2027-02-07T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let after_maturity = time::OffsetDateTime::parse(
+            "2027-02-07T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let retry = reissued_quote(
             &previous,
             reissued_id,
@@ -1383,7 +1424,7 @@ mod tests {
             &previous,
             reissued_id,
             after_maturity,
-            after_maturity + chrono::Duration::hours(24),
+            after_maturity + time::Duration::hours(24),
         );
         assert_eq!(
             db.execute_quote_reissue(successor.clone(), retry.clone(), after_maturity)
@@ -1411,16 +1452,19 @@ mod tests {
     async fn quote_reissue_transaction_converges_across_independent_service_handles() {
         let db = init_surreal_db().await;
         let other = db.independent_test_handle();
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let reissued_id = Uuid::from_u128(0x306);
         let signed = crate::authorization::tests::signed_reissue_for(
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,
@@ -1454,9 +1498,12 @@ mod tests {
     async fn normal_enquiry_and_permitted_reissue_share_one_atomic_quote_head() {
         let db = init_surreal_db().await;
         let other = db.independent_test_handle();
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let normal_id = Uuid::from_u128(0x308);
         let reissued_id = Uuid::from_u128(0x309);
@@ -1482,7 +1529,7 @@ mod tests {
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         db.store(previous.clone()).await.unwrap();
 
@@ -1521,9 +1568,12 @@ mod tests {
     async fn normal_enquiry_never_adopts_a_reissued_quote_for_another_wallet_in(
         db: impl Repository,
     ) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let normal = reissued_quote(
             &previous,
@@ -1546,7 +1596,7 @@ mod tests {
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         db.store(previous.clone()).await.unwrap();
         assert_eq!(
@@ -1568,15 +1618,18 @@ mod tests {
     }
 
     async fn expired_unconsumed_quote_reissue_fails_closed_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let reissued_id = Uuid::from_u128(0x301);
         let signed = crate::authorization::tests::signed_reissue_for(
             &previous,
             reissued_id,
-            now - chrono::Duration::hours(2),
+            now - time::Duration::hours(2),
             now,
         );
         let quote = reissued_quote(
@@ -1603,19 +1656,25 @@ mod tests {
     }
 
     async fn matured_unconsumed_quote_reissue_fails_closed_for(db: impl Repository) {
-        let denied_at = chrono::DateTime::parse_from_rfc3339("2027-02-05T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let consumed_at = chrono::DateTime::parse_from_rfc3339("2027-02-07T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let denied_at = time::OffsetDateTime::parse(
+            "2027-02-05T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
+        let consumed_at = time::OffsetDateTime::parse(
+            "2027-02-07T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(denied_at);
         let reissued_id = Uuid::from_u128(0x305);
         let signed = crate::authorization::tests::signed_reissue_for(
             &previous,
             reissued_id,
             consumed_at,
-            consumed_at + chrono::Duration::hours(1),
+            consumed_at + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,
@@ -1641,9 +1700,12 @@ mod tests {
     }
 
     async fn another_quote_at_the_denial_timestamp_blocks_reissue_for(db: impl Repository) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let previous = denied_quote(now);
         let reissued_id = Uuid::from_u128(0x302);
         let mut competing = reissued_quote(
@@ -1659,7 +1721,7 @@ mod tests {
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,
@@ -1693,9 +1755,12 @@ mod tests {
     async fn quote_reissue_requires_the_exact_denied_source_and_preselected_target_for(
         db: impl Repository,
     ) {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let mut previous = denied_quote(now);
         previous.status = quotes::Status::Pending {
             wallet_pubkey: keys_test::publics()[0],
@@ -1705,7 +1770,7 @@ mod tests {
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,
@@ -1743,14 +1808,14 @@ mod tests {
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn quote_reissue_fails_closed_on_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBQuotes::from_pool(pool);
-        let now = TStamp::default();
+        let now = TStamp::UNIX_EPOCH;
         let previous = denied_quote(now);
         let reissued_id = Uuid::from_u128(0x304);
         let signed = crate::authorization::tests::signed_reissue_for(
             &previous,
             reissued_id,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let quote = reissued_quote(
             &previous,

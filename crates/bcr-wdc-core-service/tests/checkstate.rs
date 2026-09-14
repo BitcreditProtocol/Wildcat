@@ -36,7 +36,10 @@ async fn checkstate() {
     let amounts = vec![cashu::Amount::from(8_u64), cashu::Amount::from(16_u64)];
     let spent = core_tests::generate_random_ecash_proofs(&set, &amounts);
 
-    corecl.burn(spent.clone()).await.expect("burn");
+    corecl
+        .burn(spent.iter().cloned().map(Into::into).collect())
+        .await
+        .expect("burn");
 
     let amounts = vec![cashu::Amount::from(32_u64), cashu::Amount::from(64_u64)];
     let unspent = core_tests::generate_random_ecash_proofs(&set, &amounts);
