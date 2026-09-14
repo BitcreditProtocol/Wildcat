@@ -510,8 +510,7 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use bcr_common::{core_tests, wire_tests};
-    use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
-    use bcr_wdc_utils::{convert, keys::test_utils as keys_utils};
+    use bcr_wdc_utils::keys::test_utils as keys_utils;
     use mockall::predicate::*;
     use rand::Rng;
     use std::str::FromStr;
@@ -520,21 +519,15 @@ mod tests {
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
-        let holder =
-            convert::billidentparticipant_wire2ebill(wire_tests::random_identity_public_data().1)
-                .unwrap();
+        let holder = wire_tests::random_identity_public_data().1;
         BillInfo {
             id: core_tests::random_bill_id(),
-            drawee: convert::billidentparticipant_wire2ebill(
-                wire_tests::random_identity_public_data().1,
-            )
-            .unwrap(),
-            drawer: convert::billidentparticipant_wire2ebill(
-                wire_tests::random_identity_public_data().1,
-            )
-            .unwrap(),
-            payee: BillParticipant::Ident(holder.clone()),
-            current_holder: BillParticipant::Ident(holder),
+            drawee: wire_tests::random_identity_public_data().1,
+
+            drawer: wire_tests::random_identity_public_data().1,
+
+            payee: wire_bill::BillParticipant::Ident(holder.clone()),
+            current_holder: wire_bill::BillParticipant::Ident(holder),
             endorsees: Default::default(),
             sum: btc::Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: (time::OffsetDateTime::now_utc()

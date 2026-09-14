@@ -34,31 +34,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aes"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
-dependencies = [
- "cfg-if",
- "cipher",
- "cpufeatures 0.2.17",
-]
-
-[[package]]
-name = "aes-gcm"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
-dependencies = [
- "aead",
- "aes",
- "cipher",
- "ctr",
- "ghash",
- "subtle",
-]
-
-[[package]]
 name = "affinitypool"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -661,34 +636,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bcr-ebill-core"
-version = "0.5.16"
-source = "git+https://github.com/BitcreditProtocol/Bitcredit-Core.git?rev=bd51d8227b9dd589271b6fa99c6e22f7962737d6#bd51d8227b9dd589271b6fa99c6e22f7962737d6"
-dependencies = [
- "ammonia",
- "bcr-common",
- "bip39",
- "bitcoin",
- "borsh",
- "borsh-derive",
- "ecies",
- "email_address",
- "log",
- "miniscript",
- "nostr",
- "once_cell",
- "rust_decimal",
- "serde",
- "serde_json",
- "serde_repr",
- "strum 0.28.0",
- "thiserror 2.0.20",
- "time",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "bcr-wdc-admin-aggregator"
 version = "0.5.0-alpha"
 dependencies = [
@@ -750,7 +697,6 @@ dependencies = [
  "async-trait",
  "axum",
  "bcr-common",
- "bcr-ebill-core",
  "bcr-wdc-utils",
  "bip39",
  "bitcoin",
@@ -811,7 +757,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bcr-common",
- "bcr-ebill-core",
  "bcr-wdc-utils",
  "bitcoin",
  "built",
@@ -892,8 +837,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
 dependencies = [
  "bitcoin_hashes 0.14.101",
- "rand 0.8.8",
- "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -1772,15 +1715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctr"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
-dependencies = [
- "cipher",
-]
-
-[[package]]
 name = "curve25519-dalek"
 version = "4.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2089,24 +2023,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecies"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a2df85e2b13a5f7fa61e7f0ee776acfe74da80bf2fb1bcde2725af19c197b33"
-dependencies = [
- "aes-gcm",
- "getrandom 0.2.17",
- "hkdf",
- "k256",
- "lock_api",
- "once_cell",
- "rand_core 0.6.4",
- "sha2 0.10.9",
- "typenum",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2154,12 +2070,6 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
-
-[[package]]
-name = "email_address"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
 
 [[package]]
 name = "embedded-io"
@@ -2677,16 +2587,6 @@ dependencies = [
  "r-efi 6.0.0",
  "rand_core 0.10.1",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "ghash"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
-dependencies = [
- "opaque-debug",
- "polyval",
 ]
 
 [[package]]
@@ -3445,7 +3345,6 @@ checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
 dependencies = [
  "cfg-if",
  "elliptic-curve",
- "once_cell",
 ]
 
 [[package]]
@@ -3624,9 +3523,6 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
-dependencies = [
- "serde_core",
-]
 
 [[package]]
 name = "lru"
@@ -3736,16 +3632,6 @@ name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
-name = "miniscript"
-version = "12.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8343cc1ef1408bd9bdbf69f7aef47017dfab7e6349ec26fddf62e0e9fb5a4cf"
-dependencies = [
- "bech32 0.11.1",
- "bitcoin",
-]
 
 [[package]]
 name = "miniz_oxide"
@@ -4070,10 +3956,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-dependencies = [
- "critical-section",
- "portable-atomic",
-]
 
 [[package]]
 name = "opaque-debug"
@@ -4452,18 +4334,6 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
 dependencies = [
- "cpufeatures 0.2.17",
- "opaque-debug",
- "universal-hash",
-]
-
-[[package]]
-name = "polyval"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1fe60d06143b2430aa532c94cfe9e29783047f06c0d7fd359a9a51b729fa25"
-dependencies = [
- "cfg-if",
  "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash",

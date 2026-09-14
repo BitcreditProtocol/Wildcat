@@ -40,9 +40,10 @@ pub trait Repository {
 mod tests {
     use super::*;
     use crate::{quotes, service, TStamp};
-    use bcr_common::{cashu, core_tests, wire_tests::random_identity_public_data};
-    use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
-    use bcr_wdc_utils::{convert, keys::test_utils as keys_test, surreal as surreal_config};
+    use bcr_common::{
+        cashu, core_tests, wire::bill as wire_bill, wire_tests::random_identity_public_data,
+    };
+    use bcr_wdc_utils::{keys::test_utils as keys_test, surreal as surreal_config};
     use uuid::Uuid;
 
     async fn init_surreal_db() -> impl Repository {
@@ -286,14 +287,9 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                    .unwrap(),
-                drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                    .unwrap(),
-                payee: BillParticipant::Ident(
-                    convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                        .unwrap(),
-                ),
+                drawee: random_identity_public_data().1,
+                drawer: random_identity_public_data().1,
+                payee: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
                 endorsees: vec![],
                 maturity_date: time::Date::from_calendar_date(
                     2021,
@@ -461,9 +457,7 @@ mod tests {
         search_by_bill(db).await;
     }
     async fn search_by_bill(db: impl Repository) {
-        let current_holder = BillParticipant::Ident(
-            convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
-        );
+        let current_holder = wire_bill::BillParticipant::Ident(random_identity_public_data().1);
         let quote = quotes::Quote {
             id: Uuid::new_v4(),
             status: quotes::Status::Pending {
