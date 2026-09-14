@@ -50,6 +50,7 @@ struct QuoteReissueRecord {
     permit_digest: String,
     signed: SignedCreditQuoteReissuePermit,
     minting_pubkey: bcr_common::cashu::PublicKey,
+    #[serde(with = "time::serde::rfc3339")]
     consumed_at: crate::TStamp,
 }
 
@@ -994,6 +995,47 @@ fn is_transaction_conflict(message: &str) -> bool {
 mod tests {
     use super::*;
     use bcr_wdc_utils::keys::test_utils as keys_test;
+
+    #[test]
+    fn legacy_reissue_record_preserves_rfc3339_consumed_at() {
+        let consumed_at = time::macros::datetime!(2026-08-10 12:00 UTC);
+        let quote = quotes::Quote::new(
+            quotes::BillInfo::random(),
+            keys_test::publics()[0],
+            consumed_at,
+            quotes::test_credit_program_binding(),
+        );
+        let reissued_quote_id = Uuid::from_u128(0x301);
+        let signed = crate::authorization::tests::signed_reissue_for(
+            &quote,
+            reissued_quote_id,
+            consumed_at,
+            consumed_at + time::Duration::hours(1),
+        );
+        let record = QuoteReissueRecord {
+            previous_quote_id: quote.id,
+            reissued_quote_id,
+            permit_digest: String::from("synthetic-permit-digest"),
+            signed,
+            minting_pubkey: keys_test::publics()[0],
+            consumed_at,
+        };
+        let mut legacy = serde_json::to_value(&record).unwrap();
+        assert_eq!(legacy["consumedAt"], "2026-08-10T12:00:00Z");
+        // Existing chrono-backed records use an RFC3339 string, including fractions.
+        legacy["consumedAt"] = serde_json::json!("2026-08-10T12:00:00.123Z");
+        let restored: QuoteReissueRecord = serde_json::from_value(legacy).unwrap();
+        assert_eq!(
+            restored.consumed_at,
+            consumed_at + time::Duration::milliseconds(123)
+        );
+        assert_eq!(restored.previous_quote_id, quote.id);
+        assert_eq!(restored.reissued_quote_id, reissued_quote_id);
+        assert_eq!(
+            serde_json::to_value(restored).unwrap()["consumedAt"],
+            "2026-08-10T12:00:00.123Z"
+        );
+    }
 
     #[test]
     fn legacy_entry_without_credit_program_remains_readable_but_unbound() {
