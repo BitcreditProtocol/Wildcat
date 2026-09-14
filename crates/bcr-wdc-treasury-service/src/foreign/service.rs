@@ -824,7 +824,7 @@ mod tests {
                 };
                 Ok(wire_swap::SwapCommitmentRequest {
                     inputs: attested,
-                    outputs: outp,
+                    outputs: outp.into_iter().map(From::from).collect(),
                     expiry: now.unix_timestamp() as u64,
                     wallet_key: core::generate_random_keypair().public_key(),
                 })

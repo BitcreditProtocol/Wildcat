@@ -57,10 +57,11 @@ async fn swap() {
     let expiry =
         (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
     let wallet_kp = core::generate_random_keypair();
+    let c_blinds = blinds.iter().cloned().map(From::from).collect::<Vec<_>>();
     let (_, commitment) = client
         .commit_swap(
             proof_fps.clone(),
-            blinds.clone(),
+            c_blinds,
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -160,10 +161,11 @@ async fn swap_p2pk() {
     let wallet_kp = core::generate_random_keypair();
     let expiry =
         (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
+    let c_blinds = blinds.iter().cloned().map(From::from).collect::<Vec<_>>();
     let (_, commitment) = client
         .commit_swap(
             correct_fps.clone(),
-            blinds.clone(),
+            c_blinds,
             expiry,
             wallet_kp.public_key(),
             mint_pk,

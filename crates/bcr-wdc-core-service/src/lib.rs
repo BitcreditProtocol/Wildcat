@@ -280,7 +280,7 @@ mod tests {
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: test_utils::attested_fingerprints(proof_fps),
-            outputs: blinds.clone(),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
@@ -334,7 +334,7 @@ mod tests {
         let wallet_kp = core::generate_random_keypair();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: test_utils::attested_fingerprints(proof_fps),
-            outputs: blinds.clone(),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
@@ -438,7 +438,7 @@ mod tests {
             .unwrap();
         let request = wire_swap::SwapCommitmentRequest {
             inputs: test_utils::attested_fingerprints(proof_fps),
-            outputs: blinds.clone(),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
             expiry,
             wallet_key: wallet_kp.public_key(),
         };
