@@ -127,10 +127,13 @@ impl Repository for QuotesIDMap {
                 _ => Err(Error::CreditQuoteReissueConflict),
             };
         }
-        crate::service::validate_basic_ebill_rules(&quote.bill, consumed_at.date_naive())?;
-        let expires_at = chrono::DateTime::parse_from_rfc3339(&signed.permit.expires_at)
-            .map_err(|_| Error::CreditQuoteReissueInvalid)?
-            .with_timezone(&chrono::Utc);
+        crate::service::validate_basic_ebill_rules(&quote.bill, consumed_at.date())?;
+        let expires_at = time::OffsetDateTime::parse(
+            &signed.permit.expires_at,
+            &time::format_description::well_known::Rfc3339,
+        )
+        .map_err(|_| Error::CreditQuoteReissueInvalid)?
+        .to_offset(time::UtcOffset::UTC);
         if expires_at <= consumed_at {
             return Err(Error::CreditQuoteReissueInvalid);
         }

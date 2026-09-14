@@ -68,7 +68,7 @@ pub async fn reissue_enquire_quote(
             bill,
             payload.minting_pubkey,
             payload.signed_permit,
-            chrono::Utc::now(),
+            time::OffsetDateTime::now_utc(),
         )
         .await?;
     Ok(Json(wire_quotes::EnquireReply { id }))
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn public_projection_is_visible_only_while_quote_is_pending() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut quote = quotes::Quote::new(
             quotes::BillInfo::random(),
             bcr_wdc_utils::keys::test_utils::publics()[0],
@@ -245,10 +245,10 @@ mod tests {
             payee: BillParticipant::Ident(holder),
             endorsees: vec![],
             sum: 8_000_000,
-            maturity_date: chrono::Utc::now().date_naive() + chrono::Duration::days(30),
+            maturity_date: time::OffsetDateTime::now_utc().date() + time::Duration::days(30),
             file_urls: vec![],
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let previous = quotes::Quote::new(
             quotes::BillInfo::random(),
             cashu::PublicKey::from(holder_key.public_key()),
@@ -264,7 +264,7 @@ mod tests {
                 &previous,
                 uuid::Uuid::new_v4(),
                 now,
-                now + chrono::Duration::hours(1),
+                now + time::Duration::hours(1),
             ),
         };
         let attacker = generate_random_keypair();
