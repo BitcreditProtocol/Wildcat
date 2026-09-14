@@ -94,8 +94,6 @@ pub async fn restore(
     State(ctrl): State<Arc<service::Service>>,
     Json(req): Json<cashu::RestoreRequest>,
 ) -> Result<Json<cashu::RestoreResponse>> {
-    tracing::debug!("Received wallet restore request");
-
     let mut response = cashu::RestoreResponse {
         outputs: Vec::new(),
         signatures: Vec::new(),

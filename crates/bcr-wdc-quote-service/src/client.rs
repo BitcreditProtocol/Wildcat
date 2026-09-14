@@ -20,6 +20,8 @@ use crate::{
     service::{MintingStatus, WdcClient},
 };
 
+// ----- end imports
+
 #[derive(Debug, Clone)]
 pub struct WildcatCl {
     pub core: CoreClient,
@@ -60,8 +62,10 @@ impl WdcClient for WildcatCl {
     }
 
     async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core.sign(msgs).await?;
-        Ok(signatures)
+        let c_msgs: Vec<_> = msgs.iter().cloned().map(From::from).collect();
+        let signatures = self.core.sign(&c_msgs).await?;
+        let c_signatures = signatures.into_iter().map(From::from).collect();
+        Ok(c_signatures)
     }
 
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {

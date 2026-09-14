@@ -265,14 +265,15 @@ impl Service {
             .map(|fp| ProofFingerprint::from(fp.clone()))
             .collect::<Vec<_>>();
         signatures_utils::basic_fingerprints_checks(&core_fps)?;
-        signatures_utils::basic_blinds_checks(&request.outputs)?;
+        let c_outputs: Vec<_> = request.outputs.iter().cloned().map(From::from).collect();
+        signatures_utils::basic_blinds_checks(&c_outputs)?;
         self.clowder
             .authenticate_attestation(&self.alpha_id, &request.inputs)
             .await?;
         let kinfos = self.list_info(ListFilters::default()).await?;
         let kinfos = keys_utils::kinfos_list_to_map(kinfos);
         let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
-        swap::mint::verify_commit(&core_fps, &request.outputs, &kinfos)?;
+        swap::mint::verify_commit(&core_fps, &c_outputs, &kinfos)?;
         let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
         if !self
             .check_state(&ys, now)
