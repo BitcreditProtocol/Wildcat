@@ -16,6 +16,22 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
+  recipe:
+    name: Docker recipe checks
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - run: python3 .github/scripts/test_docker_recipe.py
+      # Temporary native verification; remove after recording the isolated build.
+      - name: Build the current recipe without publishing
+        run: docker build --progress=plain -t wildcat-recipe-check -f docker/base-image/Dockerfile .
+
   build:
     timeout-minutes: 20
     runs-on: ubuntu-latest
