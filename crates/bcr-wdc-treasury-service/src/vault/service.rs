@@ -114,7 +114,7 @@ mod tests {
             my_url: cashu::MintUrl::from_str("http://localhost:4343").unwrap(),
             mint_id: mint_id.clone(),
         };
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let token = service.generate_token(now).await.unwrap();
         let encoded = token.to_string();
         assert!(encoded.starts_with("bitcrrC"), "{encoded}");

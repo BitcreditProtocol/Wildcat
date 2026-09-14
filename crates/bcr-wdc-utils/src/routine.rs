@@ -25,7 +25,7 @@ async fn run_routine<R: Routine>(routine: R, cancel: CancellationToken, mut inte
         tokio::select! {
             _ = cancel.cancelled() => break,
             _ = tokio::time::sleep(interval) => {
-                let now = chrono::Utc::now();
+                let now = time::OffsetDateTime::now_utc();
                 interval = match routine.run_task(now).await {
                     Ok(None) => {tracing::info!("Routine checks completed successfully");
                         interval},

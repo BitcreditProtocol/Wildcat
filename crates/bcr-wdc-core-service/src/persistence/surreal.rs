@@ -592,6 +592,7 @@ struct CommitmentDBEntry {
     id: RecordId,
     inputs: Vec<cashu::PublicKey>,
     outputs: Vec<cashu::PublicKey>,
+    #[serde(with = "time::serde::rfc3339")]
     expiration: TStamp,
     wallet_key: cashu::PublicKey,
     fp_digest: [u8; 32],
@@ -603,7 +604,7 @@ impl Repository {
         self.db
             .query("DELETE FROM type::table($table) WHERE expiration < $now")
             .bind(("table", COMMITMENTS_TABLE))
-            .bind(("now", now))
+            .bind(("now", bcr_wdc_utils::surreal::tstamp_param(now)))
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         Ok(())
@@ -741,6 +742,7 @@ impl Repository {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ReservedYsDBEntry {
     id: RecordId,
+    #[serde(with = "time::serde::rfc3339")]
     deadline: TStamp,
 }
 
@@ -792,7 +794,7 @@ impl Repository {
         self.db
             .query("DELETE FROM type::table($table) WHERE deadline < $now")
             .bind(("table", RESERVED_YS_TABLE))
-            .bind(("now", now))
+            .bind(("now", bcr_wdc_utils::surreal::tstamp_param(now)))
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())

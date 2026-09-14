@@ -63,11 +63,9 @@ impl Service {
                     "Foreign keyset has no expiration",
                 )));
             };
-            let foreign_expiration = TStamp::from_timestamp_secs(foreign_unix_expiration as i64)
-                .ok_or(Error::InvalidInput(String::from(
-                    "foreign expiry date parse",
-                )))?;
-            let foreign_date = foreign_expiration.date_naive();
+            let foreign_expiration = TStamp::from_unix_timestamp(foreign_unix_expiration as i64)
+                .map_err(|_| Error::InvalidInput(String::from("foreign expiry date parse")))?;
+            let foreign_date = foreign_expiration.date();
             let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
             let mut secrets = Vec::new();
             for (fp, hash) in fps_hashes {
@@ -157,7 +155,7 @@ impl Service {
         )
         .await?;
         let locktime =
-            foreign_locktime - chrono::TimeDelta::seconds(self.exchange_lock_margin_secs as i64);
+            foreign_locktime - time::Duration::seconds(self.exchange_lock_margin_secs as i64);
         let wallet_cpk = cashu::PublicKey::from(*wallet_pk);
         // Only this mint may reclaim once the locktime passes.
         let refund = cashu::PublicKey::from(myself);
@@ -342,7 +340,7 @@ mod tests {
         let conditions = cashu::SpendingConditions::new_htlc(
             preimage.clone(),
             Some(cashu::Conditions {
-                locktime: Some(locktime.timestamp() as u64),
+                locktime: Some(locktime.unix_timestamp() as u64),
                 pubkeys: Some(vec![mint]),
                 refund_keys: Some(vec![wpk]),
                 ..Default::default()
@@ -381,14 +379,14 @@ mod tests {
         let wallet_kp = core::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let (mut foreign_info, mut foreign_keyset) = core_tests::generate_random_ecash_keyset();
-        let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
-        foreign_keyset.final_expiry = Some(expiration.timestamp() as u64);
-        foreign_info.final_expiry = Some(expiration.timestamp() as u64);
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        foreign_keyset.final_expiry = Some(expiration.unix_timestamp() as u64);
+        foreign_info.final_expiry = Some(expiration.unix_timestamp() as u64);
         let inputs = vec![
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset.clone().into(),
                 cashu::Amount::from(512),
-                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
                 cashu::PublicKey::from(myself_kp.public_key()),
             )
@@ -396,7 +394,7 @@ mod tests {
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset.clone().into(),
                 cashu::Amount::from(256),
-                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
                 cashu::PublicKey::from(myself_kp.public_key()),
             )
@@ -463,7 +461,7 @@ mod tests {
             .with(eq(inputs.clone()), always(), eq(exchange_path.clone()))
             .returning(move |_, _, _| Ok(cloned_inputs.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
-        myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
+        myself_keyset.final_expiry = Some(expiration.unix_timestamp() as u64);
         let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         onlinerepo
             .expect_store_htlc()
@@ -474,7 +472,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         keys.expect_get_keyset_with_expiration()
-            .with(eq(expiration.date_naive()))
+            .with(eq(expiration.date()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
         let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
@@ -513,13 +511,13 @@ mod tests {
         let wallet_kp = core::generate_random_keypair();
         let foreign_url = reqwest::Url::parse("https://foreign-mint.example").unwrap();
         let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
-        let expiration = chrono::Utc::now() + chrono::TimeDelta::days(7);
-        foreign_info.final_expiry = Some(expiration.timestamp() as u64);
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        foreign_info.final_expiry = Some(expiration.unix_timestamp() as u64);
         let originals = [
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset.clone().into(),
                 cashu::Amount::from(512),
-                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
                 cashu::PublicKey::from(myself_kp.public_key()),
             )
@@ -527,7 +525,7 @@ mod tests {
             generate_htlc_proof_for_online_exchange(
                 &foreign_keyset.clone().into(),
                 cashu::Amount::from(256),
-                chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+                time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
                 cashu::PublicKey::from(wallet_kp.public_key()),
                 cashu::PublicKey::from(myself_kp.public_key()),
             )
@@ -557,10 +555,10 @@ mod tests {
             .times(1)
             .returning(move |_, _| Ok(foreign_info.clone()));
         let (_, mut myself_keyset) = core_tests::generate_random_ecash_keyset();
-        myself_keyset.final_expiry = Some(expiration.timestamp() as u64);
+        myself_keyset.final_expiry = Some(expiration.unix_timestamp() as u64);
         let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset.clone().into(), None);
         keys.expect_get_keyset_with_expiration()
-            .with(eq(expiration.date_naive()))
+            .with(eq(expiration.date()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
         let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
@@ -761,7 +759,7 @@ mod tests {
         let (foreign_proof, preimage) = generate_htlc_proof_for_online_exchange(
             &foreign_keyset.clone().into(),
             cashu::Amount::from(256),
-            chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+            time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
             cashu::PublicKey::from(myself_kp.public_key()),
         );
@@ -827,7 +825,7 @@ mod tests {
                 Ok(wire_swap::SwapCommitmentRequest {
                     inputs: attested,
                     outputs: outp,
-                    expiry: now.timestamp() as u64,
+                    expiry: now.unix_timestamp() as u64,
                     wallet_key: core::generate_random_keypair().public_key(),
                 })
             });
@@ -881,7 +879,7 @@ mod tests {
             exchange_lock_margin_secs: 15 * 60,
         };
         let amount = srvc
-            .try_swap_htlc(&preimage, chrono::Utc::now())
+            .try_swap_htlc(&preimage, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
@@ -901,7 +899,7 @@ mod tests {
         let (foreign_proof, _) = generate_htlc_proof_for_online_exchange(
             &foreign_keyset.clone().into(),
             cashu::Amount::from(256),
-            chrono::Utc::now() + chrono::TimeDelta::minutes(90),
+            time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
             cashu::PublicKey::from(wallet_kp.public_key()),
             cashu::PublicKey::from(myself_kp.public_key()),
         );
@@ -946,7 +944,7 @@ mod tests {
             exchange_lock_margin_secs: 15 * 60,
         };
         let amount = srvc
-            .try_swap_htlc(&preimage, chrono::Utc::now())
+            .try_swap_htlc(&preimage, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);

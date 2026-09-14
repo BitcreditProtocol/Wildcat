@@ -18,7 +18,7 @@ use error::Result;
 
 // ----- end imports
 
-pub type TStamp = chrono::DateTime<chrono::Utc>;
+pub use bcr_common::TStamp;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -32,7 +32,7 @@ pub struct AppController {
     core_client: bcr_common::client::core::Client,
     treasury_client: bcr_common::client::treasury::Client,
     clwdr_rest_client: Arc<clowder::Client>,
-    time_started: chrono::DateTime<chrono::Utc>,
+    time_started: time::OffsetDateTime,
 }
 
 impl AppController {
@@ -51,7 +51,7 @@ impl AppController {
             core_client,
             treasury_client,
             clwdr_rest_client,
-            time_started: chrono::Utc::now(),
+            time_started: time::OffsetDateTime::now_utc(),
         }
     }
 }

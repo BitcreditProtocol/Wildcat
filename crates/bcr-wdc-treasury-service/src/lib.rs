@@ -20,7 +20,7 @@ mod admin;
 pub mod config;
 pub mod ebill;
 mod error;
-mod foreign;
+pub mod foreign;
 pub mod onchain;
 pub mod persistence;
 pub mod vault;
@@ -29,7 +29,7 @@ mod web;
 
 // ----- end imports
 
-type TStamp = chrono::DateTime<chrono::Utc>;
+use bcr_common::TStamp;
 
 #[derive(Clone, FromRef)]
 pub struct AppController {
@@ -99,8 +99,8 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         core_cl: core_client.clone(),
     };
     let onchain = onchain::Service {
-        melt_quote_expiry: chrono::Duration::seconds(melt_quote_expiry_seconds as i64),
-        mint_quote_expiry: chrono::Duration::seconds(mint_quote_expiry_seconds as i64),
+        melt_quote_expiry: time::Duration::seconds(melt_quote_expiry_seconds as i64),
+        mint_quote_expiry: time::Duration::seconds(mint_quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
         repo: Arc::new(onchain_repo),
         clowder_cl: Arc::new(clowder_cl),
@@ -196,7 +196,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
 
     // cache
-    let cache_expiry = chrono::Duration::seconds(cache_expiry_sec as i64);
+    let cache_expiry = time::Duration::seconds(cache_expiry_sec as i64);
     let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
     let app_ctrl = AppController {
         ebill: Arc::new(ebill),
@@ -237,7 +237,16 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     (app_ctrl, monitors)
 }
 
-pub fn routes(app: AppController) -> Router {
+pub fn routes<Cntrlr>(app: Cntrlr) -> Router
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<ebill::Service>: FromRef<Cntrlr>,
+    Arc<onchain::Service>: FromRef<Cntrlr>,
+    Arc<foreign::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<ClowderNatsClient>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
     let web = Router::new()
         .route(
             cl_treasury::web_ep::EXCHANGE_ONLINE_V1,

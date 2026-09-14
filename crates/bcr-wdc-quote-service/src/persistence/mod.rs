@@ -63,7 +63,7 @@ mod tests {
         quotes::Quote {
             bill: quotes::BillInfo::random(),
             id: Uuid::new_v4(),
-            submitted: TStamp::default(),
+            submitted: TStamp::UNIX_EPOCH,
             status: quotes::Status::Pending {
                 wallet_pubkey: keys_test::publics()[0],
             },
@@ -73,7 +73,7 @@ mod tests {
     fn offered_status(quote: &quotes::Quote) -> quotes::Status {
         quotes::Status::Offered {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id,
-            ttl: TStamp::default(),
+            ttl: TStamp::UNIX_EPOCH,
             discounted: quote.bill.sum,
             wallet_pubkey: keys_test::publics()[0],
         }
@@ -127,7 +127,7 @@ mod tests {
     async fn update_status_if_pending_ko(db: impl Repository) {
         let mut quote = pending_quote();
         quote.status = quotes::Status::Rejected {
-            tstamp: TStamp::default(),
+            tstamp: TStamp::UNIX_EPOCH,
             discounted: bitcoin::Amount::default(),
         };
         db.store(quote.clone()).await.unwrap();
@@ -180,7 +180,7 @@ mod tests {
     async fn update_status_if_offered_ko(db: impl Repository) {
         let mut quote = pending_quote();
         quote.status = quotes::Status::Denied {
-            tstamp: TStamp::from_timestamp(10000, 0).unwrap(),
+            tstamp: TStamp::from_unix_timestamp(10000).unwrap(),
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
@@ -247,7 +247,7 @@ mod tests {
     async fn update_status_if_failedebillvalidation_ko(db: impl Repository) {
         let mut quote = pending_quote();
         quote.status = quotes::Status::Denied {
-            tstamp: TStamp::from_timestamp(10000, 0).unwrap(),
+            tstamp: TStamp::from_unix_timestamp(10000).unwrap(),
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
@@ -295,23 +295,30 @@ mod tests {
                         .unwrap(),
                 ),
                 endorsees: vec![],
-                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+                maturity_date: time::Date::from_calendar_date(
+                    2021,
+                    time::Month::try_from(1u8).unwrap(),
+                    1,
+                )
+                .unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::default(),
+            submitted: TStamp::UNIX_EPOCH,
         };
         db.store(quote.clone()).await.unwrap();
         let filters = service::ListFilters::default();
         let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 1);
-        let date = chrono::NaiveDate::from_ymd_opt(2021, 1, 1);
+        let date =
+            time::Date::from_calendar_date(2021, time::Month::try_from(1u8).unwrap(), 1).ok();
         let filters = service::ListFilters {
             bill_maturity_date_from: date,
             ..Default::default()
         };
         let res = db.list_light(filters, None).await.unwrap();
         assert_eq!(res.len(), 1);
-        let date = chrono::NaiveDate::from_ymd_opt(2022, 1, 1);
+        let date =
+            time::Date::from_calendar_date(2022, time::Month::try_from(1u8).unwrap(), 1).ok();
         let filters = service::ListFilters {
             bill_maturity_date_from: date,
             ..Default::default()
@@ -355,10 +362,15 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+                maturity_date: time::Date::from_calendar_date(
+                    2021,
+                    time::Month::try_from(1u8).unwrap(),
+                    1,
+                )
+                .unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::from_timestamp(100000, 0).unwrap(),
+            submitted: TStamp::from_unix_timestamp(100000).unwrap(),
         };
         db.store(quote).await.unwrap();
         let qid2 = Uuid::new_v4();
@@ -368,10 +380,15 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+                maturity_date: time::Date::from_calendar_date(
+                    2020,
+                    time::Month::try_from(1u8).unwrap(),
+                    1,
+                )
+                .unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::from_timestamp(300000, 0).unwrap(),
+            submitted: TStamp::from_unix_timestamp(300000).unwrap(),
         };
         db.store(quote).await.unwrap();
         let qid3 = Uuid::new_v4();
@@ -381,10 +398,15 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: chrono::NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+                maturity_date: time::Date::from_calendar_date(
+                    2022,
+                    time::Month::try_from(1u8).unwrap(),
+                    1,
+                )
+                .unwrap(),
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::from_timestamp(200000, 0).unwrap(),
+            submitted: TStamp::from_unix_timestamp(200000).unwrap(),
         };
         db.store(quote).await.unwrap();
         let filters = service::ListFilters::default();
@@ -448,12 +470,17 @@ mod tests {
                 wallet_pubkey: keys_test::publics()[0],
             },
             bill: quotes::BillInfo {
-                maturity_date: chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+                maturity_date: time::Date::from_calendar_date(
+                    2021,
+                    time::Month::try_from(1u8).unwrap(),
+                    1,
+                )
+                .unwrap(),
                 payee: current_holder.clone(),
                 current_holder,
                 ..quotes::BillInfo::random()
             },
-            submitted: TStamp::default(),
+            submitted: TStamp::UNIX_EPOCH,
         };
         db.store(quote.clone()).await.unwrap();
         let result = db

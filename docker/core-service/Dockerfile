@@ -12,7 +12,7 @@ RUN apt-get update \
 
 WORKDIR /core-service
 COPY --from=rust-builder /wildcat/target/release/bcr-wdc-core-service .
-COPY --from=rust-builder /wildcat/target/release/migrate .
+COPY --from=rust-builder /wildcat/target/release/core-migrate ./migrate
 
 # Expose web server port
 EXPOSE 3338

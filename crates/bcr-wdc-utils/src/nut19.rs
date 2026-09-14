@@ -9,6 +9,8 @@ use crate::TStamp;
 
 // ----- end imports
 
+const MAX_TSTAMP: TStamp = time::PrimitiveDateTime::MAX.assume_utc();
+
 #[async_trait]
 pub trait Cache: Send + Sync {
     async fn store(&self, key: Sha1Hash, value: ciborium::Value, now: TStamp);
@@ -24,14 +26,14 @@ pub trait Cache: Send + Sync {
 pub struct InMemoryMap {
     map: RwLock<HashMap<Sha1Hash, (TStamp, ciborium::Value)>>,
     oldest: RwLock<TStamp>,
-    ttl: chrono::Duration,
+    ttl: time::Duration,
 }
 
 impl InMemoryMap {
-    pub fn new(ttl: chrono::Duration) -> Self {
+    pub fn new(ttl: time::Duration) -> Self {
         Self {
             map: RwLock::new(HashMap::new()),
-            oldest: RwLock::new(TStamp::MAX_UTC),
+            oldest: RwLock::new(MAX_TSTAMP),
             ttl,
         }
     }
@@ -55,7 +57,7 @@ impl Cache for InMemoryMap {
             return;
         }
         let mut map = self.map.write().await;
-        let mut new_oldest = TStamp::MAX_UTC;
+        let mut new_oldest = MAX_TSTAMP;
         map.retain(|_, (tstamp, _)| {
             if now - *tstamp > self.ttl {
                 false

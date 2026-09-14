@@ -24,8 +24,8 @@ pub struct Service {
     pub wdc: Arc<dyn WildcatClient>,
     pub repo: Arc<dyn Repository>,
     pub clowder_cl: Arc<dyn ClowderClient>,
-    pub melt_quote_expiry: chrono::Duration,
-    pub mint_quote_expiry: chrono::Duration,
+    pub melt_quote_expiry: time::Duration,
+    pub mint_quote_expiry: time::Duration,
     pub min_mint_threshold: bitcoin::Amount,
     pub melt_fee_ppk: u64,
     pub min_feerate_sat_per_vb: f64,
@@ -64,7 +64,7 @@ impl Service {
             address: address.to_string(),
             payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
             blinded_messages: request.blinded_messages.clone(),
-            expiry: expiry.timestamp().max(0) as u64,
+            expiry: expiry.unix_timestamp().max(0) as u64,
             wallet_key: request.wallet_key,
         };
         // acquire clowder's commitment before persisting the quote locally
@@ -205,7 +205,7 @@ impl Service {
             amount: target,
             network_fee,
             melt_fee: admin_fees,
-            expiry: expiry.timestamp().max(0) as u64,
+            expiry: expiry.unix_timestamp().max(0) as u64,
             wallet_key,
         };
         let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
@@ -501,8 +501,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -517,7 +517,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
-            .create_onchain_mint_quote(request, chrono::Utc::now())
+            .create_onchain_mint_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
     }
@@ -531,8 +531,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::from_sat(1000),
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -548,7 +548,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
-            .create_onchain_mint_quote(request, chrono::Utc::now())
+            .create_onchain_mint_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
     }
@@ -598,7 +598,7 @@ mod tests {
                     available: cashu::Amount::from(99_000),
                     address: String::new(),
                     target: bitcoin::Amount::from_sat(99_000),
-                    expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+                    expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
                     fees: cashu::Amount::ZERO,
                     wallet_key: core::generate_random_keypair().public_key().into(),
                     input_ys: vec![],
@@ -619,8 +619,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -641,7 +641,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         let response = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await;
         assert!(matches!(response, Err(Error::ServiceUnavailable(_))));
     }
@@ -700,8 +700,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -722,7 +722,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
     }
@@ -743,7 +743,7 @@ mod tests {
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(8),
-            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
             fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
@@ -801,8 +801,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -813,7 +813,7 @@ mod tests {
             inputs: proofs,
         };
         service
-            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .melt_onchain(request, time::OffsetDateTime::now_utc(), &vault)
             .await
             .unwrap();
     }
@@ -835,7 +835,7 @@ mod tests {
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(8),
-            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
             fees: cashu::Amount::ZERO,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
@@ -862,8 +862,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -874,7 +874,7 @@ mod tests {
             inputs: proofs,
         };
         let err = service
-            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .melt_onchain(request, time::OffsetDateTime::now_utc(), &vault)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -898,8 +898,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -920,7 +920,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -943,8 +943,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -966,7 +966,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
         };
         service
-            .create_onchain_mint_quote(request, chrono::Utc::now())
+            .create_onchain_mint_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
     }
@@ -988,7 +988,7 @@ mod tests {
             available: cashu::Amount::from(8),
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(5),
-            expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
             fees: cashu::Amount::from(2),
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
@@ -1051,8 +1051,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -1063,7 +1063,7 @@ mod tests {
             inputs: proofs,
         };
         service
-            .melt_onchain(request, chrono::Utc::now(), &vault)
+            .melt_onchain(request, time::OffsetDateTime::now_utc(), &vault)
             .await
             .unwrap();
     }
@@ -1102,8 +1102,8 @@ mod tests {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
             clowder_cl: Arc::new(clowder),
-            melt_quote_expiry: chrono::Duration::seconds(3600),
-            mint_quote_expiry: chrono::Duration::seconds(3600),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
             min_mint_threshold: bitcoin::Amount::ZERO,
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
@@ -1165,7 +1165,7 @@ mod tests {
         let service = melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[512, 512], 800, 200);
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         let msg = match err {
@@ -1183,7 +1183,7 @@ mod tests {
         let service = melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[512], u64::MAX, u64::MAX);
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -1195,7 +1195,7 @@ mod tests {
         let service = melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[128, 16], 100, 43);
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         let msg = match err {
@@ -1216,7 +1216,7 @@ mod tests {
         let service = melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[512, 256, 128, 64, 32, 16, 8, 4, 2, 1], 800, 215);
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         let msg = match err {
@@ -1266,7 +1266,7 @@ mod tests {
                 available: cashu::Amount::from(99_000),
                 address: String::new(),
                 target: bitcoin::Amount::from_sat(50_000),
-                expiry: chrono::Utc::now() + chrono::Duration::seconds(3600),
+                expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
                 fees: cashu::Amount::ZERO,
                 wallet_key: core::generate_random_keypair().public_key().into(),
                 input_ys: vec![],
@@ -1281,7 +1281,7 @@ mod tests {
         let service = melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[512, 512], 800, 216);
         let err = service
-            .create_onchain_melt_quote(request, chrono::Utc::now())
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         assert!(matches!(err, Error::ServiceUnavailable(_)));

@@ -87,10 +87,7 @@ pub trait OfflineRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait KeysClient: Send + Sync {
-    async fn get_keyset_with_expiration(
-        &self,
-        expiration: chrono::NaiveDate,
-    ) -> Result<ecash::KeySet>;
+    async fn get_keyset_with_expiration(&self, expiration: time::Date) -> Result<ecash::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     /// Retires proofs this mint issued, so unbacked eCash stops circulating.
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;

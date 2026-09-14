@@ -31,7 +31,11 @@ pub async fn enquire_quote(
     )?;
     let bill = quotes::convert_to_billinfo(bill_info, payload.content)?;
     let id = ctrl
-        .enquire(bill, payload.minting_pubkey, chrono::Utc::now())
+        .enquire(
+            bill,
+            payload.minting_pubkey,
+            time::OffsetDateTime::now_utc(),
+        )
         .await?;
     Ok(Json(wire_quotes::EnquireReply { id }))
 }
@@ -97,7 +101,7 @@ pub async fn lookup_quote(
 ) -> Result<Json<wire_quotes::StatusReply>> {
     tracing::debug!("Received mint quote lookup request for id: {}", id);
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let quote = ctrl.lookup(id, now).await?;
     Ok(Json(convert_to_enquire_reply(quote)))
 }
@@ -110,7 +114,7 @@ pub async fn resolve_offer(
 ) -> Result<()> {
     tracing::debug!("Received mint quote resolve request for id: {}", id);
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     match req {
         wire_quotes::ResolveOffer::Reject => ctrl.reject(id, now).await?,
         wire_quotes::ResolveOffer::Accept => ctrl.accept(id, now).await?,
@@ -125,7 +129,7 @@ pub async fn cancel(
 ) -> Result<Json<wire_quotes::StatusReply>> {
     tracing::debug!("Received mint quote cancel request for id: {}", id);
 
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     ctrl.cancel(id, now).await?;
     let quote = ctrl.lookup(id, now).await?;
     let reply = convert_to_enquire_reply(quote);

@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "core-migrate"
+path = "src/bin/migrate.rs"
+
 [features]
 test-utils = ["axum-test", "bcr-wdc-utils/test-utils"]
 
@@ -16,14 +20,14 @@ bcr-common = {workspace = true, features = ["clwdr-client", "mint"]}
 bcr-wdc-utils = {workspace = true}
 bip39 = {workspace = true}
 bitcoin.workspace = true
-chrono.workspace = true
+time.workspace = true
 config = {workspace = true}
 futures.workspace = true
 itertools.workspace = true
 secp256k1 = {workspace = true, features = ["global-context"]}
 serde.workspace = true
 serde_json = {workspace = true}
-sqlx = {workspace = true, default-features = false, features = ["runtime-tokio", "uuid", "postgres", "macros", "json", "migrate", "chrono"]}
+sqlx = {workspace = true, default-features = false, features = ["runtime-tokio", "uuid", "postgres", "macros", "json", "migrate", "time"]}
 surrealdb.workspace = true
 thiserror.workspace = true
 tokio = {workspace = true, features = ["signal"]}

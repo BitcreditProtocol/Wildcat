@@ -30,7 +30,7 @@ pub async fn try_htlc_swap(
     State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
 ) -> Result<Json<cashu::Amount>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let amount = ctrl.try_swap_htlc(&request.preimage, now).await?;
     Ok(Json(amount))
 }
@@ -40,7 +40,7 @@ pub async fn new_ebill_mintop(
     State(ctrl): State<Arc<ebill::Service>>,
     Json(request): Json<wire_treasury::NewMintOperationRequest>,
 ) -> Result<Json<wire_treasury::NewMintOperationResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     ctrl.new_minting_operation(
         request.quote_id,
         request.kid,
@@ -97,7 +97,7 @@ pub async fn store_fees_proofs(
 pub async fn generate_fees_token(
     State(ctrl): State<Arc<vault::Service>>,
 ) -> Result<Json<wire_treasury::FeesTokenResponse>> {
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let token = ctrl.generate_token(now).await?;
     let total = token.value()?;
     let response = wire_treasury::FeesTokenResponse {
