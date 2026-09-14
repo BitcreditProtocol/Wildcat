@@ -310,7 +310,7 @@ impl ForeignClient for MintClient {
         commitment: secp256k1::schnorr::Signature,
     ) -> Result<Vec<cashu::BlindSignature>> {
         let signatures = self.foreign_cl.swap(inputs, outputs, commitment).await?;
-        Ok(signatures)
+        Ok(signatures.into_iter().map(Into::into).collect())
     }
 
     async fn check_state(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>> {

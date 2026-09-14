@@ -505,7 +505,7 @@ mod tests {
             .with(eq(expiration.date()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
+        let cloned_keyset: ecash::MintKeySet = myself_keyset.clone();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {
@@ -594,7 +594,7 @@ mod tests {
             .with(eq(expiration.date()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
+        let cloned_keyset: ecash::MintKeySet = myself_keyset.clone();
         keys.expect_sign().times(1).returning(move |blinds| {
             let mut signatures = Vec::with_capacity(blinds.len());
             for blind in blinds {

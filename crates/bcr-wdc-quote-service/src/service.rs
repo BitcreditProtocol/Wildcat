@@ -312,9 +312,15 @@ impl Service {
         let verified = self
             .authorization_verifier
             .verify_quote_denial(signed, &quote, now)?;
-        let denied_at = chrono::DateTime::from_timestamp_millis(now.timestamp_millis())
-            .ok_or(Error::CreditQuoteDenialInvalid)?;
-        let completed_at = denied_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let denied_at = now
+            .replace_nanosecond(now.millisecond() as u32 * 1_000_000)
+            .map_err(|_| Error::CreditQuoteDenialInvalid)?;
+        let completed_at = denied_at
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component");
         let receipt = wire_quotes::CreditAuthorizationReceipt {
             receipt_version: String::from("credit-authorization-receipt-v1"),
             operation_id: verified.operation_id,
@@ -374,7 +380,12 @@ impl Service {
             applicant_action: verified.command.applicant_action,
             action: verified.command.action.clone(),
             status: String::from("completed"),
-            completed_at: now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            completed_at: now
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
         };
         self.quotes
             .apply_applicant_action_projection(ApplicantActionProjectionMutation {
@@ -541,7 +552,12 @@ impl Service {
             action: verified.authorization.action,
             effect_id: qid.to_string(),
             result_digest: offer_result_digest(qid, verified.discounted, verified.expiration),
-            completed_at: now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            completed_at: now
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
             synthetic: true,
         };
         quote.authorization_receipt = Some(receipt);
@@ -905,11 +921,12 @@ mod tests {
     async fn completed_authorization_replays_after_envelope_expiry() {
         let mut bill = generate_random_bill();
         bill.sum = btc::Amount::from_sat(8_000_000);
-        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             keys_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
         let qid = quote.id;
@@ -929,16 +946,19 @@ mod tests {
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
-        let issued = chrono::DateTime::parse_from_rfc3339("2026-08-10T12:05:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-10T12:05:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let first = service
             .authorize_offer(qid, signed.clone(), issued)
             .await
             .unwrap();
 
         let replayed = service
-            .authorize_offer(qid, signed, issued + chrono::Duration::days(3))
+            .authorize_offer(qid, signed, issued + time::Duration::days(3))
             .await
             .unwrap();
 
@@ -949,21 +969,25 @@ mod tests {
     async fn governed_denial_replays_after_command_expiry() {
         let mut bill = generate_random_bill();
         bill.sum = btc::Amount::from_sat(8_000_000);
-        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             keys_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
         let qid = quote.id;
-        let issued = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let signed = crate::authorization::tests::signed_denial_for(
             &quote,
             issued,
-            issued + chrono::Duration::hours(1),
+            issued + time::Duration::hours(1),
         );
         let db = crate::persistence::inmemory::QuotesIDMap::default();
         db.store(quote).await.unwrap();
@@ -975,7 +999,7 @@ mod tests {
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
 
-        let consumed_at = issued + chrono::Duration::microseconds(123);
+        let consumed_at = issued + time::Duration::microseconds(123);
         let first = service
             .deny_governed(signed.clone(), consumed_at)
             .await
@@ -984,11 +1008,11 @@ mod tests {
         assert!(matches!(
             stored.status,
             Status::Denied { tstamp }
-                if tstamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                if tstamp.to_offset(time::UtcOffset::UTC).format(&time::macros::format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z")).expect("complete UTC timestamp has every fixed format component")
                     == first.completed_at
         ));
         let replayed = service
-            .deny_governed(signed, issued + chrono::Duration::days(2))
+            .deny_governed(signed, issued + time::Duration::days(2))
             .await
             .unwrap();
 
@@ -1001,21 +1025,25 @@ mod tests {
     async fn unsigned_and_signed_governed_denial_have_one_allowed_outcome() {
         let mut bill = generate_random_bill();
         bill.sum = btc::Amount::from_sat(8_000_000);
-        bill.maturity_date = chrono::NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             keys_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
         let qid = quote.id;
-        let now = chrono::DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let signed = crate::authorization::tests::signed_denial_for(
             &quote,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let db = crate::persistence::inmemory::QuotesIDMap::default();
         db.store(quote).await.unwrap();
@@ -1124,7 +1152,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
-        let denied_at = TStamp::from_timestamp(10_000, 0).unwrap();
+        let denied_at = TStamp::from_unix_timestamp(10_000).unwrap();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill().returning(move |_, _| {
             Ok(vec![Quote {
@@ -1147,7 +1175,7 @@ mod tests {
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
 
-        let submitted = denied_at + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let submitted = denied_at + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
         let reissued = service
             .enquire(rnd_bill, public_key, submitted)
             .await
@@ -1162,7 +1190,7 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let public_key = keys_utils::publics()[0];
         let cloned = rnd_bill.clone();
-        let denied_at = TStamp::from_timestamp(10_000, 0).unwrap();
+        let denied_at = TStamp::from_unix_timestamp(10_000).unwrap();
         let mut repo = MockRepository::new();
         repo.expect_search_by_bill().returning(move |_, _| {
             Ok(vec![Quote {
@@ -1182,7 +1210,12 @@ mod tests {
                     action: String::from(crate::authorization::QUOTE_DENIAL_ACTION),
                     effect_id: id.to_string(),
                     result_digest: format!("sha256:{}", "c".repeat(64)),
-                    completed_at: denied_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    completed_at: denied_at
+                        .to_offset(time::UtcOffset::UTC)
+                        .format(&time::macros::format_description!(
+                            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                        ))
+                        .expect("complete UTC timestamp has every fixed format component"),
                     synthetic: true,
                 }),
             }])
@@ -1195,7 +1228,7 @@ mod tests {
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
 
-        let submitted = denied_at + Service::USER_DECISION_RETENTION + chrono::Duration::seconds(1);
+        let submitted = denied_at + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
         let returned = service
             .enquire(rnd_bill, public_key, submitted)
             .await

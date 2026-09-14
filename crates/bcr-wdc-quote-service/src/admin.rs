@@ -235,10 +235,13 @@ pub async fn record_acceptor_risk_evidence(
     Path(id): Path<uuid::Uuid>,
     Json(command): Json<wire_quotes::AcceptorRiskEvidenceCommand>,
 ) -> Result<Json<wire_quotes::AcceptorRiskEvidence>> {
-    let quote = ctrl.quote.lookup(id, chrono::Utc::now()).await?;
+    let quote = ctrl
+        .quote
+        .lookup(id, time::OffsetDateTime::now_utc())
+        .await?;
     Ok(Json(
         ctrl.credit_evidence
-            .record_acceptor(&quote, command, chrono::Utc::now())
+            .record_acceptor(&quote, command, time::OffsetDateTime::now_utc())
             .await?,
     ))
 }
@@ -272,7 +275,11 @@ pub async fn authorize_quote(
     Json(request): Json<wire_quotes::AuthorizedQuoteRequest>,
 ) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
     let receipt = ctrl
-        .authorize_offer(id, request.signed_authorization, chrono::Utc::now())
+        .authorize_offer(
+            id,
+            request.signed_authorization,
+            time::OffsetDateTime::now_utc(),
+        )
         .await?;
     Ok(Json(receipt))
 }
@@ -282,7 +289,10 @@ pub async fn deny_governed_quote(
     State(ctrl): State<Arc<Service>>,
     Json(command): Json<crate::authorization::SignedCreditQuoteDenialCommandV1>,
 ) -> Result<Json<wire_quotes::CreditAuthorizationReceipt>> {
-    Ok(Json(ctrl.deny_governed(command, chrono::Utc::now()).await?))
+    Ok(Json(
+        ctrl.deny_governed(command, time::OffsetDateTime::now_utc())
+            .await?,
+    ))
 }
 
 #[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, command))]
@@ -291,7 +301,7 @@ pub async fn apply_applicant_action_projection(
     Json(command): Json<crate::authorization::SignedCreditApplicantActionCommandV1>,
 ) -> Result<Json<wire_quotes::CreditApplicantActionReceipt>> {
     let receipt = ctrl
-        .apply_applicant_action_projection(command, chrono::Utc::now())
+        .apply_applicant_action_projection(command, time::OffsetDateTime::now_utc())
         .await?;
     Ok(Json(receipt))
 }
@@ -327,7 +337,7 @@ mod tests {
         quotes::Quote::new(
             quotes::BillInfo::random(),
             keys_test::publics()[0],
-            crate::TStamp::default(),
+            crate::TStamp::UNIX_EPOCH,
             quotes::test_credit_program_binding(),
         )
     }

@@ -7,7 +7,7 @@ use bitcoin::{
     hashes::{sha256, Hash as _},
     Amount,
 };
-use chrono::{DateTime, NaiveDate, Utc};
+
 use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
 use unicode_normalization::UnicodeNormalization;
 
@@ -24,12 +24,12 @@ pub const QUOTE_DENIAL_ACTION: &str = "deny_governed_quote";
 pub const QUOTE_DENIAL_SCHEMA_VERSION: &str = "credit-quote-denial-command-v1";
 pub const APPLICANT_ACTION_COMMAND_ACTION: &str = "project_applicant_action";
 pub const APPLICANT_ACTION_COMMAND_SCHEMA_VERSION: &str = "credit-applicant-action-command-v1";
-const MAX_QUOTE_REISSUE_PERMIT_TTL: chrono::Duration = chrono::Duration::days(1);
-const QUOTE_REISSUE_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
-const MAX_QUOTE_DENIAL_COMMAND_TTL: chrono::Duration = chrono::Duration::days(1);
-const QUOTE_DENIAL_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
-const MAX_APPLICANT_ACTION_PROJECTION_TTL: chrono::Duration = chrono::Duration::days(1);
-const APPLICANT_ACTION_PROJECTION_CLOCK_SKEW: chrono::Duration = chrono::Duration::seconds(30);
+const MAX_QUOTE_REISSUE_PERMIT_TTL: time::Duration = time::Duration::days(1);
+const QUOTE_REISSUE_CLOCK_SKEW: time::Duration = time::Duration::seconds(30);
+const MAX_QUOTE_DENIAL_COMMAND_TTL: time::Duration = time::Duration::days(1);
+const QUOTE_DENIAL_CLOCK_SKEW: time::Duration = time::Duration::seconds(30);
+const MAX_APPLICANT_ACTION_PROJECTION_TTL: time::Duration = time::Duration::days(1);
+const APPLICANT_ACTION_PROJECTION_CLOCK_SKEW: time::Duration = time::Duration::seconds(30);
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -246,16 +246,16 @@ impl AuthorizationVerifier {
 
         let expiration_date = parse_date(&authorization.terms.offer_expires_on)?;
         let expiration = expiration_date
-            .and_hms_milli_opt(23, 59, 59, 999)
-            .ok_or_else(invalid)?
-            .and_utc();
+            .with_hms_milli(23, 59, 59, 999)
+            .map_err(|_| invalid())?
+            .assume_utc();
         if expiration
             > quote
                 .bill
                 .maturity_date
-                .and_hms_opt(23, 59, 59)
-                .ok_or_else(invalid)?
-                .and_utc()
+                .with_hms(23, 59, 59)
+                .map_err(|_| invalid())?
+                .assume_utc()
             || expires_at > expiration
         {
             return Err(invalid());
@@ -323,8 +323,20 @@ impl AuthorizationVerifier {
 
         let issued_at = parse_datetime(&permit.issued_at).map_err(|_| invalid_reissue())?;
         let expires_at = parse_datetime(&permit.expires_at).map_err(|_| invalid_reissue())?;
-        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != permit.issued_at
-            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != permit.expires_at
+        if issued_at
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component")
+            != permit.issued_at
+            || expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component")
+                != permit.expires_at
             || issued_at > now + QUOTE_REISSUE_CLOCK_SKEW
             || expires_at <= issued_at
             || expires_at - issued_at > MAX_QUOTE_REISSUE_PERMIT_TTL
@@ -419,8 +431,20 @@ impl AuthorizationVerifier {
 
         let issued_at = parse_datetime(&command.issued_at).map_err(|_| invalid_denial())?;
         let expires_at = parse_datetime(&command.expires_at).map_err(|_| invalid_denial())?;
-        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.issued_at
-            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.expires_at
+        if issued_at
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component")
+            != command.issued_at
+            || expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component")
+                != command.expires_at
             || issued_at > now + QUOTE_DENIAL_CLOCK_SKEW
             || expires_at <= issued_at
             || expires_at - issued_at > MAX_QUOTE_DENIAL_COMMAND_TTL
@@ -537,8 +561,20 @@ impl AuthorizationVerifier {
             .map_err(|_| invalid_applicant_action_projection())?;
         let expires_at = parse_datetime(&command.expires_at)
             .map_err(|_| invalid_applicant_action_projection())?;
-        if issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.issued_at
-            || expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) != command.expires_at
+        if issued_at
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component")
+            != command.issued_at
+            || expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component")
+                != command.expires_at
             || issued_at > now + APPLICANT_ACTION_PROJECTION_CLOCK_SKEW
             || expires_at <= issued_at
             || expires_at - issued_at > MAX_APPLICANT_ACTION_PROJECTION_TTL
@@ -653,17 +689,21 @@ fn parse_sat(value: &str) -> Result<u64> {
     Ok(amount)
 }
 
-fn parse_date(value: &str) -> Result<NaiveDate> {
-    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| invalid())?;
+fn parse_date(value: &str) -> Result<time::Date> {
+    let date = time::Date::parse(
+        value,
+        &time::macros::format_description!("[year]-[month]-[day]"),
+    )
+    .map_err(|_| invalid())?;
     if date.to_string() != value {
         return Err(invalid());
     }
     Ok(date)
 }
 
-fn parse_datetime(value: &str) -> Result<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|value| value.with_timezone(&Utc))
+fn parse_datetime(value: &str) -> Result<time::OffsetDateTime> {
+    time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
+        .map(|value| value.to_offset(time::UtcOffset::UTC))
         .map_err(|_| invalid())
 }
 
@@ -957,7 +997,12 @@ pub fn offer_result_digest(quote_id: uuid::Uuid, discounted: Amount, expiration:
         "AI-CREDIT-WILDCAT-OFFER-RESULT-V1",
         &quote_id.to_string(),
         &discounted.to_sat().to_string(),
-        &expiration.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        &expiration
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component"),
     ]))
 }
 
@@ -1090,8 +1135,18 @@ pub(crate) mod tests {
             review_request_id: uuid::Uuid::from_u128(1),
             contested_decision_result_digest: format!("sha256:{}", "b".repeat(64)),
             corrected_submission_digest: format!("sha256:{}", "d".repeat(64)),
-            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            issued_at: issued_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
+            expires_at: expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
             nonce: uuid::Uuid::from_u128(2),
             action: String::from(QUOTE_REISSUE_ACTION),
             synthetic: true,
@@ -1150,8 +1205,18 @@ pub(crate) mod tests {
             calculation_version: String::from("deterministic-credit-core-v9"),
             operator_decision_digest: format!("sha256:{}", "d".repeat(64)),
             operation_id: String::new(),
-            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            issued_at: issued_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
+            expires_at: expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
             nonce: uuid::Uuid::from_u128(11).to_string(),
             action: String::from(QUOTE_DENIAL_ACTION),
             synthetic: true,
@@ -1207,8 +1272,18 @@ pub(crate) mod tests {
             expected_revision_digest,
             revision_digest: String::new(),
             operation_id: String::new(),
-            issued_at: issued_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            issued_at: issued_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
+            expires_at: expires_at
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::macros::format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                ))
+                .expect("complete UTC timestamp has every fixed format component"),
             nonce: uuid::Uuid::new_v4().to_string(),
             action: String::from(APPLICANT_ACTION_COMMAND_ACTION),
             synthetic: true,
@@ -1245,21 +1320,25 @@ pub(crate) mod tests {
     fn quote_reissue_verifier_binds_ai_signature_bill_program_and_ttl_shape() {
         let mut bill = crate::quotes::BillInfo::random();
         bill.sum = Amount::from_sat(8_000_000);
-        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
-        let issued = DateTime::parse_from_rfc3339("2026-08-10T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-10T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let signed = signed_reissue_for(
             &quote,
             uuid::Uuid::from_u128(3),
             issued,
-            issued + chrono::Duration::hours(24),
+            issued + time::Duration::hours(24),
         );
         test_authorization_verifier()
             .verify_quote_reissue(signed.clone(), &quote, issued)
@@ -1267,7 +1346,7 @@ pub(crate) mod tests {
         // Expiry gates only first repository consumption. Static verification remains available
         // so a durable consumed receipt can be replayed after its original challenge expired.
         test_authorization_verifier()
-            .verify_quote_reissue(signed.clone(), &quote, issued + chrono::Duration::days(2))
+            .verify_quote_reissue(signed.clone(), &quote, issued + time::Duration::days(2))
             .unwrap();
 
         let resign = |mut candidate: wire_quotes::SignedCreditQuoteReissuePermit| {
@@ -1312,8 +1391,8 @@ pub(crate) mod tests {
         let issued_too_far_ahead = signed_reissue_for(
             &quote,
             uuid::Uuid::from_u128(4),
-            issued + chrono::Duration::seconds(31),
-            issued + chrono::Duration::hours(1),
+            issued + time::Duration::seconds(31),
+            issued + time::Duration::hours(1),
         );
         assert!(matches!(
             test_authorization_verifier().verify_quote_reissue(
@@ -1328,7 +1407,7 @@ pub(crate) mod tests {
             &quote,
             uuid::Uuid::from_u128(5),
             issued,
-            issued + chrono::Duration::hours(24) + chrono::Duration::milliseconds(1),
+            issued + time::Duration::hours(24) + time::Duration::milliseconds(1),
         );
         assert!(matches!(
             test_authorization_verifier().verify_quote_reissue(ttl_too_long, &quote, issued),
@@ -1350,24 +1429,28 @@ pub(crate) mod tests {
     fn quote_denial_verifier_binds_signature_quote_program_bill_and_authority() {
         let mut bill = crate::quotes::BillInfo::random();
         bill.sum = Amount::from_sat(8_000_000);
-        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
-        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
+        let signed = signed_denial_for(&quote, issued, issued + time::Duration::hours(1));
         let verified = test_authorization_verifier()
             .verify_quote_denial(signed.clone(), &quote, issued)
             .unwrap();
         assert_eq!(verified.operation_id, signed.command.operation_id);
         // Expiry gates first repository consumption, not replay of a committed receipt.
         test_authorization_verifier()
-            .verify_quote_denial(signed.clone(), &quote, issued + chrono::Duration::days(2))
+            .verify_quote_denial(signed.clone(), &quote, issued + time::Duration::days(2))
             .unwrap();
 
         let mut tampered = signed.clone();
@@ -1419,8 +1502,8 @@ pub(crate) mod tests {
 
         let issued_too_far_ahead = signed_denial_for(
             &quote,
-            issued + chrono::Duration::seconds(31),
-            issued + chrono::Duration::hours(1),
+            issued + time::Duration::seconds(31),
+            issued + time::Duration::hours(1),
         );
         assert!(matches!(
             test_authorization_verifier().verify_quote_denial(issued_too_far_ahead, &quote, issued),
@@ -1429,7 +1512,7 @@ pub(crate) mod tests {
         let ttl_too_long = signed_denial_for(
             &quote,
             issued,
-            issued + chrono::Duration::hours(24) + chrono::Duration::milliseconds(1),
+            issued + time::Duration::hours(24) + time::Duration::milliseconds(1),
         );
         assert!(matches!(
             test_authorization_verifier().verify_quote_denial(ttl_too_long, &quote, issued),
@@ -1442,18 +1525,21 @@ pub(crate) mod tests {
         let quote = Quote::new(
             crate::quotes::BillInfo::random(),
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
-        let now = DateTime::parse_from_rfc3339("2026-08-29T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-29T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let signed = signed_applicant_action_projection_for(
             &quote,
             ApplicantActionCommandValue::ClarificationRequired,
             None,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         let verified = test_authorization_verifier()
             .verify_applicant_action_projection(signed.clone(), &quote, now)
@@ -1475,7 +1561,7 @@ pub(crate) mod tests {
             ApplicantActionCommandValue::None,
             None,
             now,
-            now + chrono::Duration::hours(1),
+            now + time::Duration::hours(1),
         );
         assert!(matches!(
             test_authorization_verifier().verify_applicant_action_projection(
@@ -1566,13 +1652,16 @@ pub(crate) mod tests {
         let quote = Quote::new(
             crate::quotes::BillInfo::random(),
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
-        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
+        let signed = signed_denial_for(&quote, issued, issued + time::Duration::hours(1));
         let mut value = serde_json::to_value(&signed).unwrap();
         value["unexpected"] = serde_json::json!(true);
         assert!(serde_json::from_value::<SignedCreditQuoteDenialCommandV1>(value).is_err());
@@ -1611,19 +1700,30 @@ pub(crate) mod tests {
         let quote = Quote::new(
             crate::quotes::BillInfo::random(),
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
-        let issued = DateTime::parse_from_rfc3339("2026-08-25T12:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let signed = signed_denial_for(&quote, issued, issued + chrono::Duration::hours(1));
+        let issued = time::OffsetDateTime::parse(
+            "2026-08-25T12:00:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
+        let signed = signed_denial_for(&quote, issued, issued + time::Duration::hours(1));
         let mut renewed = signed.command.clone();
         renewed.key_id = String::from("rotated-ed25519-v2");
-        renewed.issued_at = (issued + chrono::Duration::hours(2))
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        renewed.expires_at = (issued + chrono::Duration::hours(3))
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        renewed.issued_at = (issued + time::Duration::hours(2))
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component");
+        renewed.expires_at = (issued + time::Duration::hours(3))
+            .to_offset(time::UtcOffset::UTC)
+            .format(&time::macros::format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
+            .expect("complete UTC timestamp has every fixed format component");
         renewed.nonce = uuid::Uuid::from_u128(12).to_string();
 
         assert_eq!(
@@ -1698,17 +1798,21 @@ pub(crate) mod tests {
     fn binds_offer_to_the_actual_quote_and_bill_state() {
         let mut bill = crate::quotes::BillInfo::random();
         bill.sum = Amount::from_sat(8_000_000);
-        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
         let signed = signed_for(&quote);
-        let now = DateTime::parse_from_rfc3339("2026-08-10T12:05:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let now = time::OffsetDateTime::parse(
+            "2026-08-10T12:05:00.000Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap()
+        .to_offset(time::UtcOffset::UTC);
         let verified = test_authorization_verifier()
             .verify(signed.clone(), &quote, now)
             .unwrap();
@@ -1721,7 +1825,7 @@ pub(crate) mod tests {
             Err(Error::CreditAuthorizationInvalid)
         ));
 
-        let expired = now + chrono::Duration::days(3);
+        let expired = now + time::Duration::days(3);
         assert!(matches!(
             test_authorization_verifier().verify(signed.clone(), &quote, expired),
             Err(Error::CreditAuthorizationInvalid)
@@ -1734,11 +1838,12 @@ pub(crate) mod tests {
     #[test]
     fn annual_discount_accepts_both_pricing_rounding_modes_and_rejects_mismatch() {
         let mut bill = crate::quotes::BillInfo::random();
-        bill.maturity_date = NaiveDate::from_ymd_opt(2027, 2, 6).unwrap();
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::try_from(2u8).unwrap(), 6).unwrap();
         let quote = Quote::new(
             bill,
             bcr_wdc_utils::keys::test_utils::publics()[0],
-            TStamp::default(),
+            TStamp::UNIX_EPOCH,
             crate::quotes::test_credit_program_binding(),
         );
         let mut authorization = signed_for(&quote).authorization;

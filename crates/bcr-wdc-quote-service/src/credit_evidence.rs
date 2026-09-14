@@ -178,7 +178,7 @@ impl Store {
         &self,
         signed: &wire_quotes::SignedAcceptorRiskEvidence,
         acceptor_ref: &str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: time::OffsetDateTime,
     ) -> Result<()> {
         let evidence = &signed.evidence;
         if evidence.schema_version != "mint-acceptor-risk-authority-evidence-v1"
@@ -196,8 +196,8 @@ impl Store {
             )));
         }
         validate_evidence_refs(&evidence.evidence_refs)?;
-        if evidence.assessed_at > now.date_naive()
-            || evidence.valid_through < now.date_naive()
+        if evidence.assessed_at > now.date()
+            || evidence.valid_through < now.date()
             || evidence.valid_through < evidence.assessed_at
         {
             return Err(Error::InvalidInput(String::from(
@@ -237,7 +237,7 @@ impl Store {
         &self,
         quote: &Quote,
         command: wire_quotes::AcceptorRiskEvidenceCommand,
-        now: chrono::DateTime<chrono::Utc>,
+        now: time::OffsetDateTime,
     ) -> Result<wire_quotes::AcceptorRiskEvidence> {
         let request = command.request;
         bounded(&command.operator_id, "operator id", 1, 200)?;
@@ -315,10 +315,7 @@ mod tests {
         .unwrap()
     }
 
-    fn signed_risk(
-        quote: &Quote,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> SignedAcceptorRiskEvidence {
+    fn signed_risk(quote: &Quote, now: time::OffsetDateTime) -> SignedAcceptorRiskEvidence {
         let evidence = AcceptorRiskAuthorityEvidence {
             schema_version: String::from("mint-acceptor-risk-authority-evidence-v1"),
             key_id: String::from("testnet-risk-authority-v1"),
@@ -328,8 +325,8 @@ mod tests {
             evidence_state: String::from("corroborated"),
             methodology_version: String::from("risk-v1"),
             assessed_by: String::from("risk-owner"),
-            assessed_at: now.date_naive(),
-            valid_through: now.date_naive() + chrono::Days::new(30),
+            assessed_at: now.date(),
+            valid_through: now.date() + time::Duration::days(30),
             evidence_refs: vec![String::from("risk-book-2026-08")],
             synthetic: true,
         };
@@ -342,10 +339,7 @@ mod tests {
         }
     }
 
-    fn acceptor_command(
-        quote: &Quote,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> AcceptorRiskEvidenceCommand {
+    fn acceptor_command(quote: &Quote, now: time::OffsetDateTime) -> AcceptorRiskEvidenceCommand {
         AcceptorRiskEvidenceCommand {
             operator_id: String::from("operator-a"),
             request: AcceptorRiskEvidenceRequest {
@@ -359,7 +353,7 @@ mod tests {
         Quote::new(
             crate::quotes::BillInfo::random(),
             keys_test::publics()[0],
-            chrono::Utc::now(),
+            time::OffsetDateTime::now_utc(),
             crate::quotes::test_credit_program_binding(),
         )
     }
@@ -368,14 +362,14 @@ mod tests {
     async fn records_quote_bound_evidence_append_only_and_idempotently() {
         let store = store().await;
         let quote = quote();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let acceptor = acceptor_command(&quote, now);
         let first = store
             .record_acceptor(&quote, acceptor.clone(), now)
             .await
             .unwrap();
         let replay = store
-            .record_acceptor(&quote, acceptor, now + chrono::Duration::seconds(1))
+            .record_acceptor(&quote, acceptor, now + time::Duration::seconds(1))
             .await
             .unwrap();
         assert_eq!(first.evidence_id, replay.evidence_id);
@@ -403,7 +397,7 @@ mod tests {
     async fn rejects_tampered_or_untrusted_authority_evidence() {
         let store = store().await;
         let quote = quote();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut signed = signed_risk(&quote, now);
         signed.evidence.probability_of_default_bps += 1;
         let error = store
@@ -427,7 +421,7 @@ mod tests {
     async fn keeps_expired_evidence_readable_as_historical_provenance() {
         let store = store().await;
         let quote = quote();
-        let recorded_at = chrono::Utc::now() - chrono::Duration::days(31);
+        let recorded_at = time::OffsetDateTime::now_utc() - time::Duration::days(31);
         let record = store
             .record_acceptor(&quote, acceptor_command(&quote, recorded_at), recorded_at)
             .await
@@ -437,7 +431,7 @@ mod tests {
             store.verify_risk(
                 &record.signed_evidence,
                 &quote.bill.drawee.node_id.to_string(),
-                chrono::Utc::now()
+                time::OffsetDateTime::now_utc()
             ),
             Err(Error::InvalidInput(_))
         ));
@@ -447,7 +441,7 @@ mod tests {
         assert_eq!(historical.evidence_id, record.evidence_id);
         assert_eq!(
             historical.signed_evidence.evidence.valid_through,
-            recorded_at.date_naive() + chrono::Days::new(30)
+            recorded_at.date() + time::Duration::days(30)
         );
     }
 
@@ -455,7 +449,7 @@ mod tests {
     async fn keeps_rotated_authority_evidence_readable_as_historical_provenance() {
         let store = store().await;
         let quote = quote();
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let record = store
             .record_acceptor(&quote, acceptor_command(&quote, now), now)
             .await
