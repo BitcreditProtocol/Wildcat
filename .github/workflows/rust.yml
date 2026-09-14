@@ -30,7 +30,9 @@ jobs:
       - run: python3 .github/scripts/test_docker_recipe.py
       # Temporary native verification; remove after recording the isolated build.
       - name: Build the current recipe without publishing
-        run: docker build --progress=plain -t wildcat-recipe-check -f docker/base-image/Dockerfile .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker build --progress=plain --secret id=gh_token,env=GH_TOKEN -t wildcat-recipe-check -f docker/base-image/Dockerfile .
 
   build:
     timeout-minutes: 20
