@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::{cashu, core::signature as core_signature, wire::keys as wire_keys};
+use bcr_common::{cashu, core::signature as core_signature};
 use thiserror::Error;
 // ----- local imports
 
@@ -94,7 +94,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
-    use bcr_common::{core_tests, ecash};
+    use bcr_common::{core_tests, ecash, wire::keys as wire_keys};
     use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {

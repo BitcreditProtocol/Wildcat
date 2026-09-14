@@ -13,8 +13,6 @@ pub enum Error {
     // external errors wrappers
     #[error("bcr_common::borsh {0}")]
     BcrCommonBorsh(#[from] bcr_common::core::signature::BorshMsgSignatureError),
-    #[error("convert {0}")]
-    Convert(#[from] bcr_wdc_utils::convert::Error),
     #[error("eCash sign/verify error {0}")]
     SignWithKeys(#[from] ECashSignatureError),
     #[error("Error in parsing datetime: {0}")]
@@ -50,7 +48,6 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("Error: {}", self);
         let resp = match self {
-            Error::Convert(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()),
             Error::InternalServer(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             Error::InvalidKeysetId(id) => {
                 let v = serde_json::Value::String(format!("Invalid keysetID: {id}"));

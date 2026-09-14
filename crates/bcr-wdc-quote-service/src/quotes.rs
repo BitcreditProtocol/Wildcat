@@ -2,13 +2,13 @@
 // ----- extra library imports
 #[cfg(test)]
 use arbitrary::Arbitrary;
-use bcr_common::{cashu, core::BillId, wire::quotes as wire_quotes};
+use bcr_common::{
+    cashu,
+    core::BillId,
+    wire::{bill as wire_bill, quotes as wire_quotes},
+};
 #[cfg(test)]
 use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
-use bcr_ebill_core::protocol::blockchain::bill::participant::{
-    BillIdentParticipant, BillParticipant,
-};
-use bcr_wdc_utils::convert;
 use bitcoin::Amount;
 use uuid::Uuid;
 // ----- local imports
@@ -18,11 +18,11 @@ use crate::TStamp;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BillInfo {
     pub id: BillId,
-    pub drawee: BillIdentParticipant,
-    pub drawer: BillIdentParticipant,
-    pub payee: BillParticipant,
-    pub endorsees: Vec<BillParticipant>,
-    pub current_holder: BillParticipant,
+    pub drawee: wire_bill::BillIdentParticipant,
+    pub drawer: wire_bill::BillIdentParticipant,
+    pub payee: wire_bill::BillParticipant,
+    pub endorsees: Vec<wire_bill::BillParticipant>,
+    pub current_holder: wire_bill::BillParticipant,
     pub sum: Amount,
     #[serde(with = "bcr_common::wire::bill_date")]
     pub maturity_date: time::Date,
@@ -37,15 +37,11 @@ pub fn convert_to_billinfo(
     let current_holder = bill.endorsees.last().unwrap_or(&bill.payee).clone();
     Ok(BillInfo {
         id: bill.id,
-        drawee: convert::billidentparticipant_wire2ebill(bill.drawee)?,
-        drawer: convert::billidentparticipant_wire2ebill(bill.drawer)?,
-        payee: convert::billparticipant_wire2ebill(bill.payee)?,
-        endorsees: bill
-            .endorsees
-            .into_iter()
-            .map(convert::billparticipant_wire2ebill)
-            .collect::<std::result::Result<_, convert::Error>>()?,
-        current_holder: convert::billparticipant_wire2ebill(current_holder)?,
+        drawee: bill.drawee,
+        drawer: bill.drawer,
+        payee: bill.payee,
+        endorsees: bill.endorsees,
+        current_holder,
         sum: Amount::from_sat(bill.sum),
         maturity_date,
         file_urls: bill.file_urls,
@@ -56,14 +52,10 @@ impl From<BillInfo> for wire_quotes::BillInfo {
     fn from(bill: BillInfo) -> Self {
         Self {
             id: bill.id,
-            drawee: convert::billidentparticipant_ebill2wire(bill.drawee),
-            drawer: convert::billidentparticipant_ebill2wire(bill.drawer),
-            payee: convert::billparticipant_ebill2wire(bill.payee),
-            endorsees: bill
-                .endorsees
-                .into_iter()
-                .map(convert::billparticipant_ebill2wire)
-                .collect(),
+            drawee: bill.drawee,
+            drawer: bill.drawer,
+            payee: bill.payee,
+            endorsees: bill.endorsees,
             sum: bill.sum.to_sat(),
             maturity_date: bill.maturity_date,
             file_urls: bill.file_urls,
@@ -78,17 +70,11 @@ impl BillInfo {
         let mut seed = arbitrary::Unstructured::new(&seed);
         Self {
             id: random_bill_id(),
-            drawee: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                .unwrap(),
-            drawer: convert::billidentparticipant_wire2ebill(random_identity_public_data().1)
-                .unwrap(),
-            payee: BillParticipant::Ident(
-                convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
-            ),
+            drawee: random_identity_public_data().1,
+            drawer: random_identity_public_data().1,
+            payee: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
             endorsees: Vec::default(),
-            current_holder: BillParticipant::Ident(
-                convert::billidentparticipant_wire2ebill(random_identity_public_data().1).unwrap(),
-            ),
+            current_holder: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
             sum: bitcoin::Amount::arbitrary(&mut seed).unwrap(),
             maturity_date: time::macros::date!(1970 - 01 - 01),
             file_urls: Vec::default(),

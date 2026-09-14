@@ -4,7 +4,6 @@
 pub mod attestation;
 #[cfg(feature = "auth")]
 pub mod client;
-pub mod convert;
 pub mod db;
 pub mod info;
 pub mod keys;

@@ -10,7 +10,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = {workspace = true, features = ["macros"]}
 bcr-common = {workspace = true, features = ["clwdr-client"]}
-bcr-ebill-core.workspace = true
 bcr-wdc-utils = {workspace = true}
 bitcoin.workspace = true
 time.workspace = true
