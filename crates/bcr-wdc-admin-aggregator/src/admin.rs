@@ -292,6 +292,23 @@ pub async fn list_ebills(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_EBILL_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = Vec<wire_bill::BillBalanceResponse> , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_bills_balance_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_bill::BillBalanceResponse>> {
+    let response = ctrl.ebill_cl.get_bills_balance_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_EBILL_ENDORSEMENTS,
     params(
         ("bid" = String, Path, description = "the ebill id")

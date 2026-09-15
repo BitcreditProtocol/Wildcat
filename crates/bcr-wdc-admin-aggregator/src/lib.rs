@@ -107,6 +107,7 @@ pub mod endpoints {
     pub const GET_IDENTITY: &str = "/v1/admin/ebill/identity";
     pub const GET_EBILL: &str = "/v1/admin/ebill/bills/{bid}";
     pub const LIST_EBILLS: &str = "/v1/admin/ebill/bills";
+    pub const GET_EBILL_BALANCE: &str = "/v1/admin/ebill/balance";
     pub const GET_EBILL_ENDORSEMENTS: &str = "/v1/admin/ebill/endorsements/{bid}";
     pub const GET_EBILL_ATTACHMENT: &str = "/v1/admin/ebill/attachments/{bid}/{fname}";
     pub const GET_EBILL_FILE_FROM_REQUEST_TO_MINT: &str =
@@ -159,6 +160,10 @@ pub fn routes(ctrl: AppController) -> Router {
         .route(endpoints::GET_IDENTITY, get(admin::get_identity))
         .route(endpoints::GET_EBILL, get(admin::get_ebill))
         .route(endpoints::LIST_EBILLS, get(admin::list_ebills))
+        .route(
+            endpoints::GET_EBILL_BALANCE,
+            get(admin::get_bills_balance_history),
+        )
         .route(
             endpoints::GET_EBILL_ENDORSEMENTS,
             get(admin::get_ebill_endorsements),
@@ -254,6 +259,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_bill::ResyncBillPayload,
         wire_bill::BillHistoryBlock,
         wire_bill::BillCallerPaymentAction,
+        wire_bill::BillBalanceResponse,
+        wire_bill::BillBalanceEntry,
         // clowder service
         wire_clowder::ClowderNodeInfo,
         wire_clowder::ConnectedMintsResponse,
@@ -289,6 +296,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_identity,
         admin::get_ebill,
         admin::list_ebills,
+        admin::get_bills_balance_history,
         admin::get_ebill_endorsements,
         admin::get_ebill_attachment,
         admin::get_ebill_paymentstatus,
