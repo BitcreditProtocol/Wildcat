@@ -286,7 +286,8 @@ pub async fn get_ebill(
 pub async fn list_ebills(
     State(ctrl): State<AppController>,
 ) -> Result<Json<Vec<wire_bill::BitcreditBill>>> {
-    let infos = ctrl.ebill_cl.get_bills().await?;
+    let mut infos = ctrl.ebill_cl.get_bills().await?;
+    infos.sort_by_key(|bill| bill.data.maturity_date);
     Ok(Json(infos))
 }
 
@@ -796,5 +797,39 @@ pub async fn get_add_reserve_status(
     Path(rid): Path<Uuid>,
 ) -> Result<Json<wire_clowder::AddReserveResponse>> {
     let response = ctrl.clwdr_cl.get_reserve(rid).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_ONCHAIN_HISTORY,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::OnchainOperationsResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_onchain_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::OnchainOperationsResponse>> {
+    let response = ctrl.clwdr_cl.get_onchain_operations_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_KEYSETS_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::KeysetsBalanceResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_keysets_balance(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::KeysetsBalanceResponse>> {
+    let response = ctrl.clwdr_cl.get_keysets_balance().await?;
     Ok(Json(response))
 }
