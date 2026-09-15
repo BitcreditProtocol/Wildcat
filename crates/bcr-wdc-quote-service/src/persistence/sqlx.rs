@@ -12,7 +12,8 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, quotes, service, TStamp,
+    persistence::{self, DbBillInfo},
+    quotes, service, TStamp,
 };
 
 // ----- end imports
@@ -27,7 +28,7 @@ enum QuoteBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteBlobV1 {
-    bill: quotes::BillInfo,
+    bill: DbBillInfo,
     status: quotes::Status,
 }
 
@@ -55,13 +56,14 @@ fn quote_to_row(quote: quotes::Quote) -> QuoteRow {
         bill,
         submitted,
     } = quote;
+    let bill = DbBillInfo::from(bill);
     let maturity_date = bill.maturity_date;
-    let bill_id = bill.id.to_string();
-    let bill_sum = i64::try_from(bill.sum.to_sat()).expect("21x10^14 satoshis fits in i64");
-    let bill_drawee_id = bill.drawee.node_id.to_string();
-    let bill_drawer_id = bill.drawer.node_id.to_string();
-    let bill_payer_id = bill.payee.node_id().to_string();
-    let bill_holder_id = bill.current_holder.node_id().to_string();
+    let bill_id = bill.id.clone();
+    let bill_sum = i64::try_from(bill.sum).expect("21x10^14 satoshis fits in i64");
+    let bill_drawee_id = bill.drawee.node_id.clone();
+    let bill_drawer_id = bill.drawer.node_id.clone();
+    let bill_payer_id = bill.payee.node_id().to_owned();
+    let bill_holder_id = bill.current_holder.node_id().to_owned();
     let status_d = status.discriminant().to_string();
     let blob_v1 = QuoteBlobV1 { bill, status };
     let blob = Json(QuoteBlob::V1(blob_v1));
@@ -97,7 +99,7 @@ fn quote_from_row(row: QuoteRow) -> Result<quotes::Quote> {
     }
     Ok(quotes::Quote {
         id: row.qid,
-        bill,
+        bill: quotes::BillInfo::try_from(bill)?,
         status,
         submitted: row.submitted,
     })
