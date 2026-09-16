@@ -180,7 +180,7 @@ impl ClowderClient for ClowderCl {
 
     async fn sign_onchain_mint_response(
         &self,
-        msg: &wire_mint::OnchainMintQuoteResponseBody,
+        msg: &wire_mint::OnchainMintQuoteResponseBodyV1,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
         let request = wire_clowder::MintQuoteOnchainRequest {
             quote_id: msg.quote,
