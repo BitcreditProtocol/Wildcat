@@ -292,6 +292,45 @@ pub async fn list_ebills(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_EBILL_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_bill::BillBalanceResponse , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_bills_balance_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_bill::BillBalanceResponse>> {
+    let response = ctrl.ebill_cl.get_bills_balance_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::CHECK_BILL_PAYMENT,
+    request_body(content = wire_bill::CheckBillPaymentPayload, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn check_bill_payment(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_bill::CheckBillPaymentPayload>,
+) -> Result<()> {
+    let response = ctrl.ebill_cl.check_bill_payment(req.bill_id).await;
+    match response {
+        Ok(_) => Ok(()),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_EBILL_ENDORSEMENTS,
     params(
         ("bid" = String, Path, description = "the ebill id")
