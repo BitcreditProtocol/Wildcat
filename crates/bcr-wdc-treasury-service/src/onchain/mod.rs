@@ -69,7 +69,7 @@ pub trait ClowderClient: Send + Sync {
     ) -> Result<Vec<cashu::BlindSignature>>;
     async fn sign_onchain_mint_response(
         &self,
-        msg: &wire_mint::OnchainMintQuoteResponseBody,
+        msg: &wire_mint::OnchainMintQuoteResponseBodyV1,
     ) -> Result<(String, secp256k1::schnorr::Signature)>;
     async fn sign_onchain_melt_response(
         &self,

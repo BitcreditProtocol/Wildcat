@@ -59,7 +59,7 @@ impl Service {
             .request_onchain_mint_address(qid, kid)
             .await?;
         let expiry = now + self.mint_quote_expiry;
-        let body = wire_mint::OnchainMintQuoteResponseBody {
+        let body = wire_mint::OnchainMintQuoteResponseBodyV1 {
             quote: qid,
             address: address.to_string(),
             payment_amount: bitcoin::Amount::from_sat(blinds_camount.into()),
