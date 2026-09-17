@@ -11,7 +11,7 @@ use bcr_common::{
     cashu,
     client::admin::core::{BRError, RNFError},
     core::{
-        keys as core_keys,
+        keys as core_keys, maturity,
         signature::{
             self, sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint,
         },
@@ -64,7 +64,7 @@ impl Service {
         &self,
         unit: cashu::CurrencyUnit,
         now: TStamp,
-        expiration: Option<TStamp>,
+        expiration: Option<u64>,
         fees_ppk: u64,
     ) -> Result<ecash::MintKeySetInfo> {
         let fees_ppk = std::cmp::max(fees_ppk, self.min_keyset_fees_ppk.load(Ordering::Relaxed));
@@ -118,12 +118,8 @@ impl Service {
     }
 
     pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<ecash::MintKeySetInfo>> {
-        let min_tstamp = filters
-            .min_expiration
-            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
-        let max_tstamp = filters
-            .max_expiration
-            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
+        let min_tstamp = filters.min_expiration.map(maturity::credit_expires_at);
+        let max_tstamp = filters.max_expiration.map(maturity::credit_expires_at);
         self.repository
             .keys_list_info(filters.unit, min_tstamp, max_tstamp)
             .await
@@ -159,7 +155,7 @@ impl Service {
         let mut keyset = self.keys(first_blind.keyset_id).await?;
         let mut signatures = Vec::with_capacity(blinds.len());
         for blind in blinds {
-            let current_keyset = if blind.keyset_id == keyset.id {
+            let current_keyset = if blind.keyset_id == keyset.id.into() {
                 &keyset
             } else {
                 keyset = self.keys(blind.keyset_id).await?;
@@ -438,7 +434,7 @@ impl Service {
             stored_signatures: Vec::with_capacity(total_len),
         };
         for premint in premints {
-            let keyset = self.keys(premint.keyset_id).await?.into();
+            let keyset = self.keys(premint.keyset_id).await?;
             let blinded_messages = premint.blinded_messages();
             let signatures = self.generate_signatures(&blinded_messages).await?;
             generated
@@ -538,7 +534,7 @@ mod tests {
         repository.keys_store(entry).await.unwrap();
         let amounts = [cashu::Amount::from(8u64)];
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        let outputs = signatures_test::generate_blinds(keyset.id, &amounts)
+        let outputs = signatures_test::generate_blinds(keyset.id.into(), &amounts)
             .into_iter()
             .map(|generated| generated.0)
             .collect::<Vec<_>>();

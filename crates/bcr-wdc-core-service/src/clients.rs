@@ -105,13 +105,13 @@ impl ClowderClient for ClowderCl {
 
     async fn new_keyset(&self, keyset: ecash::KeySet) -> Result<()> {
         let request = wire_clowder::KeysetCreationRequest {
-            id: keyset.id,
+            id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
             unit: keyset.unit.clone(),
         };
         let response = wire_clowder::KeysetCreationResponse {
             public_keys: keyset.keys.keys().clone(),
-            id: keyset.id,
+            id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
             unit: keyset.unit,
         };

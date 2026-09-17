@@ -15,7 +15,7 @@ async fn checkstate() {
     let (mut info, set) = core_tests::generate_random_ecash_keyset();
     info.active = false;
     let entry = MintKeysEntry {
-        id: info.id,
+        id: info.id.into(),
         unit: info.unit.clone(),
         active: info.active,
         valid_from: info.valid_from,

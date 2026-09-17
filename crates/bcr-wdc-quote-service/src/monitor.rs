@@ -101,7 +101,7 @@ mod tests {
             status: quotes::Status::Accepted {
                 discounted: bitcoin::Amount::from_sat(1000),
                 wallet_pubkey: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
-                keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+                keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             },
             submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo::random(),
@@ -138,7 +138,7 @@ mod tests {
             status: quotes::Status::Accepted {
                 discounted: bitcoin::Amount::from_sat(1000),
                 wallet_pubkey: pk,
-                keyset_id: keyset.id,
+                keyset_id: keyset.id.into(),
             },
             submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo {
@@ -177,10 +177,10 @@ mod tests {
             .times(1)
             .with(eq(bid.clone()))
             .returning(move |_| Ok(bill.clone()));
-        let cloned = bcr_wdc_utils::keys::to_keyset(&keyset.clone().into(), None);
+        let cloned = bcr_wdc_utils::keys::to_keyset(&keyset.clone(), None);
         wdc.expect_get_keys()
             .times(1)
-            .with(eq(keyset.id))
+            .with(eq(cashu::Id::from(keyset.id)))
             .returning(move |_| Ok(cloned.clone()));
         let cloned = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blnds| {
@@ -196,7 +196,7 @@ mod tests {
             .times(1)
             .with(
                 eq(qid),
-                eq(keyset.id),
+                eq(cashu::Id::from(keyset.id)),
                 eq(pk),
                 eq(cashu::Amount::from(1000)),
                 eq(bid),

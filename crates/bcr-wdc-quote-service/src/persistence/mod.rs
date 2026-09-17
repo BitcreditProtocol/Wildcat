@@ -371,7 +371,7 @@ mod tests {
 
     fn offered_status(quote: &quotes::Quote) -> quotes::Status {
         quotes::Status::Offered {
-            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             ttl: TStamp::UNIX_EPOCH,
             discounted: quote.bill.sum,
             wallet_pubkey: keys_test::publics()[0],
@@ -380,7 +380,7 @@ mod tests {
 
     fn accepted_status() -> quotes::Status {
         quotes::Status::Accepted {
-            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             discounted: bitcoin::Amount::default(),
             wallet_pubkey: keys_test::publics()[0],
         }
@@ -506,7 +506,7 @@ mod tests {
     async fn update_status_if_failedebillvalidation_ok(db: impl Repository) {
         let mut quote = pending_quote();
         quote.status = quotes::Status::FailedEbillValidation {
-            keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+            keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             discounted: bitcoin::Amount::default(),
             wallet_pubkey: keys_test::publics()[0],
         };
@@ -515,7 +515,7 @@ mod tests {
             .update_status_if_failedebillvalidation(
                 quote.id,
                 quotes::Status::MintingEnabled {
-                    keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+                    keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
                     discounted: bitcoin::Amount::default(),
                     wallet_pubkey: keys_test::publics()[0],
                     fee: cashu::Amount::from(10),
@@ -553,7 +553,7 @@ mod tests {
             .update_status_if_failedebillvalidation(
                 quote.id,
                 quotes::Status::MintingEnabled {
-                    keyset_id: core_tests::generate_random_ecash_keyset().0.id,
+                    keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
                     discounted: quote.bill.sum,
                     wallet_pubkey: keys_test::publics()[0],
                     fee: cashu::Amount::from(10),
@@ -844,7 +844,7 @@ mod tests {
             quotes::Status::Canceled { tstamp },
             quotes::Status::Denied { tstamp },
             quotes::Status::Offered {
-                keyset_id,
+                keyset_id: keyset_id.into(),
                 ttl: tstamp,
                 discounted,
                 wallet_pubkey,
@@ -853,18 +853,18 @@ mod tests {
             quotes::Status::Rejected { discounted, tstamp },
             quotes::Status::Accepted {
                 discounted,
-                keyset_id,
+                keyset_id: keyset_id.into(),
                 wallet_pubkey,
             },
             quotes::Status::MintingEnabled {
-                keyset_id,
+                keyset_id: keyset_id.into(),
                 wallet_pubkey,
                 discounted,
                 fee: cashu::Amount::from(10),
             },
             quotes::Status::FailedEbillValidation {
                 discounted,
-                keyset_id,
+                keyset_id: keyset_id.into(),
                 wallet_pubkey,
             },
         ]
@@ -922,7 +922,7 @@ mod tests {
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
         let wallet_pubkey = keys_test::publics()[0];
         let encoded = serde_json::to_value(quotes::Status::Offered {
-            keyset_id,
+            keyset_id: keyset_id.into(),
             ttl: TStamp::UNIX_EPOCH,
             discounted: bitcoin::Amount::from_sat(42),
             wallet_pubkey,

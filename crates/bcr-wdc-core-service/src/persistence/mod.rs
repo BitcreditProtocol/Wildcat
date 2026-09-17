@@ -145,7 +145,7 @@ mod tests {
     async fn keysrepo_info(db: impl Repository) {
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = keys_utils::MintKeysEntry {
-            id: kinfo.id,
+            id: kinfo.id.into(),
             unit: kinfo.unit.clone(),
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -157,7 +157,7 @@ mod tests {
             keys: keyset.keys,
         };
         db.keys_store(entry).await.unwrap();
-        let rinfo = db.keys_info(kinfo.id).await.unwrap().unwrap();
+        let rinfo = db.keys_info(kinfo.id.into()).await.unwrap().unwrap();
         assert_eq!(rinfo, kinfo);
     }
 
@@ -180,7 +180,7 @@ mod tests {
         info1.unit = cashu::CurrencyUnit::Sat;
         info1.final_expiry = Some(10);
         let entry1 = keys_utils::MintKeysEntry {
-            id: info1.id,
+            id: info1.id.into(),
             unit: info1.unit,
             active: info1.active,
             valid_from: info1.valid_from,
@@ -196,7 +196,7 @@ mod tests {
         info2.unit = cashu::CurrencyUnit::Usd;
         info2.final_expiry = Some(20);
         let entry2 = keys_utils::MintKeysEntry {
-            id: info2.id,
+            id: info2.id.into(),
             unit: info2.unit,
             active: info2.active,
             valid_from: info2.valid_from,
@@ -212,7 +212,7 @@ mod tests {
         info3.unit = cashu::CurrencyUnit::Usd;
         info3.final_expiry = Some(30);
         let entry3 = keys_utils::MintKeysEntry {
-            id: info3.id,
+            id: info3.id.into(),
             unit: info3.unit,
             active: info3.active,
             valid_from: info3.valid_from,
@@ -261,7 +261,7 @@ mod tests {
     async fn keysrepo_keyset_test(db: impl Repository) {
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = keys_utils::MintKeysEntry {
-            id: kinfo.id,
+            id: kinfo.id.into(),
             unit: kinfo.unit,
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -292,7 +292,7 @@ mod tests {
         let (mut info0, keyset0) = core_tests::generate_random_ecash_keyset();
         info0.final_expiry = Some(30);
         let keys0 = keys_utils::MintKeysEntry {
-            id: info0.id,
+            id: info0.id.into(),
             unit: info0.unit,
             active: info0.active,
             valid_from: info0.valid_from,
@@ -307,7 +307,7 @@ mod tests {
         let (mut info1, keyset1) = core_tests::generate_random_ecash_keyset();
         info1.final_expiry = Some(10);
         let keys1 = keys_utils::MintKeysEntry {
-            id: info1.id,
+            id: info1.id.into(),
             unit: info1.unit,
             active: info1.active,
             valid_from: info1.valid_from,
@@ -348,7 +348,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(keyset.id, &amounts)[0].clone();
+        let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         db.signature_store(y, signature).await.unwrap();
     }
 
@@ -370,7 +370,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
-        let signature = signatures_test::generate_signatures(keyset.id, &amounts)[0].clone();
+        let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         db.signature_store(y, signature.clone()).await.unwrap();
         let res = db.signature_store(y, signature).await;
         assert!(matches!(res, Err(Error::Conflict(_))));
@@ -1170,7 +1170,7 @@ mod tests {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, amounts);
         let blinds: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(keyset.id, amounts)
+            signatures_test::generate_blinds(keyset.id.into(), amounts)
                 .into_iter()
                 .map(|b| b.0)
                 .collect();

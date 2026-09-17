@@ -143,6 +143,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         online_repo,
         offline_repo,
         exchange_lock_margin_secs,
+        offline_exchange_lock_secs,
         ..
     } = foreign;
     let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
@@ -172,6 +173,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         clowder: clowder.clone(),
         mint_factory: factory.clone(),
         exchange_lock_margin_secs,
+        offline_exchange_lock_secs,
     };
 
     // vault

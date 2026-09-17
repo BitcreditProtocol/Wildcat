@@ -6,7 +6,7 @@ use bcr_common::{
     cashu,
     client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
-    core::signature,
+    core::{maturity::active_keyset, signature, CURRENCY_UNIT},
     ecash,
     wire::{
         attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
@@ -72,22 +72,16 @@ impl WildcatClient for WildcatCl {
 
     async fn get_active_keyset(&self) -> Result<cashu::Id> {
         let filter = wire_keys::KeysetInfoFilters {
-            unit: Some(cashu::CurrencyUnit::Sat),
+            unit: Some(CURRENCY_UNIT),
             ..Default::default()
         };
-        let mut infos = self.core_cl.list_keyset_info(filter).await?;
-        infos.retain(|info| info.active);
-        if infos.is_empty() {
-            return Err(Error::Internal(String::from("no active keyset found")));
-        }
-        infos.sort_by_key(|info| info.final_expiry);
-        let last_kid = infos.last().unwrap().id;
-        let kid = infos
-            .into_iter()
-            .find(|info| info.final_expiry.is_none())
-            .map(|info| info.id)
-            .unwrap_or_else(|| last_kid);
-        Ok(kid)
+        let infos = self.core_cl.list_keyset_info(filter).await?;
+        let now = TStamp::now_utc().unix_timestamp() as u64;
+        active_keyset(&infos, true, now)
+            .map(|info| info.id.into())
+            .ok_or(Error::Internal(String::from(
+                "no active debit keyset found",
+            )))
     }
 
     async fn verify_fingerprints(&self, fps: &[wire_keys::ProofFingerprint]) -> Result<()> {

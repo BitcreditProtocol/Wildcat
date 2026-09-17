@@ -13,7 +13,7 @@ async fn keyset_info_not_found() {
     let client = MintClient::new(server_url);
 
     let kid = core_tests::generate_random_ecash_keyset().0.id;
-    let response = client.keyset_info(kid).await;
+    let response = client.keyset_info(kid.into()).await;
     assert!(response.is_err());
     assert!(matches!(
         response.unwrap_err(),

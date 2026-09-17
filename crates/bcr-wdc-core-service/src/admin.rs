@@ -3,7 +3,9 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::{
-    cashu, ecash,
+    cashu,
+    core::maturity,
+    ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
 use bitcoin::secp256k1 as secp;
@@ -18,7 +20,7 @@ pub async fn new_keyset(
     Json(request): Json<wire_keys::NewKeysetRequest>,
 ) -> Result<Json<ecash::KeySetInfo>> {
     let now = time::OffsetDateTime::now_utc();
-    let expiration = request.expiration.map(|date| date.midnight().assume_utc());
+    let expiration = request.expiration.map(maturity::credit_expires_at);
     let kinfo = ctrl
         .create(request.unit, now, expiration, request.fees_ppk)
         .await?;

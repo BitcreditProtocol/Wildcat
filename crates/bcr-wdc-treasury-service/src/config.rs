@@ -48,10 +48,18 @@ pub struct Foreign {
     /// holds, so it can reclaim before its own claim lapses.
     #[serde(default = "default_exchange_lock_margin_secs")]
     pub exchange_lock_margin_secs: u64,
+    /// How long offline-exchange eCash stays claimable by the wallet before this
+    /// mint reclaims it; a wallet that never unlocks redeems at its own alpha.
+    #[serde(default = "default_offline_exchange_lock_secs")]
+    pub offline_exchange_lock_secs: u64,
 }
 
 fn default_exchange_lock_margin_secs() -> u64 {
     15 * 60
+}
+
+fn default_offline_exchange_lock_secs() -> u64 {
+    7 * 24 * 3600
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
