@@ -356,7 +356,7 @@ struct KeysInfoDBEntry {
 impl std::convert::From<KeysInfoDBEntry> for ecash::MintKeySetInfo {
     fn from(info: KeysInfoDBEntry) -> Self {
         Self {
-            id: info.kid,
+            id: info.kid.into(),
             unit: info.unit,
             active: info.active,
             valid_from: info.valid_from,
@@ -416,7 +416,7 @@ impl std::convert::From<KeysDBEntry> for keys_utils::MintKeysEntry {
             keysmap.insert(cashu::Amount::from(uval), keypair);
         }
         Self {
-            id: info.id,
+            id: info.id.into(),
             unit: info.unit,
             active: info.active,
             valid_from: info.valid_from,

@@ -39,7 +39,7 @@ impl WdcClient for WildcatCl {
             .core
             .get_or_create_keyset_with_expiration(redemption_date)
             .await?;
-        Ok(kinfo.id)
+        Ok(kinfo.id.into())
     }
 
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet> {

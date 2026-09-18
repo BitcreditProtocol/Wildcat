@@ -11,7 +11,7 @@ use bcr_common::{
     cashu,
     client::admin::core::{BRError, RNFError},
     core::{
-        keys as core_keys,
+        keys as core_keys, maturity,
         signature::{
             self, sign_ecash, verify_ecash_fingerprint, verify_ecash_proof, ProofFingerprint,
         },
@@ -64,7 +64,7 @@ impl Service {
         &self,
         unit: cashu::CurrencyUnit,
         now: TStamp,
-        expiration: Option<TStamp>,
+        expiration: Option<u64>,
         fees_ppk: u64,
     ) -> Result<ecash::MintKeySetInfo> {
         let fees_ppk = std::cmp::max(fees_ppk, self.min_keyset_fees_ppk.load(Ordering::Relaxed));
@@ -118,12 +118,8 @@ impl Service {
     }
 
     pub async fn list_info(&self, filters: ListFilters) -> Result<Vec<ecash::MintKeySetInfo>> {
-        let min_tstamp = filters
-            .min_expiration
-            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
-        let max_tstamp = filters
-            .max_expiration
-            .map(|date| date.midnight().assume_utc().unix_timestamp() as u64);
+        let min_tstamp = filters.min_expiration.map(maturity::credit_expires_at);
+        let max_tstamp = filters.max_expiration.map(maturity::credit_expires_at);
         self.repository
             .keys_list_info(filters.unit, min_tstamp, max_tstamp)
             .await
@@ -159,7 +155,7 @@ impl Service {
         let mut keyset = self.keys(first_blind.keyset_id).await?;
         let mut signatures = Vec::with_capacity(blinds.len());
         for blind in blinds {
-            let current_keyset = if blind.keyset_id == keyset.id {
+            let current_keyset = if blind.keyset_id == keyset.id.into() {
                 &keyset
             } else {
                 keyset = self.keys(blind.keyset_id).await?;
@@ -438,7 +434,7 @@ impl Service {
             stored_signatures: Vec::with_capacity(total_len),
         };
         for premint in premints {
-            let keyset = self.keys(premint.keyset_id).await?.into();
+            let keyset = self.keys(premint.keyset_id).await?;
             let blinded_messages = premint.blinded_messages();
             let signatures = self.generate_signatures(&blinded_messages).await?;
             generated
@@ -463,14 +459,14 @@ impl Service {
     }
 
     pub async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<Vec<cashu::PublicKey>> {
-        signatures_utils::basic_proofs_checks(&proofs)?;
-        self.verify_proofs(&proofs).await?;
-        let mut ys = Vec::with_capacity(proofs.len());
-        for proof in &proofs {
-            ys.push(cashu::dhke::hash_to_curve(proof.secret.as_bytes())?);
-        }
+        let fps: Vec<ProofFingerprint> = wire_attestation::project_to_fingerprints(&proofs)?
+            .into_iter()
+            .map(ProofFingerprint::from)
+            .collect();
+        signatures_utils::basic_fingerprints_checks(&fps)?;
+        self.verify_fingerprints(&fps).await?;
         self.repository.proofs_insert(proofs).await?;
-        Ok(ys)
+        Ok(fps.into_iter().map(|fp| fp.y.into()).collect())
     }
 
     pub async fn recover(&self, proofs: &[cashu::Proof]) -> Result<()> {
@@ -506,7 +502,10 @@ mod tests {
 
     use bcr_common::core_tests;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use bitcoin::bip32::DerivationPath;
+    use bitcoin::{
+        bip32::DerivationPath,
+        hashes::{sha256::Hash as Sha256Hash, Hash},
+    };
 
     use super::*;
     use crate::{
@@ -538,7 +537,7 @@ mod tests {
         repository.keys_store(entry).await.unwrap();
         let amounts = [cashu::Amount::from(8u64)];
         let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        let outputs = signatures_test::generate_blinds(keyset.id, &amounts)
+        let outputs = signatures_test::generate_blinds(keyset.id.into(), &amounts)
             .into_iter()
             .map(|generated| generated.0)
             .collect::<Vec<_>>();
@@ -637,5 +636,61 @@ mod tests {
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
         assert!(repository.commitment_load(&commitment).await.is_ok());
+    }
+
+    // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.
+    #[tokio::test]
+    async fn burn_accepts_locked_proofs_without_witness() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let locktime = time::OffsetDateTime::now_utc().unix_timestamp() as u64 + 60;
+        let wallet = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let mint = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let conditions = bcr_common::core::htlc::exchange_htlc(
+            Sha256Hash::hash(b"lock"),
+            locktime,
+            wallet,
+            mint,
+        )
+        .unwrap();
+        let secret = signature::offline_htlc_secret(conditions).unwrap();
+        let amount = cashu::Amount::from(8u64);
+        let (blinded, r) = cashu::dhke::blind_message(&secret.to_bytes(), None).unwrap();
+        let premint = cashu::PreMint {
+            secret,
+            blinded_message: cashu::BlindedMessage::new(amount, keyset.id.into(), blinded),
+            r,
+            amount,
+        };
+        let signed = sign_ecash(&keyset, &premint.blinded_message).unwrap();
+        let proof = signature::unblind_ecash_signature(
+            &core_keys::to_keyset(&keyset, None),
+            premint,
+            signed,
+        )
+        .unwrap();
+        assert!(proof.witness.is_none());
+        let service = service(
+            repository.clone(),
+            MockClowderClient::new(),
+            MockTreasuryService::new(),
+        );
+
+        let ys = service.burn(vec![proof.clone()]).await.unwrap();
+
+        assert_eq!(ys, vec![proof.y().unwrap()]);
+        assert!(repository
+            .proofs_contains(proof.y().unwrap())
+            .await
+            .unwrap()
+            .is_some());
     }
 }

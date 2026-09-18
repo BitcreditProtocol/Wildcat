@@ -7,7 +7,6 @@ pub mod client;
 pub mod db;
 pub mod info;
 pub mod keys;
-pub mod maturity;
 pub mod nut19;
 pub mod routine;
 pub mod signatures;

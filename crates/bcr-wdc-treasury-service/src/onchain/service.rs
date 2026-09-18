@@ -477,7 +477,7 @@ mod tests {
         let (info, keyset) = core_tests::generate_random_ecash_keyset();
         wdc.expect_get_active_keyset()
             .times(1)
-            .returning(move || Ok(info.id));
+            .returning(move || Ok(info.id.into()));
         clowder
             .expect_request_onchain_mint_address()
             .times(1)
@@ -508,10 +508,11 @@ mod tests {
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
             wallet_key: core::generate_random_keypair().public_key().into(),
@@ -539,10 +540,11 @@ mod tests {
             alpha_id: core::generate_random_keypair().public_key(),
         };
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &[Amount::from(8_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds: Vec<_> =
+            signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
             wallet_key: core::generate_random_keypair().public_key().into(),
@@ -776,16 +778,14 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(kinfo.clone().into()));
         let cloned_keyset = keyset.clone();
-        wdc.expect_keyset().times(2).returning(move |_| {
-            Ok(bcr_wdc_utils::keys::to_keyset(
-                &cloned_keyset.clone().into(),
-                None,
-            ))
-        });
+        wdc.expect_keyset()
+            .times(2)
+            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset.clone(), None)));
         let cloned_keyset = keyset.clone();
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(cloned_keyset.id, &amounts);
+            let signatures =
+                signatures_test::generate_signatures(cloned_keyset.id.into(), &amounts);
             Ok(signatures)
         });
         vault.expect_store_proofs().times(1).returning(|_| Ok(()));
@@ -938,7 +938,7 @@ mod tests {
         let (_, keyset2) = core_tests::generate_random_ecash_keyset();
         wdc.expect_get_active_keyset()
             .times(1)
-            .returning(move || Ok(info1.id));
+            .returning(move || Ok(info1.id.into()));
         let service = Service {
             wdc: Arc::new(wdc),
             repo: Arc::new(repo),
@@ -950,14 +950,16 @@ mod tests {
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
         };
-        let blinds1: Vec<_> = signatures_test::generate_blinds(keyset1.id, &[Amount::from(8_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
-        let blinds2: Vec<_> = signatures_test::generate_blinds(keyset2.id, &[Amount::from(8_u64)])
-            .into_iter()
-            .map(|b| b.0)
-            .collect();
+        let blinds1: Vec<_> =
+            signatures_test::generate_blinds(keyset1.id.into(), &[Amount::from(8_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
+        let blinds2: Vec<_> =
+            signatures_test::generate_blinds(keyset2.id.into(), &[Amount::from(8_u64)])
+                .into_iter()
+                .map(|b| b.0)
+                .collect();
         let mut blinded_messages = Vec::new();
         blinded_messages.extend(blinds1);
         blinded_messages.extend(blinds2);
@@ -1026,7 +1028,7 @@ mod tests {
             .returning(move |_| Ok(cloned_keyset.clone()));
         wdc.expect_sign().times(1).returning(move |blinds| {
             let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
-            let signatures = signatures_test::generate_signatures(keyset.id, &amounts);
+            let signatures = signatures_test::generate_signatures(keyset.id.into(), &amounts);
             Ok(signatures)
         });
         wdc.expect_burn()

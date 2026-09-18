@@ -23,7 +23,7 @@ async fn swap() {
     let client = CoreClient::new(server_url);
     let (info, keyset) = core_tests::generate_random_ecash_keyset();
     let entry = MintKeysEntry {
-        id: info.id,
+        id: info.id.into(),
         unit: info.unit,
         active: info.active,
         valid_from: info.valid_from,
@@ -41,7 +41,7 @@ async fn swap() {
         .await
         .expect("store");
     let amounts = vec![Amount::from(8_u64)];
-    let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id, &amounts)
+    let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
@@ -80,7 +80,7 @@ async fn swap_p2pk() {
     let (info, mint_keyset) = core_tests::generate_random_ecash_keyset();
     let kid = info.id;
     let entry = MintKeysEntry {
-        id: info.id,
+        id: info.id.into(),
         unit: info.unit,
         active: info.active,
         valid_from: info.valid_from,
@@ -106,7 +106,7 @@ async fn swap_p2pk() {
             let secret: cashu::nut10::Secret = conditions.clone().into();
             let secret: cashu::secret::Secret = secret.try_into().unwrap();
             let (blinded, r) = blind_message(&secret.to_bytes(), None).unwrap();
-            let blinded_message = cashu::BlindedMessage::new(*amount, kid, blinded);
+            let blinded_message = cashu::BlindedMessage::new(*amount, kid.into(), blinded);
             (blinded_message, secret, r)
         })
         .collect();
@@ -122,7 +122,7 @@ async fn swap_p2pk() {
             let c = sign_message(&mint_secret, &blinded_message.blinded_secret).unwrap();
             cashu::nuts::BlindSignature {
                 amount: blinded_message.amount,
-                keyset_id: mint_keyset.id,
+                keyset_id: mint_keyset.id.into(),
                 c,
                 dleq: None,
             }
@@ -143,7 +143,7 @@ async fn swap_p2pk() {
     // Swap 2,2,4 proofs into a single 8 blinded message
     let single_amount = [Amount::from(8)];
     let blinds: Vec<cashu::BlindedMessage> =
-        signatures_test::generate_blinds(mint_keyset.id, &single_amount)
+        signatures_test::generate_blinds(mint_keyset.id.into(), &single_amount)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();

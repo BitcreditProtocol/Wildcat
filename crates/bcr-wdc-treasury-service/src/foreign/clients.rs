@@ -33,7 +33,7 @@ impl foreign::KeysClient for CoreCl {
             .core
             .get_or_create_keyset_with_expiration(expiration)
             .await?;
-        let keyset = self.core.keys(kinfo.id).await?;
+        let keyset = self.core.keys(kinfo.id.into()).await?;
         Ok(keyset)
     }
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
@@ -325,7 +325,7 @@ impl ForeignClient for MintClient {
 
     async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, ecash::KeySetInfo>> {
         let kinfos = self.foreign_cl.list_keyset_info(Default::default()).await?;
-        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
+        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id.into(), kinfo)));
         Ok(map)
     }
 

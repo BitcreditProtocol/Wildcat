@@ -244,7 +244,7 @@ mod tests {
         let controller = test_utils::test_controller();
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = MintKeysEntry {
-            id: kinfo.id,
+            id: kinfo.id.into(),
             unit: kinfo.unit.clone(),
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -261,9 +261,9 @@ mod tests {
             .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.service.info(kinfo.id).await.is_ok());
+        assert!(controller.service.info(kinfo.id.into()).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
-        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id.into(), &amounts)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
@@ -298,7 +298,7 @@ mod tests {
         let controller = test_utils::test_controller();
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = MintKeysEntry {
-            id: kinfo.id,
+            id: kinfo.id.into(),
             unit: kinfo.unit.clone(),
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -315,9 +315,9 @@ mod tests {
             .keys_store(entry)
             .await
             .expect("store");
-        assert!(controller.service.info(kinfo.id).await.is_ok());
+        assert!(controller.service.info(kinfo.id.into()).await.is_ok());
         let amounts = vec![cashu::Amount::from(8_u64)];
-        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id, &amounts)
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id.into(), &amounts)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
@@ -359,7 +359,7 @@ mod tests {
         let (kinfo, mint_keyset) = core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let entry = MintKeysEntry {
-            id: kinfo.id,
+            id: kinfo.id.into(),
             unit: kinfo.unit,
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -385,7 +385,7 @@ mod tests {
                 let secret: cashu::nut10::Secret = conditions.clone().into();
                 let secret: cashu::secret::Secret = secret.try_into().unwrap();
                 let (blinded, r) = cashu::dhke::blind_message(&secret.to_bytes(), None).unwrap();
-                let blinded_message = cashu::BlindedMessage::new(*amount, kid, blinded);
+                let blinded_message = cashu::BlindedMessage::new(*amount, kid.into(), blinded);
                 (blinded_message, secret, r)
             })
             .collect();
@@ -402,7 +402,7 @@ mod tests {
                     .unwrap();
                 cashu::nuts::BlindSignature {
                     amount: blinded_message.amount,
-                    keyset_id: mint_keyset.id,
+                    keyset_id: mint_keyset.id.into(),
                     c,
                     dleq: None,
                 }
@@ -423,7 +423,7 @@ mod tests {
         )
         .unwrap();
         let blinds: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(mint_keyset.id, &amounts)
+            signatures_test::generate_blinds(mint_keyset.id.into(), &amounts)
                 .into_iter()
                 .map(|bbb| bbb.0)
                 .collect();
