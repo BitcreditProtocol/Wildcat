@@ -608,6 +608,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bcr-common"
 version = "0.10.0"
+source = "git+https://github.com/BitcreditProtocol/bcr-common.git?rev=b169176#b169176af4590597faec4455855dee9ac0f43952"
 dependencies = [
  "async-nats",
  "bip39",
