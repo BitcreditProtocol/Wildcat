@@ -459,14 +459,14 @@ impl Service {
     }
 
     pub async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<Vec<cashu::PublicKey>> {
-        signatures_utils::basic_proofs_checks(&proofs)?;
-        self.verify_proofs(&proofs).await?;
-        let mut ys = Vec::with_capacity(proofs.len());
-        for proof in &proofs {
-            ys.push(cashu::dhke::hash_to_curve(proof.secret.as_bytes())?);
-        }
+        let fps: Vec<ProofFingerprint> = wire_attestation::project_to_fingerprints(&proofs)?
+            .into_iter()
+            .map(ProofFingerprint::from)
+            .collect();
+        signatures_utils::basic_fingerprints_checks(&fps)?;
+        self.verify_fingerprints(&fps).await?;
         self.repository.proofs_insert(proofs).await?;
-        Ok(ys)
+        Ok(fps.into_iter().map(|fp| fp.y.into()).collect())
     }
 
     pub async fn recover(&self, proofs: &[cashu::Proof]) -> Result<()> {
@@ -502,7 +502,10 @@ mod tests {
 
     use bcr_common::core_tests;
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
-    use bitcoin::bip32::DerivationPath;
+    use bitcoin::{
+        bip32::DerivationPath,
+        hashes::{sha256::Hash as Sha256Hash, Hash},
+    };
 
     use super::*;
     use crate::{
@@ -633,5 +636,61 @@ mod tests {
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
         assert!(repository.commitment_load(&commitment).await.is_ok());
+    }
+
+    // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.
+    #[tokio::test]
+    async fn burn_accepts_locked_proofs_without_witness() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let locktime = time::OffsetDateTime::now_utc().unix_timestamp() as u64 + 60;
+        let wallet = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let mint = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let conditions = bcr_common::core::htlc::exchange_htlc(
+            Sha256Hash::hash(b"lock"),
+            locktime,
+            wallet,
+            mint,
+        )
+        .unwrap();
+        let secret = signature::offline_htlc_secret(conditions).unwrap();
+        let amount = cashu::Amount::from(8u64);
+        let (blinded, r) = cashu::dhke::blind_message(&secret.to_bytes(), None).unwrap();
+        let premint = cashu::PreMint {
+            secret,
+            blinded_message: cashu::BlindedMessage::new(amount, keyset.id.into(), blinded),
+            r,
+            amount,
+        };
+        let signed = sign_ecash(&keyset, &premint.blinded_message).unwrap();
+        let proof = signature::unblind_ecash_signature(
+            &core_keys::to_keyset(&keyset, None),
+            premint,
+            signed,
+        )
+        .unwrap();
+        assert!(proof.witness.is_none());
+        let service = service(
+            repository.clone(),
+            MockClowderClient::new(),
+            MockTreasuryService::new(),
+        );
+
+        let ys = service.burn(vec![proof.clone()]).await.unwrap();
+
+        assert_eq!(ys, vec![proof.y().unwrap()]);
+        assert!(repository
+            .proofs_contains(proof.y().unwrap())
+            .await
+            .unwrap()
+            .is_some());
     }
 }

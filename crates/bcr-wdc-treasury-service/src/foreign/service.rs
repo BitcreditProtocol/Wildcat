@@ -254,9 +254,13 @@ impl Service {
         if online_amount > cashu::Amount::ZERO {
             return Ok(online_amount);
         }
-        let offline_amount =
-            try_offline_htlc_swap(preimage, self.offline_repo.as_ref(), self.clowder.as_ref())
-                .await?;
+        let offline_amount = try_offline_htlc_swap(
+            preimage,
+            self.offline_repo.as_ref(),
+            self.online_repo.as_ref(),
+            self.clowder.as_ref(),
+        )
+        .await?;
         Ok(offline_amount)
     }
 }
@@ -302,6 +306,7 @@ async fn try_online_htlc(
 async fn try_offline_htlc_swap(
     preimage: &str,
     repo: &dyn OfflineRepository,
+    issued: &dyn OnlineRepository,
     clowder: &dyn ClowderClient,
 ) -> Result<cashu::Amount> {
     let hash = offline_hash_lock(preimage);
@@ -332,6 +337,8 @@ async fn try_offline_htlc_swap(
     proof.verify_dleq(*key)?;
     repo.remove_fps(&[fp.y]).await?;
     repo.store_proofs(mint_id, vec![proof]).await?;
+    // Backed now, so no longer the reclaim routine's to burn.
+    issued.remove_issued_by_hash(&hash).await?;
     Ok(amount)
 }
 
@@ -947,7 +954,7 @@ mod tests {
 
     #[tokio::test]
     async fn try_swap_htlc_offline() {
-        let onlinerepo = crate::foreign::MockOnlineRepository::new();
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
         let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
         let keys = crate::foreign::MockKeysClient::new();
         let mut clowder = crate::foreign::MockClowderClient::new();
@@ -995,6 +1002,11 @@ mod tests {
             .with(eq(foreign_pk), always())
             .times(1)
             .returning(|_, _| Ok(()));
+        onlinerepo
+            .expect_remove_issued_by_hash()
+            .with(eq(hash))
+            .times(1)
+            .returning(|_| Ok(()));
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
