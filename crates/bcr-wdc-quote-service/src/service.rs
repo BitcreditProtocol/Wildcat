@@ -857,7 +857,12 @@ mod tests {
         bill.maturity_date = submitted.date();
         let credit_ends = credit_ends_at(bill.maturity_date).unwrap();
         let expiration_date = calculate_expiration_from_maturity(bill.maturity_date).unwrap();
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            submitted,
+            crate::quotes::test_credit_program_binding(),
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -881,6 +886,8 @@ mod tests {
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let (_, ttl) = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -896,7 +903,12 @@ mod tests {
         let mut bill = generate_random_bill();
         bill.maturity_date = time::macros::date!(2026 - 01 - 01);
         let submitted = credit_ends_at(bill.maturity_date).unwrap();
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            submitted,
+            crate::quotes::test_credit_program_binding(),
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -910,6 +922,8 @@ mod tests {
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let err = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -998,7 +1012,7 @@ mod tests {
         wdc_client
             .expect_get_keyset_with_expiration_date()
             .times(1)
-            .returning(|_| Ok(core_tests::generate_random_ecash_keyset().0.id));
+            .returning(|_| Ok(core_tests::generate_random_ecash_keyset().0.id.into()));
         let service = Service {
             quotes: Box::new(db),
             wdc_client: Box::new(wdc_client),
