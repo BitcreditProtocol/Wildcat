@@ -15,10 +15,9 @@ use crate::{
     authorization::same_quote_reissue_authority,
     error::{Error, Result},
     persistence::{
-        same_executed_quote, same_governed_denial_authority, same_pending_quote_request,
-        self, DbBillInfo,
-        ApplicantActionProjectionMutation, ApplicantActionProjectionState, GovernedDenialInput,
-        Repository,
+        self, same_executed_quote, same_governed_denial_authority, same_pending_quote_request,
+        ApplicantActionProjectionMutation, ApplicantActionProjectionState, DbBillInfo,
+        GovernedDenialInput, Repository,
     },
     quotes,
     service::{ListFilters, SortOrder},
@@ -210,7 +209,9 @@ impl DBQuotes {
             .await
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
             .into_iter()
-            .map(quotes::Quote::from)
+            .map(quote_from_dbentry)
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .max_by_key(|candidate| (candidate.submitted, candidate.id))
             .filter(|candidate| same_pending_quote_request(candidate, requested))
             .map(|candidate| candidate.id)
@@ -236,7 +237,8 @@ impl DBQuotes {
             .load(existing.reissued_quote_id)
             .await
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .map(quotes::Quote::from);
+            .map(quote_from_dbentry)
+            .transpose()?;
         match stored {
             Some(stored)
                 if same_permit
@@ -262,7 +264,8 @@ impl DBQuotes {
             .load(quote_id)
             .await
             .map_err(|error| Error::QuotesRepository(anyhow!(error)))?
-            .map(quotes::Quote::from)
+            .map(quote_from_dbentry)
+            .transpose()?
             .ok_or_else(|| Error::ResourceNotFound(quote_id.to_string()))?;
         let Some(record) = record else {
             return if stored.authorization_receipt().is_none() {
@@ -826,7 +829,10 @@ impl Repository for DBQuotes {
             )
             .bind(("quotes_table", Self::TABLE))
             .bind(("bill_id", quote_record.bill.id.clone()))
-            .bind(("holder_id", quote_record.bill.current_holder.node_id()))
+            .bind((
+                "holder_id",
+                quote_record.bill.current_holder.node_id().to_owned(),
+            ))
             .bind(("expect_empty", expected_latest.is_none()))
             .bind(("expected_latest", expected_latest.unwrap_or_default()))
             .bind(("previous_rid", previous_rid))
@@ -941,7 +947,10 @@ impl Repository for DBQuotes {
             .bind(("denied", quotes::StatusDiscriminants::Denied))
             .bind(("quotes_table", Self::TABLE))
             .bind(("bill_id", quote_record.bill.id.clone()))
-            .bind(("holder_id", quote_record.bill.current_holder.node_id()))
+            .bind((
+                "holder_id",
+                quote_record.bill.current_holder.node_id().to_owned(),
+            ))
             .bind(("previous_quote_id", previous_quote_id))
             .bind(("quote_id", quote_id))
             .bind(("quote_rid", quote_rid))
@@ -1061,7 +1070,7 @@ mod tests {
             .remove("credit_program");
 
         let legacy: QuoteDBEntry = serde_json::from_value(value).unwrap();
-        let restored = quotes::Quote::from(legacy);
+        let restored = quote_from_dbentry(legacy).unwrap();
 
         assert!(restored.credit_program().is_none());
     }

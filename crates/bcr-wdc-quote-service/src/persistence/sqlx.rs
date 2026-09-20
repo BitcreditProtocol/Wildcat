@@ -37,14 +37,14 @@ struct QuoteBlobV1 {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteBlobV2 {
-    bill: quotes::BillInfo,
+    bill: DbBillInfo,
     status: quotes::Status,
     credit_program: quotes::CreditProgramBinding,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteBlobV3 {
-    bill: quotes::BillInfo,
+    bill: DbBillInfo,
     status: quotes::Status,
     credit_program: quotes::CreditProgramBinding,
     authorization_receipt: Option<bcr_common::wire::quotes::CreditAuthorizationReceipt>,
@@ -515,13 +515,17 @@ mod tests {
         let quote = pending_quote();
         let mut row = quote_to_row(quote.clone()).unwrap();
         row.blob = Json(QuoteBlob::V1(QuoteBlobV1 {
-            bill: quote.bill,
+            bill: quote.bill.into(),
             status: quote.status,
         }));
 
         let mut restored = quote_from_row(row).unwrap();
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
-        let result = restored.offer(keyset_id, TStamp::UNIX_EPOCH, bitcoin::Amount::from_sat(1));
+        let result = restored.offer(
+            keyset_id.into(),
+            TStamp::UNIX_EPOCH,
+            bitcoin::Amount::from_sat(1),
+        );
 
         assert!(restored.credit_program().is_none());
         assert!(matches!(result, Err(Error::CreditProgramNotBound(_))));

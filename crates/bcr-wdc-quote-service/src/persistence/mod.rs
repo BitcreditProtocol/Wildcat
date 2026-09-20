@@ -3,13 +3,13 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{
-    core::{BillId, NodeId},
-    wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
-};
 use bcr_common::wire::quotes::{
     ApplicantActionProjection, CreditApplicantActionReceipt, CreditAuthorizationReceipt,
     SignedCreditQuoteReissuePermit,
+};
+use bcr_common::{
+    core::{BillId, NodeId},
+    wire::{bill as wire_bill, contact as wire_contact, identity as wire_identity},
 };
 // ----- local modules
 pub mod inmemory;

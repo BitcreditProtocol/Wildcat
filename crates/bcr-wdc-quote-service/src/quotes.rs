@@ -538,7 +538,11 @@ mod tests {
         quote.credit_program = None;
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
 
-        let result = quote.offer(keyset_id, TStamp::UNIX_EPOCH, bitcoin::Amount::from_sat(1));
+        let result = quote.offer(
+            keyset_id.into(),
+            TStamp::UNIX_EPOCH,
+            bitcoin::Amount::from_sat(1),
+        );
 
         assert!(matches!(result, Err(Error::CreditProgramNotBound(id)) if id == quote.id));
         assert!(matches!(quote.status, Status::Pending { .. }));
@@ -590,7 +594,11 @@ mod tests {
         );
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         quote
-            .offer(keyset_id, TStamp::UNIX_EPOCH, bitcoin::Amount::from_sat(1))
+            .offer(
+                keyset_id.into(),
+                TStamp::UNIX_EPOCH,
+                bitcoin::Amount::from_sat(1),
+            )
             .unwrap();
 
         assert!(matches!(
@@ -610,7 +618,11 @@ mod tests {
         );
         let keyset_id = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         quote
-            .offer(keyset_id, TStamp::UNIX_EPOCH, bitcoin::Amount::from_sat(1))
+            .offer(
+                keyset_id.into(),
+                TStamp::UNIX_EPOCH,
+                bitcoin::Amount::from_sat(1),
+            )
             .unwrap();
         quote.authorization_receipt = Some(wire_quotes::CreditAuthorizationReceipt {
             receipt_version: String::from("credit-authorization-receipt-v1"),
@@ -650,7 +662,7 @@ mod tests {
         .unwrap()
         .to_offset(time::UtcOffset::UTC);
         let discounted = bitcoin::Amount::from_sat(7_735_000);
-        quote.offer(keyset_id, ttl, discounted).unwrap();
+        quote.offer(keyset_id.into(), ttl, discounted).unwrap();
         quote.authorization_receipt = Some(wire_quotes::CreditAuthorizationReceipt {
             receipt_version: String::from("credit-authorization-receipt-v1"),
             operation_id: format!("sha256:{}", "a".repeat(64)),

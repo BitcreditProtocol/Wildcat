@@ -824,7 +824,12 @@ mod tests {
         bill.maturity_date = (submitted + time::Duration::days(1)).date();
         let matures_at = credit_expires_at(bill.maturity_date);
         let expiration_date = calculate_expiration_from_maturity(bill.maturity_date);
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            submitted,
+            crate::quotes::test_credit_program_binding(),
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -847,6 +852,8 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let (_, ttl) = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -861,7 +868,12 @@ mod tests {
         let submitted = time::OffsetDateTime::now_utc();
         let mut bill = generate_random_bill();
         bill.maturity_date = submitted.date();
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            submitted,
+            crate::quotes::test_credit_program_binding(),
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -874,6 +886,8 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
         let err = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -938,7 +952,7 @@ mod tests {
         wdc_client
             .expect_get_keyset_with_expiration_date()
             .times(1)
-            .returning(|_| Ok(core_tests::generate_random_ecash_keyset().0.id));
+            .returning(|_| Ok(core_tests::generate_random_ecash_keyset().0.id.into()));
         let service = Service {
             quotes: Box::new(db),
             wdc_client: Box::new(wdc_client),
