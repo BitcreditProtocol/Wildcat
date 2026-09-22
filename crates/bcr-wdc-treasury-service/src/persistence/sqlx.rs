@@ -3,7 +3,10 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{cashu, core::BillId};
+use bcr_common::{
+    cashu::{self, ProofsMethods},
+    core::BillId,
+};
 use bcr_wdc_utils::postgres;
 use sqlx::types::Json;
 use sqlx::PgPool;
@@ -300,6 +303,35 @@ impl foreign::OnlineRepository for DBForeignOnline {
             }
         }
         Ok(proofs)
+    }
+
+    async fn settled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT mint_id, blobs
+            FROM treasury_foreign_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut balances = std::collections::HashMap::with_capacity(rows.len());
+        for row in rows {
+            let mint_id =
+                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
+            let mut proofs = Vec::with_capacity(row.blobs.len());
+            for blob in &row.blobs {
+                let blob: ForeignProofBlob =
+                    serde_json::from_str(blob).map_err(|e| Error::DB(anyhow!(e)))?;
+                match blob {
+                    ForeignProofBlob::V1(proof) => proofs.push(proof),
+                }
+            }
+            balances.insert(mint_id, proofs.total_amount()?);
+        }
+        Ok(balances)
     }
 
     async fn store_htlc(
