@@ -3,9 +3,12 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, State};
 use bcr_common::{
-    cashu, ecash,
+    cashu,
+    core::maturity,
+    ecash,
     wire::{keys as wire_keys, swap as wire_swap},
 };
+use bitcoin::secp256k1 as secp;
 // ----- local imports
 use crate::{error::Result, service};
 
@@ -17,7 +20,7 @@ pub async fn new_keyset(
     Json(request): Json<wire_keys::NewKeysetRequest>,
 ) -> Result<Json<ecash::KeySetInfo>> {
     let now = time::OffsetDateTime::now_utc();
-    let expiration = request.expiration.map(|date| date.midnight().assume_utc());
+    let expiration = request.expiration.map(maturity::credit_expires_at);
     let kinfo = ctrl
         .create(request.unit, now, expiration, request.fees_ppk)
         .await?;
@@ -59,7 +62,8 @@ pub async fn recover_tokens(
     State(ctrl): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::RecoverRequest>,
 ) -> Result<Json<wire_swap::RecoverResponse>> {
-    ctrl.recover(&request.proofs).await?;
+    let c_proofs: Vec<cashu::Proof> = request.proofs.into_iter().map(From::from).collect();
+    ctrl.recover(&c_proofs).await?;
     Ok(Json(wire_swap::RecoverResponse {}))
 }
 
@@ -69,7 +73,15 @@ pub async fn burn_tokens(
     Json(request): Json<wire_swap::BurnRequest>,
 ) -> Result<Json<wire_swap::BurnResponse>> {
     let wire_swap::BurnRequest { proofs } = request;
-    let ys = ctrl.burn(proofs).await?;
+    let c_proofs: Vec<cashu::Proof> = proofs.into_iter().map(From::from).collect();
+    let c_ys = ctrl.burn(c_proofs).await?;
+    let ys = c_ys
+        .into_iter()
+        .map(|c_y| {
+            let b_array = c_y.to_bytes();
+            secp::PublicKey::from_slice(&b_array).expect("cashu::PublicKey <-> secp::PublicKey")
+        })
+        .collect();
     Ok(Json(wire_swap::BurnResponse { ys }))
 }
 
@@ -78,5 +90,6 @@ pub async fn reserve_ys(
     State(swap_srvc): State<Arc<service::Service>>,
     Json(request): Json<wire_swap::ReserveRequest>,
 ) -> Result<()> {
-    swap_srvc.reserve(request.ys, request.deadline).await
+    let c_ys = request.ys.into_iter().map(cashu::PublicKey::from).collect();
+    swap_srvc.reserve(c_ys, request.deadline).await
 }

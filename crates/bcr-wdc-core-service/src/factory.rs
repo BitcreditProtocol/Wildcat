@@ -31,7 +31,7 @@ impl Factory {
         &self,
         unit: cashu::CurrencyUnit,
         now: TStamp,
-        expiration: Option<TStamp>,
+        expiration: Option<u64>,
         fees_ppk: u64,
     ) -> keys_utils::MintKeysEntry {
         // sha of info.unit.to_string()
@@ -42,8 +42,7 @@ impl Factory {
             | (unit_hash[2] as u32) << 8
             | (unit_hash[3] as u32))
             & 0x7FFFFFFF;
-        let expire = expiration.map(|e| e.unix_timestamp().max(0) as u64);
-        let expire_tstamp = expire.unwrap_or_default();
+        let expire_tstamp = expiration.unwrap_or_default();
         // concatenate now and expiration_tstamp as vec<u8> of length 16 (8 bytes for each)
         let time_vec: Vec<u8> = std::iter::chain(
             now.unix_timestamp().to_be_bytes(),
@@ -82,13 +81,13 @@ impl Factory {
             unit,
             &denominations,
             fees_ppk,
-            expire,
+            expiration,
             KeySetVersion::Version01,
         );
         tracing::info!(
             "new keyset generated: {}, {now}, {}, {fees_ppk} ==> {}",
             keyset.unit,
-            expiration.unwrap_or(TStamp::UNIX_EPOCH),
+            expire_tstamp,
             keyset.id
         );
         let cdk_common::MintKeySet {
@@ -124,19 +123,19 @@ mod tests {
         let factory = Factory::new(&seed, derivation);
         let unit1 = cashu::CurrencyUnit::Sat;
         let now = time::OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
-        let expire1 = time::OffsetDateTime::from_unix_timestamp(2_000_000).unwrap();
+        let expire1 = 2_000_000;
         let info1 = factory.generate(unit1.clone(), now, Some(expire1), 100);
         assert_eq!(info1.unit, unit1);
-        assert_eq!(info1.final_expiry, Some(expire1.unix_timestamp() as u64));
+        assert_eq!(info1.final_expiry, Some(expire1));
         // different unit
         let unit2 = cashu::CurrencyUnit::Eur;
         let info2 = factory.generate(unit2.clone(), now, Some(expire1), 0);
         assert_eq!(info2.unit, unit2);
         assert_ne!(info2.id, info1.id);
         // different expiration
-        let expire3 = time::OffsetDateTime::from_unix_timestamp(3_000_000).unwrap();
+        let expire3 = 3_000_000;
         let info3 = factory.generate(unit1.clone(), now, Some(expire3), 0);
-        assert_eq!(info3.final_expiry, Some(expire3.unix_timestamp() as u64));
+        assert_eq!(info3.final_expiry, Some(expire3));
         assert_ne!(info3.id, info1.id);
         assert_ne!(info3.id, info2.id);
         // different now

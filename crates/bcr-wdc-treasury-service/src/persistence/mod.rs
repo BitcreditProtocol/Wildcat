@@ -231,7 +231,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
@@ -259,7 +259,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
@@ -287,7 +287,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::from(64),
             minted: cashu::Amount::ZERO,
@@ -321,7 +321,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::from(64),
             minted: cashu::Amount::ZERO,
@@ -358,7 +358,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
@@ -366,7 +366,7 @@ mod tests {
         };
         db.mint_store(op.clone()).await.unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
-        assert_eq!(res.kid, kid);
+        assert_eq!(res.kid, kid.into());
         assert_eq!(res.pub_key, kp.public_key().into());
     }
 
@@ -389,7 +389,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
@@ -400,7 +400,7 @@ mod tests {
             .await
             .unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
-        assert_eq!(res.kid, kid);
+        assert_eq!(res.kid, kid.into());
         assert_eq!(res.minted, cashu::Amount::from(100u64));
     }
 
@@ -423,7 +423,7 @@ mod tests {
         let kp = core::generate_random_keypair();
         let op1 = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
@@ -432,14 +432,14 @@ mod tests {
         db.mint_store(op1.clone()).await.unwrap();
         let op2 = ebill::MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key: kp.public_key().into(),
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op2.clone()).await.unwrap();
-        let res = db.mint_list(kid).await.unwrap();
+        let res = db.mint_list(kid.into()).await.unwrap();
         assert_eq!(res.len(), 2);
         let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
         assert!(rids.contains(&op1.uid));
@@ -588,13 +588,13 @@ mod tests {
         let keys = core_tests::generate_random_ecash_keyset();
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
-        let blinds = signature_tests::generate_blinds(kid, &amounts)
+        let blinds = signature_tests::generate_blinds(kid.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
         let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
             expiry: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
@@ -624,13 +624,13 @@ mod tests {
         let kid = keys.0.id;
         let amounts = vec![cashu::Amount::from(100u64)];
         let now = time::OffsetDateTime::now_utc();
-        let blinds = signature_tests::generate_blinds(kid, &amounts)
+        let blinds = signature_tests::generate_blinds(kid.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
         let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             target: bitcoin::Amount::ZERO,
             recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
             expiry: now + time::Duration::hours(1),

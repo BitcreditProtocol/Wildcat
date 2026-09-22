@@ -26,7 +26,8 @@ pub async fn online_exchange(
         exchange_path,
     } = request;
 
-    let signatures = ctrl.online_exchange(proofs, exchange_path).await?;
+    let now = time::OffsetDateTime::now_utc();
+    let signatures = ctrl.online_exchange(proofs, exchange_path, now).await?;
     let response = wire_exchange::OnlineExchangeResponse { proofs: signatures };
     Ok(Json(response))
 }
@@ -48,12 +49,14 @@ pub async fn offline_exchange(
     State(clwdr_nats): State<Arc<ClowderNatsClient>>,
     Json(request): Json<wire_exchange::OfflineExchangeRequest>,
 ) -> Result<Json<wire_exchange::OfflineExchangeResponse>> {
+    let now = time::OffsetDateTime::now_utc();
     let proofs = ctrl
         .offline_exchange(
             request.fingerprints,
             request.hashes,
             request.wallet_pk,
             request.wallet_signature,
+            now,
         )
         .await?;
     let payload = wire_exchange::OfflineExchangePayload { proofs };
