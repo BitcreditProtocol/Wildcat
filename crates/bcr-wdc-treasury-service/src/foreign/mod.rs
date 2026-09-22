@@ -27,6 +27,7 @@ pub use service::Service;
 pub trait OnlineRepository: Send + Sync {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
+    async fn settled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
 
     async fn store_htlc(
         &self,
@@ -77,6 +78,7 @@ pub trait OfflineRepository: Send + Sync {
     ) -> Result<()>;
     #[allow(dead_code)]
     async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
+    async fn unsettled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;

@@ -710,6 +710,40 @@ struct ForeignProofDBEntry {
     mint_id: String,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct ForeignBalanceDBEntry {
+    mint_id: String,
+    total: u64,
+}
+
+async fn foreign_balance_by_mint(
+    db: &Surreal<Any>,
+    table: &'static str,
+) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+    let entries: Vec<ForeignBalanceDBEntry> = db
+        .query(
+            "
+            SELECT mint_id, math::sum(proof.amount) AS total
+            FROM type::table($table)
+            GROUP BY mint_id
+            ",
+        )
+        .bind(("table", table))
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?
+        .take(0)
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+    let balances = entries
+        .into_iter()
+        .map(|entry| {
+            let mint_id =
+                secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
+            (mint_id, cashu::Amount::from(entry.total))
+        })
+        .collect();
+    Ok(balances)
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ForeignOnlineHtlcProofDBEntry {
     id: RecordId,
@@ -777,6 +811,12 @@ impl foreign::OnlineRepository for DBForeignOnline {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let proofs = entries.into_iter().map(|entry| entry.proof).collect();
         Ok(proofs)
+    }
+
+    async fn settled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        foreign_balance_by_mint(&self.db, Self::FOREIGNS_TABLE).await
     }
 
     async fn store_htlc(
@@ -1035,6 +1075,12 @@ impl foreign::OfflineRepository for DBForeignOffline {
             ret_val.push(entry.proof);
         }
         Ok(ret_val)
+    }
+
+    async fn unsettled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        foreign_balance_by_mint(&self.db, Self::PROOFS_TABLE).await
     }
 
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
