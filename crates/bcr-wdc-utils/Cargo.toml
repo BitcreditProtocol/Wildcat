@@ -8,7 +8,7 @@ build = "build.rs"
 
 [features]
 test-utils = ["rand", "bcr-common/test-utils"]
-auth = ["reqwest/json"]
+auth = ["reqwest/json", "reqwest/form"]
 
 
 [dependencies]
