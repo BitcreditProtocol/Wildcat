@@ -19,7 +19,6 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS rust-builder
 COPY --from=planner /wildcat/recipe.json recipe.json
 COPY --chmod=0755 scripts/cargo_git_auth.sh /scripts/cargo_git_auth.sh
-COPY bcr-common bcr-common
 
 RUN --mount=type=secret,id=gh_token,required=false \
     --mount=type=ssh \

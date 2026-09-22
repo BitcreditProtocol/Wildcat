@@ -6,7 +6,7 @@ use bcr_common::{
     cashu,
     client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
-    core::signature,
+    core::{maturity::active_keyset, signature, CURRENCY_UNIT},
     ecash,
     wire::{
         attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
@@ -32,22 +32,31 @@ pub struct WildcatCl {
 #[async_trait]
 impl WildcatClient for WildcatCl {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core_cl.sign(&blinds).await?;
-        Ok(signatures)
+        let c_blinds: Vec<_> = blinds.into_iter().map(From::from).collect();
+        let signatures = self.core_cl.sign(&c_blinds).await?;
+        Ok(signatures.into_iter().map(From::from).collect())
     }
 
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()> {
-        self.core_cl.burn(inputs).await?;
+        let c_inputs = inputs.into_iter().map(From::from).collect();
+        self.core_cl.burn(c_inputs).await?;
         Ok(())
     }
 
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core_cl.recover(proofs).await?;
+        let c_proofs = proofs.into_iter().map(From::from).collect();
+        self.core_cl.recover(c_proofs).await?;
         Ok(())
     }
 
     async fn reserve_inputs(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
-        self.core_cl.reserve(inputs, deadline).await?;
+        let c_inputs = inputs
+            .iter()
+            .map(|y| {
+                PublicKey::from_slice(&y.to_bytes()).expect("cashu::PublicKey <-> secp::PublicKey")
+            })
+            .collect();
+        self.core_cl.reserve(c_inputs, deadline).await?;
         Ok(())
     }
 
@@ -63,22 +72,16 @@ impl WildcatClient for WildcatCl {
 
     async fn get_active_keyset(&self) -> Result<cashu::Id> {
         let filter = wire_keys::KeysetInfoFilters {
-            unit: Some(cashu::CurrencyUnit::Sat),
+            unit: Some(CURRENCY_UNIT),
             ..Default::default()
         };
-        let mut infos = self.core_cl.list_keyset_info(filter).await?;
-        infos.retain(|info| info.active);
-        if infos.is_empty() {
-            return Err(Error::Internal(String::from("no active keyset found")));
-        }
-        infos.sort_by_key(|info| info.final_expiry);
-        let last_kid = infos.last().unwrap().id;
-        let kid = infos
-            .into_iter()
-            .find(|info| info.final_expiry.is_none())
-            .map(|info| info.id)
-            .unwrap_or_else(|| last_kid);
-        Ok(kid)
+        let infos = self.core_cl.list_keyset_info(filter).await?;
+        let now = TStamp::now_utc().unix_timestamp() as u64;
+        active_keyset(&infos, true, now)
+            .map(|info| info.id.into())
+            .ok_or(Error::Internal(String::from(
+                "no active debit keyset found",
+            )))
     }
 
     async fn verify_fingerprints(&self, fps: &[wire_keys::ProofFingerprint]) -> Result<()> {
@@ -90,7 +93,8 @@ impl WildcatClient for WildcatCl {
 
     async fn verify_proofs(&self, ps: &[cashu::Proof]) -> Result<()> {
         for p in ps {
-            self.core_cl.verify_proof(p).await?;
+            let c_proof = ecash::Proof::from(p.clone());
+            self.core_cl.verify_proof(&c_proof).await?;
         }
         Ok(())
     }
@@ -170,7 +174,7 @@ impl ClowderClient for ClowderCl {
 
     async fn sign_onchain_mint_response(
         &self,
-        msg: &wire_mint::OnchainMintQuoteResponseBody,
+        msg: &wire_mint::OnchainMintQuoteResponseBodyV1,
     ) -> Result<(String, secp256k1::schnorr::Signature)> {
         let request = wire_clowder::MintQuoteOnchainRequest {
             quote_id: msg.quote,

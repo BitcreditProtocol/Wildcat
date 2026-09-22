@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
-    core::{BillId, NodeId},
+    core::{maturity, BillId, NodeId},
     ecash,
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
@@ -305,12 +305,20 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
+        let matures_at = credit_expires_at(quote.bill.maturity_date);
+        if matures_at <= submitted {
+            return Err(Error::InvalidInput(String::from(
+                "bill matured, cannot offer",
+            )));
+        }
         let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date);
         let kid = self
             .wdc_client
             .get_keyset_with_expiration_date(expiration_date)
             .await?;
-        let expiration = ttl.unwrap_or(calculate_default_expiration_date_for_quote(submitted));
+        let expiration = ttl
+            .unwrap_or(calculate_default_expiration_date_for_quote(submitted))
+            .min(matures_at);
         quote.offer(kid, expiration, discounted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
@@ -458,6 +466,11 @@ impl Service {
     }
 }
 
+fn credit_expires_at(maturity_date: time::Date) -> TStamp {
+    TStamp::from_unix_timestamp(maturity::credit_expires_at(maturity_date) as i64)
+        .expect("day-aligned unix seconds fit a TStamp")
+}
+
 pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
     now + time::Duration::days(2)
 }
@@ -472,7 +485,7 @@ async fn mint_fees(
     keys: &ecash::KeySet,
 ) -> Result<Vec<cashu::Proof>> {
     let premint = cashu::PreMintSecrets::random(
-        keys.id,
+        keys.id.into(),
         fees_amount,
         &cashu::amount::SplitTarget::None,
         &bcr_wdc_utils::keys::to_fee_and_amounts(keys),
@@ -510,8 +523,7 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use bcr_common::{core_tests, wire_tests};
-    use bcr_ebill_core::protocol::blockchain::bill::participant::BillParticipant;
-    use bcr_wdc_utils::{convert, keys::test_utils as keys_utils};
+    use bcr_wdc_utils::keys::test_utils as keys_utils;
     use mockall::predicate::*;
     use rand::Rng;
     use std::str::FromStr;
@@ -520,21 +532,15 @@ mod tests {
 
     fn generate_random_bill() -> BillInfo {
         let mut rng = rand::thread_rng();
-        let holder =
-            convert::billidentparticipant_wire2ebill(wire_tests::random_identity_public_data().1)
-                .unwrap();
+        let holder = wire_tests::random_identity_public_data().1;
         BillInfo {
             id: core_tests::random_bill_id(),
-            drawee: convert::billidentparticipant_wire2ebill(
-                wire_tests::random_identity_public_data().1,
-            )
-            .unwrap(),
-            drawer: convert::billidentparticipant_wire2ebill(
-                wire_tests::random_identity_public_data().1,
-            )
-            .unwrap(),
-            payee: BillParticipant::Ident(holder.clone()),
-            current_holder: BillParticipant::Ident(holder),
+            drawee: wire_tests::random_identity_public_data().1,
+
+            drawer: wire_tests::random_identity_public_data().1,
+
+            payee: wire_bill::BillParticipant::Ident(holder.clone()),
+            current_holder: wire_bill::BillParticipant::Ident(holder),
             endorsees: Default::default(),
             sum: btc::Amount::from_sat(rng.gen_range(1000..100000)),
             maturity_date: (time::OffsetDateTime::now_utc()
@@ -556,6 +562,71 @@ mod tests {
 
         bill.maturity_date = today - time::Duration::days(1);
         assert!(validate_basic_ebill_rules(&bill, today).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_offer_ttl_clamped_to_bill_maturity() {
+        let submitted = time::OffsetDateTime::now_utc();
+        let mut bill = generate_random_bill();
+        bill.maturity_date = (submitted + time::Duration::days(1)).date();
+        let matures_at = credit_expires_at(bill.maturity_date);
+        let expiration_date = calculate_expiration_from_maturity(bill.maturity_date);
+        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let qid = quote.id;
+
+        let mut repo = MockRepository::new();
+        repo.expect_load()
+            .times(1)
+            .with(eq(qid))
+            .returning(move |_| Ok(Some(quote.clone())));
+        repo.expect_update_status_if_pending()
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let mut wdc_client = MockWdcClient::new();
+        let kid = core_tests::generate_random_ecash_keyset().0.id;
+        wdc_client
+            .expect_get_keyset_with_expiration_date()
+            .times(1)
+            .with(eq(expiration_date))
+            .returning(move |_| Ok(kid.into()));
+
+        let service = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(wdc_client),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+        };
+        let (_, ttl) = service
+            .offer(qid, btc::Amount::from_sat(1000), submitted, None)
+            .await
+            .unwrap();
+        assert_eq!(ttl, matures_at);
+        assert!(ttl < calculate_default_expiration_date_for_quote(submitted));
+    }
+
+    #[tokio::test]
+    async fn test_offer_rejected_once_bill_matured() {
+        let submitted = time::OffsetDateTime::now_utc();
+        let mut bill = generate_random_bill();
+        bill.maturity_date = submitted.date();
+        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let qid = quote.id;
+
+        let mut repo = MockRepository::new();
+        repo.expect_load()
+            .times(1)
+            .with(eq(qid))
+            .returning(move |_| Ok(Some(quote.clone())));
+
+        let service = Service {
+            quotes: Box::new(repo),
+            wdc_client: Box::new(MockWdcClient::new()),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+        };
+        let err = service
+            .offer(qid, btc::Amount::from_sat(1000), submitted, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
     }
 
     #[tokio::test]
@@ -666,7 +737,7 @@ mod tests {
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: Status::Offered {
-                        keyset_id,
+                        keyset_id: keyset_id.into(),
                         ttl: now + time::Duration::days(1),
                         discounted: rnd_bill.sum,
                         wallet_pubkey,
@@ -705,7 +776,7 @@ mod tests {
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: Status::Offered {
-                        keyset_id,
+                        keyset_id: keyset_id.into(),
                         ttl: now,
                         discounted: rnd_bill.sum,
                         wallet_pubkey,
@@ -748,7 +819,7 @@ mod tests {
             .returning(move |_, _| {
                 Ok(vec![Quote {
                     status: Status::Offered {
-                        keyset_id,
+                        keyset_id: keyset_id.into(),
                         ttl: now,
                         discounted: rnd_bill.sum,
                         wallet_pubkey,
@@ -856,7 +927,7 @@ mod tests {
         let discounted = quote.bill.sum - btc::Amount::from_sat(10);
         let bill_id = quote.bill.id.clone();
         quote.status = Status::FailedEbillValidation {
-            keyset_id,
+            keyset_id: keyset_id.into(),
             discounted,
             wallet_pubkey,
         };
@@ -869,7 +940,7 @@ mod tests {
                 Ok(Some(Quote {
                     id: qid,
                     status: Status::FailedEbillValidation {
-                        keyset_id,
+                        keyset_id: keyset_id.into(),
                         discounted,
                         wallet_pubkey,
                     },
@@ -887,7 +958,7 @@ mod tests {
                             discounted: actual_discounted,
                             wallet_pubkey: actual_wallet_pubkey,
                             fee: actual_fee
-                        } if *actual_keyset_id == keyset_id
+                        } if *actual_keyset_id == keyset_id.into()
                             && *actual_discounted == discounted
                             && *actual_wallet_pubkey == wallet_pubkey
                             && *actual_fee == fee
@@ -899,7 +970,7 @@ mod tests {
         let mut wdc_client = MockWdcClient::new();
         wdc_client
             .expect_get_keys()
-            .with(eq(keyset_id))
+            .with(eq(cashu::Id::from(keyset_id)))
             .times(1)
             .returning(move |_| Ok(keyset.clone()));
 
@@ -920,7 +991,7 @@ mod tests {
                       target,
                       actual_bill_id| {
                     *actual_qid == qid
-                        && *actual_keyset_id == keyset_id
+                        && *actual_keyset_id == keyset_id.into()
                         && *actual_wallet_pubkey == wallet_pubkey
                         && *target == cashu::Amount::from(discounted.to_sat())
                         && *actual_bill_id == bill_id

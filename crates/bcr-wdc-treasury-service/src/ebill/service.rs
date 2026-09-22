@@ -198,7 +198,7 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(|_| Err(Error::InvalidInput(String::new())));
         let service = Service {
             clowdercl: Box::new(clowder_cl),
@@ -208,7 +208,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -230,7 +230,7 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         repo.expect_mint_lookup_by_bill()
             .times(1)
@@ -243,7 +243,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mintop = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -261,7 +261,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap();
     }
@@ -282,11 +282,11 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         let existing = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -309,7 +309,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap();
     }
@@ -329,11 +329,11 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         let existing = MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -351,7 +351,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
-            .new_minting_operation(Uuid::new_v4(), kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(Uuid::new_v4(), kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::AlreadyExists(_)));
@@ -373,11 +373,11 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         let existing = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: cashu::Amount::from(128),
             minted: cashu::Amount::ZERO,
@@ -395,7 +395,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::AlreadyExists(_)));
@@ -417,7 +417,7 @@ mod tests {
         core_cl
             .expect_info()
             .times(2)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         repo.expect_mint_lookup_by_bill()
             .times(1)
@@ -425,7 +425,7 @@ mod tests {
             .returning(|_| Ok(None));
         let stored = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -457,12 +457,12 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id.clone(), now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id.clone(), now)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::ClowderNatsClient(_)));
         service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap();
     }
@@ -483,7 +483,7 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         repo.expect_mint_lookup_by_bill()
             .times(1)
@@ -499,7 +499,7 @@ mod tests {
             .returning(|op| Err(Error::AlreadyExists(op.uid.to_string())));
         let stored = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -517,7 +517,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap();
     }
@@ -538,7 +538,7 @@ mod tests {
         core_cl
             .expect_info()
             .times(1)
-            .with(eq(kid))
+            .with(eq(cashu::Id::from(kid)))
             .returning(move |_| Ok(kinfo.clone().into()));
         repo.expect_mint_lookup_by_bill()
             .times(1)
@@ -549,7 +549,7 @@ mod tests {
             .returning(|op| Err(Error::AlreadyExists(op.uid.to_string())));
         let stored = MintOperation {
             uid: Uuid::new_v4(),
-            kid,
+            kid: kid.into(),
             pub_key,
             target: amount,
             minted: cashu::Amount::ZERO,
@@ -567,7 +567,7 @@ mod tests {
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
-            .new_minting_operation(uid, kid, pub_key, amount, bill_id, now)
+            .new_minting_operation(uid, kid.into(), pub_key, amount, bill_id, now)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::AlreadyExists(_)));
@@ -600,7 +600,7 @@ mod tests {
         });
         let mintop = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: total,
             minted: cashu::Amount::ZERO,
@@ -622,7 +622,7 @@ mod tests {
             repo: Box::new(mintop_repo),
             multiplier: cashu::Amount::ONE,
         };
-        let outputs = signatures_test::generate_blinds(kid, &amounts);
+        let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let response = service.mint(request).await.unwrap();
@@ -649,7 +649,7 @@ mod tests {
             repo: Box::new(mintop_repo),
             multiplier: cashu::Amount::ONE,
         };
-        let outputs = signatures_test::generate_blinds(kid, &amounts);
+        let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let err = service.mint(request).await.unwrap_err();
@@ -689,7 +689,7 @@ mod tests {
         });
         let mintop = MintOperation {
             uid,
-            kid,
+            kid: kid.into(),
             pub_key,
             target: total,
             minted: cashu::Amount::ZERO,
@@ -706,7 +706,7 @@ mod tests {
             repo: Box::new(mintop_repo),
             multiplier: cashu::Amount::ONE,
         };
-        let outputs = signatures_test::generate_blinds(kid, &amounts);
+        let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         (service, request, amounts.len())

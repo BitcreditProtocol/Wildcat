@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::{cashu, core::signature as core_signature, wire::keys as wire_keys};
+use bcr_common::{cashu, core::signature as core_signature};
 use thiserror::Error;
 // ----- local imports
 
@@ -16,12 +16,8 @@ pub enum ChecksError {
     ZeroAmount,
     #[error("non-unique elements")]
     NonUnique,
-    #[error("verify_p2pk: {0}")]
-    P2PK(#[from] cashu::nut11::Error),
-    #[error("verify_htlc: {0}")]
-    HTLC(#[from] cashu::nut14::Error),
-    #[error("verify_offline_exchange_htlc: {0}")]
-    OfflineHTLC(#[from] core_signature::ECashSignatureError),
+    #[error("spending conditions: {0}")]
+    SpendingConditions(#[from] core_signature::ECashSignatureError),
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
@@ -59,13 +55,7 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     }
     // 4. p2pk / htlc
     for proof in proofs {
-        match &proof.witness {
-            Some(cashu::Witness::P2PKWitness(_)) => proof.verify_p2pk()?,
-            // Routed by the committed offline-exchange tag: tagged offline proofs use raw-bytes
-            // verifier, everything else uses cashu's `verify_htlc`.
-            Some(cashu::Witness::HTLCWitness(_)) => core_signature::verify_exchange_htlc(proof)?,
-            None => (),
-        }
+        core_signature::verify_spending_conditions(proof)?;
     }
     Ok(())
 }
@@ -94,7 +84,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
 pub mod test_utils {
     use super::*;
     use crate::keys::test_utils::{generate_blind, publics};
-    use bcr_common::{core_tests, ecash};
+    use bcr_common::{core_tests, ecash, wire::keys as wire_keys};
     use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
@@ -148,7 +138,8 @@ pub mod test_utils {
         signatures: impl std::iter::IntoIterator<Item = (cashu::BlindedMessage, cashu::BlindSignature)>,
     ) -> bool {
         for (msg, sig) in signatures.into_iter() {
-            if msg.keyset_id != keyset.id || sig.keyset_id != keyset.id {
+            let kid = cashu::Id::from(keyset.id);
+            if msg.keyset_id != kid || sig.keyset_id != kid {
                 return false;
             }
             if msg.amount != sig.amount {
@@ -185,7 +176,7 @@ mod tests {
     fn basic_checks_zero_amount() {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(2)];
-        let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
+        let mut blinds: Vec<_> = generate_blinds(keyset.id.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
@@ -206,7 +197,7 @@ mod tests {
     fn basic_checks_unique() {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = vec![cashu::Amount::from(64), cashu::Amount::from(8)];
-        let mut blinds: Vec<_> = generate_blinds(keyset.id, &amounts)
+        let mut blinds: Vec<_> = generate_blinds(keyset.id.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();

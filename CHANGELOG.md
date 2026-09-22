@@ -1,5 +1,6 @@
 # 0.6.0
 * Consolidated key and swap services into core.
+* Adopted the shared maturity boundary, spending-condition check and intermint HTLC helpers from bcr-common; onchain minting now fails closed without a debit keyset.
 * Introduced redemption-date keysets.
 * Added online and offline intermint exchanges.
 * Expanded Clowder and multisig integration.

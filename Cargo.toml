@@ -20,8 +20,7 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", tag = "v0.6.0"}
-bcr-ebill-core = {git = "https://github.com/BitcreditProtocol/Bitcredit-Core.git", rev = "bd51d8227b9dd589271b6fa99c6e22f7962737d6"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "3c914f0"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
@@ -54,7 +53,3 @@ url = {version = "2.5.4"}
 utoipa = {version = "5"}
 utoipa-swagger-ui = {version = "9"}
 uuid = {version = "1"}
-
-# due to https://github.com/rust-lang/cargo/issues/5478 we need to use a different source
-[patch."https://github.com/BitcreditProtocol/bcr-common.git"]
-bcr-common = {path = "./bcr-common"}

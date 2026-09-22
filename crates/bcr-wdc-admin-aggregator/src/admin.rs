@@ -292,6 +292,45 @@ pub async fn list_ebills(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_EBILL_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_bill::BillBalanceResponse , content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_bills_balance_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_bill::BillBalanceResponse>> {
+    let response = ctrl.ebill_cl.get_bills_balance_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
+    path = endpoints::CHECK_BILL_PAYMENT,
+    request_body(content = wire_bill::CheckBillPaymentPayload, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", content_type = "application/json"),
+        (status = 404, description = "bill-id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn check_bill_payment(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_bill::CheckBillPaymentPayload>,
+) -> Result<()> {
+    let response = ctrl.ebill_cl.check_bill_payment(req.bill_id).await;
+    match response {
+        Ok(_) => Ok(()),
+        Err(EbillClientError::ResourceNotFound(resource)) => Err(Error::ResourceNotFound(resource)),
+        Err(e) => Err(Error::EBillClient(e)),
+    }
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_EBILL_ENDORSEMENTS,
     params(
         ("bid" = String, Path, description = "the ebill id")
@@ -796,5 +835,39 @@ pub async fn get_add_reserve_status(
     Path(rid): Path<Uuid>,
 ) -> Result<Json<wire_clowder::AddReserveResponse>> {
     let response = ctrl.clwdr_cl.get_reserve(rid).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_ONCHAIN_HISTORY,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::OnchainOperationsResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_onchain_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::OnchainOperationsResponse>> {
+    let response = ctrl.clwdr_cl.get_onchain_operations_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_KEYSETS_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::KeysetsBalanceResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_keysets_balance(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::KeysetsBalanceResponse>> {
+    let response = ctrl.clwdr_cl.get_keysets_balance().await?;
     Ok(Json(response))
 }

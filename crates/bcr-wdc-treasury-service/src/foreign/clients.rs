@@ -33,15 +33,17 @@ impl foreign::KeysClient for CoreCl {
             .core
             .get_or_create_keyset_with_expiration(expiration)
             .await?;
-        let keyset = self.core.keys(kinfo.id).await?;
+        let keyset = self.core.keys(kinfo.id.into()).await?;
         Ok(keyset)
     }
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let signatures = self.core.sign(blinds).await?;
-        Ok(signatures)
+        let c_blinds: Vec<_> = blinds.iter().cloned().map(From::from).collect();
+        let signatures = self.core.sign(&c_blinds).await?;
+        Ok(signatures.into_iter().map(From::from).collect())
     }
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.core.burn(proofs).await?;
+        let c_proofs = proofs.into_iter().map(From::from).collect();
+        self.core.burn(c_proofs).await?;
         Ok(())
     }
     async fn proof_states(
@@ -278,9 +280,10 @@ impl ForeignClient for MintClient {
                 inputs: fps.clone(),
             })
             .await?;
+        let c_outputs = outputs.into_iter().map(From::from).collect();
         let request = bcr_common::client::mint::Client::prepare_swap_commitment_request(
             fps,
-            outputs,
+            c_outputs,
             expiry.unix_timestamp() as u64,
             self.my_pk,
             attestation,
@@ -322,7 +325,7 @@ impl ForeignClient for MintClient {
 
     async fn list_keyset_infos(&self) -> Result<HashMap<cashu::Id, ecash::KeySetInfo>> {
         let kinfos = self.foreign_cl.list_keyset_info(Default::default()).await?;
-        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id, kinfo)));
+        let map = HashMap::from_iter(kinfos.into_iter().map(|kinfo| (kinfo.id.into(), kinfo)));
         Ok(map)
     }
 

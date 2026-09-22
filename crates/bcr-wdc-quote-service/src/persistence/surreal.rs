@@ -10,7 +10,7 @@ use uuid::Uuid;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence::Repository,
+    persistence::{self, DbBillInfo, Repository},
     quotes,
     service::{ListFilters, SortOrder},
     TStamp,
@@ -21,28 +21,32 @@ use crate::{
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QuoteDBEntry {
     qid: surrealdb::Uuid, // can't be `id`, reserved word in surreal
-    bill: quotes::BillInfo,
+    bill: DbBillInfo,
     #[serde(with = "time::serde::rfc3339")]
     submitted: TStamp,
     status: quotes::Status,
 }
 
-impl From<QuoteDBEntry> for quotes::Quote {
-    fn from(dbq: QuoteDBEntry) -> Self {
-        Self {
-            id: dbq.qid,
-            bill: dbq.bill,
-            submitted: dbq.submitted,
-            status: dbq.status,
-        }
-    }
+fn quote_from_dbentry(dbq: QuoteDBEntry) -> Result<quotes::Quote> {
+    let QuoteDBEntry {
+        qid,
+        bill,
+        submitted,
+        status,
+    } = dbq;
+    Ok(quotes::Quote {
+        id: qid,
+        bill: quotes::BillInfo::try_from(bill)?,
+        submitted,
+        status,
+    })
 }
 
 impl From<quotes::Quote> for QuoteDBEntry {
     fn from(quote: quotes::Quote) -> Self {
         Self {
             qid: quote.id,
-            bill: quote.bill,
+            bill: DbBillInfo::from(quote.bill),
             submitted: quote.submitted,
             status: quote.status,
         }
@@ -53,8 +57,8 @@ impl From<quotes::Quote> for QuoteDBEntry {
 struct LightQuoteDBEntry {
     qid: uuid::Uuid,
     status: quotes::StatusDiscriminants,
-    sum: bitcoin::Amount,
-    #[serde(with = "bcr_common::wire::bill_date")]
+    sum: u64,
+    #[serde(with = "persistence::db_date")]
     maturity_date: time::Date,
     #[allow(dead_code)]
     #[serde(with = "time::serde::rfc3339")]
@@ -65,7 +69,7 @@ impl From<LightQuoteDBEntry> for quotes::LightQuote {
         Self {
             id: dbq.qid,
             status: dbq.status,
-            sum: dbq.sum,
+            sum: bitcoin::Amount::from_sat(dbq.sum),
             maturity_date: dbq.maturity_date,
         }
     }
@@ -153,7 +157,7 @@ impl DBQuotes {
             statement,
             first,
             filters.bill_payer_id,
-            "bill.payer.node_id == $bill_payer_id"
+            "(bill.payee.Ident.node_id == $bill_payer_id OR bill.payee.Anon.node_id == $bill_payer_id)"
         );
         #[allow(unused_assignments)]
         {
@@ -161,7 +165,7 @@ impl DBQuotes {
                 statement,
                 first,
                 filters.bill_holder_id,
-                "bill.holder.node_id == $bill_holder_id"
+                "(bill.current_holder.Ident.node_id == $bill_holder_id OR bill.current_holder.Anon.node_id == $bill_holder_id)"
             );
         }
         if let Some(sort) = sort {
@@ -190,8 +194,8 @@ impl DBQuotes {
             .db
             .query("SELECT * FROM type::table($table) WHERE bill.id == $bill AND (bill.current_holder.Anon.node_id == $endorser OR bill.current_holder.Ident.node_id == $endorser) ORDER BY submitted DESC")
             .bind(("table", Self::TABLE))
-            .bind(("bill", bill.to_owned()))
-            .bind(("endorser", endorser.to_owned()))
+            .bind(("bill", bill.to_string()))
+            .bind(("endorser", endorser.to_string()))
             .await?
             .take(0)?;
         Ok(results)
@@ -205,7 +209,8 @@ impl Repository for DBQuotes {
             .load(qid)
             .await
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
-            .map(quotes::Quote::from);
+            .map(quote_from_dbentry)
+            .transpose()?;
         Ok(res)
     }
 
@@ -332,8 +337,8 @@ impl Repository for DBQuotes {
             .await
             .map_err(|e| Error::QuotesRepository(anyhow!(e)))?
             .into_iter()
-            .map(quotes::Quote::from)
-            .collect();
+            .map(quote_from_dbentry)
+            .collect::<Result<Vec<_>>>()?;
         Ok(res)
     }
 

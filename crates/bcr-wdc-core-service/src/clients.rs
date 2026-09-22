@@ -105,13 +105,13 @@ impl ClowderClient for ClowderCl {
 
     async fn new_keyset(&self, keyset: ecash::KeySet) -> Result<()> {
         let request = wire_clowder::KeysetCreationRequest {
-            id: keyset.id,
+            id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
             unit: keyset.unit.clone(),
         };
         let response = wire_clowder::KeysetCreationResponse {
             public_keys: keyset.keys.keys().clone(),
-            id: keyset.id,
+            id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
             unit: keyset.unit,
         };
@@ -125,9 +125,10 @@ impl ClowderClient for ClowderCl {
     ) -> Result<(String, schnorr::Signature)> {
         let (content, _) = signature::serialize_borsh_msg_b64(&request)
             .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
+        let c_outputs = request.outputs.iter().cloned().map(From::from).collect();
         let request = wire_clowder::SwapCommitmentRequest {
             inputs: request.inputs,
-            outputs: request.outputs,
+            outputs: c_outputs,
             expiry: request.expiry,
             wallet_key: request.wallet_key.into(),
         };

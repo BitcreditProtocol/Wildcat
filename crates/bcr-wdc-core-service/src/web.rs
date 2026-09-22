@@ -63,7 +63,7 @@ pub async fn lookup_keys_v1(
         keys: cashu::Keys::from(mint_keyset.keys),
         final_expiry: mint_keyset.final_expiry,
         unit: mint_keyset.unit,
-        id: mint_keyset.id,
+        id: mint_keyset.id.into(),
         input_fee_ppk: mint_keyset.input_fee_ppk,
     };
     let response = cashu::KeysResponse {
@@ -94,8 +94,6 @@ pub async fn restore(
     State(ctrl): State<Arc<service::Service>>,
     Json(req): Json<cashu::RestoreRequest>,
 ) -> Result<Json<cashu::RestoreResponse>> {
-    tracing::debug!("Received wallet restore request");
-
     let mut response = cashu::RestoreResponse {
         outputs: Vec::new(),
         signatures: Vec::new(),
