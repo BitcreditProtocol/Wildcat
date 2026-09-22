@@ -24,7 +24,6 @@ bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev =
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
-bcr-wdc-webapi = {path = "./crates/bcr-wdc-webapi"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
