@@ -71,11 +71,13 @@ jobs:
         CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       run: |
         set -euo pipefail
-        test "$GITHUB_REF" = refs/heads/master || exit 1
+        # Name the failing guard: a bare exit leaves the log without a reason.
+        stop() { echo "::error::$1"; exit 1; }
+        test "$GITHUB_REF" = refs/heads/master || stop "Nightly images are only published from master, not $GITHUB_REF"
         if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
-          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
-          test "$GITHUB_SHA" = "$EXPECTED_SHA" || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || stop "expected_sha must be a full 40 character commit SHA"
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || stop "candidate_run_id must be a positive run ID"
+          test "$GITHUB_SHA" = "$EXPECTED_SHA" || stop "master moved: the candidate captured $EXPECTED_SHA, this run is on $GITHUB_SHA"
         fi
 
     - name: Detect code changes

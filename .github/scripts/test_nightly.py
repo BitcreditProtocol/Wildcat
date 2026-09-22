@@ -9,8 +9,19 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = json.loads(subprocess.check_output(
-    ["yq", "-o=json", ".", str(ROOT / "workflows/nightly.yml")], text=True))
+
+
+def workflow(path):
+    """Read a workflow through yq, naming the missing tool instead of raising FileNotFoundError."""
+    try:
+        return json.loads(subprocess.check_output(["yq", "-o=json", ".", str(path)], text=True))
+    except FileNotFoundError as error:
+        raise SystemExit(f"yq is required to read {path.name}; install it and rerun") from error
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise SystemExit(f"{path.name} could not be parsed as YAML: {error}") from error
+
+
+WORKFLOW = workflow(ROOT / "workflows/nightly.yml")
 
 
 class NightlyTests(unittest.TestCase):
@@ -29,6 +40,9 @@ class NightlyTests(unittest.TestCase):
                 result = subprocess.run(["bash", "-c", step["run"]], env=dict(baseline, **changes),
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode == 0, expected == 0)
+                # A refusal has to say which guard stopped it, not just exit non-zero.
+                if expected:
+                    self.assertIn("::error::", result.stdout)
 
     def test_records_both_registries_from_source_specific_tags(self):
         steps = WORKFLOW["jobs"]["wildcat-images"]["steps"]
