@@ -29,3 +29,4 @@ target/
 
 # env vars for docker compose
 .env
+__pycache__/
