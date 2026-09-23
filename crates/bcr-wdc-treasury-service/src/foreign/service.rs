@@ -15,7 +15,8 @@ use crate::{
     error::{Error, Result},
     foreign::{
         fingerprints_vec_to_map, proof, signed_swap_with_foreign, to_mint_proofs_map,
-        ClowderClient, KeysClient, MintClientFactory, OfflineRepository, OnlineRepository,
+        ClowderClient, KeysClient, MintBalance, MintClientFactory, OfflineRepository,
+        OnlineRepository,
     },
     TStamp,
 };
@@ -262,6 +263,33 @@ impl Service {
         )
         .await?;
         Ok(offline_amount)
+    }
+
+    /// Foreign eCash held per issuing mint: swapped and owned outright, and held for
+    /// a mint that is still offline. A mint shows up if either figure is non-zero.
+    pub async fn balance(&self) -> Result<Vec<MintBalance>> {
+        let settled = self.online_repo.settled_balance().await?;
+        let mut unsettled = self.offline_repo.unsettled_balance().await?;
+        let mut balances = Vec::with_capacity(settled.len() + unsettled.len());
+        for (mint_id, settled) in settled {
+            // Taking it out leaves only the mints that have nothing settled yet.
+            let unsettled = unsettled.remove(&mint_id).unwrap_or_default();
+            balances.push(MintBalance {
+                mint_id,
+                settled,
+                unsettled,
+            });
+        }
+        balances.extend(
+            unsettled
+                .into_iter()
+                .map(|(mint_id, unsettled)| MintBalance {
+                    mint_id,
+                    settled: cashu::Amount::ZERO,
+                    unsettled,
+                }),
+        );
+        Ok(balances)
     }
 }
 
@@ -698,6 +726,64 @@ mod tests {
             outputs,
             &core::generate_random_keypair(),
         )
+    }
+
+    // A mint with only settled, one with only unsettled, and one with both.
+    #[tokio::test]
+    async fn balance_unions_the_two_stores() {
+        let settled_only = core::generate_random_keypair().public_key();
+        let unsettled_only = core::generate_random_keypair().public_key();
+        let both = core::generate_random_keypair().public_key();
+
+        let mut online_repo = crate::foreign::MockOnlineRepository::new();
+        online_repo
+            .expect_settled_balance()
+            .times(1)
+            .returning(move || {
+                Ok(HashMap::from([
+                    (settled_only, cashu::Amount::from(8u64)),
+                    (both, cashu::Amount::from(16u64)),
+                ]))
+            });
+        let mut offline_repo = crate::foreign::MockOfflineRepository::new();
+        offline_repo
+            .expect_unsettled_balance()
+            .times(1)
+            .returning(move || {
+                Ok(HashMap::from([
+                    (unsettled_only, cashu::Amount::from(2u64)),
+                    (both, cashu::Amount::from(4u64)),
+                ]))
+            });
+
+        let service = Service {
+            online_repo: Arc::new(online_repo),
+            offline_repo: Arc::new(offline_repo),
+            keys: Arc::new(crate::foreign::MockKeysClient::new()),
+            clowder: Arc::new(crate::foreign::MockClowderClient::new()),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+            offline_exchange_lock_secs: 7 * 24 * 3600,
+        };
+        let balances = service.balance().await.unwrap();
+
+        assert_eq!(balances.len(), 3);
+        let by_mint: HashMap<_, _> = balances
+            .into_iter()
+            .map(|b| (b.mint_id, (b.settled, b.unsettled)))
+            .collect();
+        assert_eq!(
+            by_mint[&settled_only],
+            (cashu::Amount::from(8u64), cashu::Amount::ZERO)
+        );
+        assert_eq!(
+            by_mint[&unsettled_only],
+            (cashu::Amount::ZERO, cashu::Amount::from(2u64))
+        );
+        assert_eq!(
+            by_mint[&both],
+            (cashu::Amount::from(16u64), cashu::Amount::from(4u64))
+        );
     }
 
     fn redeem_service(
