@@ -857,6 +857,23 @@ pub async fn get_onchain_history(
 
 #[utoipa::path(
     get,
+    path = endpoints::FOREIGN_BALANCE,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_treasury::ForeignBalanceResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_foreign_balance(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_treasury::ForeignBalanceResponse>> {
+    let response = ctrl.treasury_cl.foreign_balance().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::GET_CLOWDER_KEYSETS_BALANCE,
     params(
     ),

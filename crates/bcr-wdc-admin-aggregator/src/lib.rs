@@ -136,6 +136,7 @@ pub mod endpoints {
     pub const DENIED_MELTOPS: &str = "/v1/admin/treasury/onchain/meltops/denied";
     pub const DENIED_MELTOP: &str = "/v1/admin/treasury/onchain/meltops/denied/{qid}";
     pub const FEES_TOKEN: &str = "/v1/admin/fees/token";
+    pub const FOREIGN_BALANCE: &str = "/v1/admin/treasury/foreign/balance";
 }
 
 pub fn routes(ctrl: AppController) -> Router {
@@ -240,6 +241,7 @@ pub fn routes(ctrl: AppController) -> Router {
             post(admin::post_ebill_reqtopay),
         )
         .route(endpoints::DENIED_MELTOPS, get(admin::list_denied_meltops))
+        .route(endpoints::FOREIGN_BALANCE, get(admin::get_foreign_balance))
         .route(
             endpoints::DENIED_MELTOP,
             delete(admin::delete_denied_meltop),
@@ -293,6 +295,8 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_treasury::MintOperationStatus,
         wire_treasury::DeniedMeltOperations,
         wire_treasury::FeesTokenResponse,
+        wire_treasury::ForeignBalanceEntry,
+        wire_treasury::ForeignBalanceResponse,
         // utoipa unit type
         utoipa::TupleUnit,
     ),),
@@ -340,6 +344,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::list_denied_meltops,
         admin::delete_denied_meltop,
         admin::collect_fees_token,
+        admin::get_foreign_balance,
     )
 )]
 pub struct ApiDoc;
