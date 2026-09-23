@@ -22,6 +22,16 @@ use crate::{error::Result, TStamp};
 
 pub use service::Service;
 
+/// Foreign eCash held from one issuing mint.
+#[derive(Debug, Clone)]
+pub struct MintBalance {
+    pub mint_id: secp256k1::PublicKey,
+    /// Swapped and owned outright.
+    pub settled: cashu::Amount,
+    /// Held, but the issuing mint is offline so it cannot be swapped yet.
+    pub unsettled: cashu::Amount,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {

@@ -323,6 +323,10 @@ where
         .route(
             cl_treasury::admin_ep::DENIED_MELTOP,
             delete(admin::delete_denied_meltop),
+        )
+        .route(
+            cl_treasury::admin_ep::FOREIGN_BALANCE,
+            get(admin::foreign_balance),
         );
     admin.merge(web).with_state(app)
 }
