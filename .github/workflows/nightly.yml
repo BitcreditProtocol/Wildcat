@@ -91,7 +91,6 @@ jobs:
             - 'bcr-common/**'
             - 'Cargo.toml'
             - 'Cargo.lock'
-            - 'recipe.json'
             - 'docker/**/Dockerfile'
             - '.github/workflows/nightly.yml'
 
