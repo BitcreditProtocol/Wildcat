@@ -19,7 +19,7 @@ members = [
 anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
-axum-test = {version = "17"}
+axum-test = {version = "21"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "562a37c"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
