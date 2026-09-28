@@ -690,6 +690,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "bcr-wdc-mint-service"
+version = "0.5.0-alpha"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-test",
+ "bcr-common",
+ "bcr-wdc-mint-service",
+ "bcr-wdc-utils",
+ "bip39",
+ "bitcoin",
+ "config",
+ "futures",
+ "itertools 0.15.0",
+ "mockall",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "surrealdb",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "bcr-wdc-quote-service"
 version = "0.5.0-alpha"
 dependencies = [

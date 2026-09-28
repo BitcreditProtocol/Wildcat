@@ -89,7 +89,7 @@ class NightlyTests(unittest.TestCase):
         for name in ("base-image", "wildcat-images"):
             self.assertIn("github.event_name == 'workflow_dispatch' ||", jobs[name]["if"])
         expected = {"bcr-wdc-" + name for name in (
-            "core-service", "treasury-service", "quote-service", "wallet-aggregator", "admin-aggregator")}
+            "core-service", "treasury-service", "quote-service", "wallet-aggregator", "admin-aggregator", "mint-service")}
         self.assertEqual({s["name"] for s in jobs["wildcat-images"]["strategy"]["matrix"]["service"]}, expected)
         save = next(s for s in jobs["wildcat-images"]["steps"] if s.get("name") == "Save the image result")
         self.assertEqual(save["with"]["retention-days"], 90)

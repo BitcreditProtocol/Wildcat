@@ -9,6 +9,7 @@ resolver = "2"
 members = [
     "crates/bcr-wdc-admin-aggregator",
     "crates/bcr-wdc-core-service",
+    "crates/bcr-wdc-mint-service",
     "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-treasury-service",
     "crates/bcr-wdc-utils",
@@ -22,6 +23,8 @@ axum = {version = "0.8"}
 axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "562a37c"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
+bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
+bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
