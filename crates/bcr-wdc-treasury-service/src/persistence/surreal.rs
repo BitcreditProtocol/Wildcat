@@ -893,11 +893,12 @@ impl foreign::OnlineRepository for DBForeignOnline {
                 locktime: locktime.unix_timestamp(),
             });
         }
-        let _: Vec<ForeignIssuedProofDBEntry> = self
-            .db
-            .insert(Self::ISSUED_TABLE)
-            .content(entries)
+        self.db
+            .query("INSERT IGNORE $entries")
+            .bind(("entries", entries))
             .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .check()
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
@@ -952,6 +953,51 @@ struct ForeignFingerprintDBEntry {
     mint_id: String,
 }
 
+impl ForeignFingerprintDBEntry {
+    fn new(
+        mint_id: secp256k1::PublicKey,
+        hash: Sha256Hash,
+        fp: wire_keys::ProofFingerprint,
+    ) -> Self {
+        Self {
+            id: RecordId::from_table_key(DBForeignOffline::FPS_TABLE, hash.to_string()),
+            amount: fp.amount,
+            keyset_id: fp.keyset_id,
+            y: fp.y,
+            c: fp.c,
+            dleq: fp.dleq,
+            mint_id: mint_id.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OfflineReservationDBEntry {
+    id: RecordId,
+    exchange_digest: [u8; 32],
+    alpha_id: String,
+    evidence_digest: [u8; 32],
+    proofs: Option<Vec<cashu::Proof>>,
+}
+
+impl From<OfflineReservationDBEntry> for foreign::OfflineReservation {
+    fn from(entry: OfflineReservationDBEntry) -> Self {
+        Self {
+            exchange_digest: entry.exchange_digest,
+            alpha_id: secp256k1::PublicKey::from_str(&entry.alpha_id)
+                .expect("alpha_id <--> String"),
+            evidence_digest: entry.evidence_digest,
+            proofs: entry.proofs,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OfflineReservedYDBEntry {
+    id: RecordId,
+    digest: RecordId,
+}
+
 #[derive(Debug, Clone)]
 pub struct DBForeignOffline {
     db: Surreal<Any>,
@@ -961,6 +1007,17 @@ impl DBForeignOffline {
     const FPS_TABLE: &'static str = "offline-fps";
     const PROOFS_TABLE: &'static str = "offline-proofs";
     const REDEMPTIONS_TABLE: &'static str = "offline-redemptions";
+    const RESERVATIONS_TABLE: &'static str = "offline-reservations";
+    const RESERVED_YS_TABLE: &'static str = "offline-reserved-ys";
+
+    fn reservation_rid(exchange_digest: [u8; 32]) -> RecordId {
+        let key = Sha256Hash::from_byte_array(exchange_digest).to_string();
+        RecordId::from_table_key(Self::RESERVATIONS_TABLE, key)
+    }
+
+    async fn load_reservation(&self, rid: RecordId) -> Result<Option<OfflineReservationDBEntry>> {
+        self.db.select(rid).await.map_err(|e| Error::DB(anyhow!(e)))
+    }
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -980,19 +1037,10 @@ impl foreign::OfflineRepository for DBForeignOffline {
         hash: Vec<Sha256Hash>,
     ) -> Result<()> {
         for (hash, fp) in hash.into_iter().zip(fps) {
-            let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
-            let entry = ForeignFingerprintDBEntry {
-                id: rid.clone(),
-                amount: fp.amount,
-                keyset_id: fp.keyset_id,
-                y: fp.y,
-                c: fp.c,
-                dleq: fp.dleq,
-                mint_id: mint_id.to_string(),
-            };
+            let entry = ForeignFingerprintDBEntry::new(mint_id, hash, fp);
             let _: Option<ForeignFingerprintDBEntry> = self
                 .db
-                .insert(rid)
+                .insert(entry.id.clone())
                 .content(entry)
                 .await
                 .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -1134,28 +1182,107 @@ impl foreign::OfflineRepository for DBForeignOffline {
 
     async fn reserve_exchange(
         &self,
-        _reservation: foreign::OfflineReservation,
-        _ys: &[cashu::PublicKey],
+        reservation: foreign::OfflineReservation,
+        ys: &[cashu::PublicKey],
     ) -> Result<bool> {
-        todo!()
+        let rid = Self::reservation_rid(reservation.exchange_digest);
+        let entry = OfflineReservationDBEntry {
+            id: rid.clone(),
+            exchange_digest: reservation.exchange_digest,
+            alpha_id: reservation.alpha_id.to_string(),
+            evidence_digest: reservation.evidence_digest,
+            proofs: reservation.proofs,
+        };
+        let y_rids: Vec<RecordId> = ys
+            .iter()
+            .map(|y| RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string()))
+            .collect();
+        // CREATE fails on an existing id, which aborts the whole transaction.
+        let errors = self
+            .db
+            .query(
+                "
+                BEGIN;
+                    CREATE $rid CONTENT $entry RETURN NONE;
+                    FOR $y IN $ys { CREATE $y SET digest = $rid RETURN NONE; };
+                COMMIT;
+                ",
+            )
+            .bind(("rid", rid.clone()))
+            .bind(("entry", entry))
+            .bind(("ys", y_rids))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take_errors();
+        if errors.is_empty() {
+            return Ok(true);
+        }
+        if self.load_reservation(rid).await?.is_some()
+            || self.search_reservation(ys).await?.is_some()
+        {
+            return Ok(false);
+        }
+        Err(Error::DB(anyhow!("reserve exchange: {errors:?}")))
     }
 
     async fn search_reservation(
         &self,
-        _ys: &[cashu::PublicKey],
+        ys: &[cashu::PublicKey],
     ) -> Result<Option<foreign::OfflineReservation>> {
-        todo!()
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string());
+            let held: Option<OfflineReservedYDBEntry> = self
+                .db
+                .select(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            if let Some(held) = held {
+                return Ok(self.load_reservation(held.digest).await?.map(Into::into));
+            }
+        }
+        Ok(None)
     }
 
     async fn issue_reservation(
         &self,
-        _exchange_digest: [u8; 32],
-        _mint_id: secp256k1::PublicKey,
-        _fps: Vec<wire_keys::ProofFingerprint>,
-        _hashes: Vec<Sha256Hash>,
-        _proofs: Vec<cashu::Proof>,
+        exchange_digest: [u8; 32],
+        mint_id: secp256k1::PublicKey,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        proofs: Vec<cashu::Proof>,
     ) -> Result<bool> {
-        todo!()
+        let rid = Self::reservation_rid(exchange_digest);
+        let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
+            .into_iter()
+            .zip(fps)
+            .map(|(hash, fp)| ForeignFingerprintDBEntry::new(mint_id, hash, fp))
+            .collect();
+        let errors = self
+            .db
+            .query(
+                "
+                BEGIN;
+                    LET $issued = UPDATE $rid SET proofs = $proofs WHERE proofs = NONE RETURN AFTER;
+                    IF array::is_empty($issued) { THROW 'not reserved' };
+                    IF !array::is_empty($fps) { INSERT $fps };
+                COMMIT;
+                ",
+            )
+            .bind(("rid", rid.clone()))
+            .bind(("proofs", proofs))
+            .bind(("fps", fp_entries))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take_errors();
+        if errors.is_empty() {
+            return Ok(true);
+        }
+        match self.load_reservation(rid).await? {
+            Some(entry) if entry.proofs.is_none() => {
+                Err(Error::DB(anyhow!("issue reservation: {errors:?}")))
+            }
+            _ => Ok(false),
+        }
     }
 }
 

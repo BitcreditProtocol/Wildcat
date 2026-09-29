@@ -330,7 +330,10 @@ mod tests {
             exchange_digest: other_digest,
             ..reserved.clone()
         };
-        assert!(!db.reserve_exchange(other_reserved, &other_ys).await.unwrap());
+        assert!(!db
+            .reserve_exchange(other_reserved, &other_ys)
+            .await
+            .unwrap());
 
         let issue = |proofs: Vec<cashu::Proof>| {
             db.issue_reservation(
@@ -384,15 +387,17 @@ mod tests {
     #[tokio::test]
     async fn test_offline_exchange_reservation_proofs_in_order() {
         foreign_offline_reservation_proofs_in_order(inmemory::OfflineRepository::default()).await;
-        foreign_offline_reservation_proofs_in_order(init_surreal_foreign_offline_db().await)
-            .await;
+        foreign_offline_reservation_proofs_in_order(init_surreal_foreign_offline_db().await).await;
     }
     async fn foreign_offline_reservation_proofs_in_order(db: impl foreign::OfflineRepository) {
         let ys = random_ys(1);
         let mut proofs = generate_test_proofs(6);
         proofs.sort_by_key(|p| std::cmp::Reverse(p.y().unwrap()));
         let mint_id = core::generate_random_keypair().public_key();
-        assert!(db.reserve_exchange(reservation([3u8; 32]), &ys).await.unwrap());
+        assert!(db
+            .reserve_exchange(reservation([3u8; 32]), &ys)
+            .await
+            .unwrap());
         assert!(db
             .issue_reservation([3u8; 32], mint_id, vec![], vec![], proofs.clone())
             .await
@@ -412,9 +417,7 @@ mod tests {
             .await;
     }
     // Issuing an unreserved digest writes neither proofs nor fingerprints.
-    async fn foreign_offline_reservation_issue_needs_reserved(
-        db: impl foreign::OfflineRepository,
-    ) {
+    async fn foreign_offline_reservation_issue_needs_reserved(db: impl foreign::OfflineRepository) {
         let request: OfflineExchangeRequest = fixture_field(&retry_fixture(), "request");
         let mint_id = core::generate_random_keypair().public_key();
         assert!(!db

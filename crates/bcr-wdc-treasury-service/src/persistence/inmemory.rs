@@ -86,11 +86,12 @@ impl foreign::OnlineRepository for OnlineRepository {
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.issued.lock().unwrap();
-        locked.extend(
-            proofs
-                .into_iter()
-                .map(|p| (hash, locktime.unix_timestamp(), p)),
-        );
+        for p in proofs {
+            let y = p.y()?;
+            if !locked.iter().any(|(_, _, q)| q.y().is_ok_and(|qy| qy == y)) {
+                locked.push((hash, locktime.unix_timestamp(), p));
+            }
+        }
         Ok(())
     }
 
@@ -148,6 +149,13 @@ pub struct OfflineRepository {
     fingerprints: Arc<Mutex<HashMap<Sha256Hash, (secp256k1::PublicKey, ProofFingerprint)>>>,
     proofs: Arc<Mutex<HashMap<secp256k1::PublicKey, Vec<cashu::Proof>>>>,
     redemptions: Arc<Mutex<HashSet<[u8; 32]>>>,
+    reservations: Arc<Mutex<Reservations>>,
+}
+
+#[derive(Default, Debug)]
+struct Reservations {
+    by_digest: HashMap<[u8; 32], foreign::OfflineReservation>,
+    by_y: HashMap<cashu::PublicKey, [u8; 32]>,
 }
 
 #[async_trait]
@@ -219,28 +227,53 @@ impl foreign::OfflineRepository for OfflineRepository {
 
     async fn reserve_exchange(
         &self,
-        _reservation: foreign::OfflineReservation,
-        _ys: &[cashu::PublicKey],
+        reservation: foreign::OfflineReservation,
+        ys: &[cashu::PublicKey],
     ) -> Result<bool> {
-        todo!()
+        let mut locked = self.reservations.lock().unwrap();
+        let digest = reservation.exchange_digest;
+        if locked.by_digest.contains_key(&digest) || ys.iter().any(|y| locked.by_y.contains_key(y))
+        {
+            return Ok(false);
+        }
+        locked.by_digest.insert(digest, reservation);
+        locked.by_y.extend(ys.iter().map(|y| (*y, digest)));
+        Ok(true)
     }
 
     async fn search_reservation(
         &self,
-        _ys: &[cashu::PublicKey],
+        ys: &[cashu::PublicKey],
     ) -> Result<Option<foreign::OfflineReservation>> {
-        todo!()
+        let locked = self.reservations.lock().unwrap();
+        Ok(ys
+            .iter()
+            .find_map(|y| locked.by_y.get(y))
+            .and_then(|digest| locked.by_digest.get(digest))
+            .cloned())
     }
 
     async fn issue_reservation(
         &self,
-        _exchange_digest: [u8; 32],
-        _mint_id: secp256k1::PublicKey,
-        _fps: Vec<ProofFingerprint>,
-        _hashes: Vec<Sha256Hash>,
-        _proofs: Vec<cashu::Proof>,
+        exchange_digest: [u8; 32],
+        mint_id: secp256k1::PublicKey,
+        fps: Vec<ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        proofs: Vec<cashu::Proof>,
     ) -> Result<bool> {
-        todo!()
+        let mut locked = self.reservations.lock().unwrap();
+        let Some(reservation) = locked.by_digest.get_mut(&exchange_digest) else {
+            return Ok(false);
+        };
+        if reservation.proofs.is_some() {
+            return Ok(false);
+        }
+        reservation.proofs = Some(proofs);
+        let mut fingerprints = self.fingerprints.lock().unwrap();
+        for (h, fp) in hashes.into_iter().zip(fps) {
+            fingerprints.insert(h, (mint_id, fp));
+        }
+        Ok(true)
     }
 }
 
