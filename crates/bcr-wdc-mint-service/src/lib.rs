@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::str::FromStr;
 use std::sync::{atomic::AtomicU64, Arc};
 // ----- extra library imports
 use axum::{
@@ -6,9 +7,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use bcr_common::cashu;
 use bcr_common::client::{
     self,
-    admin::{core as core_ep, treasury::Client as TreasuryClient},
+    admin::{core as core_ep, treasury as treasury_ep},
 };
 use bcr_wdc_utils::nut19;
 // ----- local modules
@@ -17,8 +19,9 @@ pub mod config;
 pub mod core;
 pub mod error;
 pub mod persistence;
+pub mod vault;
 mod web;
-// treasury's modules land here in step 2: vault, onchain, ebill, foreign
+// remaining treasury modules land here: onchain, ebill, foreign
 // local imports
 use crate::{
     core::{clients, factory, service},
@@ -32,6 +35,7 @@ use bcr_common::TStamp;
 #[derive(Clone, FromRef)]
 pub struct AppController {
     pub service: Arc<service::Service>,
+    pub vault: Arc<vault::Service>,
     pub cache: Arc<dyn nut19::Cache>,
 }
 
@@ -42,13 +46,13 @@ impl AppController {
             repository_new,
             clowder_url,
             clowder_nkey_seed,
-            treasury_url,
             clowder_rest_url,
             starting_derivation_path,
             max_expiry_sec,
             minimum_keyset_fees_ppk,
             cache_expiry_sec,
             settle_window_sec,
+            vault: vault_cfg,
         } = cfg;
         let repository = if repository_new.max_connections > 0 {
             let db = persistence::sqlx::Repository::new(repository_new)
@@ -76,30 +80,43 @@ impl AppController {
             .expect("Failed to get clowder info");
         let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
             .expect("secp256k1::PublicKey == cashu::PublicKey");
+        let mint_url = clowder_rest
+            .get_mint_url(&alpha_id)
+            .await
+            .expect("Failed to get mint url");
+        let my_url = cashu::MintUrl::from_str(mint_url.mint_url.as_str())
+            .expect("cashu::MintUrl == reqwest::Url");
+        let mint_id = bcr_common::core::NodeId::new(alpha_id, info.network);
         let clowder = clients::ClowderCl {
             nats: clowder_cl,
             rest: clowder_rest,
         };
         let max_expiry = time::Duration::seconds(max_expiry_sec as i64);
-        let treasury = clients::TreasuryCl {
-            cl: Box::new(TreasuryClient::new(treasury_url)),
-        };
         let settle_window_tout =
             time::OffsetDateTime::now_utc() + time::Duration::seconds(settle_window_sec as i64);
         let service = service::Service {
             repository: repository.clone(),
             clowder: Box::new(clowder),
-            treasury: Box::new(treasury),
             keygen,
             min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
             max_expiry,
             alpha_id,
             settle_window_deadline: settle_window_tout,
         };
+        let config::Vault { db: vault_db, .. } = vault_cfg;
+        let vault_repo = persistence::surreal::DBVault::new(vault_db)
+            .await
+            .expect("Failed to create vault repository");
+        let vault = vault::Service {
+            repo: Box::new(vault_repo),
+            my_url,
+            mint_id,
+        };
         let cache_expiry = time::Duration::seconds(cache_expiry_sec as i64);
         let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
         Self {
             service: Arc::new(service),
+            vault: Arc::new(vault),
             cache,
         }
     }
@@ -109,6 +126,7 @@ pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
 where
     Cntrlr: Send + Sync + Clone + 'static,
     Arc<service::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
     Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
     let web = Router::new()
@@ -136,7 +154,15 @@ where
         )
         .route(core_ep::admin_ep::BURN, post(admin::burn_tokens))
         .route(core_ep::admin_ep::RECOVER, post(admin::recover_tokens))
-        .route(core_ep::admin_ep::RESERVE, post(admin::reserve_ys));
+        .route(core_ep::admin_ep::RESERVE, post(admin::reserve_ys))
+        .route(
+            treasury_ep::admin_ep::FEES_STORE_PROOFS,
+            post(admin::store_fees_proofs),
+        )
+        .route(
+            treasury_ep::admin_ep::FEES_TOKEN,
+            get(admin::generate_fees_token),
+        );
 
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
@@ -160,15 +186,23 @@ pub mod test_utils {
         let service = service::Service {
             repository,
             clowder: Box::new(clients::DummyClowderClient),
-            treasury: Box::new(clients::DummyTreasuryClient),
             keygen,
             min_keyset_fees_ppk: Default::default(),
             max_expiry: time::Duration::seconds(3600),
             alpha_id: mint_kp().public_key(),
             settle_window_deadline: TStamp::UNIX_EPOCH,
         };
+        let vault = vault::Service {
+            repo: Box::new(persistence::inmemory::VaultMap::default()),
+            my_url: cashu::MintUrl::from_str("http://localhost:3338").expect("MintUrl"),
+            mint_id: bcr_common::core::NodeId::new(
+                mint_kp().public_key(),
+                bitcoin::Network::Regtest,
+            ),
+        };
         AppController {
             service: Arc::new(service),
+            vault: Arc::new(vault),
             cache: Arc::new(nut19::Dummy),
         }
     }
@@ -235,6 +269,13 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The same adapter `web::swap_tokens` builds: fee proofs go to the in-process vault.
+    fn treasury(ctrl: &AppController) -> clients::VaultSrvc {
+        clients::VaultSrvc {
+            vault: ctrl.vault.clone(),
+        }
+    }
     use bcr_common::{
         cashu, core, core_tests,
         wire::{keys as wire_keys, swap as wire_swap},
@@ -350,7 +391,7 @@ mod tests {
 
         controller
             .service
-            .swap(proofs, blinds, commitment, now)
+            .swap(&treasury(&controller), proofs, blinds, commitment, now)
             .await
             .unwrap();
     }
@@ -452,7 +493,13 @@ mod tests {
 
         let res = controller
             .service
-            .swap(proofs.clone(), blinds.clone(), commitment, now)
+            .swap(
+                &treasury(&controller),
+                proofs.clone(),
+                blinds.clone(),
+                commitment,
+                now,
+            )
             .await;
         assert!(res.is_err());
         for p in proofs.iter_mut() {
@@ -460,7 +507,13 @@ mod tests {
         }
         controller
             .service
-            .swap(proofs.clone(), blinds, commitment, now)
+            .swap(
+                &treasury(&controller),
+                proofs.clone(),
+                blinds,
+                commitment,
+                now,
+            )
             .await
             .unwrap();
     }

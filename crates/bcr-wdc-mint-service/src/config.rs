@@ -14,11 +14,17 @@ pub struct App {
     pub clowder_url: client::Url,
     #[serde(default)]
     pub clowder_nkey_seed: Option<String>,
-    pub treasury_url: client::Url,
     pub clowder_rest_url: client::Url,
     pub starting_derivation_path: btc32::DerivationPath,
     pub max_expiry_sec: u64,
     pub minimum_keyset_fees_ppk: u64,
     pub cache_expiry_sec: u64,
     pub settle_window_sec: u64,
+    pub vault: Vault,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Vault {
+    pub db: surreal::DBConnConfig,
+    pub new: postgres::DBConnConfig,
 }

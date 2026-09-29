@@ -14,11 +14,11 @@ use bcr_common::{
 use bcr_wdc_utils::{keys as keys_utils, postgres};
 use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
 use sqlx::types::Json;
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, TStamp,
+    persistence, vault, TStamp,
 };
 
 // ----- end imports
@@ -937,6 +937,122 @@ impl persistence::Repository for Repository {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned vault proof blob
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum VaultProofBlob {
+    V1(cashu::Proof),
+}
+// ///////////////////////////////////////////////////////////////////////// DBVault
+
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    pool: PgPool,
+}
+
+impl DBVault {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut y_strs = Vec::with_capacity(proofs.len());
+        let mut blob_values = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            let blob = VaultProofBlob::V1(proof);
+            let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            y_strs.push(y.to_string());
+            blob_values.push(blob_value);
+        }
+        sqlx::query!(
+            r#"
+            INSERT INTO treasury_vault_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
+            "#,
+            &y_strs,
+            &blob_values
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let y_strs: Vec<String> = ys.into_iter().map(|y| y.to_string()).collect();
+        let results = sqlx::query(
+            r#"
+            SELECT blob FROM treasury_vault_proofs WHERE y = ANY($1::text[])
+            "#,
+        )
+        .bind(&y_strs)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let blobs: Vec<Json<VaultProofBlob>> = results
+            .into_iter()
+            .map(|row| {
+                let blob: Json<VaultProofBlob> =
+                    row.try_get("blob").map_err(|e| Error::DB(anyhow!(e)))?;
+                Ok(blob)
+            })
+            .collect::<Result<_>>()?;
+        let proofs = blobs
+            .into_iter()
+            .map(|blob| match blob.0 {
+                VaultProofBlob::V1(proof) => proof,
+            })
+            .collect();
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let results = sqlx::query!(
+            r#"
+            SELECT y FROM treasury_vault_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(results.len());
+        for row in results {
+            let y = cashu::PublicKey::from_str(&row.y).map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query(
+            r#"
+            DELETE FROM treasury_vault_proofs WHERE y = ANY($1::text[])
+            "#,
+        )
+        .bind(&y_strs)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 }

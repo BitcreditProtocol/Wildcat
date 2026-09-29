@@ -99,7 +99,7 @@ pub struct StoredCommitment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Error;
+    use crate::{error::Error, vault};
     use bcr_common::{cashu::ProofsMethods, core, core_tests};
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{
@@ -1292,5 +1292,122 @@ mod tests {
         assert!(result.is_none());
         let result = db.commitment_load(&commitment).await;
         assert!(result.is_ok());
+    }
+
+    //////////////////////////////////////////////////////////////////// vault::Repository
+    async fn init_surreal_vault_db() -> impl vault::Repository {
+        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        surreal::DBVault { db: sdb }
+    }
+    fn init_inmemory_vault_db() -> impl vault::Repository {
+        inmemory::VaultMap::default()
+    }
+
+    fn generate_test_proofs(n: usize) -> Vec<cashu::Proof> {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = vec![cashu::Amount::from(8u64); n];
+        core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+    }
+
+    #[tokio::test]
+    async fn test_vault_store_load_proofs() {
+        let db = init_inmemory_vault_db();
+        vault_store_load_proofs(db).await;
+        let db = init_surreal_vault_db().await;
+        vault_store_load_proofs(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_vault_store_load_proofs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBVault::from_pool(pool);
+        vault_store_load_proofs(db).await;
+    }
+    async fn vault_store_load_proofs(db: impl vault::Repository) {
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let loaded = db.load_proofs(vec![]).await.unwrap();
+        assert!(loaded.is_empty());
+        let loaded = db.load_proofs(ys).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+        for proof in &proofs {
+            assert!(loaded.contains(proof));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vault_load_proofs_partial() {
+        let db = init_inmemory_vault_db();
+        vault_load_proofs_partial(db).await;
+        let db = init_surreal_vault_db().await;
+        vault_load_proofs_partial(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_vault_load_proofs_partial_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBVault::from_pool(pool);
+        vault_load_proofs_partial(db).await;
+    }
+    async fn vault_load_proofs_partial(db: impl vault::Repository) {
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let mut all_ys = ys.clone();
+        let extra_y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        all_ys.push(extra_y);
+        let loaded = db.load_proofs(all_ys).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_vault_list_ys() {
+        let db = init_inmemory_vault_db();
+        vault_list_ys(db).await;
+        let db = init_surreal_vault_db().await;
+        vault_list_ys(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_vault_list_ys_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBVault::from_pool(pool);
+        vault_list_ys(db).await;
+    }
+    async fn vault_list_ys(db: impl vault::Repository) {
+        let ys = db.list_ys().await.unwrap();
+        assert!(ys.is_empty());
+        let proofs = generate_test_proofs(2);
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let ys = db.list_ys().await.unwrap();
+        assert_eq!(ys.len(), 2);
+        for proof in &proofs {
+            assert!(ys.contains(&proof.y().unwrap()));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vault_delete_proofs() {
+        let db = init_inmemory_vault_db();
+        vault_delete_proofs(db).await;
+        let db = init_surreal_vault_db().await;
+        vault_delete_proofs(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_vault_delete_proofs_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBVault::from_pool(pool);
+        vault_delete_proofs(db).await;
+    }
+    async fn vault_delete_proofs(db: impl vault::Repository) {
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        db.store_proofs(proofs.clone()).await.unwrap();
+        let to_delete = &ys[..2];
+        db.delete_proofs(to_delete).await.unwrap();
+        let remaining_ys = db.list_ys().await.unwrap();
+        assert_eq!(remaining_ys.len(), 1);
+        assert!(remaining_ys.contains(&ys[2]));
     }
 }
