@@ -1108,4 +1108,27 @@ mod tests {
             .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
     }
+
+    #[test]
+    fn fixture_exchange_digest() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/offline_exchange_retry.json"
+        ))
+        .unwrap();
+        let request: bcr_common::wire::exchange::OfflineExchangeRequest =
+            serde_json::from_value(fixture["request"].clone()).unwrap();
+        let alpha_id: secp256k1::PublicKey =
+            serde_json::from_value(fixture["alpha_id"].clone()).unwrap();
+        let evidence_digest =
+            <[u8; 32]>::from_hex(fixture["evidence_digest"].as_str().unwrap()).unwrap();
+        let expected = <[u8; 32]>::from_hex(fixture["exchange_digest"].as_str().unwrap()).unwrap();
+        let digest = bcr_common::wire::exchange::exchange_digest(
+            &alpha_id,
+            &evidence_digest,
+            &request.fingerprints,
+            &request.hashes,
+            &request.wallet_pk,
+        );
+        assert_eq!(digest, expected);
+    }
 }
