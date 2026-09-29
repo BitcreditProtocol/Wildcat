@@ -216,6 +216,32 @@ impl foreign::OfflineRepository for OfflineRepository {
         let mut locked = self.redemptions.lock().unwrap();
         Ok(locked.insert(digest))
     }
+
+    async fn reserve_exchange(
+        &self,
+        _reservation: foreign::OfflineReservation,
+        _ys: &[cashu::PublicKey],
+    ) -> Result<bool> {
+        todo!()
+    }
+
+    async fn search_reservation(
+        &self,
+        _ys: &[cashu::PublicKey],
+    ) -> Result<Option<foreign::OfflineReservation>> {
+        todo!()
+    }
+
+    async fn issue_reservation(
+        &self,
+        _exchange_digest: [u8; 32],
+        _mint_id: secp256k1::PublicKey,
+        _fps: Vec<ProofFingerprint>,
+        _hashes: Vec<Sha256Hash>,
+        _proofs: Vec<cashu::Proof>,
+    ) -> Result<bool> {
+        todo!()
+    }
 }
 
 #[allow(dead_code)]

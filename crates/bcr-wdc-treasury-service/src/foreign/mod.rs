@@ -94,6 +94,38 @@ pub trait OfflineRepository: Send + Sync {
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
     /// First writer wins on the digest: `false` if the entry was already redeemed.
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool>;
+    /// Holds the digest and every Y, all or nothing: `false`, with nothing written, if
+    /// any of them is already held.
+    async fn reserve_exchange(
+        &self,
+        reservation: OfflineReservation,
+        ys: &[cashu::PublicKey],
+    ) -> Result<bool>;
+    /// The reservation holding any of `ys`.
+    async fn search_reservation(
+        &self,
+        ys: &[cashu::PublicKey],
+    ) -> Result<Option<OfflineReservation>>;
+    /// Reserved to Issued, storing the proofs in order and the fingerprints in one write:
+    /// `false`, with nothing written, unless the digest is still Reserved.
+    async fn issue_reservation(
+        &self,
+        exchange_digest: [u8; 32],
+        mint_id: secp256k1::PublicKey,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<bool>;
+}
+
+/// An offline exchange's hold on its Ys, keyed by its exchange digest.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OfflineReservation {
+    pub exchange_digest: [u8; 32],
+    pub alpha_id: secp256k1::PublicKey,
+    pub evidence_digest: [u8; 32],
+    /// `None` while Reserved; the issued proofs once Issued.
+    pub proofs: Option<Vec<cashu::Proof>>,
 }
 
 #[cfg_attr(test, mockall::automock)]

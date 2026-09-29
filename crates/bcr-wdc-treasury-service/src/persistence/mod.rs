@@ -12,8 +12,12 @@ pub mod surreal;
 mod tests {
     use super::*;
     use crate::{ebill, error::Error, foreign, onchain, vault};
-    use bcr_common::{cashu, core, core_tests};
+    use bcr_common::{
+        cashu, core, core_tests,
+        wire::exchange::{exchange_digest, OfflineExchangeRequest},
+    };
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
+    use bitcoin::hex::FromHex;
     use std::str::FromStr;
     use uuid::Uuid;
 
@@ -251,6 +255,203 @@ mod tests {
         assert_eq!(balances.len(), 2);
         assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
         assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
+    }
+
+    fn retry_fixture() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/offline_exchange_retry.json"
+        ))
+        .unwrap()
+    }
+    fn fixture_field<T: serde::de::DeserializeOwned>(fixture: &serde_json::Value, key: &str) -> T {
+        serde_json::from_value(fixture[key].clone()).unwrap()
+    }
+    fn fixture_digest(fixture: &serde_json::Value, key: &str) -> [u8; 32] {
+        <[u8; 32]>::from_hex(fixture[key].as_str().unwrap()).unwrap()
+    }
+    fn random_ys(n: usize) -> Vec<cashu::PublicKey> {
+        (0..n)
+            .map(|_| cashu::PublicKey::from(core::generate_random_keypair().public_key()))
+            .collect()
+    }
+    fn reservation(exchange_digest: [u8; 32]) -> foreign::OfflineReservation {
+        foreign::OfflineReservation {
+            exchange_digest,
+            alpha_id: core::generate_random_keypair().public_key(),
+            evidence_digest: [2u8; 32],
+            proofs: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_reservation_worked_example() {
+        foreign_offline_reservation_worked_example(inmemory::OfflineRepository::default()).await;
+        foreign_offline_reservation_worked_example(init_surreal_foreign_offline_db().await).await;
+    }
+    // The request reserves its Y and is issued once; a replay recomputes the stored digest
+    // and gets the stored proofs, while other_request, on the same Y, recomputes another
+    // digest and cannot reserve.
+    async fn foreign_offline_reservation_worked_example(db: impl foreign::OfflineRepository) {
+        let fixture = retry_fixture();
+        let request: OfflineExchangeRequest = fixture_field(&fixture, "request");
+        let other: OfflineExchangeRequest = fixture_field(&fixture, "other_request");
+        let digest = fixture_digest(&fixture, "exchange_digest");
+        let other_digest = fixture_digest(&fixture, "other_exchange_digest");
+        let proof: cashu::Proof = fixture_field(&fixture, "proof");
+        let ys: Vec<_> = request.fingerprints.iter().map(|fp| fp.y).collect();
+        let other_ys: Vec<_> = other.fingerprints.iter().map(|fp| fp.y).collect();
+        let mint_id = core::generate_random_keypair().public_key();
+        let reserved = foreign::OfflineReservation {
+            exchange_digest: digest,
+            alpha_id: fixture_field(&fixture, "alpha_id"),
+            evidence_digest: fixture_digest(&fixture, "evidence_digest"),
+            proofs: None,
+        };
+        let recompute = |found: &foreign::OfflineReservation, req: &OfflineExchangeRequest| {
+            exchange_digest(
+                &found.alpha_id,
+                &found.evidence_digest,
+                &req.fingerprints,
+                &req.hashes,
+                &req.wallet_pk,
+            )
+        };
+
+        assert_eq!(db.search_reservation(&ys).await.unwrap(), None);
+        assert!(db.reserve_exchange(reserved.clone(), &ys).await.unwrap());
+        let found = db.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(found, reserved);
+        assert_eq!(recompute(&found, &request), digest);
+
+        let found = db.search_reservation(&other_ys).await.unwrap().unwrap();
+        assert_eq!(recompute(&found, &other), other_digest);
+        assert_ne!(other_digest, found.exchange_digest);
+        let other_reserved = foreign::OfflineReservation {
+            exchange_digest: other_digest,
+            ..reserved.clone()
+        };
+        assert!(!db.reserve_exchange(other_reserved, &other_ys).await.unwrap());
+
+        let issue = |proofs: Vec<cashu::Proof>| {
+            db.issue_reservation(
+                digest,
+                mint_id,
+                request.fingerprints.clone(),
+                request.hashes.clone(),
+                proofs,
+            )
+        };
+        assert!(issue(vec![proof.clone()]).await.unwrap());
+        assert!(!issue(generate_test_proofs(1)).await.unwrap());
+        let issued = db.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(issued.exchange_digest, digest);
+        assert_eq!(
+            serde_json::to_string(&issued.proofs).unwrap(),
+            serde_json::to_string(&Some(vec![proof])).unwrap()
+        );
+        let (fp_mint, fp) = db.search_fp(&request.hashes[0]).await.unwrap().unwrap();
+        assert_eq!(fp_mint, mint_id);
+        assert_eq!(fp.y, ys[0]);
+        assert_eq!(
+            db.search_reservation(&other_ys).await.unwrap().unwrap(),
+            issued
+        );
+    }
+
+    #[tokio::test]
+    async fn test_offline_exchange_reservation_all_or_nothing() {
+        foreign_offline_reservation_all_or_nothing(inmemory::OfflineRepository::default()).await;
+        foreign_offline_reservation_all_or_nothing(init_surreal_foreign_offline_db().await).await;
+    }
+    // A reservation sharing one Y, or the digest, with another leaves no row behind.
+    async fn foreign_offline_reservation_all_or_nothing(db: impl foreign::OfflineRepository) {
+        let ys = random_ys(3);
+        let first = reservation([1u8; 32]);
+        let second = reservation([2u8; 32]);
+        assert!(db.reserve_exchange(first.clone(), &ys[..1]).await.unwrap());
+        assert!(!db
+            .reserve_exchange(second.clone(), &[ys[1], ys[0]])
+            .await
+            .unwrap());
+        assert_eq!(db.search_reservation(&ys[1..2]).await.unwrap(), None);
+        assert!(!db.reserve_exchange(first.clone(), &ys[2..]).await.unwrap());
+        assert_eq!(db.search_reservation(&ys[2..]).await.unwrap(), None);
+        assert!(db.reserve_exchange(second.clone(), &ys[1..]).await.unwrap());
+        assert_eq!(db.search_reservation(&ys[..1]).await.unwrap(), Some(first));
+        assert_eq!(db.search_reservation(&ys[2..]).await.unwrap(), Some(second));
+    }
+
+    #[tokio::test]
+    async fn test_offline_exchange_reservation_proofs_in_order() {
+        foreign_offline_reservation_proofs_in_order(inmemory::OfflineRepository::default()).await;
+        foreign_offline_reservation_proofs_in_order(init_surreal_foreign_offline_db().await)
+            .await;
+    }
+    async fn foreign_offline_reservation_proofs_in_order(db: impl foreign::OfflineRepository) {
+        let ys = random_ys(1);
+        let mut proofs = generate_test_proofs(6);
+        proofs.sort_by_key(|p| std::cmp::Reverse(p.y().unwrap()));
+        let mint_id = core::generate_random_keypair().public_key();
+        assert!(db.reserve_exchange(reservation([3u8; 32]), &ys).await.unwrap());
+        assert!(db
+            .issue_reservation([3u8; 32], mint_id, vec![], vec![], proofs.clone())
+            .await
+            .unwrap());
+        let issued = db.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_string(&issued.proofs).unwrap(),
+            serde_json::to_string(&Some(proofs)).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_offline_exchange_reservation_issue_needs_reserved() {
+        foreign_offline_reservation_issue_needs_reserved(inmemory::OfflineRepository::default())
+            .await;
+        foreign_offline_reservation_issue_needs_reserved(init_surreal_foreign_offline_db().await)
+            .await;
+    }
+    // Issuing an unreserved digest writes neither proofs nor fingerprints.
+    async fn foreign_offline_reservation_issue_needs_reserved(
+        db: impl foreign::OfflineRepository,
+    ) {
+        let request: OfflineExchangeRequest = fixture_field(&retry_fixture(), "request");
+        let mint_id = core::generate_random_keypair().public_key();
+        assert!(!db
+            .issue_reservation(
+                [4u8; 32],
+                mint_id,
+                request.fingerprints.clone(),
+                request.hashes.clone(),
+                generate_test_proofs(1),
+            )
+            .await
+            .unwrap());
+        assert!(db.search_fp(&request.hashes[0]).await.unwrap().is_none());
+        let ys: Vec<_> = request.fingerprints.iter().map(|fp| fp.y).collect();
+        assert_eq!(db.search_reservation(&ys).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_offline_exchange_reservation_store_issued_idempotent() {
+        foreign_online_store_issued_idempotent(init_inmemory_foreign_online_db()).await;
+        foreign_online_store_issued_idempotent(init_surreal_foreign_online_db().await).await;
+    }
+    // A replay that stores the issued proofs again keeps one copy of each.
+    async fn foreign_online_store_issued_idempotent(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-replay");
+        let now = time::OffsetDateTime::now_utc();
+        let mut proofs = generate_test_proofs(2);
+        for _ in 0..2 {
+            db.store_issued(hash, now, proofs.clone()).await.unwrap();
+        }
+        let mut expired = db
+            .list_expired_issued(now + time::Duration::hours(1))
+            .await
+            .unwrap();
+        expired.sort_by_key(|p| p.y().unwrap());
+        proofs.sort_by_key(|p| p.y().unwrap());
+        assert_eq!(expired, proofs);
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository

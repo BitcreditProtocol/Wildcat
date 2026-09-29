@@ -1131,6 +1131,32 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(before.is_none())
     }
+
+    async fn reserve_exchange(
+        &self,
+        _reservation: foreign::OfflineReservation,
+        _ys: &[cashu::PublicKey],
+    ) -> Result<bool> {
+        todo!()
+    }
+
+    async fn search_reservation(
+        &self,
+        _ys: &[cashu::PublicKey],
+    ) -> Result<Option<foreign::OfflineReservation>> {
+        todo!()
+    }
+
+    async fn issue_reservation(
+        &self,
+        _exchange_digest: [u8; 32],
+        _mint_id: secp256k1::PublicKey,
+        _fps: Vec<wire_keys::ProofFingerprint>,
+        _hashes: Vec<Sha256Hash>,
+        _proofs: Vec<cashu::Proof>,
+    ) -> Result<bool> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
