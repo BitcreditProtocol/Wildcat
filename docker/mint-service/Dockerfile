@@ -12,7 +12,6 @@ RUN apt-get update \
 
 WORKDIR /mint-service
 COPY --from=rust-builder /wildcat/target/release/bcr-wdc-mint-service .
-COPY --from=rust-builder /wildcat/target/release/mint-core-migrate ./migrate
 
 # Expose web server port
 EXPOSE 3338

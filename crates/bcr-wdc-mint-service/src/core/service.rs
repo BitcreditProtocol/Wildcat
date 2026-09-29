@@ -48,7 +48,6 @@ pub struct ListFilters {
 pub struct Service {
     pub repository: Arc<dyn Repository>,
     pub clowder: Box<dyn ClowderClient>,
-    pub treasury: Box<dyn TreasuryService>,
     pub keygen: KeysFactory,
     pub min_keyset_fees_ppk: AtomicU64,
     pub max_expiry: time::Duration,
@@ -320,6 +319,7 @@ impl Service {
 
     pub async fn swap(
         &self,
+        treasury: &dyn TreasuryService,
         inputs: Vec<cashu::Proof>,
         outputs: Vec<cashu::BlindedMessage>,
         commitment: schnorr::Signature,
@@ -392,7 +392,7 @@ impl Service {
         self.repository
             .swap_finalize(inputs, stored_signatures, commitment)
             .await?;
-        self.treasury.store_proofs(fees.proofs).await?;
+        treasury.store_proofs(fees.proofs).await?;
         Ok(signatures)
     }
 
@@ -565,15 +565,10 @@ mod tests {
         (keyset, proofs, outputs, commitment, now)
     }
 
-    fn service(
-        repository: Arc<inmemory::Repository>,
-        clowder: MockClowderClient,
-        treasury: MockTreasuryService,
-    ) -> Service {
+    fn service(repository: Arc<inmemory::Repository>, clowder: MockClowderClient) -> Service {
         Service {
             repository,
             clowder: Box::new(clowder),
-            treasury: Box::new(treasury),
             keygen: KeysFactory::new(&seed(), DerivationPath::default()),
             min_keyset_fees_ppk: AtomicU64::default(),
             max_expiry: time::Duration::hours(1),
@@ -596,10 +591,10 @@ mod tests {
             .expect_store_proofs()
             .times(1)
             .returning(|_| Ok(()));
-        let service = service(repository.clone(), clowder, treasury);
+        let service = service(repository.clone(), clowder);
 
         let signatures = service
-            .swap(proofs.clone(), outputs.clone(), commitment, now)
+            .swap(&treasury, proofs.clone(), outputs.clone(), commitment, now)
             .await
             .unwrap();
 
@@ -631,9 +626,11 @@ mod tests {
             .returning(|_, _, _, _, _| Ok(()));
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(0);
-        let service = service(repository.clone(), clowder, treasury);
+        let service = service(repository.clone(), clowder);
 
-        let result = service.swap(proofs, outputs.clone(), commitment, now).await;
+        let result = service
+            .swap(&treasury, proofs, outputs.clone(), commitment, now)
+            .await;
         assert!(matches!(result, Err(Error::Conflict(_))));
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
@@ -680,11 +677,7 @@ mod tests {
         )
         .unwrap();
         assert!(proof.witness.is_none());
-        let service = service(
-            repository.clone(),
-            MockClowderClient::new(),
-            MockTreasuryService::new(),
-        );
+        let service = service(repository.clone(), MockClowderClient::new());
 
         let ys = service.burn(vec![proof.clone()]).await.unwrap();
 

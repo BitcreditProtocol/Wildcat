@@ -31,12 +31,14 @@ pub enum Error {
     SignVerifyEcash(#[from] bcr_common::core::signature::ECashSignatureError),
     #[error("borsh signed verification: {0}")]
     BorshVerify(#[from] signature::BorshMsgSignatureError),
-    #[error("treasury client {0}")]
-    TreasuryClient(#[from] bcr_common::client::admin::treasury::Error),
     #[error("clowder client {0}")]
     ClowderClient(#[from] bcr_common::client::clowder::ClowderClientError),
     #[error("clowder rest client {0}")]
     ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
+    #[error("bcr_common::wallet {0}")]
+    BcrWallet(#[from] bcr_common::wallet::Error),
+    #[error("database error {0}")]
+    DB(#[source] anyhow::Error),
     #[error("DHKE error: {0}")]
     CdkDhke(#[from] cashu::dhke::Error),
     #[error("cdk::nut00 error: {0}")]
@@ -111,8 +113,9 @@ impl axum::response::IntoResponse for Error {
                 }
             }
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::BcrWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CdkDhke(e) => {
                 let v = BRError::Generic(e.to_string());
                 let j = serde_json::to_string(&v).unwrap_or_default();

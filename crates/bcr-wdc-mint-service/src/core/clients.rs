@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{
-        admin::{clowder as clowder_rest, core::BRError, treasury::Client as TreasuryClient},
+        admin::{clowder as clowder_rest, core::BRError},
         clowder::ClowderNatsClient,
     },
     core::{signature, BillId},
@@ -17,6 +17,7 @@ use bitcoin::secp256k1::{schnorr, PublicKey};
 use crate::{
     error::{Error, Result},
     persistence::SignatureOwner,
+    vault,
 };
 
 // ----- end imports
@@ -249,25 +250,14 @@ pub trait TreasuryService: Send + Sync {
     async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }
 
-pub struct TreasuryCl {
-    pub cl: Box<TreasuryClient>,
+/// Core's view of the vault.
+pub struct VaultSrvc {
+    pub vault: Arc<vault::Service>,
 }
 
 #[async_trait]
-impl TreasuryService for TreasuryCl {
+impl TreasuryService for VaultSrvc {
     async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
-        self.cl.fees_store_proofs(proofs).await?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "test-utils")]
-pub struct DummyTreasuryClient;
-
-#[cfg(feature = "test-utils")]
-#[async_trait]
-impl TreasuryService for DummyTreasuryClient {
-    async fn store_proofs(&self, _proofs: Vec<cashu::Proof>) -> Result<()> {
-        Ok(())
+        self.vault.store_proofs(proofs).await
     }
 }

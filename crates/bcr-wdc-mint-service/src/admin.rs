@@ -6,11 +6,11 @@ use bcr_common::{
     cashu,
     core::maturity,
     ecash,
-    wire::{keys as wire_keys, swap as wire_swap},
+    wire::{keys as wire_keys, swap as wire_swap, treasury as wire_treasury},
 };
 use bitcoin::secp256k1 as secp;
 // ----- local imports
-use crate::{core::service, error::Result};
+use crate::{core::service, error::Result, vault};
 
 // ----- end imports
 
@@ -92,4 +92,30 @@ pub async fn reserve_ys(
 ) -> Result<()> {
     let c_ys = request.ys.into_iter().map(cashu::PublicKey::from).collect();
     swap_srvc.reserve(c_ys, request.deadline).await
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(vault_srvc))]
+pub async fn store_fees_proofs(
+    State(vault_srvc): State<Arc<vault::Service>>,
+    Json(request): Json<wire_treasury::StoreProofsRequest>,
+) -> Result<Json<wire_treasury::StoreProofsResponse>> {
+    vault_srvc.store_proofs(request.proofs).await?;
+    let response = wire_treasury::StoreProofsResponse {};
+    Ok(Json(response))
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(vault_srvc, core_srvc))]
+pub async fn generate_fees_token(
+    State(vault_srvc): State<Arc<vault::Service>>,
+    State(core_srvc): State<Arc<service::Service>>,
+) -> Result<Json<wire_treasury::FeesTokenResponse>> {
+    let now = time::OffsetDateTime::now_utc();
+    let wdc_cl = vault::WildcatCl { core: core_srvc };
+    let token = vault_srvc.generate_token(&wdc_cl, now).await?;
+    let total = token.value()?;
+    let response = wire_treasury::FeesTokenResponse {
+        token: token.to_string(),
+        total,
+    };
+    Ok(Json(response))
 }

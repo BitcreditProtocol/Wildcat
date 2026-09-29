@@ -20,7 +20,7 @@ use surrealdb::{
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, TStamp,
+    persistence, vault, TStamp,
 };
 
 // ----- end imports
@@ -859,6 +859,114 @@ impl Repository {
             .bind(("now", bcr_wdc_utils::surreal::tstamp_param(now)))
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////// Vault DB
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct VaultProofDBEntry {
+    id: RecordId,
+    proof: cashu::Proof,
+}
+impl std::convert::From<VaultProofDBEntry> for cashu::Proof {
+    fn from(entry: VaultProofDBEntry) -> Self {
+        entry.proof
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    pub(super) db: Surreal<Any>,
+}
+
+impl DBVault {
+    const PROOFS_TABLE: &'static str = "vault_proofs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self { db: db_connection })
+    }
+
+    pub async fn dump(&self) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<VaultProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = entries.into_iter().map(Into::into).collect();
+        Ok(proofs)
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut entries: Vec<VaultProofDBEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y()?;
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry = VaultProofDBEntry { id: rid, proof };
+            entries.push(entry);
+        }
+        let _: Vec<VaultProofDBEntry> = self
+            .db
+            .insert(Self::PROOFS_TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let mut proofs = Vec::with_capacity(ys.len());
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry: Option<VaultProofDBEntry> = self
+                .db
+                .select(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            if let Some(entry) = entry {
+                proofs.push(entry.proof);
+            }
+        }
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let rids: Vec<RecordId> = self
+            .db
+            .query("SELECT VALUE id FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(rids.len());
+        for rid in rids {
+            let y = cashu::PublicKey::from_str(&rid.key().to_string())
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let _: Option<VaultProofDBEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
         Ok(())
     }
 }

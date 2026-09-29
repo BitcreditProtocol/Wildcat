@@ -11,7 +11,7 @@ use bitcoin::secp256k1::schnorr;
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, TStamp,
+    persistence, vault, TStamp,
 };
 
 // ----- end imports
@@ -356,6 +356,45 @@ impl persistence::Repository for Repository {
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
         let mut locked = self.reserved_ys.write().unwrap();
         locked.retain(|_, deadline| *deadline >= now);
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Default, Debug)]
+pub struct VaultMap {
+    proofs: Arc<Mutex<HashMap<cashu::PublicKey, cashu::Proof>>>,
+}
+
+#[async_trait]
+impl vault::Repository for VaultMap {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for proof in proofs {
+            let y = proof.y()?;
+            locked.insert(y, proof);
+        }
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(ys
+            .into_iter()
+            .filter_map(|y| locked.get(&y).cloned())
+            .collect())
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let locked = self.proofs.lock().unwrap();
+        Ok(locked.keys().cloned().collect())
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let mut locked = self.proofs.lock().unwrap();
+        for y in ys {
+            locked.remove(y);
+        }
         Ok(())
     }
 }
