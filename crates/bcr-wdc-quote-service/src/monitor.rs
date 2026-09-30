@@ -180,7 +180,7 @@ mod tests {
             current_waiting_state: None,
         };
         wdc.expect_validate_endorsed_bill_matches_shared_bill()
-            .times(1)
+            .times(2)
             .with(eq(bid.clone()), always())
             .returning(|_, _| Ok(true));
         wdc.expect_get_ebill()

@@ -51,6 +51,7 @@ pub struct AppConfig {
     credit_authorization_mint_id: String,
     credit_authorization_key_id: String,
     credit_authorization_public_key: String,
+    credit_offer_constraints_json: String,
     credit_evidence_risk_methodology_version: String,
     credit_evidence_risk_assessed_by: String,
     credit_evidence_risk_authority_key_id: String,
@@ -77,6 +78,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         credit_authorization_mint_id,
         credit_authorization_key_id,
         credit_authorization_public_key,
+        credit_offer_constraints_json,
         credit_evidence_risk_methodology_version,
         credit_evidence_risk_assessed_by,
         credit_evidence_risk_authority_key_id,
@@ -91,6 +93,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         credit_authorization_mint_id,
         credit_authorization_key_id,
         credit_authorization_public_key,
+        authorization::OfferConstraints::from_json(&credit_offer_constraints_json)
+            .expect("invalid Mint-owned offer constraints"),
     )
     .expect("invalid AI Credit authorization verifier configuration");
     let credit_evidence = Arc::new(

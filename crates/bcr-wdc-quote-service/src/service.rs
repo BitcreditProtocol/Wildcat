@@ -602,6 +602,7 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
+        self.require_valid_mint_transfer(&quote).await?;
         let fees_amount = quote.bill.sum - discounted;
         let fees_amount = cashu::Amount::from(fees_amount.to_sat());
         quote.override_failed_ebill_validation(fees_amount)?;
@@ -638,6 +639,7 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
+        self.require_valid_mint_transfer(&quote).await?;
         let fees_amount = quote.bill.sum - discounted;
         let fees_amount = cashu::Amount::from(fees_amount.to_sat());
         quote.start_minting(fees_amount)?;
@@ -653,6 +655,18 @@ impl Service {
         self.quotes
             .update_status_if_accepted(quote.id, quote.status)
             .await?;
+        Ok(())
+    }
+
+    async fn require_valid_mint_transfer(&self, quote: &Quote) -> Result<()> {
+        if !self
+            .check_if_endorsed_bill_is_valid(quote.bill.id.clone(), quote.clone())
+            .await?
+        {
+            return Err(Error::InvalidInput(
+                "Mint must currently hold the matching bill via a Mint transfer".into(),
+            ));
+        }
         Ok(())
     }
 
@@ -1523,6 +1537,10 @@ mod tests {
 
         let mut wdc_client = MockWdcClient::new();
         wdc_client
+            .expect_validate_endorsed_bill_matches_shared_bill()
+            .times(1)
+            .returning(|_, _| Ok(true));
+        wdc_client
             .expect_get_keys()
             .with(eq(cashu::Id::from(keyset_id)))
             .times(1)
@@ -1567,5 +1585,55 @@ mod tests {
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn enabling_or_overriding_without_mint_holdership_has_no_side_effects() {
+        for manual in [false, true] {
+            let mut quote = Quote::new(
+                generate_random_bill(),
+                keys_utils::publics()[0],
+                time::OffsetDateTime::now_utc(),
+                crate::quotes::test_credit_program_binding(),
+            );
+            let qid = quote.id;
+            let (keyset, _) = core_tests::generate_random_ecash_keyset();
+            let discounted = quote.bill.sum - btc::Amount::from_sat(10);
+            quote.status = if manual {
+                Status::FailedEbillValidation {
+                    keyset_id: keyset.id.into(),
+                    discounted,
+                    wallet_pubkey: keys_utils::publics()[0],
+                }
+            } else {
+                Status::Accepted {
+                    keyset_id: keyset.id.into(),
+                    discounted,
+                    wallet_pubkey: keys_utils::publics()[0],
+                }
+            };
+            let mut repo = MockRepository::new();
+            repo.expect_load()
+                .times(1)
+                .returning(move |_| Ok(Some(quote.clone())));
+            let mut client = MockWdcClient::new();
+            client
+                .expect_validate_endorsed_bill_matches_shared_bill()
+                .times(1)
+                .returning(|_, _| Ok(false));
+            let service = Service {
+                quotes: Box::new(repo),
+                wdc_client: Box::new(client),
+                mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+                credit_program: crate::quotes::test_credit_program_binding(),
+                authorization_verifier: crate::authorization::test_authorization_verifier(),
+            };
+            let result = if manual {
+                service.enable_minting_manual_override(qid).await
+            } else {
+                service.enable_minting(qid).await
+            };
+            assert!(matches!(result, Err(Error::InvalidInput(_))));
+        }
     }
 }

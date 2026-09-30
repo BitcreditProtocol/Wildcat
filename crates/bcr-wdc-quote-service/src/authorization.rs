@@ -131,6 +131,70 @@ pub struct AuthorizationVerifier {
     mint_id: String,
     key_id: String,
     public_key: VerifyingKey,
+    constraints: OfferConstraints,
+}
+
+/// Mint-owned bounds, selected from the reviewed policy by deployment, not the API signer.
+/// This is an enforcement subset, not policy-release authentication or independent risk analysis.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfferConstraints {
+    policy_pack_version: String,
+    policy_pack_digest: String,
+    calculation_version: String,
+    minimum_tenor_days: u32,
+    maximum_tenor_days: u32,
+    maximum_bill_sum_sat: String,
+    minimum_useful_discounted_sat: String,
+    operating_cost_sat: String,
+    maximum_effective_annual_bps: u32,
+    maximum_fee_ratio_bps: u32,
+}
+
+impl OfferConstraints {
+    pub fn from_json(json: &str) -> Result<Self> {
+        if json.len() > 8192 {
+            return Err(invalid());
+        }
+        let constraints: Self = serde_json::from_str(json).map_err(|_| invalid())?;
+        validate_text(&constraints.policy_pack_version)?;
+        validate_digest(&constraints.policy_pack_digest)?;
+        validate_text(&constraints.calculation_version)?;
+        let maximum = parse_sat(&constraints.maximum_bill_sum_sat)?;
+        let minimum = parse_sat(&constraints.minimum_useful_discounted_sat)?;
+        let operating = parse_sat(&constraints.operating_cost_sat)?;
+        if constraints.minimum_tenor_days == 0
+            || constraints.maximum_tenor_days < constraints.minimum_tenor_days
+            || maximum == 0
+            || minimum == 0
+            || operating == 0
+            || u128::from(minimum) + u128::from(operating) > u128::from(maximum)
+            || constraints.maximum_effective_annual_bps == 0
+            || constraints.maximum_effective_annual_bps > 20_000
+            || constraints.maximum_fee_ratio_bps == 0
+            || constraints.maximum_fee_ratio_bps > 10_000
+        {
+            return Err(invalid());
+        }
+        Ok(constraints)
+    }
+
+    fn validate(&self, authorization: &wire_quotes::CreditAuthorizationEnvelope) -> Result<()> {
+        let terms = &authorization.terms;
+        if authorization.policy_pack_version != self.policy_pack_version
+            || authorization.policy_pack_digest != self.policy_pack_digest
+            || authorization.calculation_version != self.calculation_version
+            || !(self.minimum_tenor_days..=self.maximum_tenor_days).contains(&terms.tenor_days)
+            || parse_sat(&terms.bill_sum_sat)? > parse_sat(&self.maximum_bill_sum_sat)?
+            || parse_sat(&terms.discounted_sat)? < parse_sat(&self.minimum_useful_discounted_sat)?
+            || terms.operating_cost_sat != self.operating_cost_sat
+            || terms.effective_annual_bps > self.maximum_effective_annual_bps
+            || terms.fee_ratio_bps > self.maximum_fee_ratio_bps
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -143,7 +207,12 @@ pub struct VerifiedOffer {
 }
 
 impl AuthorizationVerifier {
-    pub fn new(mint_id: String, key_id: String, public_key_base64url: String) -> Result<Self> {
+    pub fn new(
+        mint_id: String,
+        key_id: String,
+        public_key_base64url: String,
+        constraints: OfferConstraints,
+    ) -> Result<Self> {
         validate_text(&mint_id)?;
         validate_text(&key_id)?;
         let bytes = general_purpose::URL_SAFE_NO_PAD
@@ -157,6 +226,7 @@ impl AuthorizationVerifier {
             mint_id,
             key_id,
             public_key,
+            constraints,
         })
     }
 
@@ -204,6 +274,12 @@ impl AuthorizationVerifier {
         self.public_key
             .verify(&canonical, &signature)
             .map_err(|_| invalid())?;
+
+        // Completed receipts retain their immutable historic authority; a new offer must
+        // satisfy today's Mint-owned limits even when it carries a valid API signature.
+        if now.is_some() {
+            self.constraints.validate(&authorization)?;
+        }
 
         let issued_at = parse_datetime(&authorization.issued_at)?;
         let expires_at = parse_datetime(&authorization.expires_at)?;
@@ -637,6 +713,12 @@ pub(crate) fn test_authorization_verifier() -> AuthorizationVerifier {
         String::from("local-wildcat"),
         String::from("synthetic-ed25519-v1"),
         String::from("jn__htbnO4jauBDTN5Oeby-2uOylC6skT2-jm8mXiNc"),
+        OfferConstraints::from_json(r#"{
+            "policyPackVersion":"synthetic-policy-v1","policyPackDigest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "calculationVersion":"deterministic-credit-core-v9","minimumTenorDays":30,"maximumTenorDays":240,
+            "maximumBillSumSat":"20000000","minimumUsefulDiscountedSat":"500000","operatingCostSat":"50000",
+            "maximumEffectiveAnnualBps":1500,"maximumFeeRatioBps":3000
+        }"#).expect("reviewed synthetic fixture bounds"),
     )
     .expect("valid synthetic authorization verifier")
 }
@@ -1034,9 +1116,9 @@ fn digest(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::engine::general_purpose;
     use bcr_common::wire::quotes as wire_quotes;
-    use bitcoin::{hashes::Hash as _, Amount};
+    use bitcoin::Amount;
     use ed25519_dalek::{Signer as _, SigningKey};
 
     use super::*;
@@ -1833,6 +1915,93 @@ pub(crate) mod tests {
         test_authorization_verifier()
             .verify_replay(signed, &quote)
             .expect("a completed operation remains safely replayable after authorization expiry");
+    }
+
+    #[test]
+    fn mint_enforces_each_independently_configured_offer_bound() {
+        let mut bill = crate::quotes::BillInfo::random();
+        bill.sum = Amount::from_sat(8_000_000);
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::February, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::UNIX_EPOCH,
+            crate::quotes::test_credit_program_binding(),
+        );
+        let signed = signed_for(&quote);
+        let now = parse_datetime(&signed.authorization.issued_at).unwrap();
+        test_authorization_verifier()
+            .verify(signed.clone(), &quote, now)
+            .unwrap();
+        let changes: Vec<(&str, fn(&mut OfferConstraints))> = vec![
+            ("policy version", |c| {
+                c.policy_pack_version = "different-policy".into()
+            }),
+            ("policy digest", |c| {
+                c.policy_pack_digest = format!("sha256:{}", "f".repeat(64))
+            }),
+            ("calculation version", |c| {
+                c.calculation_version = "different-calculation".into()
+            }),
+            ("minimum tenor", |c| {
+                c.minimum_tenor_days = 241;
+                c.maximum_tenor_days = 300;
+            }),
+            ("maximum tenor", |c| {
+                c.minimum_tenor_days = 1;
+                c.maximum_tenor_days = 1;
+            }),
+            ("bill cap", |c| c.maximum_bill_sum_sat = "7000000".into()),
+            ("useful proceeds", |c| {
+                c.minimum_useful_discounted_sat = "8000000".into()
+            }),
+            ("operating floor", |c| c.operating_cost_sat = "60000".into()),
+            ("annual ceiling", |c| c.maximum_effective_annual_bps = 1),
+            ("fee ratio ceiling", |c| c.maximum_fee_ratio_bps = 1),
+        ];
+        for (name, change) in changes {
+            let mut verifier = test_authorization_verifier();
+            change(&mut verifier.constraints);
+            assert!(
+                verifier.verify(signed.clone(), &quote, now).is_err(),
+                "unenforced {name}"
+            );
+        }
+        assert!(OfferConstraints::from_json("{}").is_err());
+    }
+
+    #[test]
+    fn mint_rejects_a_correctly_signed_zero_fee_offer() {
+        let mut bill = crate::quotes::BillInfo::random();
+        bill.sum = Amount::from_sat(8_000_000);
+        bill.maturity_date =
+            time::Date::from_calendar_date(2027, time::Month::February, 6).unwrap();
+        let quote = Quote::new(
+            bill,
+            bcr_wdc_utils::keys::test_utils::publics()[0],
+            TStamp::UNIX_EPOCH,
+            crate::quotes::test_credit_program_binding(),
+        );
+        let mut signed = signed_for(&quote);
+        let terms = &mut signed.authorization.terms;
+        terms.discounted_sat = terms.bill_sum_sat.clone();
+        terms.applied_discount_sat = "0".into();
+        terms.operating_cost_sat = "0".into();
+        terms.effective_fee_sat = "0".into();
+        terms.annual_discount_bps = 0;
+        terms.effective_annual_bps = 0;
+        terms.fee_ratio_bps = 0;
+        validate_envelope(&signed.authorization)
+            .expect("zero fee passes the original arithmetic checks");
+        let bytes = canonical_authorization(&signed.authorization);
+        signed.authorization_digest = digest(&bytes);
+        signed.signature = general_purpose::STANDARD.encode(signing_key().sign(&bytes).to_bytes());
+        let now = parse_datetime(&signed.authorization.issued_at).unwrap();
+        assert!(matches!(
+            test_authorization_verifier().verify(signed, &quote, now),
+            Err(Error::CreditAuthorizationInvalid)
+        ));
     }
 
     #[test]

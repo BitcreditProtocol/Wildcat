@@ -42,6 +42,8 @@ impl Service {
         _now: TStamp,
     ) -> Result<()> {
         let _kinfo = self.wildcatcl.info(kid).await?;
+        self.require_current_bill_holdership(bill_id.clone())
+            .await?;
         let new = MintOperation {
             uid,
             kid,
@@ -113,6 +115,8 @@ impl Service {
         if operation.minted + output_amount > target {
             return Err(Error::InvalidInput(String::from("exceeding amount")));
         }
+        self.require_current_bill_holdership(operation.bill_id.clone())
+            .await?;
         let signatures = self.wildcatcl.sign(&request.outputs).await?;
         self.repo
             .mint_update_field(
@@ -152,6 +156,15 @@ impl Service {
         Ok(wire_mint::EbillMintResponse { signatures })
     }
 
+    async fn require_current_bill_holdership(&self, bill_id: BillId) -> Result<()> {
+        if !self.wildcatcl.bill_is_held_by_mint(bill_id).await? {
+            return Err(Error::InvalidInput(
+                "Mint must currently hold an accepted, unpaid bill".into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn request_to_pay_ebill(
         &self,
         bid: BillId,
@@ -184,10 +197,47 @@ mod tests {
     use mockall::predicate::eq;
 
     #[tokio::test]
+    async fn new_minting_operation_refuses_bill_not_held_by_mint() {
+        let repo = MockRepository::new();
+        let clowder = MockClowderClient::new();
+        let mut client = MockWildcatClient::new();
+        let (info, _) = core_tests::generate_random_ecash_keyset();
+        let kid = info.id.into();
+        client
+            .expect_info()
+            .returning(move |_| Ok(info.clone().into()));
+        client
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(false));
+        let service = Service {
+            repo: Box::new(repo),
+            wildcatcl: Box::new(client),
+            clowdercl: Box::new(clowder),
+            multiplier: cashu::Amount::ONE,
+        };
+        let result = service
+            .new_minting_operation(
+                Uuid::new_v4(),
+                kid,
+                bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
+                cashu::Amount::from(64),
+                core_tests::random_bill_id(),
+                TStamp::now_utc(),
+            )
+            .await;
+        assert!(matches!(result, Err(Error::InvalidInput(_))));
+    }
+
+    #[tokio::test]
     async fn new_minting_operation_missing_keyset() {
         let repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
         let uid = Uuid::new_v4();
         let pub_key = bcr_common::core::generate_random_keypair()
@@ -219,6 +269,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -271,6 +324,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -319,6 +375,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let pub_key = bcr_common::core::generate_random_keypair()
@@ -362,6 +421,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -406,6 +468,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -472,6 +537,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -527,6 +595,9 @@ mod tests {
         let mut repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, _keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -578,6 +649,9 @@ mod tests {
         let mut mintop_repo = MockRepository::new();
         let mut clowder_cl = MockClowderClient::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
@@ -630,6 +704,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mint_rechecks_holdership_before_any_signature_or_mutation() {
+        for core_unavailable in [false, true] {
+            let mut repo = MockRepository::new();
+            let mut core = MockWildcatClient::new();
+            let kid = bcr_common::core_tests::generate_random_ecash_keyset().0.id;
+            let uid = Uuid::new_v4();
+            let kp = bcr_common::core::generate_random_keypair();
+            let operation = MintOperation {
+                uid,
+                kid: kid.into(),
+                pub_key: kp.public_key().into(),
+                target: cashu::Amount::from(128),
+                minted: cashu::Amount::ZERO,
+                bill_id: core_tests::random_bill_id(),
+            };
+            repo.expect_mint_load()
+                .times(1)
+                .returning(move |_| Ok(operation.clone()));
+            core.expect_bill_is_held_by_mint()
+                .times(1)
+                .returning(move |_| {
+                    if core_unavailable {
+                        Err(Error::InvalidInput("Core unavailable".into()))
+                    } else {
+                        Ok(false)
+                    }
+                });
+            // No expectations for sign, update or Clowder: any side effect fails the test.
+            let service = Service {
+                clowdercl: Box::new(MockClowderClient::new()),
+                wildcatcl: Box::new(core),
+                repo: Box::new(repo),
+                multiplier: cashu::Amount::ONE,
+            };
+            let outputs = signatures_test::generate_blinds(kid.into(), &[cashu::Amount::from(128)]);
+            let request = wire_mint::EbillMintRequest::new(
+                uid,
+                outputs.iter().map(|(blind, _, _)| blind.clone()).collect(),
+                &kp,
+            );
+            assert!(service.mint(request).await.is_err());
+        }
+    }
+
+    #[tokio::test]
     async fn mint_missing_mintop() {
         let mut mintop_repo = MockRepository::new();
         let clowder_cl = MockClowderClient::new();
@@ -667,6 +786,9 @@ mod tests {
     ) -> (Service, wire_mint::EbillMintRequest, usize) {
         let mut mintop_repo = MockRepository::new();
         let mut core_cl = MockWildcatClient::new();
+        core_cl
+            .expect_bill_is_held_by_mint()
+            .returning(|_| Ok(true));
         let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
         let kid = kinfo.id;
         let uid = Uuid::new_v4();
