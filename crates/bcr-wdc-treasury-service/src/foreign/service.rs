@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
-    client::admin::treasury::SUError,
+    client::{admin::treasury::SUError, clowder::ClowderClientError},
     core::{
         self,
         htlc::{exchange_htlc, hop_locktime, htlc_lock, offline_hash_lock, online_hash_lock},
@@ -53,8 +53,6 @@ impl Service {
             wallet_signature,
         };
         let ys: Vec<cashu::PublicKey> = inputs.iter().map(|fp| fp.y).collect();
-        // A retry is answered from what was stored: the node refuses to record it again
-        // once the alpha is back online.
         if let Some(reservation) = self.offline_repo.search_reservation(&ys).await? {
             return self.replay_offline_exchange(reservation, request).await;
         }
@@ -136,7 +134,6 @@ impl Service {
         if !self.offline_repo.reserve_exchange(reservation, &ys).await? {
             return Err(exchange_in_progress());
         }
-        // Once signing starts the reservation is kept: a replay never signs again.
         let mut retv: Vec<cashu::Proof> = Vec::new();
         for (keyset, premints) in batches {
             let signatures = self.keys.sign(&premints.blinded_messages()).await?;
@@ -202,7 +199,8 @@ impl Service {
 
     /// Signals and records issued proofs, then marks the exchange complete; a replay of an
     /// exchange that stopped part way runs this again with the stored proofs. A failure
-    /// leaves it Issued and is retryable, so no proofs leave unannounced.
+    /// leaves it Issued, so no proofs leave unannounced; it is retryable unless the node
+    /// refused the signal for good, which is passed through.
     async fn announce_offline_exchange(
         &self,
         request: OfflineExchangeRequest,
@@ -210,14 +208,20 @@ impl Service {
         proofs: Vec<cashu::Proof>,
         expires_at: TStamp,
     ) -> Result<Vec<cashu::Proof>> {
-        if let Err(e) = self
+        match self
             .try_announce_offline_exchange(request, digest, &proofs, expires_at)
             .await
         {
-            tracing::warn!("offline exchange left issued, retryable: {e}");
-            return Err(exchange_in_progress());
+            Ok(()) => Ok(proofs),
+            Err(Error::ClowderNatsClient(ClowderClientError::Rejected(r))) if !r.is_transient() => {
+                tracing::warn!("offline exchange left issued, refused: {r}");
+                Err(Error::ClowderNatsClient(ClowderClientError::Rejected(r)))
+            }
+            Err(e) => {
+                tracing::warn!("offline exchange left issued, retryable: {e}");
+                Err(exchange_in_progress())
+            }
         }
-        Ok(proofs)
     }
 
     async fn try_announce_offline_exchange(
@@ -762,7 +766,6 @@ mod tests {
             .returning(move || Ok(myself_pk));
         let now = time::OffsetDateTime::now_utc();
         let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
-        // Reserved before signing, stored before anything is announced.
         let mut seq = mockall::Sequence::new();
         offlinerepo
             .expect_reserve_exchange()
@@ -1205,6 +1208,42 @@ mod tests {
 
         let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
         assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+        let still = repo.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(
+            still.state,
+            ReservationState::Issued {
+                proofs: stored,
+                expires_at
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_refused_is_not_retryable() {
+        let f = retry_fixture();
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| {
+                Err(Error::ClowderNatsClient(ClowderClientError::Rejected(
+                    bcr_common::wire::clowder::ClowderRejection::InvalidProof,
+                )))
+            });
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online.expect_store_issued().never();
+        let srvc = fixture_service(repo.clone(), online, keys, clowder);
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+
+        let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
+        assert!(matches!(
+            replay,
+            Err(Error::ClowderNatsClient(ClowderClientError::Rejected(_)))
+        ));
         let still = repo.search_reservation(&ys).await.unwrap().unwrap();
         assert_eq!(
             still.state,

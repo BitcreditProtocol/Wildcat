@@ -1204,7 +1204,6 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .iter()
             .map(|y| RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string()))
             .collect();
-        // CREATE fails on an existing id, which aborts the whole transaction.
         let errors = self
             .db
             .query(

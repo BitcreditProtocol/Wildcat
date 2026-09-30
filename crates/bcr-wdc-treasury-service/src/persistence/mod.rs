@@ -294,9 +294,6 @@ mod tests {
         foreign_offline_reservation_worked_example(inmemory::OfflineRepository::default()).await;
         foreign_offline_reservation_worked_example(init_surreal_foreign_offline_db().await).await;
     }
-    // The request reserves its Y and is issued once, with its expiry, then completed; a
-    // replay recomputes the stored digest and gets the stored proofs, while other_request,
-    // on the same Y, recomputes another digest and cannot reserve.
     async fn foreign_offline_reservation_worked_example(db: impl foreign::OfflineRepository) {
         let fixture = retry_fixture();
         let request: OfflineExchangeRequest = fixture_field(&fixture, "request");
@@ -384,7 +381,6 @@ mod tests {
         foreign_offline_reservation_all_or_nothing(inmemory::OfflineRepository::default()).await;
         foreign_offline_reservation_all_or_nothing(init_surreal_foreign_offline_db().await).await;
     }
-    // A reservation sharing one Y, or the digest, with another leaves no row behind.
     async fn foreign_offline_reservation_all_or_nothing(db: impl foreign::OfflineRepository) {
         let ys = random_ys(3);
         let first = reservation([1u8; 32]);
@@ -434,8 +430,6 @@ mod tests {
         foreign_offline_reservation_issue_needs_reserved(init_surreal_foreign_offline_db().await)
             .await;
     }
-    // Issuing an unreserved digest writes neither proofs nor fingerprints, and only an
-    // issued reservation completes.
     async fn foreign_offline_reservation_issue_needs_reserved(db: impl foreign::OfflineRepository) {
         let request: OfflineExchangeRequest = fixture_field(&retry_fixture(), "request");
         let mint_id = core::generate_random_keypair().public_key();
@@ -466,7 +460,6 @@ mod tests {
         foreign_online_store_issued_idempotent(init_inmemory_foreign_online_db()).await;
         foreign_online_store_issued_idempotent(init_surreal_foreign_online_db().await).await;
     }
-    // A replay that stores the issued proofs again keeps one copy of each.
     async fn foreign_online_store_issued_idempotent(db: impl foreign::OnlineRepository) {
         let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-replay");
         let now = time::OffsetDateTime::now_utc();
