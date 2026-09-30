@@ -216,12 +216,18 @@ impl foreign::OfflineRepository for OfflineRepository {
         &self,
         reservation: foreign::OfflineReservation,
         ys: &[cashu::PublicKey],
+        fps: Vec<ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool> {
         let mut locked = self.reservations.lock().unwrap();
         let digest = reservation.exchange_digest;
         if locked.by_digest.contains_key(&digest) || ys.iter().any(|y| locked.by_y.contains_key(y))
         {
             return Ok(false);
+        }
+        let mut fingerprints = self.fingerprints.lock().unwrap();
+        for (h, fp) in hashes.into_iter().zip(fps) {
+            fingerprints.insert(h, (reservation.alpha_id, fp));
         }
         locked.by_digest.insert(digest, reservation);
         locked.by_y.extend(ys.iter().map(|y| (*y, digest)));
@@ -238,30 +244,6 @@ impl foreign::OfflineRepository for OfflineRepository {
             .find_map(|y| locked.by_y.get(y))
             .and_then(|digest| locked.by_digest.get(digest))
             .cloned())
-    }
-
-    async fn issue_reservation(
-        &self,
-        exchange_digest: [u8; 32],
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<ProofFingerprint>,
-        hashes: Vec<Sha256Hash>,
-        proofs: Vec<cashu::Proof>,
-        expires_at: TStamp,
-    ) -> Result<bool> {
-        let mut locked = self.reservations.lock().unwrap();
-        let Some(reservation) = locked.by_digest.get_mut(&exchange_digest) else {
-            return Ok(false);
-        };
-        if reservation.state != foreign::ReservationState::Reserved {
-            return Ok(false);
-        }
-        reservation.state = foreign::ReservationState::Issued { proofs, expires_at };
-        let mut fingerprints = self.fingerprints.lock().unwrap();
-        for (h, fp) in hashes.into_iter().zip(fps) {
-            fingerprints.insert(h, (mint_id, fp));
-        }
-        Ok(true)
     }
 
     async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()> {

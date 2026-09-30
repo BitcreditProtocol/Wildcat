@@ -88,29 +88,21 @@ pub trait OfflineRepository: Send + Sync {
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
     /// First writer wins on the digest: `false` if the entry was already redeemed.
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool>;
-    /// Holds the digest and every Y, all or nothing: `false`, with nothing written, if
-    /// any of them is already held.
+    /// Holds the digest and every Y, storing the issued proofs in order, their expiry and
+    /// the fingerprints, all or nothing: `false`, with nothing written, if any of them is
+    /// already held.
     async fn reserve_exchange(
         &self,
         reservation: OfflineReservation,
         ys: &[cashu::PublicKey],
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool>;
     /// The reservation holding any of `ys`.
     async fn search_reservation(
         &self,
         ys: &[cashu::PublicKey],
     ) -> Result<Option<OfflineReservation>>;
-    /// Reserved to Issued, storing the proofs in order, their expiry and the fingerprints
-    /// in one write: `false`, with nothing written, unless the digest is still Reserved.
-    async fn issue_reservation(
-        &self,
-        exchange_digest: [u8; 32],
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hashes: Vec<Sha256Hash>,
-        proofs: Vec<cashu::Proof>,
-        expires_at: TStamp,
-    ) -> Result<bool>;
     /// Issued to Complete, once the issuance has been signalled and stored.
     async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()>;
 }
@@ -126,8 +118,6 @@ pub struct OfflineReservation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReservationState {
-    /// Held for signing; nothing is issued yet.
-    Reserved,
     /// Signed and stored, but not yet signalled and recorded as issued.
     Issued {
         proofs: Vec<cashu::Proof>,

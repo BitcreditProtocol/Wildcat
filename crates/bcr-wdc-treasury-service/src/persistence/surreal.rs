@@ -977,19 +977,17 @@ struct OfflineReservationDBEntry {
     exchange_digest: [u8; 32],
     alpha_id: String,
     evidence_digest: [u8; 32],
-    proofs: Option<Vec<cashu::Proof>>,
+    proofs: Vec<cashu::Proof>,
     expires_at: Option<i64>,
-    complete: bool,
 }
 
 impl OfflineReservationDBEntry {
     fn new(id: RecordId, reservation: foreign::OfflineReservation) -> Self {
-        let (proofs, expires_at, complete) = match reservation.state {
-            foreign::ReservationState::Reserved => (None, None, false),
+        let (proofs, expires_at) = match reservation.state {
             foreign::ReservationState::Issued { proofs, expires_at } => {
-                (Some(proofs), Some(expires_at.unix_timestamp()), false)
+                (proofs, Some(expires_at.unix_timestamp()))
             }
-            foreign::ReservationState::Complete(proofs) => (Some(proofs), None, true),
+            foreign::ReservationState::Complete(proofs) => (proofs, None),
         };
         Self {
             id,
@@ -998,20 +996,18 @@ impl OfflineReservationDBEntry {
             evidence_digest: reservation.evidence_digest,
             proofs,
             expires_at,
-            complete,
         }
     }
 }
 
 impl From<OfflineReservationDBEntry> for foreign::OfflineReservation {
     fn from(entry: OfflineReservationDBEntry) -> Self {
-        let state = match (entry.proofs, entry.expires_at, entry.complete) {
-            (Some(proofs), _, true) => foreign::ReservationState::Complete(proofs),
-            (Some(proofs), Some(expires_at), false) => foreign::ReservationState::Issued {
-                proofs,
+        let state = match entry.expires_at {
+            Some(expires_at) => foreign::ReservationState::Issued {
+                proofs: entry.proofs,
                 expires_at: TStamp::from_unix_timestamp(expires_at).expect("expires_at <--> i64"),
             },
-            _ => foreign::ReservationState::Reserved,
+            None => foreign::ReservationState::Complete(entry.proofs),
         };
         Self {
             exchange_digest: entry.exchange_digest,
@@ -1021,12 +1017,6 @@ impl From<OfflineReservationDBEntry> for foreign::OfflineReservation {
             state,
         }
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct OfflineReservedYDBEntry {
-    id: RecordId,
-    digest: RecordId,
 }
 
 #[derive(Debug, Clone)]
@@ -1197,8 +1187,15 @@ impl foreign::OfflineRepository for DBForeignOffline {
         &self,
         reservation: foreign::OfflineReservation,
         ys: &[cashu::PublicKey],
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool> {
         let rid = Self::reservation_rid(reservation.exchange_digest);
+        let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
+            .into_iter()
+            .zip(fps)
+            .map(|(hash, fp)| ForeignFingerprintDBEntry::new(reservation.alpha_id, hash, fp))
+            .collect();
         let entry = OfflineReservationDBEntry::new(rid.clone(), reservation);
         let y_rids: Vec<RecordId> = ys
             .iter()
@@ -1211,12 +1208,14 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 BEGIN;
                     CREATE $rid CONTENT $entry RETURN NONE;
                     FOR $y IN $ys { CREATE $y SET digest = $rid RETURN NONE; };
+                    IF !array::is_empty($fps) { INSERT $fps };
                 COMMIT;
                 ",
             )
             .bind(("rid", rid.clone()))
             .bind(("entry", entry))
             .bind(("ys", y_rids))
+            .bind(("fps", fp_entries))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take_errors();
@@ -1235,67 +1234,24 @@ impl foreign::OfflineRepository for DBForeignOffline {
         &self,
         ys: &[cashu::PublicKey],
     ) -> Result<Option<foreign::OfflineReservation>> {
-        for y in ys {
-            let rid = RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string());
-            let held: Option<OfflineReservedYDBEntry> = self
-                .db
-                .select(rid)
-                .await
-                .map_err(|e| Error::DB(anyhow!(e)))?;
-            if let Some(held) = held {
-                return Ok(self.load_reservation(held.digest).await?.map(Into::into));
-            }
-        }
-        Ok(None)
-    }
-
-    async fn issue_reservation(
-        &self,
-        exchange_digest: [u8; 32],
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hashes: Vec<Sha256Hash>,
-        proofs: Vec<cashu::Proof>,
-        expires_at: TStamp,
-    ) -> Result<bool> {
-        let rid = Self::reservation_rid(exchange_digest);
-        let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
-            .into_iter()
-            .zip(fps)
-            .map(|(hash, fp)| ForeignFingerprintDBEntry::new(mint_id, hash, fp))
+        let y_rids: Vec<RecordId> = ys
+            .iter()
+            .map(|y| RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string()))
             .collect();
-        let errors = self
+        let held: Option<OfflineReservationDBEntry> = self
             .db
-            .query(
-                "
-                BEGIN;
-                    LET $issued = UPDATE $rid SET proofs = $proofs, expires_at = $expires_at WHERE proofs = NONE RETURN AFTER;
-                    IF array::is_empty($issued) { THROW 'not reserved' };
-                    IF !array::is_empty($fps) { INSERT $fps };
-                COMMIT;
-                ",
-            )
-            .bind(("rid", rid.clone()))
-            .bind(("proofs", proofs))
-            .bind(("expires_at", expires_at.unix_timestamp()))
-            .bind(("fps", fp_entries))
+            .query("SELECT VALUE digest.* FROM $ys LIMIT 1")
+            .bind(("ys", y_rids))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
-            .take_errors();
-        if errors.is_empty() {
-            return Ok(true);
-        }
-        match self.load_reservation(rid).await? {
-            Some(entry) if entry.proofs.is_none() => {
-                Err(Error::DB(anyhow!("issue reservation: {errors:?}")))
-            }
-            _ => Ok(false),
-        }
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(held.map(Into::into))
     }
 
     async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()> {
         self.db
-            .query("UPDATE $rid SET complete = true WHERE proofs != NONE")
+            .query("UPDATE $rid SET expires_at = NONE")
             .bind(("rid", Self::reservation_rid(exchange_digest)))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -1465,12 +1421,13 @@ mod tests {
             exchange_digest: [9u8; 32],
             alpha_id,
             evidence_digest: [2u8; 32],
-            state: foreign::ReservationState::Reserved,
+            state: foreign::ReservationState::Issued {
+                proofs: vec![],
+                expires_at: time::OffsetDateTime::now_utc(),
+            },
         };
-        assert!(db.reserve_exchange(reservation, &[y]).await.unwrap());
-        let now = time::OffsetDateTime::now_utc();
         assert!(db
-            .issue_reservation([9u8; 32], alpha_id, fps, hash.clone(), vec![], now)
+            .reserve_exchange(reservation, &[y], fps, hash.clone())
             .await
             .unwrap());
         let result = db.search_fp(&hash[0]).await.unwrap();

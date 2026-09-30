@@ -125,15 +125,6 @@ impl Service {
             };
             batches.push((keyset, premints));
         }
-        let reservation = OfflineReservation {
-            exchange_digest: digest,
-            alpha_id: foreign_mint_id,
-            evidence_digest: recorded.evidence_digest,
-            state: ReservationState::Reserved,
-        };
-        if !self.offline_repo.reserve_exchange(reservation, &ys).await? {
-            return Err(exchange_in_progress());
-        }
         let mut retv: Vec<cashu::Proof> = Vec::new();
         for (keyset, premints) in batches {
             let signatures = self.keys.sign(&premints.blinded_messages()).await?;
@@ -145,16 +136,18 @@ impl Service {
                 )?);
             }
         }
+        let reservation = OfflineReservation {
+            exchange_digest: digest,
+            alpha_id: foreign_mint_id,
+            evidence_digest: recorded.evidence_digest,
+            state: ReservationState::Issued {
+                proofs: retv.clone(),
+                expires_at,
+            },
+        };
         if !self
             .offline_repo
-            .issue_reservation(
-                digest,
-                foreign_mint_id,
-                inputs,
-                hashes,
-                retv.clone(),
-                expires_at,
-            )
+            .reserve_exchange(reservation, &ys, inputs, hashes)
             .await?
         {
             return Err(exchange_in_progress());
@@ -188,7 +181,6 @@ impl Service {
             )
             .map_err(|_| Error::InvalidInput(String::from("invalid wallet signature")))?;
         match reservation.state {
-            ReservationState::Reserved => Err(exchange_in_progress()),
             ReservationState::Issued { proofs, expires_at } => {
                 self.announce_offline_exchange(request, digest, proofs, expires_at)
                     .await
@@ -409,7 +401,7 @@ impl Service {
     }
 }
 
-/// Retryable: the exchange is held, but its proofs are not issued yet.
+/// Retryable: the exchange is held by a concurrent request.
 fn exchange_in_progress() -> Error {
     Error::ServiceUnavailable(SUError::Unknown)
 }
@@ -767,17 +759,6 @@ mod tests {
         let now = time::OffsetDateTime::now_utc();
         let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
         let mut seq = mockall::Sequence::new();
-        offlinerepo
-            .expect_reserve_exchange()
-            .withf(move |r, ys| {
-                r.exchange_digest == digest
-                    && r.alpha_id == foreign_pk
-                    && r.state == ReservationState::Reserved
-                    && ys.len() == 2
-            })
-            .times(1)
-            .in_sequence(&mut seq)
-            .returning(|_, _| Ok(true));
         let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
         keys.expect_sign()
             .times(1)
@@ -795,19 +776,21 @@ mod tests {
                 }
                 Ok(signatures)
             });
+        let (cloned_inputs, cloned_hashes) = (inputs.clone(), hashes.clone());
         offlinerepo
-            .expect_issue_reservation()
-            .with(
-                eq(digest),
-                eq(foreign_pk),
-                eq(inputs.clone()),
-                eq(hashes.clone()),
-                always(),
-                eq(expires_at),
-            )
+            .expect_reserve_exchange()
+            .withf(move |r, ys, fps, hs| {
+                r.exchange_digest == digest
+                    && r.alpha_id == foreign_pk
+                    && matches!(&r.state, ReservationState::Issued { proofs, expires_at: e }
+                        if proofs.len() == 2 && *e == expires_at)
+                    && ys.len() == 2
+                    && *fps == cloned_inputs
+                    && *hs == cloned_hashes
+            })
             .times(1)
             .in_sequence(&mut seq)
-            .returning(|_, _, _, _, _, _| Ok(true));
+            .returning(|_, _, _, _| Ok(true));
         clowder
             .expect_signal_offline_exchange_event()
             .times(1)
@@ -901,6 +884,7 @@ mod tests {
     /// returned keyset signs it.
     fn fixture_exchange_mocks(
         f: &RetryFixture,
+        runs: usize,
     ) -> (
         crate::foreign::MockClowderClient,
         crate::foreign::MockKeysClient,
@@ -911,7 +895,7 @@ mod tests {
         let alpha_id = f.alpha_id;
         clowder
             .expect_can_accept_offline_exchange()
-            .times(1)
+            .times(runs)
             .returning(move |_| {
                 Ok((
                     reqwest::Url::parse("https://alpha.example").unwrap(),
@@ -921,7 +905,7 @@ mod tests {
         let myself_pk = core::generate_random_keypair().public_key();
         clowder
             .expect_get_myself_pk()
-            .times(1)
+            .times(runs)
             .returning(move || Ok(myself_pk));
         let recorded = bcr_common::wire::exchange::RecordOfflineExchangeResponse {
             evidence_digest: f.evidence_digest,
@@ -929,7 +913,7 @@ mod tests {
         };
         clowder
             .expect_record_offline_exchange()
-            .times(1)
+            .times(runs)
             .returning(move |_| Ok(recorded.clone()));
         let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
         let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
@@ -937,11 +921,11 @@ mod tests {
         let info = ecash::KeySetInfo::from(info);
         clowder
             .expect_get_keyset_info()
-            .times(1)
+            .times(runs)
             .returning(move |_, _| Ok(info.clone()));
         let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&keyset, None);
         keys.expect_get_keyset_with_expiration()
-            .times(1)
+            .times(runs)
             .returning(move |_| Ok(cloned_keyset.clone()));
         (clowder, keys, keyset)
     }
@@ -1002,17 +986,17 @@ mod tests {
             exchange_digest: f.exchange_digest,
             alpha_id: f.alpha_id,
             evidence_digest: f.evidence_digest,
-            state: ReservationState::Reserved,
+            state: ReservationState::Issued {
+                proofs: vec![f.proof.clone()],
+                expires_at: time::OffsetDateTime::now_utc(),
+            },
         };
-        assert!(repo.reserve_exchange(reservation, &ys).await.unwrap());
         assert!(repo
-            .issue_reservation(
-                f.exchange_digest,
-                f.alpha_id,
+            .reserve_exchange(
+                reservation,
+                &ys,
                 f.request.fingerprints.clone(),
                 f.request.hashes.clone(),
-                vec![f.proof.clone()],
-                time::OffsetDateTime::now_utc(),
             )
             .await
             .unwrap());
@@ -1023,7 +1007,7 @@ mod tests {
     #[tokio::test]
     async fn offline_exchange_replay_returns_stored_proofs() {
         let f = retry_fixture();
-        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f);
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 1);
         keys.expect_sign()
             .times(1)
             .returning(move |blinds| sign_all(&keyset, blinds));
@@ -1051,7 +1035,7 @@ mod tests {
     #[tokio::test]
     async fn offline_exchange_other_request_is_refused() {
         let f = retry_fixture();
-        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f);
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 1);
         keys.expect_sign()
             .times(1)
             .returning(move |blinds| sign_all(&keyset, blinds));
@@ -1074,22 +1058,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn offline_exchange_failed_sign_replay_is_retryable() {
+    async fn offline_exchange_failed_sign_holds_nothing() {
         let f = retry_fixture();
-        let (mut clowder, mut keys, _) = fixture_exchange_mocks(&f);
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 2);
+        let mut seq = mockall::Sequence::new();
         keys.expect_sign()
             .times(1)
+            .in_sequence(&mut seq)
             .returning(|_| Err(Error::InvalidInput(String::from("keys unavailable"))));
-        clowder.expect_signal_offline_exchange_event().never();
+        keys.expect_sign()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(move |blinds| sign_all(&keyset, blinds));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
         let mut online = crate::foreign::MockOnlineRepository::new();
-        online.expect_store_issued().never();
+        online
+            .expect_store_issued()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
         let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
         let srvc = fixture_service(repo, online, keys, clowder);
         let now = time::OffsetDateTime::now_utc();
 
         assert!(exchange(&srvc, &f.request, now).await.is_err());
-        let replay = exchange(&srvc, &f.request, now).await;
-        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+        let retry = exchange(&srvc, &f.request, now).await.unwrap();
+        assert_eq!(retry.len(), 1);
     }
 
     #[tokio::test]
@@ -1123,13 +1119,6 @@ mod tests {
     ) {
         let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
         let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
-        let reservation = OfflineReservation {
-            exchange_digest: f.exchange_digest,
-            alpha_id: f.alpha_id,
-            evidence_digest: f.evidence_digest,
-            state: ReservationState::Reserved,
-        };
-        assert!(repo.reserve_exchange(reservation, &ys).await.unwrap());
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proofs = vec![
             generate_htlc_proof_for_online_exchange(
@@ -1141,14 +1130,21 @@ mod tests {
             )
             .0,
         ];
+        let reservation = OfflineReservation {
+            exchange_digest: f.exchange_digest,
+            alpha_id: f.alpha_id,
+            evidence_digest: f.evidence_digest,
+            state: ReservationState::Issued {
+                proofs: proofs.clone(),
+                expires_at,
+            },
+        };
         assert!(repo
-            .issue_reservation(
-                f.exchange_digest,
-                f.alpha_id,
+            .reserve_exchange(
+                reservation,
+                &ys,
                 f.request.fingerprints.clone(),
                 f.request.hashes.clone(),
-                proofs.clone(),
-                expires_at,
             )
             .await
             .unwrap());
