@@ -1187,8 +1187,9 @@ mod tests {
         assert_eq!(completed.state, ReservationState::Complete(stored));
     }
 
-    #[tokio::test]
-    async fn offline_exchange_replay_tail_fails_is_retryable() {
+    /// Replays the Issued fixture exchange with a signal failing with `signal_err`, and
+    /// checks it stays Issued with its stored proofs and expiry.
+    async fn replay_with_failing_tail(signal_err: fn() -> Error) -> Result<Vec<cashu::Proof>> {
         let f = retry_fixture();
         let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
         let (repo, stored) = issued_fixture_store(&f, expires_at).await;
@@ -1196,9 +1197,7 @@ mod tests {
         clowder
             .expect_signal_offline_exchange_event()
             .times(1)
-            .returning(|_, _, _, _, _, _| {
-                Err(Error::InvalidInput(String::from("clowder unavailable")))
-            });
+            .returning(move |_, _, _, _, _, _| Err(signal_err()));
         let mut keys = crate::foreign::MockKeysClient::new();
         keys.expect_sign().never();
         let mut online = crate::foreign::MockOnlineRepository::new();
@@ -1207,7 +1206,6 @@ mod tests {
         let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
 
         let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
-        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
         let still = repo.search_reservation(&ys).await.unwrap().unwrap();
         assert_eq!(
             still.state,
@@ -1216,42 +1214,40 @@ mod tests {
                 expires_at
             }
         );
+        replay
+    }
+
+    fn rejected(r: bcr_common::wire::clowder::ClowderRejection) -> Error {
+        Error::ClowderNatsClient(ClowderClientError::Rejected(r))
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_fails_is_retryable() {
+        let replay =
+            replay_with_failing_tail(|| Error::InvalidInput(String::from("clowder unavailable")))
+                .await;
+        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_transient_rejection_is_retryable() {
+        let replay = replay_with_failing_tail(|| {
+            rejected(bcr_common::wire::clowder::ClowderRejection::LedgerBusy)
+        })
+        .await;
+        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
     }
 
     #[tokio::test]
     async fn offline_exchange_replay_tail_refused_is_not_retryable() {
-        let f = retry_fixture();
-        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
-        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
-        let mut clowder = crate::foreign::MockClowderClient::new();
-        clowder
-            .expect_signal_offline_exchange_event()
-            .times(1)
-            .returning(|_, _, _, _, _, _| {
-                Err(Error::ClowderNatsClient(ClowderClientError::Rejected(
-                    bcr_common::wire::clowder::ClowderRejection::InvalidProof,
-                )))
-            });
-        let mut keys = crate::foreign::MockKeysClient::new();
-        keys.expect_sign().never();
-        let mut online = crate::foreign::MockOnlineRepository::new();
-        online.expect_store_issued().never();
-        let srvc = fixture_service(repo.clone(), online, keys, clowder);
-        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
-
-        let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
+        let replay = replay_with_failing_tail(|| {
+            rejected(bcr_common::wire::clowder::ClowderRejection::InvalidProof)
+        })
+        .await;
         assert!(matches!(
             replay,
             Err(Error::ClowderNatsClient(ClowderClientError::Rejected(_)))
         ));
-        let still = repo.search_reservation(&ys).await.unwrap().unwrap();
-        assert_eq!(
-            still.state,
-            ReservationState::Issued {
-                proofs: stored,
-                expires_at
-            }
-        );
     }
 
     #[tokio::test]
