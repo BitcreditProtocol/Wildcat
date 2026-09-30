@@ -201,7 +201,8 @@ impl Service {
     }
 
     /// Signals and records issued proofs, then marks the exchange complete; a replay of an
-    /// exchange that stopped part way runs this again with the stored proofs.
+    /// exchange that stopped part way runs this again with the stored proofs. A failure
+    /// leaves it Issued and is retryable, so no proofs leave unannounced.
     async fn announce_offline_exchange(
         &self,
         request: OfflineExchangeRequest,
@@ -209,18 +210,35 @@ impl Service {
         proofs: Vec<cashu::Proof>,
         expires_at: TStamp,
     ) -> Result<Vec<cashu::Proof>> {
+        if let Err(e) = self
+            .try_announce_offline_exchange(request, digest, &proofs, expires_at)
+            .await
+        {
+            tracing::warn!("offline exchange left issued, retryable: {e}");
+            return Err(exchange_in_progress());
+        }
+        Ok(proofs)
+    }
+
+    async fn try_announce_offline_exchange(
+        &self,
+        request: OfflineExchangeRequest,
+        digest: [u8; 32],
+        proofs: &[cashu::Proof],
+        expires_at: TStamp,
+    ) -> Result<()> {
         self.clowder
             .signal_offline_exchange_event(
                 request.fingerprints,
                 request.hashes,
                 request.wallet_pk,
-                proofs.clone(),
+                proofs.to_vec(),
                 Some(digest),
                 Some(request.wallet_signature),
             )
             .await?;
         let mut issued: HashMap<Sha256Hash, Vec<cashu::Proof>> = HashMap::new();
-        for proof in &proofs {
+        for proof in proofs {
             let (hash, _) = htlc_lock(proof)?;
             issued.entry(hash).or_default().push(proof.clone());
         }
@@ -229,8 +247,7 @@ impl Service {
                 .store_issued(hash, expires_at, hash_proofs)
                 .await?;
         }
-        self.offline_repo.complete_reservation(digest).await?;
-        Ok(proofs)
+        self.offline_repo.complete_reservation(digest).await
     }
 
     pub async fn online_exchange(
@@ -1092,51 +1109,131 @@ mod tests {
         assert_eq!(proofs_json(&proofs), proofs_json(&[f.proof]));
     }
 
+    /// The fixture's exchange stopped after its proofs were stored, before they were
+    /// announced; the proofs are HTLC-locked like issued offline eCash.
+    async fn issued_fixture_store(
+        f: &RetryFixture,
+        expires_at: TStamp,
+    ) -> (
+        Arc<crate::persistence::inmemory::OfflineRepository>,
+        Vec<cashu::Proof>,
+    ) {
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+        let reservation = OfflineReservation {
+            exchange_digest: f.exchange_digest,
+            alpha_id: f.alpha_id,
+            evidence_digest: f.evidence_digest,
+            state: ReservationState::Reserved,
+        };
+        assert!(repo.reserve_exchange(reservation, &ys).await.unwrap());
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = vec![
+            generate_htlc_proof_for_online_exchange(
+                &keyset,
+                cashu::Amount::from(8),
+                expires_at,
+                f.request.wallet_pk,
+                cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            )
+            .0,
+        ];
+        assert!(repo
+            .issue_reservation(
+                f.exchange_digest,
+                f.alpha_id,
+                f.request.fingerprints.clone(),
+                f.request.hashes.clone(),
+                proofs.clone(),
+                expires_at,
+            )
+            .await
+            .unwrap());
+        (repo, proofs)
+    }
+
     #[tokio::test]
     async fn offline_exchange_replay_resumes_tail() {
         let f = retry_fixture();
-        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f);
-        keys.expect_sign()
-            .times(1)
-            .returning(move |blinds| sign_all(&keyset, blinds));
-        let signals = std::sync::atomic::AtomicUsize::new(0);
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder.expect_record_offline_exchange().never();
+        let cloned = stored.clone();
         clowder
             .expect_signal_offline_exchange_event()
-            .times(2)
-            .returning(move |_, _, _, _, _, _| {
-                match signals.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
-                    0 => Err(Error::InvalidInput(String::from("clowder unavailable"))),
-                    _ => Ok(()),
-                }
-            });
-        let now = time::OffsetDateTime::now_utc();
-        let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
+            .withf(move |_, _, _, proofs, _, _| *proofs == cloned)
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
         let mut online = crate::foreign::MockOnlineRepository::new();
         online
             .expect_store_issued()
             .with(always(), eq(expires_at), always())
             .times(1)
             .returning(|_, _, _| Ok(()));
-        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
         let srvc = fixture_service(repo.clone(), online, keys, clowder);
         let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
 
-        assert!(exchange(&srvc, &f.request, now).await.is_err());
-        let stopped = repo.search_reservation(&ys).await.unwrap().unwrap();
-        let ReservationState::Issued {
-            proofs: stored,
-            expires_at: stored_expiry,
-        } = stopped.state
-        else {
-            panic!("not issued: {:?}", stopped.state);
-        };
-        assert_eq!(stored_expiry, expires_at);
-        let proofs = exchange(&srvc, &f.request, now + time::Duration::hours(1))
+        let proofs = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
         assert_eq!(proofs_json(&proofs), proofs_json(&stored));
         let completed = repo.search_reservation(&ys).await.unwrap().unwrap();
         assert_eq!(completed.state, ReservationState::Complete(stored));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_fails_is_retryable() {
+        let f = retry_fixture();
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| {
+                Err(Error::InvalidInput(String::from("clowder unavailable")))
+            });
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online.expect_store_issued().never();
+        let srvc = fixture_service(repo.clone(), online, keys, clowder);
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+
+        let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
+        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+        let still = repo.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(
+            still.state,
+            ReservationState::Issued {
+                proofs: stored,
+                expires_at
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_bad_signature_is_refused() {
+        let f = retry_fixture();
+        let repo = completed_fixture_store(&f).await;
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let srvc = fixture_service(
+            repo,
+            crate::foreign::MockOnlineRepository::new(),
+            keys,
+            crate::foreign::MockClowderClient::new(),
+        );
+        let forged = OfflineExchangeRequest {
+            wallet_signature: f.other_request.wallet_signature,
+            ..f.request.clone()
+        };
+
+        let replay = exchange(&srvc, &forged, time::OffsetDateTime::now_utc()).await;
+        assert!(matches!(replay, Err(Error::InvalidInput(_))));
     }
 
     fn redeem_request(amounts: &[u64]) -> bcr_common::wire::exchange::RedeemOfflineExchangeRequest {
