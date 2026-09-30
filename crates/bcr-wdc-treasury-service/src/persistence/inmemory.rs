@@ -160,19 +160,6 @@ struct Reservations {
 
 #[async_trait]
 impl foreign::OfflineRepository for OfflineRepository {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        let mut locked = self.fingerprints.lock().unwrap();
-        for (h, fp) in hash.into_iter().zip(fps) {
-            locked.insert(h, (mint_id, fp));
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -260,20 +247,31 @@ impl foreign::OfflineRepository for OfflineRepository {
         fps: Vec<ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
     ) -> Result<bool> {
         let mut locked = self.reservations.lock().unwrap();
         let Some(reservation) = locked.by_digest.get_mut(&exchange_digest) else {
             return Ok(false);
         };
-        if reservation.proofs.is_some() {
+        if reservation.state != foreign::ReservationState::Reserved {
             return Ok(false);
         }
-        reservation.proofs = Some(proofs);
+        reservation.state = foreign::ReservationState::Issued { proofs, expires_at };
         let mut fingerprints = self.fingerprints.lock().unwrap();
         for (h, fp) in hashes.into_iter().zip(fps) {
             fingerprints.insert(h, (mint_id, fp));
         }
         Ok(true)
+    }
+
+    async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()> {
+        let mut locked = self.reservations.lock().unwrap();
+        if let Some(reservation) = locked.by_digest.get_mut(&exchange_digest) {
+            if let foreign::ReservationState::Issued { proofs, .. } = &reservation.state {
+                reservation.state = foreign::ReservationState::Complete(proofs.clone());
+            }
+        }
+        Ok(())
     }
 }
 

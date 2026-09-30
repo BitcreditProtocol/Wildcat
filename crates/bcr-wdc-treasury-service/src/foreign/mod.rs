@@ -70,12 +70,6 @@ pub trait OnlineRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OfflineRepository: Send + Sync {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()>;
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -106,8 +100,8 @@ pub trait OfflineRepository: Send + Sync {
         &self,
         ys: &[cashu::PublicKey],
     ) -> Result<Option<OfflineReservation>>;
-    /// Reserved to Issued, storing the proofs in order and the fingerprints in one write:
-    /// `false`, with nothing written, unless the digest is still Reserved.
+    /// Reserved to Issued, storing the proofs in order, their expiry and the fingerprints
+    /// in one write: `false`, with nothing written, unless the digest is still Reserved.
     async fn issue_reservation(
         &self,
         exchange_digest: [u8; 32],
@@ -115,7 +109,10 @@ pub trait OfflineRepository: Send + Sync {
         fps: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
     ) -> Result<bool>;
+    /// Issued to Complete, once the issuance has been signalled and stored.
+    async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()>;
 }
 
 /// An offline exchange's hold on its Ys, keyed by its exchange digest.
@@ -124,8 +121,20 @@ pub struct OfflineReservation {
     pub exchange_digest: [u8; 32],
     pub alpha_id: secp256k1::PublicKey,
     pub evidence_digest: [u8; 32],
-    /// `None` while Reserved; the issued proofs once Issued.
-    pub proofs: Option<Vec<cashu::Proof>>,
+    pub state: ReservationState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReservationState {
+    /// Held for signing; nothing is issued yet.
+    Reserved,
+    /// Signed and stored, but not yet signalled and recorded as issued.
+    Issued {
+        proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
+    },
+    /// Signalled and recorded as issued.
+    Complete(Vec<cashu::Proof>),
 }
 
 #[cfg_attr(test, mockall::automock)]

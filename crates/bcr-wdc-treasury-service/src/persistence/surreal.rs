@@ -978,16 +978,47 @@ struct OfflineReservationDBEntry {
     alpha_id: String,
     evidence_digest: [u8; 32],
     proofs: Option<Vec<cashu::Proof>>,
+    expires_at: Option<i64>,
+    complete: bool,
+}
+
+impl OfflineReservationDBEntry {
+    fn new(id: RecordId, reservation: foreign::OfflineReservation) -> Self {
+        let (proofs, expires_at, complete) = match reservation.state {
+            foreign::ReservationState::Reserved => (None, None, false),
+            foreign::ReservationState::Issued { proofs, expires_at } => {
+                (Some(proofs), Some(expires_at.unix_timestamp()), false)
+            }
+            foreign::ReservationState::Complete(proofs) => (Some(proofs), None, true),
+        };
+        Self {
+            id,
+            exchange_digest: reservation.exchange_digest,
+            alpha_id: reservation.alpha_id.to_string(),
+            evidence_digest: reservation.evidence_digest,
+            proofs,
+            expires_at,
+            complete,
+        }
+    }
 }
 
 impl From<OfflineReservationDBEntry> for foreign::OfflineReservation {
     fn from(entry: OfflineReservationDBEntry) -> Self {
+        let state = match (entry.proofs, entry.expires_at, entry.complete) {
+            (Some(proofs), _, true) => foreign::ReservationState::Complete(proofs),
+            (Some(proofs), Some(expires_at), false) => foreign::ReservationState::Issued {
+                proofs,
+                expires_at: TStamp::from_unix_timestamp(expires_at).expect("expires_at <--> i64"),
+            },
+            _ => foreign::ReservationState::Reserved,
+        };
         Self {
             exchange_digest: entry.exchange_digest,
             alpha_id: secp256k1::PublicKey::from_str(&entry.alpha_id)
                 .expect("alpha_id <--> String"),
             evidence_digest: entry.evidence_digest,
-            proofs: entry.proofs,
+            state,
         }
     }
 }
@@ -1030,24 +1061,6 @@ impl DBForeignOffline {
 
 #[async_trait]
 impl foreign::OfflineRepository for DBForeignOffline {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        for (hash, fp) in hash.into_iter().zip(fps) {
-            let entry = ForeignFingerprintDBEntry::new(mint_id, hash, fp);
-            let _: Option<ForeignFingerprintDBEntry> = self
-                .db
-                .insert(entry.id.clone())
-                .content(entry)
-                .await
-                .map_err(|e| Error::DB(anyhow!(e)))?;
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -1186,13 +1199,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         ys: &[cashu::PublicKey],
     ) -> Result<bool> {
         let rid = Self::reservation_rid(reservation.exchange_digest);
-        let entry = OfflineReservationDBEntry {
-            id: rid.clone(),
-            exchange_digest: reservation.exchange_digest,
-            alpha_id: reservation.alpha_id.to_string(),
-            evidence_digest: reservation.evidence_digest,
-            proofs: reservation.proofs,
-        };
+        let entry = OfflineReservationDBEntry::new(rid.clone(), reservation);
         let y_rids: Vec<RecordId> = ys
             .iter()
             .map(|y| RecordId::from_table_key(Self::RESERVED_YS_TABLE, y.to_string()))
@@ -1250,6 +1257,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         fps: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
         proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
     ) -> Result<bool> {
         let rid = Self::reservation_rid(exchange_digest);
         let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
@@ -1262,7 +1270,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .query(
                 "
                 BEGIN;
-                    LET $issued = UPDATE $rid SET proofs = $proofs WHERE proofs = NONE RETURN AFTER;
+                    LET $issued = UPDATE $rid SET proofs = $proofs, expires_at = $expires_at WHERE proofs = NONE RETURN AFTER;
                     IF array::is_empty($issued) { THROW 'not reserved' };
                     IF !array::is_empty($fps) { INSERT $fps };
                 COMMIT;
@@ -1270,6 +1278,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             )
             .bind(("rid", rid.clone()))
             .bind(("proofs", proofs))
+            .bind(("expires_at", expires_at.unix_timestamp()))
             .bind(("fps", fp_entries))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
@@ -1283,6 +1292,17 @@ impl foreign::OfflineRepository for DBForeignOffline {
             }
             _ => Ok(false),
         }
+    }
+
+    async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()> {
+        self.db
+            .query("UPDATE $rid SET complete = true WHERE proofs != NONE")
+            .bind(("rid", Self::reservation_rid(exchange_digest)))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .check()
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
     }
 }
 
@@ -1442,7 +1462,18 @@ mod tests {
             Sha256Hash::from_slice(&[0u8; 32]).unwrap(),
             Sha256Hash::from_slice(&[1u8; 32]).unwrap(),
         ];
-        db.store_fps(alpha_id, fps, hash.clone()).await.unwrap();
+        let reservation = foreign::OfflineReservation {
+            exchange_digest: [9u8; 32],
+            alpha_id,
+            evidence_digest: [2u8; 32],
+            state: foreign::ReservationState::Reserved,
+        };
+        assert!(db.reserve_exchange(reservation, &[y]).await.unwrap());
+        let now = time::OffsetDateTime::now_utc();
+        assert!(db
+            .issue_reservation([9u8; 32], alpha_id, fps, hash.clone(), vec![], now)
+            .await
+            .unwrap());
         let result = db.search_fp(&hash[0]).await.unwrap();
         assert!(result.is_some());
         let (mint, fp) = result.unwrap();
