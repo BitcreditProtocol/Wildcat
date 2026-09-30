@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn offline_exchange_reservation_worked_example() {
+    async fn test_foreign_offline_reservation_worked_example() {
         foreign_offline_reservation_worked_example(inmemory::OfflineRepository::default()).await;
         foreign_offline_reservation_worked_example(init_surreal_foreign_offline_db().await).await;
     }
@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_offline_exchange_reservation_all_or_nothing() {
+    async fn test_foreign_offline_reservation_all_or_nothing() {
         foreign_offline_reservation_all_or_nothing(inmemory::OfflineRepository::default()).await;
         foreign_offline_reservation_all_or_nothing(init_surreal_foreign_offline_db().await).await;
     }
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_offline_exchange_reservation_proofs_in_order() {
+    async fn test_foreign_offline_reservation_proofs_in_order() {
         foreign_offline_reservation_proofs_in_order(inmemory::OfflineRepository::default()).await;
         foreign_offline_reservation_proofs_in_order(init_surreal_foreign_offline_db().await).await;
     }
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_offline_exchange_reservation_issue_needs_reserved() {
+    async fn test_foreign_offline_reservation_issue_needs_reserved() {
         foreign_offline_reservation_issue_needs_reserved(inmemory::OfflineRepository::default())
             .await;
         foreign_offline_reservation_issue_needs_reserved(init_surreal_foreign_offline_db().await)
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_offline_exchange_reservation_store_issued_idempotent() {
+    async fn test_foreign_offline_reservation_store_issued_idempotent() {
         foreign_online_store_issued_idempotent(init_inmemory_foreign_online_db()).await;
         foreign_online_store_issued_idempotent(init_surreal_foreign_online_db().await).await;
     }
