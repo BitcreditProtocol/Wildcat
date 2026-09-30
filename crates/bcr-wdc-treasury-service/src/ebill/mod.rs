@@ -42,6 +42,7 @@ pub trait Repository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
+    async fn bill_is_held_by_mint(&self, bid: BillId) -> Result<bool>;
     async fn info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;

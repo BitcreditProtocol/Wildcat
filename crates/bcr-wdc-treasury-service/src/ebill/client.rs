@@ -106,8 +106,130 @@ pub struct WildcatCl {
     pub ebill: Box<EbillClient>,
 }
 
+/// The history projection is produced from the eBill service's locally validated
+/// chain. Ordinary endorsement to the Mint is not an authorized Mint transfer.
+fn history_confirms_mint_holder(
+    history: &[wire_bill::BillHistoryBlock],
+    mint: &core::NodeId,
+) -> bool {
+    if history.iter().any(|block| {
+        !matches!(
+            block.block_type.as_str(),
+            "Issue"
+                | "Endorse"
+                | "Mint"
+                | "Sell"
+                | "Recourse"
+                | "RequestToAccept"
+                | "Accept"
+                | "RequestToPay"
+                | "OfferToSell"
+                | "RejectToAccept"
+                | "RejectToPay"
+                | "RejectToPayRecourse"
+                | "RejectToBuy"
+                | "RequestRecourse"
+        )
+    }) {
+        return false;
+    }
+    history
+        .iter()
+        .filter(|block| {
+            matches!(
+                block.block_type.as_str(),
+                "Issue" | "Endorse" | "Mint" | "Sell" | "Recourse"
+            )
+        })
+        .max_by_key(|block| block.block_id)
+        .is_some_and(|block| {
+            block.block_type == "Mint"
+                && block
+                    .pay_to_the_order_of
+                    .as_ref()
+                    .is_some_and(|holder| holder.node_id() == *mint)
+        })
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    #[test]
+    fn ordinary_return_to_mint_cannot_reauthorize_an_old_mint_operation() {
+        let mint = bcr_common::core_tests::random_node_id();
+        let other = bcr_common::core_tests::random_node_id();
+        let block = |id, kind: &str, owner: Option<core::NodeId>| wire_bill::BillHistoryBlock {
+            block_id: id,
+            block_type: kind.into(),
+            pay_to_the_order_of: owner.map(|node_id| {
+                wire_bill::BillParticipant::Anon(wire_bill::BillAnonParticipant {
+                    node_id,
+                    nostr_relays: vec![],
+                })
+            }),
+            payment_data: None,
+            request_deadline: None,
+            signed: wire_bill::SignedBy {
+                data: wire_bill::BillParticipant::Anon(wire_bill::BillAnonParticipant {
+                    node_id: mint.clone(),
+                    nostr_relays: vec![],
+                }),
+                signatory: None,
+            },
+            signing_timestamp: id,
+            signing_address: None,
+        };
+        assert!(!history_confirms_mint_holder(&[], &mint));
+        assert!(!history_confirms_mint_holder(
+            &[block(1, "Issue", None)],
+            &mint
+        ));
+        let minted = block(2, "Mint", Some(mint.clone()));
+        assert!(history_confirms_mint_holder(
+            &[minted.clone(), block(3, "RequestToPay", None)],
+            &mint
+        ));
+        assert!(!history_confirms_mint_holder(
+            &[minted.clone(), block(3, "Endorse", Some(other.clone()))],
+            &mint
+        ));
+        assert!(!history_confirms_mint_holder(
+            &[
+                minted.clone(),
+                block(3, "Endorse", Some(other)),
+                block(4, "Endorse", Some(mint.clone()))
+            ],
+            &mint
+        ));
+        assert!(!history_confirms_mint_holder(
+            &[minted.clone(), block(3, "Recourse", Some(mint.clone()))],
+            &mint
+        ));
+        assert!(!history_confirms_mint_holder(
+            &[minted, block(3, "UnknownTransfer", Some(mint.clone()))],
+            &mint
+        ));
+    }
+}
+
 #[async_trait]
 impl ebill::WildcatClient for WildcatCl {
+    async fn bill_is_held_by_mint(&self, bid: BillId) -> Result<bool> {
+        let identity = self.ebill.get_identity().await?;
+        let bill = self.ebill.get_bill(&bid).await?;
+        let history = self.ebill.get_bill_history(bid.clone()).await?;
+        let holder = bill
+            .participants
+            .endorsee
+            .as_ref()
+            .unwrap_or(&bill.participants.payee);
+        Ok(bill.id == bid
+            && holder.node_id() == identity.node_id
+            && bill.status.acceptance.accepted
+            && !bill.status.payment.paid
+            && history_confirms_mint_holder(&history, &identity.node_id))
+    }
+
     async fn info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo> {
         let kinfo = self.core.keyset_info(kid).await?;
         Ok(kinfo)
