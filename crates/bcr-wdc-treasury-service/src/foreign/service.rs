@@ -345,7 +345,7 @@ async fn try_offline_htlc_swap(
     let amount = cashu::Amount::from(fp.amount);
     let proof = cashu::Proof {
         amount,
-        keyset_id: fp.keyset_id,
+        keyset_id: fp.keyset_id.into(),
         c: fp.c,
         dleq: fp.dleq,
         witness: None,

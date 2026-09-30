@@ -142,9 +142,21 @@ pub async fn swap_tokens(
         let response = nut19::swap::blob_to_response(blob);
         return Ok(Json(response));
     }
-    let signatures = ctrl
-        .swap(request.inputs, request.outputs, request.commitment, now)
-        .await?;
+    let wire_swap::SwapRequest {
+        inputs,
+        outputs,
+        commitment,
+    } = request;
+    let c_inputs: cashu::Proofs = inputs.into_iter().map(cashu::Proof::from).collect();
+    let c_outputs: Vec<_> = outputs
+        .into_iter()
+        .map(cashu::BlindedMessage::from)
+        .collect();
+    let c_signatures = ctrl.swap(c_inputs, c_outputs, commitment, now).await?;
+    let signatures = c_signatures
+        .into_iter()
+        .map(ecash::BlindSignature::from)
+        .collect::<Vec<_>>();
     let response = wire_swap::SwapResponse { signatures };
     let blob = nut19::swap::response_to_blob(&response);
     cache.store_and_clean(key, blob, now).await;

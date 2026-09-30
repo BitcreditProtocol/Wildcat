@@ -984,7 +984,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             let entry = ForeignFingerprintDBEntry {
                 id: rid.clone(),
                 amount: fp.amount,
-                keyset_id: fp.keyset_id,
+                keyset_id: fp.keyset_id.into(),
                 y: fp.y,
                 c: fp.c,
                 dleq: fp.dleq,
@@ -1015,7 +1015,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         };
         let fp = wire_keys::ProofFingerprint {
             amount: entry.amount,
-            keyset_id: entry.keyset_id,
+            keyset_id: entry.keyset_id.into(),
             y: entry.y,
             c: entry.c,
             dleq: entry.dleq,
@@ -1251,7 +1251,7 @@ impl vault::Repository for DBVault {
 mod tests {
     use super::*;
     use crate::foreign::OfflineRepository;
-    use bcr_common::{core, core_tests};
+    use bcr_common::{core, core_tests, ecash};
     use bitcoin::hashes::Hash;
 
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {
@@ -1272,14 +1272,14 @@ mod tests {
         let fps = vec![
             wire_keys::ProofFingerprint {
                 amount: 10,
-                keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
+                keyset_id: ecash::Id::from_bytes(&[1; 33]).unwrap(),
                 y,
                 c,
                 dleq: None,
             },
             wire_keys::ProofFingerprint {
                 amount: 10,
-                keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
+                keyset_id: ecash::Id::from_bytes(&[1; 33]).unwrap(),
                 y: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 c: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 dleq: None,
