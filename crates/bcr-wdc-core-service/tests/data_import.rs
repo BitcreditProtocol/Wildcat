@@ -313,6 +313,47 @@ async fn core_data_import_conflicting_commitments_leave_no_partial_rows(pool: Pg
 
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn core_data_import_rejects_repeated_ys_within_a_commitment(pool: PgPool) {
+    for repeat_inputs in [true, false] {
+        let (keyset, signatures, proofs) = fixture();
+        let mut pending = commitment(vec![proof_y(&proofs[0])], vec![proofs[0].c], 1);
+        if repeat_inputs {
+            pending.inputs.push(pending.inputs[0]);
+        } else {
+            pending.outputs.push(pending.outputs[0]);
+        }
+        let error = postgres::run_data_import(
+            &destination(&pool),
+            data_import::IMPORT_ID,
+            false,
+            move |conn| {
+                Box::pin(async move {
+                    data_import::import(
+                        conn.unwrap(),
+                        vec![keyset],
+                        signatures,
+                        vec![pending],
+                        vec![],
+                        vec![],
+                    )
+                    .await
+                })
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("repeats a y"));
+        let counts: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM core_keys), (SELECT count(*) FROM core_signatures),
+                    (SELECT count(*) FROM core_commitments), (SELECT count(*) FROM core_proofs),
+                    (SELECT count(*) FROM core_commitment_outputs), (SELECT count(*) FROM wdc_data_imports)",
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(counts, (0, 0, 0, 0, 0, 0));
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
 async fn core_data_import_commitment_and_reservation_write_errors_roll_back(pool: PgPool) {
     for phase in ["commitment", "input", "output", "reservation"] {
         let table = match phase {

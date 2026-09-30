@@ -54,6 +54,65 @@ fn fixture() -> (
     (op, proofs, mint, melt)
 }
 
+#[test]
+fn dry_run_diagnostics_identify_source_duplicates() {
+    let (first, proofs, _, _) = fixture();
+    assert!(data_import::ebill_source_duplicates(std::slice::from_ref(&first)).is_empty());
+    let mut second = first.clone();
+    second.uid = Uuid::new_v4();
+    assert_eq!(
+        data_import::ebill_source_duplicates(&[first.clone(), second]).len(),
+        1
+    );
+    let duplicates = data_import::ebill_source_duplicates(&[first.clone(), first.clone()]);
+    assert_eq!(duplicates.len(), 2);
+    assert!(duplicates
+        .iter()
+        .any(|message| message.contains(&format!("ebill uid: {}", first.uid))));
+    assert!(duplicates
+        .iter()
+        .any(|message| message.contains(&format!("ebill bill_id: {}", first.bill_id))));
+    assert!(data_import::vault_source_duplicates(&proofs)
+        .unwrap()
+        .is_empty());
+    let duplicates =
+        data_import::vault_source_duplicates(&[proofs[0].clone(), proofs[0].clone()]).unwrap();
+    assert_eq!(
+        duplicates,
+        vec![format!("duplicate vault y: {}", proofs[0].y().unwrap())]
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn duplicate_source_bill_id_fails_with_context_and_no_completion(pool: PgPool) {
+    let (first, _, _, _) = fixture();
+    let mut second = first.clone();
+    second.uid = Uuid::new_v4();
+    let bill_id = first.bill_id.to_string();
+    let error = postgres::run_data_import(
+        &destination(&pool),
+        data_import::EBILL_IMPORT_ID,
+        false,
+        move |conn| {
+            Box::pin(
+                async move { data_import::import_ebill(conn.unwrap(), vec![first, second]).await },
+            )
+        },
+    )
+    .await
+    .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains(data_import::EBILL_IMPORT_ID));
+    assert!(message.contains(&format!("bill_id {bill_id}")));
+    assert!(markers(&pool).await.is_empty());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM treasury_ebill_mint_ops")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
 async fn markers(pool: &PgPool) -> Vec<String> {
     sqlx::query_scalar("SELECT id FROM wdc_data_imports ORDER BY id")
         .fetch_all(pool)

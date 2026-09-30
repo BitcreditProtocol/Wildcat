@@ -33,16 +33,6 @@ pub mod postgres {
         pub max_connections: u32,
     }
 
-    pub async fn run_migration(cfg: &DBConnConfig) {
-        let mut conn = sqlx::postgres::PgConnection::connect(&cfg.connection)
-            .await
-            .expect("Failed to connect to database");
-        sqlx::migrate!("./migrations")
-            .run(&mut conn)
-            .await
-            .expect("Failed to run migration");
-    }
-
     // One session lock per destination database, including when targets share a database.
     // Never use a pooled connection: dropping this connection must release the lock.
     const DATA_IMPORT_LOCK: i64 = 0x5744_4349_4d50_4f52;
@@ -62,59 +52,72 @@ pub mod postgres {
     where
         F: for<'a> FnOnce(Option<&'a mut sqlx::PgConnection>) -> ImportFuture<'a> + Send,
     {
-        if dry_run {
-            return import(None).await;
-        }
+        async {
+            if dry_run {
+                return import(None).await;
+            }
 
-        let mut conn = sqlx::PgConnection::connect(&cfg.connection).await?;
-        println!("Waiting for destination data-import lock: {import_id}");
-        sqlx::query("SELECT pg_advisory_lock($1)")
-            .bind(DATA_IMPORT_LOCK)
+            let mut conn = sqlx::PgConnection::connect(&cfg.connection)
+                .await
+                .context("Failed to connect to destination PostgreSQL")?;
+            println!("Waiting for destination data-import lock: {import_id}");
+            sqlx::query("SELECT pg_advisory_lock($1)")
+                .bind(DATA_IMPORT_LOCK)
+                .execute(&mut conn)
+                .await
+                .context("Failed to acquire destination data-import lock")?;
+            // Schema evolution is independent of the one-time data import. Even
+            // completed targets must apply later migrations without their source.
+            sqlx::migrate!("./migrations")
+                .run_direct(&mut conn)
+                .await
+                .context("Failed to apply destination schema migrations")?;
+            // Deliberately separate from SQLx's schema-migration bookkeeping.
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS wdc_data_imports (
+                    id TEXT PRIMARY KEY,
+                    completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )",
+            )
             .execute(&mut conn)
             .await?;
-        // Deliberately separate from SQLx's schema-migration bookkeeping.
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS wdc_data_imports (
-                id TEXT PRIMARY KEY,
-                completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )",
-        )
-        .execute(&mut conn)
-        .await?;
-        let completed: bool =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM wdc_data_imports WHERE id = $1)")
-                .bind(import_id)
-                .fetch_one(&mut conn)
-                .await?;
-        if completed {
-            println!("Data import {import_id} was already applied; skipping");
-            return Ok(());
-        }
+            let completed: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM wdc_data_imports WHERE id = $1)")
+                    .bind(import_id)
+                    .fetch_one(&mut conn)
+                    .await?;
+            if completed {
+                println!("Data import {import_id} was already applied; skipping");
+                conn.close().await.context("Failed to close destination connection")?;
+                return Ok(());
+            }
 
-        // SQLx's direct connection entrypoint also keeps this future Send.
-        sqlx::migrate!("./migrations").run_direct(&mut conn).await?;
-        let mut tx = conn.begin().await?;
-        if let Err(error) = import(Some(&mut tx)).await {
-            tx.rollback()
+            let mut tx = conn.begin().await?;
+            if let Err(error) = import(Some(&mut tx)).await {
+                return match tx.rollback().await {
+                    Ok(()) => Err(error).context("Import rolled back; fix the error and rerun with source writers stopped"),
+                    Err(rollback_error) => Err(error).context(format!(
+                        "Rollback also failed: {rollback_error}; the destination connection will close. Fix the error and rerun with source writers stopped",
+                    )),
+                };
+            }
+            let recorded = sqlx::query("INSERT INTO wdc_data_imports (id) VALUES ($1)")
+                .bind(import_id)
+                .execute(&mut *tx)
+                .await?;
+            anyhow::ensure!(
+                recorded.rows_affected() == 1,
+                "Completion marker was not written"
+            );
+            tx.commit()
                 .await
-                .context("Failed to roll back data import")?;
-            return Err(error).with_context(|| {
-                format!("Data import {import_id} rolled back; fix the error and rerun with source writers stopped")
-            });
+                .context("Data-import commit failed; rerun to check completion state")?;
+            conn.close().await.context("Failed to close destination connection")?;
+            println!("Data import {import_id} complete");
+            Ok(())
         }
-        let recorded = sqlx::query("INSERT INTO wdc_data_imports (id) VALUES ($1)")
-            .bind(import_id)
-            .execute(&mut *tx)
-            .await?;
-        anyhow::ensure!(
-            recorded.rows_affected() == 1,
-            "Completion marker was not written"
-        );
-        tx.commit()
-            .await
-            .context("Data-import commit failed; rerun to check completion state")?;
-        println!("Data import {import_id} complete");
-        Ok(())
+        .await
+        .with_context(|| format!("Data import {import_id}"))
     }
 }
 

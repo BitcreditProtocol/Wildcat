@@ -173,11 +173,16 @@ pub async fn import(
 
 async fn import_commitment_ys(
     conn: &mut PgConnection,
-    table: &str,
+    table: &'static str,
     keys: Vec<cashu::PublicKey>,
     signature: &str,
 ) -> anyhow::Result<bool> {
     let ys: Vec<String> = keys.iter().map(ToString::to_string).collect();
+    let unique: std::collections::HashSet<_> = ys.iter().collect();
+    ensure!(
+        unique.len() == ys.len(),
+        "Commitment {signature} repeats a y within {table}; reconcile the source commitment",
+    );
     let signatures = vec![signature; ys.len()];
     let written = sqlx::query(&format!(
         "INSERT INTO {table} (y, signature)
@@ -198,7 +203,6 @@ async fn import_commitment_ys(
             .bind(&ys)
             .fetch_one(conn)
             .await?;
-    let unique: std::collections::HashSet<_> = ys.iter().collect();
     ensure!(
         stored == unique.len() as i64,
         "Commitment {signature} has missing rows in {table}"

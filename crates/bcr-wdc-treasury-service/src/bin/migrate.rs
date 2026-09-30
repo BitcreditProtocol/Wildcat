@@ -45,6 +45,11 @@ async fn migrate_ebill(
                 if let Some(conn) = conn {
                     data_import::import_ebill(conn, ops).await?;
                 } else {
+                    for duplicate in data_import::ebill_source_duplicates(&ops) {
+                        println!(
+                            "DRY RUN WARNING: {duplicate}; reconcile source data before importing"
+                        );
+                    }
                     println!(
                         "DRY RUN: Would migrate {} ebill mint_ops to PostgreSQL",
                         ops.len()
@@ -76,6 +81,11 @@ async fn migrate_vault(
                 if let Some(conn) = conn {
                     data_import::import_vault(conn, proofs).await?;
                 } else {
+                    for duplicate in data_import::vault_source_duplicates(&proofs)? {
+                        println!(
+                            "DRY RUN WARNING: {duplicate}; reconcile source data before importing"
+                        );
+                    }
                     println!(
                         "DRY RUN: Would migrate {} vault proofs to PostgreSQL",
                         proofs.len()

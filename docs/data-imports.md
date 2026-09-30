@@ -4,7 +4,9 @@ The `core-migrate` and `treasury-migrate` binaries use the existing `config.toml
 `CORE_SERVICE__…` / `TREASURY_SERVICE__…` environment settings. Run each service's
 binary with `--dry-run` to read and report source data. Dry runs never connect to
 PostgreSQL, run schema migrations, or read/write import state, even when an
-import has already completed.
+import has already completed. Treasury dry runs also report duplicate source
+ebill `uid`/`bill_id` and vault `y` values; reconcile these before importing. Dry
+runs do not inspect PostgreSQL for existing destination conflicts.
 
 Before importing, **stop all source writers** and keep them stopped until all
 required targets finish. The separate SurrealDB reads do not form a snapshot.
@@ -21,7 +23,8 @@ not synchronize later source changes.
 | Treasury vault | `appcfg.vault.new` | `surreal-to-postgres/treasury-vault/v1` |
 | Treasury onchain | `appcfg.onchain.new` | `surreal-to-postgres/treasury-onchain/v1` |
 
-IDs describe the data conversion version and must not change with image tags.
+IDs identify one-time imports and must not change with image tags. They are not
+a way to trigger schema upgrades or reload an existing destination.
 No imports have been added for foreign repositories, denied onchain operations,
 or other data not read by the original binaries.
 
@@ -32,8 +35,10 @@ wait; after the first completes, the waiting attempt skips successfully. Targets
 sharing a database also serialize and retain separate completion rows.
 
 Completed targets log that the import was already applied and return successfully
-without connecting to their SurrealDB source or running schema migrations.
-For a new import, existing SQLx schema migrations run first. All imported rows,
+without connecting to their SurrealDB source. Every non-dry execution applies
+pending SQLx schema migrations under the advisory lock before checking import
+completion, so subsequent deployments still receive schema updates. A schema
+migration failure fails the job even for a completed import. All imported rows,
 write validation, and the completion marker then share one transaction and the
 locked connection. Any read, conversion, write, or validation error fails the
 process and rolls back that target's data transaction. Schema initialization
@@ -45,70 +50,18 @@ conflicts. Commitments import before reservations; a conflicting commitment
 signature, input or output skips that whole commitment, with no partial rows.
 Reservations keep an existing proof state. Imported spent proofs replace
 committed/reserved placeholders by clearing their signature and deadline;
-existing spent proofs cause failure and
-are never overwritten. Treasury imports reject duplicate destination records
-instead of skipping or overwriting them, and preserve onchain source statuses
+existing spent proofs cause failure and are never overwritten. A commitment
+with a repeated input or output y is rejected as malformed source data. Treasury
+imports reject duplicate destination records instead of skipping or overwriting
+them, and preserve onchain source statuses
 without runtime expiry updates. These rules are limited to the migration helpers;
 normal application persistence is unchanged.
 
-## Preparation, cutover and retirement
-
-During preparation, keep the deployed backend selection unchanged. Use dry runs
-or disposable rehearsal destinations while applications continue writing to
-SurrealDB. A successful real import is permanent for that destination and ID;
-rerunning it at cutover will skip, not import newer source data. If the final
-destination was imported prematurely, use the backup/audit recovery procedure
-below rather than deleting its marker or changing its ID.
-
-At cutover, stop source and destination writers, including background routines,
-back up the databases, import all required targets, and reconcile the frozen
-source with PostgreSQL. Check record contents and business totals as well as
-counts, accounting for the intentional Core conflict rules. Only then switch
-application repositories and verify their reads and writes against PostgreSQL.
-The completion marker confirms the configured import transaction succeeded;
-it does not switch any application's backend or prove all SurrealDB consumers
-have migrated.
-
-Runtime changes still needed:
-
-- Core selects SurrealDB when `appcfg.repository_new.max_connections` is zero.
-  A positive value selects its SQLx repository; configure the imported destination
-  before starting writers. Import completion alone never changes this setting.
-- Treasury constructs SurrealDB repositories for ebill, vault, onchain, foreign
-  online and foreign offline at startup. The first three must be wired to their
-  existing SQLx implementations and `*.new` settings. Foreign online has a SQLx
-  implementation but no import here; foreign offline has no SQLx implementation.
-  Both require a separate transition plan before Treasury can start without
-  SurrealDB. Denied onchain operations also remain outside this import's scope.
-- The new `bcr-wdc-mint-service` is upstream's first step towards merging Core and
-  Treasury. This task does not select that runtime automatically. If deployed,
-  include its repositories in backend and consumer checks too.
-
-In Wildcat-deployment, later remove the SurrealDB health dependencies from the
-application services and any retained migration jobs in `base/docker-compose.yml`
-and applicable environment overrides. The `clowder-dev` migration jobs currently
-use `--dry-run`, which always needs the source, and applications wait for those
-jobs to succeed. Move such reporting jobs out of the startup path, or retain
-normal completed-import checks without a SurrealDB health dependency. Keep
-PostgreSQL provisioning/health dependencies. Source configuration fields remain
-required by current configuration parsing even when completed imports skip
-their source connection.
-
-Before retiring the shared SurrealDB instance, inventory the actual deployed
-images and remaining consumers. Current code/configuration identifies Quote,
-Treasury's foreign repositories, the separate eBill service database, EIC and
-ENS. Treasury's ebill target is not the eBill service's own database. Older local
-Compose files also reference key/swap services; confirm whether they still run.
-Wallet deployment files retain a legacy SurrealDB stanza, but current wallet
-runtime code has no database connection and its SurrealDB dependency is for
-development tests. Source access from other deployments or external tools must
-also be checked before removing the source service and its data.
-
-After PostgreSQL starts accepting writes, the frozen SurrealDB is no longer a
-current rollback destination. Define and verify PostgreSQL backup/restore or an
-explicit reconciliation procedure before cutover; simply switching back would
-discard newer changes. Retire SurrealDB dependencies and the source database
-only after operation, recovery and all remaining consumer transitions are verified.
+Preparation should use dry runs or disposable rehearsal destinations while source
+writers remain active. A completed real import does not synchronize newer source
+data. Completion also does not change application backend selection. The cutover
+and retirement plan, including runtime changes and consumer inventory, is tracked
+in [issue #670](https://github.com/BitcreditProtocol/Wildcat/issues/670#issuecomment-5911794646).
 
 ## Recovery after a failure or interruption
 
@@ -142,7 +95,8 @@ reconciliation first. Never mark an import completed solely to bypass errors.
 ## Focused verification
 
 Use a disposable PostgreSQL server and a `DATABASE_URL` with `CREATEDB` permission;
-SQLx gives each test an isolated database. For example:
+SQLx gives each test an isolated database. CI runs these PostgreSQL tests with
+`--include-ignored` as part of `cargo test --workspace`. For example:
 
 ```sh
 SQLX_OFFLINE=true cargo test -p bcr-wdc-utils --test data_import -- --include-ignored
@@ -151,7 +105,8 @@ SQLX_OFFLINE=true cargo test -p bcr-wdc-treasury-service --test data_import --bi
 ```
 
 The tests cover first/repeat imports, real advisory-lock contention, interruption,
-write/validation rollback, Core conflict precedence, separate Treasury markers,
-dry runs, and completed targets with unavailable SurrealDB sources. Binary tests
+pending schema updates on completed imports, write/validation rollback, Core
+conflict precedence, separate Treasury markers, dry runs, and completed targets
+with unavailable SurrealDB sources. Binary tests
 use in-memory SurrealDB; production source connectivity and production-scale
 transaction sizes need validation in the deployment environment.

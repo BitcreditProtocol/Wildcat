@@ -11,6 +11,38 @@ pub const EBILL_IMPORT_ID: &str = "surreal-to-postgres/treasury-ebill/v1";
 pub const VAULT_IMPORT_ID: &str = "surreal-to-postgres/treasury-vault/v1";
 pub const ONCHAIN_IMPORT_ID: &str = "surreal-to-postgres/treasury-onchain/v1";
 
+pub fn ebill_source_duplicates(ops: &[ebill::MintOperation]) -> Vec<String> {
+    let mut duplicates = duplicate_values("ebill uid", ops.iter().map(|op| op.uid.to_string()));
+    duplicates.extend(duplicate_values(
+        "ebill bill_id",
+        ops.iter().map(|op| op.bill_id.to_string()),
+    ));
+    duplicates
+}
+
+pub fn vault_source_duplicates(proofs: &[cashu::Proof]) -> anyhow::Result<Vec<String>> {
+    let ys = proofs
+        .iter()
+        .map(|proof| proof.y().map(|y| y.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to compute source vault proof ys")?;
+    Ok(duplicate_values("vault y", ys))
+}
+
+fn duplicate_values(field: &str, values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut duplicates = std::collections::BTreeSet::new();
+    for value in values {
+        if !seen.insert(value.clone()) {
+            duplicates.insert(value);
+        }
+    }
+    duplicates
+        .into_iter()
+        .map(|value| format!("duplicate {field}: {value}"))
+        .collect()
+}
+
 pub async fn import_ebill(
     conn: &mut PgConnection,
     ops: Vec<ebill::MintOperation>,
@@ -31,7 +63,12 @@ pub async fn import_ebill(
         .bind(serde_json::to_value(blob)?)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("Failed to import ebill mintop {}", op.uid))?;
+        .with_context(|| {
+            format!(
+                "Failed to import ebill mintop {} (bill_id {})",
+                op.uid, op.bill_id
+            )
+        })?;
         ensure!(
             written.rows_affected() == 1,
             "Ebill mintop {} was not stored",

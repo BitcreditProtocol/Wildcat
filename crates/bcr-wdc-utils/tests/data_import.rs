@@ -51,6 +51,97 @@ async fn first_import_and_completed_import_without_source(pool: PgPool) {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn completed_import_applies_pending_schema_without_source(pool: PgPool) {
+    // An import marker must not bypass pending embedded SQLx migrations.
+    sqlx::raw_sql(
+        "CREATE TABLE wdc_data_imports (id TEXT PRIMARY KEY, completed_at TIMESTAMPTZ NOT NULL DEFAULT now());
+         INSERT INTO wdc_data_imports (id) VALUES ('test/v1');
+         CREATE TABLE retained_data (value TEXT);
+         INSERT INTO retained_data VALUES ('keep me');",
+    ).execute(&pool).await.unwrap();
+    run_data_import(&destination(&pool), "test/v1", false, |_| {
+        Box::pin(async { anyhow::bail!("Source unavailable") })
+    })
+    .await
+    .unwrap();
+    let applied: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(applied > 0);
+    assert_eq!(counts(&pool).await, (0, 1));
+    let retained: String = sqlx::query_scalar("SELECT value FROM retained_data")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(retained, "keep me");
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn completed_import_still_fails_on_schema_errors(pool: PgPool) {
+    sqlx::raw_sql(
+        "CREATE TABLE wdc_data_imports (id TEXT PRIMARY KEY, completed_at TIMESTAMPTZ NOT NULL DEFAULT now());
+         INSERT INTO wdc_data_imports (id) VALUES ('test/v1');
+         CREATE TABLE core_commitments (incompatible_column TEXT);",
+    ).execute(&pool).await.unwrap();
+    let error = run_data_import(&destination(&pool), "test/v1", false, |_| {
+        Box::pin(async { panic!("Schema failure must happen before source access") })
+    })
+    .await
+    .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("Data import test/v1"));
+    assert!(message.contains("Failed to apply destination schema migrations"));
+    let markers: i64 = sqlx::query_scalar("SELECT count(*) FROM wdc_data_imports")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(markers, 1);
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn connection_errors_identify_import_target(pool: PgPool) {
+    let mut cfg = destination(&pool);
+    cfg.connection = "invalid destination URL".to_owned();
+    let error = run_data_import(&cfg, "test/connection", false, |_| {
+        Box::pin(async { panic!("Connection failure must happen before source access") })
+    })
+    .await
+    .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("Data import test/connection"));
+    assert!(message.contains("Failed to connect to destination PostgreSQL"));
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
+async fn rollback_failure_preserves_original_import_error(pool: PgPool) {
+    let error = run_data_import(&destination(&pool), "test/rollback", false, |conn| {
+        Box::pin(async move {
+            let conn = conn.unwrap();
+            sqlx::query("INSERT INTO core_signatures VALUES ('one', '{}')")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("SELECT pg_terminate_backend(pg_backend_pid())")
+                .execute(conn)
+                .await
+                .expect_err("Terminating this backend must close the connection");
+            anyhow::bail!("original import error")
+        })
+    })
+    .await
+    .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("Data import test/rollback"));
+    assert!(message.contains("Rollback also failed"));
+    assert!(message.contains("original import error"));
+    assert_eq!(counts(&pool).await, (0, 0));
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires DATABASE_URL with CREATEDB permission"]
 async fn concurrent_attempts_only_import_once(pool: PgPool) {
     let cfg = destination(&pool);
     let started = Arc::new(Notify::new());
