@@ -34,6 +34,7 @@ const SIGNATURES_TABLE: &str = "signatures";
 const PROOFS_TABLE: &str = "proofs";
 const COMMITMENTS_TABLE: &str = "commitments";
 const RESERVED_YS_TABLE: &str = "reserved_ys";
+const MIGRATIONS_TABLE: &str = "migrations";
 
 #[derive(Debug, Clone)]
 pub struct Repository {
@@ -64,6 +65,7 @@ async fn connect_surreal(cfg: surreal::DBConnConfig) -> SurrealResult<Surreal<An
 #[async_trait]
 impl persistence::Repository for Repository {
     async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
+        self.ensure_writable(&[KEYS_TABLE]).await?;
         let rid = RecordId::from_table_key(KEYS_TABLE, entry.id.to_string());
         let dbentry = convert_to_keysdbentry(entry, KEYS_TABLE);
         let _resp: Option<KeysDBEntry> = self
@@ -160,6 +162,7 @@ impl persistence::Repository for Repository {
         y: cashu::PublicKey,
         signature: cashu::BlindSignature,
     ) -> Result<()> {
+        self.ensure_writable(&[SIGNATURES_TABLE]).await?;
         Repository::signature_store(self, y, signature).await
     }
 
@@ -176,6 +179,8 @@ impl persistence::Repository for Repository {
         signatures: Vec<persistence::StoredSignature>,
         commitment: schnorr::Signature,
     ) -> Result<()> {
+        self.ensure_writable(&[PROOFS_TABLE, SIGNATURES_TABLE, COMMITMENTS_TABLE])
+            .await?;
         const CONFLICT_MSG: &str = "duplicate proofs or signatures";
         let commitment_rid = RecordId::from_table_key(COMMITMENTS_TABLE, commitment.to_string());
         let existing_commitment: Option<CommitmentDBEntry> = self
@@ -239,6 +244,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+        self.ensure_writable(&[PROOFS_TABLE]).await?;
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         for tk in tokens {
             let db_entry = convert_to_db(tk, PROOFS_TABLE)?;
@@ -259,6 +265,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+        self.ensure_writable(&[PROOFS_TABLE]).await?;
         for tk in tokens {
             let rid = cpk_to_record_id(PROOFS_TABLE, *tk);
             let _p: Option<cashu::Proof> = self
@@ -298,6 +305,7 @@ impl persistence::Repository for Repository {
         fp_digest: [u8; 32],
         signed: persistence::SignatureOwner,
     ) -> Result<()> {
+        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_store(
             self, inputs, outputs, expiration, wallet_key, commitment, fp_digest, signed,
         )
@@ -320,14 +328,17 @@ impl persistence::Repository for Repository {
     }
 
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_delete(self, commitment).await
     }
 
     async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
+        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_clean_expired(self, now).await
     }
 
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        self.ensure_writable(&[RESERVED_YS_TABLE]).await?;
         Repository::ys_store(self, inputs, deadline).await
     }
 
@@ -336,6 +347,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
+        self.ensure_writable(&[RESERVED_YS_TABLE]).await?;
         Repository::ys_clean_expired(self, now).await
     }
 }
@@ -860,5 +872,133 @@ impl Repository {
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
+    }
+}
+
+////////////////////////////////////////////////////////////////////////// Migrations DB
+/// One record per table migrated to PostgreSQL, keyed by the table name.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct MigrationDBEntry {
+    id: RecordId,
+    #[serde(with = "time::serde::rfc3339")]
+    migrated_at: TStamp,
+}
+
+impl Repository {
+    async fn is_migrated(&self, table: &str) -> Result<bool> {
+        let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
+        let entry: Option<MigrationDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
+        Ok(entry.is_some())
+    }
+
+    async fn mark_migrated(&self, table: &str) -> Result<()> {
+        let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
+        let entry = MigrationDBEntry {
+            id: rid.clone(),
+            migrated_at: time::OffsetDateTime::now_utc(),
+        };
+        let _: Option<MigrationDBEntry> = self
+            .db
+            .upsert(rid)
+            .content(entry)
+            .await
+            .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
+        Ok(())
+    }
+
+    pub async fn is_keys_migrated(&self) -> Result<bool> {
+        self.is_migrated(KEYS_TABLE).await
+    }
+    pub async fn mark_keys_migrated(&self) -> Result<()> {
+        self.mark_migrated(KEYS_TABLE).await
+    }
+
+    pub async fn is_signatures_migrated(&self) -> Result<bool> {
+        self.is_migrated(SIGNATURES_TABLE).await
+    }
+    pub async fn mark_signatures_migrated(&self) -> Result<()> {
+        self.mark_migrated(SIGNATURES_TABLE).await
+    }
+
+    pub async fn is_commitments_migrated(&self) -> Result<bool> {
+        self.is_migrated(COMMITMENTS_TABLE).await
+    }
+    pub async fn mark_commitments_migrated(&self) -> Result<()> {
+        self.mark_migrated(COMMITMENTS_TABLE).await
+    }
+
+    pub async fn is_reserved_ys_migrated(&self) -> Result<bool> {
+        self.is_migrated(RESERVED_YS_TABLE).await
+    }
+    pub async fn mark_reserved_ys_migrated(&self) -> Result<()> {
+        self.mark_migrated(RESERVED_YS_TABLE).await
+    }
+
+    pub async fn is_proofs_migrated(&self) -> Result<bool> {
+        self.is_migrated(PROOFS_TABLE).await
+    }
+    pub async fn mark_proofs_migrated(&self) -> Result<()> {
+        self.mark_migrated(PROOFS_TABLE).await
+    }
+
+    /// Refuses writes to tables already migrated to PostgreSQL, so a service
+    /// still pointing at SurrealDB cannot diverge from the migrated data.
+    async fn ensure_writable(&self, tables: &[&str]) -> Result<()> {
+        for table in tables {
+            if self.is_migrated(table).await? {
+                tracing::error!("write to table {table} refused: already migrated to PostgreSQL");
+                return Err(Error::ServiceUnavailable);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // inherent methods shadow the trait ones, which hold the write guard
+    use crate::persistence::Repository as Repo;
+
+    async fn init_db() -> Repository {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        Repository::from_db(sdb)
+    }
+
+    #[tokio::test]
+    async fn mark_migrated_sets_marker() {
+        let db = init_db().await;
+        assert!(!db.is_reserved_ys_migrated().await.unwrap());
+        db.mark_reserved_ys_migrated().await.unwrap();
+        assert!(db.is_reserved_ys_migrated().await.unwrap());
+        // marking again is harmless
+        db.mark_reserved_ys_migrated().await.unwrap();
+        assert!(!db.is_keys_migrated().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn writes_refused_once_migrated() {
+        let db = init_db().await;
+        let y = cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key());
+        let deadline = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+        Repo::ys_store(&db, vec![y], deadline).await.unwrap();
+        db.mark_reserved_ys_migrated().await.unwrap();
+        let y2 = cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key());
+        let res = Repo::ys_store(&db, vec![y2], deadline).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable)));
+        let res = Repo::ys_clean_expired(&db, deadline).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable)));
+        // reads still work
+        assert_eq!(
+            Repo::ys_contains(&db, &[y, y2]).await.unwrap(),
+            vec![true, false]
+        );
     }
 }
