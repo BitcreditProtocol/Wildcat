@@ -7,7 +7,7 @@ use bcr_common::{
         Amount,
     },
     client::admin::core::Client as CoreClient,
-    core, core_tests,
+    core, core_tests, ecash,
     wire::keys as wire_keys,
 };
 use bcr_wdc_core_service::test_utils::dummy_attestation_for;
@@ -45,8 +45,8 @@ async fn swap() {
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
-    let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-    let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+    let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+    let proof_fps: Vec<wire_keys::ProofFingerprint> = c_proofs
         .iter()
         .cloned()
         .map(wire_keys::ProofFingerprint::try_from)
@@ -61,7 +61,7 @@ async fn swap() {
     let (_, commitment) = client
         .commit_swap(
             proof_fps.clone(),
-            c_blinds,
+            c_blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -69,7 +69,11 @@ async fn swap() {
         )
         .await
         .unwrap();
-    client.swap(proofs, blinds, commitment).await.expect("swap");
+    let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
+    client
+        .swap(proofs, c_blinds, commitment)
+        .await
+        .expect("swap");
 }
 
 #[tokio::test]
@@ -165,7 +169,7 @@ async fn swap_p2pk() {
     let (_, commitment) = client
         .commit_swap(
             correct_fps.clone(),
-            c_blinds,
+            c_blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -173,8 +177,13 @@ async fn swap_p2pk() {
         )
         .await
         .unwrap();
+    let c_correct_proofs: Vec<_> = correct_proofs
+        .iter()
+        .cloned()
+        .map(ecash::Proof::from)
+        .collect();
     let res = client
-        .swap(correct_proofs, blinds, commitment)
+        .swap(c_correct_proofs, c_blinds, commitment)
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));
