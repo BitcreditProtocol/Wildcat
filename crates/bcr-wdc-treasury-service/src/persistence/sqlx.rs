@@ -22,6 +22,8 @@ use crate::{
 
 // ----- end imports
 
+pub mod data_import;
+
 // ///////////////////////////////////////////////////////////////////////// Versioned blob
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

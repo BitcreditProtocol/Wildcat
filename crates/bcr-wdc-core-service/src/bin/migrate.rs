@@ -1,12 +1,9 @@
-// ----- standard library imports
-// ----- extra library imports
+use anyhow::Context;
 use bcr_wdc_core_service::{
     config::App as AppCfg,
-    persistence::{sqlx, surreal, Repository},
+    persistence::{sqlx::data_import, surreal},
 };
-// ----- local imports
-
-// ----- end imports
+use bcr_wdc_utils::{postgres, surreal::DBConnConfig as SourceConfig};
 
 #[derive(Debug, serde::Deserialize)]
 struct MigrateConfig {
@@ -14,112 +11,114 @@ struct MigrateConfig {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let dry_run = std::env::args().any(|arg| arg == "--dry-run");
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
         .add_source(config::Environment::with_prefix("CORE_SERVICE").separator("__"))
         .build()
-        .expect("Failed to build migrate config");
+        .context("Failed to build migrate config")?;
     let cfg: MigrateConfig = settings
         .try_deserialize()
-        .expect("Failed to parse migrate config");
-    // Connect to SurrealDB
-    let surreal_repository = surreal::Repository::new(cfg.appcfg.repository)
-        .await
-        .expect("Failed to connect to SurrealDB");
-    // Dump all data from SurrealDB
-    let keys = surreal_repository
-        .dump_keys()
-        .await
-        .expect("Failed to list keys from SurrealDB");
-    let signatures = surreal_repository
-        .dump_signatures()
-        .await
-        .expect("Failed to list signatures from SurrealDB");
-    let commitments = surreal_repository
-        .dump_commitments()
-        .await
-        .expect("Failed to list commitments from SurrealDB");
-    let reserved_ys = surreal_repository
-        .dump_reserved_ys()
-        .await
-        .expect("Failed to list reserved ys from SurrealDB");
-    let proofs = surreal_repository
-        .dump_proofs()
-        .await
-        .expect("Failed to list proofs from SurrealDB");
-    println!("Found {} keysets in SurrealDB", keys.len());
-    println!("Found {} signatures in SurrealDB", signatures.len());
-    println!("Found {} commitments in SurrealDB", commitments.len());
-    println!("Found {} reserved ys in SurrealDB", reserved_ys.len());
-    println!("Found {} proofs in SurrealDB", proofs.len());
-    if dry_run {
-        println!("DRY RUN: Would migrate");
-        println!("   {} keysets to PostgreSQL", keys.len());
-        println!("   {} signatures to PostgreSQL", signatures.len());
-        println!("   {} commitments to PostgreSQL", commitments.len());
-        println!("   {} reserved ys to PostgreSQL", reserved_ys.len());
-        println!("   {} proofs to PostgreSQL", proofs.len());
-        return;
-    }
-    // Connect to PostgreSQL
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.repository_new).await;
-    let sqlx_repository = sqlx::Repository::new(cfg.appcfg.repository_new)
-        .await
-        .expect("Failed to connect to PostgreSQL");
-    // Migrate keys to PostgreSQL
-    for keyset in keys {
-        let kid = keyset.id;
-        if let Err(error) = sqlx_repository.keys_store(keyset).await {
-            println!("Skipping keyset {kid}: failed with {error}");
+        .context("Failed to parse migrate config")?;
+    migrate(cfg.appcfg.repository, &cfg.appcfg.repository_new, dry_run).await
+}
+
+async fn migrate(
+    source: SourceConfig,
+    destination: &postgres::DBConnConfig,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    postgres::run_data_import(destination, data_import::IMPORT_ID, dry_run, move |conn| {
+        Box::pin(async move {
+            let source = surreal::Repository::new(source)
+                .await
+                .context("Failed to connect to Core SurrealDB")?;
+            let keys = source.dump_keys().await.context("Failed to list keys")?;
+            let signatures = source
+                .dump_signatures()
+                .await
+                .context("Failed to list signatures")?;
+            let commitments = source
+                .dump_commitments()
+                .await
+                .context("Failed to list commitments")?;
+            let reserved_ys = source
+                .dump_reserved_ys()
+                .await
+                .context("Failed to list reserved ys")?;
+            let proofs = source
+                .dump_proofs()
+                .await
+                .context("Failed to list proofs")?;
+            println!("Found {} keysets in SurrealDB", keys.len());
+            println!("Found {} signatures in SurrealDB", signatures.len());
+            println!("Found {} commitments in SurrealDB", commitments.len());
+            println!("Found {} reserved ys in SurrealDB", reserved_ys.len());
+            println!("Found {} proofs in SurrealDB", proofs.len());
+            if let Some(conn) = conn {
+                data_import::import(conn, keys, signatures, commitments, reserved_ys, proofs).await?;
+            } else {
+                println!(
+                    "DRY RUN: Would migrate {} keysets, {} signatures, {} commitments, {} reserved ys, {} proofs to PostgreSQL",
+                    keys.len(),
+                    signatures.len(),
+                    commitments.len(),
+                    reserved_ys.len(),
+                    proofs.len()
+                );
+            }
+            Ok(())
+        })
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::sqlx::{ConnectOptions, PgPool};
+
+    fn source(connection: &str) -> SourceConfig {
+        SourceConfig {
+            connection: connection.to_owned(),
+            namespace: "migration-test".to_owned(),
+            database: "core".to_owned(),
         }
     }
-    println!("Migration for keys complete");
-    // Migrate signatures to PostgreSQL
-    for (y, signature) in signatures {
-        if let Err(error) = sqlx_repository.signature_store(y, signature).await {
-            println!("Skipping signature {y}: failed with {error}");
-        }
-    }
-    println!("Migration for signatures complete");
-    // Migrate commitments, reserved ys and proofs to PostgreSQL, in that order.
-    //
-    // PostgreSQL folds the three SurrealDB tables `commitments`, `reserved_ys` and
-    // `proofs` into the single `core_proofs` table, where one `y` is at most one of
-    // committed / reserved / spent. SurrealDB keeps them apart and lets the same `y`
-    // appear in all three, so migrating in this order lets the spend win: `insert_v0`
-    // upgrades a committed or reserved row to a spent one, while `commitment_store`
-    // and `ys_store` refuse to overwrite anything.
-    for commitment in commitments {
-        let signature = commitment.signature;
-        if let Err(error) = sqlx_repository
-            .commitment_store(
-                commitment.inputs,
-                commitment.outputs,
-                commitment.expiration,
-                commitment.wallet_key,
-                signature,
-                commitment.fp_digest,
-                commitment.signed,
-            )
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn core_completed_import_skips_unavailable_surreal_source(pool: PgPool) {
+        let destination = postgres::DBConnConfig {
+            connection: pool.connect_options().to_url_lossy().to_string(),
+            max_connections: 1,
+        };
+        migrate(source("mem://"), &destination, false)
             .await
-        {
-            println!("Skipping commitment {signature}: failed with {error}");
-        }
+            .unwrap();
+        migrate(source("unavailable://"), &destination, false)
+            .await
+            .unwrap();
+        // Dry runs still read/report the source, even for an applied import.
+        assert!(migrate(source("unavailable://"), &destination, true)
+            .await
+            .is_err());
     }
-    println!("Migration for commitments complete");
-    // one `y` per call: `ys_store` rolls the whole batch back on a single conflict,
-    // and a conflict is expected for any `y` SurrealDB held as both reserved and
-    // committed.
-    for (y, deadline) in reserved_ys {
-        if let Err(error) = sqlx_repository.ys_store(vec![y], deadline).await {
-            println!("Skipping reserved y {y}: failed with {error}");
-        }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn core_dry_run_leaves_postgres_unchanged(pool: PgPool) {
+        let destination = postgres::DBConnConfig {
+            connection: pool.connect_options().to_url_lossy().to_string(),
+            max_connections: 1,
+        };
+        migrate(source("mem://"), &destination, true).await.unwrap();
+        let tables: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(tables, 0);
     }
-    println!("Migration for reserved ys complete");
-    sqlx::insert_v0(&sqlx_repository, proofs)
-        .await
-        .expect("SqlxRepository::insert_v0 failed");
-    println!("Migration for proofs complete");
 }

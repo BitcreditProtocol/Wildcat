@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut01::MintKeyPair},
-    client::admin::core::{BRError, RNFError},
+    client::admin::core::RNFError,
     ecash,
 };
 use bcr_wdc_utils::{keys as keys_utils, postgres};
@@ -22,6 +22,8 @@ use crate::{
 };
 
 // ----- end imports
+
+pub mod data_import;
 
 // ///////////////////////////////////////////////////////////////////////// Versioned blob for keysets
 
@@ -215,57 +217,6 @@ impl Repository {
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
-}
-
-pub async fn insert_v0(
-    repository: &Repository,
-    proofs: Vec<persistence::surreal::ProofDBEntry>,
-) -> Result<()> {
-    let p_len = proofs.len();
-    let mut y_strs = Vec::with_capacity(proofs.len());
-    let mut blob_values = Vec::with_capacity(proofs.len());
-    for proof in proofs {
-        let y = cashu::PublicKey::from_str(&proof.id.key().to_string())
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        let blob = ProofBlob::V0 {
-            kid: proof.kid,
-            witness: proof.witness,
-            c: proof.c,
-            secret: proof.secret,
-        };
-        let blob_value =
-            serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        y_strs.push(y.to_string());
-        blob_values.push(blob_value);
-    }
-    let mut tx = repository
-        .pool
-        .begin()
-        .await
-        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-    let result = sqlx::query!(
-        r#"INSERT INTO core_proofs (y, blob)
-            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
-            ON CONFLICT (y) DO UPDATE
-            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
-            WHERE core_proofs.blob IS NULL"#,
-        &y_strs,
-        &blob_values,
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-    if result.rows_affected() != p_len as u64 {
-        tx.rollback()
-            .await
-            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-        let err = BRError::Generic(String::from("proofs are already spent"));
-        return Err(Error::InvalidInput(err));
-    }
-    tx.commit()
-        .await
-        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
-    Ok(())
 }
 
 #[async_trait]

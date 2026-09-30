@@ -1,15 +1,6 @@
-// ----- standard library imports
-// ----- extra library imports
-use bcr_wdc_treasury_service::{
-    ebill::Repository as _,
-    onchain::Repository as _,
-    persistence::{sqlx, surreal},
-    vault::Repository as _,
-};
-
-// ----- local imports
-
-// ----- end imports:
+use anyhow::Context;
+use bcr_wdc_treasury_service::persistence::{sqlx::data_import, surreal};
+use bcr_wdc_utils::{postgres, surreal::DBConnConfig as SourceConfig};
 
 #[derive(Debug, serde::Deserialize)]
 struct MigrateConfig {
@@ -17,99 +8,195 @@ struct MigrateConfig {
 }
 
 #[tokio::main]
-async fn main() {
-    let dry_run = std::env::args().any(|a| a == "--dry-run");
+async fn main() -> anyhow::Result<()> {
+    let dry_run = std::env::args().any(|arg| arg == "--dry-run");
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
         .add_source(config::Environment::with_prefix("TREASURY_SERVICE").separator("__"))
         .build()
-        .expect("Failed to build config");
+        .context("Failed to build migrate config")?;
     let cfg: MigrateConfig = settings
         .try_deserialize()
-        .expect("Failed to parse migrate config");
-    // Connect to SurrealDB (source)
-    let surreal_ebill = surreal::DBEbill::new(cfg.appcfg.ebill.db)
-        .await
-        .expect("Failed to connect to ebill SurrealDB");
-    let surreal_vault = surreal::DBVault::new(cfg.appcfg.vault.db)
-        .await
-        .expect("Failed to connect to vault SurrealDB");
-    let surreal_onchain = surreal::DBOnChain::new(cfg.appcfg.onchain.db)
-        .await
-        .expect("Failed to connect to onchain SurrealDB");
-    // Read all
-    let ebill_ops = surreal_ebill
-        .dump()
-        .await
-        .expect("Failed to list ebill mint_ops from SurrealDB");
-    let pfs = surreal_vault
-        .dump()
-        .await
-        .expect("Failed to list vault proofs from SurrealDB");
-    let onchain_mintops = surreal_onchain
-        .dump_mintops()
-        .await
-        .expect("Failed to list onchain mintops from SurrealDB");
-    let onchain_meltops = surreal_onchain
-        .dump_meltops()
-        .await
-        .expect("Failed to list onchain meltops from SurrealDB");
-    println!("Found {} ebill mint_ops in SurrealDB", ebill_ops.len());
-    println!("Found {} vault proofs in SurrealDB", pfs.len());
-    println!(
-        "Found {} onchain mintops in SurrealDB",
-        onchain_mintops.len()
-    );
-    println!(
-        "Found {} onchain meltops in SurrealDB",
-        onchain_meltops.len()
-    );
-    if dry_run {
-        println!("DRY RUN: Would migrate");
-        println!("   {} ebill mint_ops to PostgreSQL", ebill_ops.len());
-        println!("   {} vault proofs to PostgreSQL", pfs.len());
-        println!("   {} onchain mintops to PostgreSQL", onchain_mintops.len());
-        println!("   {} onchain meltops to PostgreSQL", onchain_meltops.len());
-        return;
-    }
-    // Connect to PostgreSQL (destination)
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.ebill.new).await;
-    let sqlx_ebill = sqlx::DBEbill::new(cfg.appcfg.ebill.new)
-        .await
-        .expect("Failed to connect to PostgreSQL");
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.vault.new).await;
-    let sqlx_vault = sqlx::DBVault::new(cfg.appcfg.vault.new)
-        .await
-        .expect("Failed to connect to PostgreSQL");
-    let sqlx_onchain = sqlx::DBOnChain::new(cfg.appcfg.onchain.new)
-        .await
-        .expect("Failed to connect to PostgreSQL");
-    for op in ebill_ops {
-        let uid = op.uid;
-        if let Err(e) = sqlx_ebill.mint_store(op).await {
-            println!("Skipping mint_op {uid}: failed with {e}");
+        .context("Failed to parse migrate config")?;
+    migrate_ebill(cfg.appcfg.ebill.db, &cfg.appcfg.ebill.new, dry_run).await?;
+    migrate_vault(cfg.appcfg.vault.db, &cfg.appcfg.vault.new, dry_run).await?;
+    migrate_onchain(cfg.appcfg.onchain.db, &cfg.appcfg.onchain.new, dry_run).await
+}
+
+async fn migrate_ebill(
+    source: SourceConfig,
+    destination: &postgres::DBConnConfig,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    postgres::run_data_import(
+        destination,
+        data_import::EBILL_IMPORT_ID,
+        dry_run,
+        move |conn| {
+            Box::pin(async move {
+                let source = surreal::DBEbill::new(source)
+                    .await
+                    .context("Failed to connect to ebill SurrealDB")?;
+                let ops = source
+                    .dump()
+                    .await
+                    .context("Failed to list ebill mint_ops")?;
+                println!("Found {} ebill mint_ops in SurrealDB", ops.len());
+                if let Some(conn) = conn {
+                    data_import::import_ebill(conn, ops).await?;
+                } else {
+                    println!(
+                        "DRY RUN: Would migrate {} ebill mint_ops to PostgreSQL",
+                        ops.len()
+                    );
+                }
+                Ok(())
+            })
+        },
+    )
+    .await
+}
+
+async fn migrate_vault(
+    source: SourceConfig,
+    destination: &postgres::DBConnConfig,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    postgres::run_data_import(
+        destination,
+        data_import::VAULT_IMPORT_ID,
+        dry_run,
+        move |conn| {
+            Box::pin(async move {
+                let source = surreal::DBVault::new(source)
+                    .await
+                    .context("Failed to connect to vault SurrealDB")?;
+                let proofs = source.dump().await.context("Failed to list vault proofs")?;
+                println!("Found {} vault proofs in SurrealDB", proofs.len());
+                if let Some(conn) = conn {
+                    data_import::import_vault(conn, proofs).await?;
+                } else {
+                    println!(
+                        "DRY RUN: Would migrate {} vault proofs to PostgreSQL",
+                        proofs.len()
+                    );
+                }
+                Ok(())
+            })
+        },
+    )
+    .await
+}
+
+async fn migrate_onchain(
+    source: SourceConfig,
+    destination: &postgres::DBConnConfig,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    postgres::run_data_import(
+        destination,
+        data_import::ONCHAIN_IMPORT_ID,
+        dry_run,
+        move |conn| {
+            Box::pin(async move {
+                let source = surreal::DBOnChain::new(source)
+                    .await
+                    .context("Failed to connect to onchain SurrealDB")?;
+                let mintops = source
+                    .dump_mintops()
+                    .await
+                    .context("Failed to list onchain mintops")?;
+                let meltops = source
+                    .dump_meltops()
+                    .await
+                    .context("Failed to list onchain meltops")?;
+                println!("Found {} onchain mintops in SurrealDB", mintops.len());
+                println!("Found {} onchain meltops in SurrealDB", meltops.len());
+                if let Some(conn) = conn {
+                    data_import::import_onchain(conn, mintops, meltops).await?;
+                } else {
+                    println!(
+                        "DRY RUN: Would migrate {} onchain mintops and {} meltops to PostgreSQL",
+                        mintops.len(),
+                        meltops.len()
+                    );
+                }
+                Ok(())
+            })
+        },
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::sqlx::{ConnectOptions, PgPool};
+
+    fn source(connection: &str) -> SourceConfig {
+        SourceConfig {
+            connection: connection.to_owned(),
+            namespace: "migration-test".to_owned(),
+            database: "treasury".to_owned(),
         }
     }
-    println!("Migration for ebill complete");
-    sqlx_vault
-        .store_proofs(pfs)
-        .await
-        .expect("VaultDB::store_proofs failed");
-    println!("Migration for vault complete");
 
-    for op in onchain_mintops {
-        sqlx_onchain
-            .store_mintop(op)
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn treasury_completed_targets_skip_unavailable_surreal_sources(pool: PgPool) {
+        let destination = postgres::DBConnConfig {
+            connection: pool.connect_options().to_url_lossy().to_string(),
+            max_connections: 1,
+        };
+        migrate_ebill(source("mem://"), &destination, false)
             .await
-            .expect("Failed to store onchain mintop");
-    }
-    println!("Migration for onchain mintops complete");
-    let now = time::OffsetDateTime::now_utc();
-    for op in onchain_meltops {
-        sqlx_onchain
-            .store_meltop(op, now)
+            .unwrap();
+        assert!(migrate_vault(source("unavailable://"), &destination, false)
             .await
-            .expect("Failed to store onchain meltop");
+            .is_err());
+        migrate_ebill(source("unavailable://"), &destination, false)
+            .await
+            .unwrap();
+        migrate_vault(source("mem://"), &destination, false)
+            .await
+            .unwrap();
+        migrate_onchain(source("mem://"), &destination, false)
+            .await
+            .unwrap();
+        migrate_vault(source("unavailable://"), &destination, false)
+            .await
+            .unwrap();
+        migrate_onchain(source("unavailable://"), &destination, false)
+            .await
+            .unwrap();
+        let markers: i64 = sqlx::query_scalar("SELECT count(*) FROM wdc_data_imports")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(markers, 3);
     }
-    println!("Migration for onchain meltops complete");
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn treasury_dry_run_leaves_postgres_unchanged(pool: PgPool) {
+        let destination = postgres::DBConnConfig {
+            connection: pool.connect_options().to_url_lossy().to_string(),
+            max_connections: 1,
+        };
+        migrate_ebill(source("mem://"), &destination, true)
+            .await
+            .unwrap();
+        migrate_vault(source("mem://"), &destination, true)
+            .await
+            .unwrap();
+        migrate_onchain(source("mem://"), &destination, true)
+            .await
+            .unwrap();
+        let tables: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(tables, 0);
+    }
 }
