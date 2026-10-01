@@ -3,11 +3,15 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
+    client::{admin::treasury::SUError, clowder::ClowderClientError},
     core::{
         self,
-        htlc::{exchange_htlc, hop_locktime, offline_hash_lock, online_hash_lock},
+        htlc::{exchange_htlc, hop_locktime, htlc_lock, offline_hash_lock, online_hash_lock},
     },
-    wire::keys as wire_keys,
+    wire::{
+        exchange::{exchange_digest, exchange_message, OfflineExchangeRequest},
+        keys as wire_keys,
+    },
 };
 use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1};
 // ----- local imports
@@ -16,7 +20,7 @@ use crate::{
     foreign::{
         fingerprints_vec_to_map, proof, signed_swap_with_foreign, to_mint_proofs_map,
         ClowderClient, KeysClient, MintBalance, MintClientFactory, OfflineRepository,
-        OnlineRepository,
+        OfflineReservation, OnlineRepository, ReservationState,
     },
     TStamp,
 };
@@ -42,6 +46,16 @@ impl Service {
         wallet_signature: secp256k1::schnorr::Signature,
         now: TStamp,
     ) -> Result<Vec<cashu::Proof>> {
+        let request = OfflineExchangeRequest {
+            fingerprints: inputs.clone(),
+            hashes: hashes.clone(),
+            wallet_pk: wpk,
+            wallet_signature,
+        };
+        let ys: Vec<cashu::PublicKey> = inputs.iter().map(|fp| fp.y).collect();
+        if let Some(reservation) = self.offline_repo.search_reservation(&ys).await? {
+            return self.replay_offline_exchange(reservation, request).await;
+        }
         let (_, foreign_mint_id) = self
             .clowder
             .can_accept_offline_exchange(inputs.clone())
@@ -53,16 +67,21 @@ impl Service {
         // No offline eCash is issued until the node has verified the wallet's
         // signature, recorded the dual-signed exchange and broadcast the
         // evidence to the alpha's Betas.
-        let request = bcr_common::wire::exchange::OfflineExchangeRequest {
-            fingerprints: inputs.clone(),
-            hashes: hashes.clone(),
-            wallet_pk: wpk,
-            wallet_signature,
-        };
         let recorded = self.clowder.record_offline_exchange(&request).await?;
+        let digest = exchange_digest(
+            &foreign_mint_id,
+            &recorded.evidence_digest,
+            &inputs,
+            &hashes,
+            &wpk,
+        );
+        if digest != recorded.exchange_digest {
+            return Err(Error::InvalidInput(String::from(
+                "recorded exchange digest mismatch",
+            )));
+        }
         let foreign_fps = fingerprints_vec_to_map(inputs.clone(), hashes.clone());
-        let mut retv: Vec<cashu::Proof> = Vec::new();
-        let mut issued: HashMap<Sha256Hash, Vec<cashu::Proof>> = HashMap::new();
+        let mut batches = Vec::new();
         for (kid, fps_hashes) in foreign_fps {
             let k_info = self.clowder.get_keyset_info(&foreign_mint_id, &kid).await?;
             let Some(foreign_unix_expiration) = k_info.final_expiry else {
@@ -75,7 +94,6 @@ impl Service {
             let foreign_date = foreign_expiration.date();
             let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
             let mut secrets = Vec::new();
-            let mut secret_hashes = Vec::new();
             for (fp, hash) in fps_hashes {
                 let amount = cashu::Amount::from(fp.amount);
                 let condition = exchange_htlc(hash, locktime, wpk, refund)?;
@@ -99,43 +117,129 @@ impl Service {
                         r,
                         amount: part,
                     });
-                    secret_hashes.push(hash);
                 }
             }
             let premints = cashu::PreMintSecrets {
                 secrets,
                 keyset_id: keyset.id.into(),
             };
+            batches.push((keyset, premints));
+        }
+        let mut retv: Vec<cashu::Proof> = Vec::new();
+        for (keyset, premints) in batches {
             let signatures = self.keys.sign(&premints.blinded_messages()).await?;
-            for ((sig, pre), hash) in signatures
-                .into_iter()
-                .zip(premints.iter())
-                .zip(secret_hashes)
-            {
-                let proof = core::signature::unblind_ecash_signature(&keyset, pre.clone(), sig)?;
-                issued.entry(hash).or_default().push(proof.clone());
-                retv.push(proof);
+            for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
+                retv.push(core::signature::unblind_ecash_signature(
+                    &keyset,
+                    pre.clone(),
+                    sig,
+                )?);
             }
         }
+        let reservation = OfflineReservation {
+            exchange_digest: digest,
+            alpha_id: foreign_mint_id,
+            evidence_digest: recorded.evidence_digest,
+            state: ReservationState::Issued {
+                proofs: retv.clone(),
+                expires_at,
+            },
+        };
+        if !self
+            .offline_repo
+            .reserve_exchange(reservation, &ys, inputs, hashes)
+            .await?
+        {
+            return Err(exchange_in_progress());
+        }
+        self.announce_offline_exchange(request, digest, retv, expires_at)
+            .await
+    }
+
+    async fn replay_offline_exchange(
+        &self,
+        reservation: OfflineReservation,
+        request: OfflineExchangeRequest,
+    ) -> Result<Vec<cashu::Proof>> {
+        let digest = exchange_digest(
+            &reservation.alpha_id,
+            &reservation.evidence_digest,
+            &request.fingerprints,
+            &request.hashes,
+            &request.wallet_pk,
+        );
+        if digest != reservation.exchange_digest {
+            return Err(Error::InvalidInput(String::from(
+                "inputs held by another exchange",
+            )));
+        }
+        secp256k1::global::SECP256K1
+            .verify_schnorr(
+                &request.wallet_signature,
+                &exchange_message(&digest),
+                &request.wallet_pk.x_only_public_key(),
+            )
+            .map_err(|_| Error::InvalidInput(String::from("invalid wallet signature")))?;
+        match reservation.state {
+            ReservationState::Issued { proofs, expires_at } => {
+                self.announce_offline_exchange(request, digest, proofs, expires_at)
+                    .await
+            }
+            ReservationState::Complete(proofs) => Ok(proofs),
+        }
+    }
+
+    async fn announce_offline_exchange(
+        &self,
+        request: OfflineExchangeRequest,
+        digest: [u8; 32],
+        proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
+    ) -> Result<Vec<cashu::Proof>> {
+        match self
+            .try_announce_offline_exchange(request, digest, &proofs, expires_at)
+            .await
+        {
+            Ok(()) => Ok(proofs),
+            Err(Error::ClowderNatsClient(ClowderClientError::Rejected(r))) if !r.is_transient() => {
+                tracing::warn!("offline exchange left issued, refused: {r}");
+                Err(Error::ClowderNatsClient(ClowderClientError::Rejected(r)))
+            }
+            Err(e) => {
+                tracing::warn!("offline exchange left issued, retryable: {e}");
+                Err(exchange_in_progress())
+            }
+        }
+    }
+
+    async fn try_announce_offline_exchange(
+        &self,
+        request: OfflineExchangeRequest,
+        digest: [u8; 32],
+        proofs: &[cashu::Proof],
+        expires_at: TStamp,
+    ) -> Result<()> {
         self.clowder
             .signal_offline_exchange_event(
-                inputs.clone(),
-                hashes.clone(),
-                wpk,
-                retv.clone(),
-                Some(recorded.exchange_digest),
-                Some(wallet_signature),
+                request.fingerprints,
+                request.hashes,
+                request.wallet_pk,
+                proofs.to_vec(),
+                Some(digest),
+                Some(request.wallet_signature),
             )
             .await?;
-        self.offline_repo
-            .store_fps(foreign_mint_id, inputs, hashes)
-            .await?;
-        for (hash, proofs) in issued {
+        let mut issued: HashMap<Sha256Hash, Vec<cashu::Proof>> = HashMap::new();
+        for proof in proofs {
+            let (hash, _) = htlc_lock(proof)?;
+            issued.entry(hash).or_default().push(proof.clone());
+        }
+        for (hash, hash_proofs) in issued {
             self.online_repo
-                .store_issued(hash, expires_at, proofs)
+                .store_issued(hash, expires_at, hash_proofs)
                 .await?;
         }
-        Ok(retv)
+        self.offline_repo.complete_reservation(digest).await
     }
 
     pub async fn online_exchange(
@@ -291,6 +395,10 @@ impl Service {
         );
         Ok(balances)
     }
+}
+
+fn exchange_in_progress() -> Error {
+    Error::ServiceUnavailable(SUError::Unknown)
 }
 
 async fn try_online_htlc(
@@ -601,15 +709,20 @@ mod tests {
             .iter()
             .map(|p| Sha256Hash::hash(p.secret.as_bytes()))
             .collect::<Vec<_>>();
+        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
         let cloned_url = foreign_url.clone();
         let foreign_pk = foreign_kp.public_key();
+        let digest = exchange_digest(&foreign_pk, &[1u8; 32], &inputs, &hashes, &wallet_pk);
+        offlinerepo
+            .expect_search_reservation()
+            .times(1)
+            .returning(|_| Ok(None));
         clowder
             .expect_can_accept_offline_exchange()
             .times(1)
             .with(eq(inputs.clone()))
             .returning(move |_| Ok((cloned_url.clone(), foreign_pk)));
         let foreign_kid = foreign_keyset.id;
-        let foreign_pk = foreign_kp.public_key();
         let foreign_info = ecash::KeySetInfo::from(foreign_info);
         clowder
             .expect_get_keyset_info()
@@ -623,44 +736,16 @@ mod tests {
             .with(eq(expiration.date()))
             .times(1)
             .returning(move |_| Ok(cloned_keyset.clone()));
-        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
-        keys.expect_sign().times(1).returning(move |blinds| {
-            let mut signatures = Vec::with_capacity(blinds.len());
-            for blind in blinds {
-                signatures.push(
-                    bcr_common::core::signature::sign_ecash(&cloned_keyset.clone().into(), blind)
-                        .unwrap(),
-                );
-            }
-            Ok(signatures)
-        });
         // The exchange only proceeds once the node has recorded it.
         clowder
             .expect_record_offline_exchange()
             .times(1)
-            .returning(|_| {
+            .returning(move |_| {
                 Ok(bcr_common::wire::exchange::RecordOfflineExchangeResponse {
                     evidence_digest: [1u8; 32],
-                    exchange_digest: [2u8; 32],
+                    exchange_digest: digest,
                 })
             });
-        clowder
-            .expect_signal_offline_exchange_event()
-            .times(1)
-            .with(
-                eq(inputs.clone()),
-                eq(hashes.clone()),
-                eq(cashu::PublicKey::from(wallet_kp.public_key())),
-                always(),
-                eq(Some([2u8; 32])),
-                always(),
-            )
-            .returning(|_, _, _, _, _, _| Ok(()));
-        offlinerepo
-            .expect_store_fps()
-            .with(eq(foreign_pk), eq(inputs.clone()), eq(hashes.clone()))
-            .times(1)
-            .returning(|_, _, _| Ok(()));
         let myself_pk = myself_kp.public_key();
         clowder
             .expect_get_myself_pk()
@@ -668,13 +753,65 @@ mod tests {
             .returning(move || Ok(myself_pk));
         let now = time::OffsetDateTime::now_utc();
         let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
+        let mut seq = mockall::Sequence::new();
+        let cloned_keyset: cashu::MintKeySet = myself_keyset.clone().into();
+        keys.expect_sign()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(move |blinds| {
+                let mut signatures = Vec::with_capacity(blinds.len());
+                for blind in blinds {
+                    signatures.push(
+                        bcr_common::core::signature::sign_ecash(
+                            &cloned_keyset.clone().into(),
+                            blind,
+                        )
+                        .unwrap(),
+                    );
+                }
+                Ok(signatures)
+            });
+        let (cloned_inputs, cloned_hashes) = (inputs.clone(), hashes.clone());
+        offlinerepo
+            .expect_reserve_exchange()
+            .withf(move |r, ys, fps, hs| {
+                r.exchange_digest == digest
+                    && r.alpha_id == foreign_pk
+                    && matches!(&r.state, ReservationState::Issued { proofs, expires_at: e }
+                        if proofs.len() == 2 && *e == expires_at)
+                    && ys.len() == 2
+                    && *fps == cloned_inputs
+                    && *hs == cloned_hashes
+            })
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_, _, _, _| Ok(true));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .with(
+                eq(inputs.clone()),
+                eq(hashes.clone()),
+                eq(wallet_pk),
+                always(),
+                eq(Some(digest)),
+                always(),
+            )
+            .in_sequence(&mut seq)
+            .returning(|_, _, _, _, _, _| Ok(()));
         onlinerepo
             .expect_store_issued()
             .with(always(), eq(expires_at), always())
             .times(2)
+            .in_sequence(&mut seq)
             .returning(|_, _, _| Ok(()));
+        offlinerepo
+            .expect_complete_reservation()
+            .with(eq(digest))
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_| Ok(()));
 
-        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
         let srvc = Service {
             online_repo: Arc::new(onlinerepo),
             offline_repo: Arc::new(offlinerepo),
@@ -689,8 +826,7 @@ mod tests {
                 inputs,
                 hashes.clone(),
                 wallet_pk,
-                secp256k1::global::SECP256K1
-                    .sign_schnorr(&secp256k1::Message::from_digest([2u8; 32]), &wallet_kp),
+                secp256k1::global::SECP256K1.sign_schnorr(&exchange_message(&digest), &wallet_kp),
                 now,
             )
             .await
@@ -711,6 +847,412 @@ mod tests {
             );
             assert!(core::signature::is_offline_exchange_htlc(proof));
         }
+    }
+
+    struct RetryFixture {
+        request: OfflineExchangeRequest,
+        other_request: OfflineExchangeRequest,
+        alpha_id: secp256k1::PublicKey,
+        evidence_digest: [u8; 32],
+        exchange_digest: [u8; 32],
+        proof: cashu::Proof,
+    }
+
+    fn retry_fixture() -> RetryFixture {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/offline_exchange_retry.json"
+        ))
+        .unwrap();
+        let field = |key: &str| fixture[key].clone();
+        let digest = |key: &str| <[u8; 32]>::from_hex(fixture[key].as_str().unwrap()).unwrap();
+        RetryFixture {
+            request: serde_json::from_value(field("request")).unwrap(),
+            other_request: serde_json::from_value(field("other_request")).unwrap(),
+            alpha_id: serde_json::from_value(field("alpha_id")).unwrap(),
+            evidence_digest: digest("evidence_digest"),
+            exchange_digest: digest("exchange_digest"),
+            proof: serde_json::from_value(field("proof")).unwrap(),
+        }
+    }
+
+    fn fixture_exchange_mocks(
+        f: &RetryFixture,
+        runs: usize,
+    ) -> (
+        crate::foreign::MockClowderClient,
+        crate::foreign::MockKeysClient,
+        ecash::MintKeySet,
+    ) {
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        let mut keys = crate::foreign::MockKeysClient::new();
+        let alpha_id = f.alpha_id;
+        clowder
+            .expect_can_accept_offline_exchange()
+            .times(runs)
+            .returning(move |_| {
+                Ok((
+                    reqwest::Url::parse("https://alpha.example").unwrap(),
+                    alpha_id,
+                ))
+            });
+        let myself_pk = core::generate_random_keypair().public_key();
+        clowder
+            .expect_get_myself_pk()
+            .times(runs)
+            .returning(move || Ok(myself_pk));
+        let recorded = bcr_common::wire::exchange::RecordOfflineExchangeResponse {
+            evidence_digest: f.evidence_digest,
+            exchange_digest: f.exchange_digest,
+        };
+        clowder
+            .expect_record_offline_exchange()
+            .times(runs)
+            .returning(move |_| Ok(recorded.clone()));
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (mut info, keyset) = core_tests::generate_random_ecash_keyset();
+        info.final_expiry = Some(expiration.unix_timestamp() as u64);
+        let info = ecash::KeySetInfo::from(info);
+        clowder
+            .expect_get_keyset_info()
+            .times(runs)
+            .returning(move |_, _| Ok(info.clone()));
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&keyset, None);
+        keys.expect_get_keyset_with_expiration()
+            .times(runs)
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        (clowder, keys, keyset)
+    }
+
+    fn sign_all(
+        keyset: &ecash::MintKeySet,
+        blinds: &[cashu::BlindedMessage],
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        Ok(blinds
+            .iter()
+            .map(|blind| bcr_common::core::signature::sign_ecash(keyset, blind).unwrap())
+            .collect())
+    }
+
+    fn fixture_service(
+        offline_repo: Arc<dyn OfflineRepository>,
+        online_repo: crate::foreign::MockOnlineRepository,
+        keys: crate::foreign::MockKeysClient,
+        clowder: crate::foreign::MockClowderClient,
+    ) -> Service {
+        Service {
+            online_repo: Arc::new(online_repo),
+            offline_repo,
+            keys: Arc::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+            offline_exchange_lock_secs: 7 * 24 * 3600,
+        }
+    }
+
+    async fn exchange(
+        srvc: &Service,
+        request: &OfflineExchangeRequest,
+        now: TStamp,
+    ) -> Result<Vec<cashu::Proof>> {
+        srvc.offline_exchange(
+            request.fingerprints.clone(),
+            request.hashes.clone(),
+            request.wallet_pk,
+            request.wallet_signature,
+            now,
+        )
+        .await
+    }
+
+    fn proofs_json(proofs: &[cashu::Proof]) -> String {
+        serde_json::to_string(proofs).unwrap()
+    }
+
+    async fn completed_fixture_store(
+        f: &RetryFixture,
+    ) -> Arc<crate::persistence::inmemory::OfflineRepository> {
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+        let reservation = OfflineReservation {
+            exchange_digest: f.exchange_digest,
+            alpha_id: f.alpha_id,
+            evidence_digest: f.evidence_digest,
+            state: ReservationState::Issued {
+                proofs: vec![f.proof.clone()],
+                expires_at: time::OffsetDateTime::now_utc(),
+            },
+        };
+        assert!(repo
+            .reserve_exchange(
+                reservation,
+                &ys,
+                f.request.fingerprints.clone(),
+                f.request.hashes.clone(),
+            )
+            .await
+            .unwrap());
+        repo.complete_reservation(f.exchange_digest).await.unwrap();
+        repo
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_returns_stored_proofs() {
+        let f = retry_fixture();
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 1);
+        keys.expect_sign()
+            .times(1)
+            .returning(move |blinds| sign_all(&keyset, blinds));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online
+            .expect_store_issued()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let srvc = fixture_service(repo, online, keys, clowder);
+        let now = time::OffsetDateTime::now_utc();
+
+        let first = exchange(&srvc, &f.request, now).await.unwrap();
+        let second = exchange(&srvc, &f.request, now + time::Duration::hours(1))
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(proofs_json(&first), proofs_json(&second));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_other_request_is_refused() {
+        let f = retry_fixture();
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 1);
+        keys.expect_sign()
+            .times(1)
+            .returning(move |blinds| sign_all(&keyset, blinds));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online
+            .expect_store_issued()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let srvc = fixture_service(repo, online, keys, clowder);
+        let now = time::OffsetDateTime::now_utc();
+
+        exchange(&srvc, &f.request, now).await.unwrap();
+        let other = exchange(&srvc, &f.other_request, now).await;
+        assert!(matches!(other, Err(Error::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_failed_sign_holds_nothing() {
+        let f = retry_fixture();
+        let (mut clowder, mut keys, keyset) = fixture_exchange_mocks(&f, 2);
+        let mut seq = mockall::Sequence::new();
+        keys.expect_sign()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_| Err(Error::InvalidInput(String::from("keys unavailable"))));
+        keys.expect_sign()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(move |blinds| sign_all(&keyset, blinds));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online
+            .expect_store_issued()
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let srvc = fixture_service(repo, online, keys, clowder);
+        let now = time::OffsetDateTime::now_utc();
+
+        assert!(exchange(&srvc, &f.request, now).await.is_err());
+        let retry = exchange(&srvc, &f.request, now).await.unwrap();
+        assert_eq!(retry.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_completed_has_no_side_effects() {
+        let f = retry_fixture();
+        let repo = completed_fixture_store(&f).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder.expect_can_accept_offline_exchange().never();
+        clowder.expect_record_offline_exchange().never();
+        clowder.expect_signal_offline_exchange_event().never();
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online.expect_store_issued().never();
+        let srvc = fixture_service(repo, online, keys, clowder);
+
+        let proofs = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
+        assert_eq!(proofs_json(&proofs), proofs_json(&[f.proof]));
+    }
+
+    async fn issued_fixture_store(
+        f: &RetryFixture,
+        expires_at: TStamp,
+    ) -> (
+        Arc<crate::persistence::inmemory::OfflineRepository>,
+        Vec<cashu::Proof>,
+    ) {
+        let repo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = vec![
+            generate_htlc_proof_for_online_exchange(
+                &keyset,
+                cashu::Amount::from(8),
+                expires_at,
+                f.request.wallet_pk,
+                cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+            )
+            .0,
+        ];
+        let reservation = OfflineReservation {
+            exchange_digest: f.exchange_digest,
+            alpha_id: f.alpha_id,
+            evidence_digest: f.evidence_digest,
+            state: ReservationState::Issued {
+                proofs: proofs.clone(),
+                expires_at,
+            },
+        };
+        assert!(repo
+            .reserve_exchange(
+                reservation,
+                &ys,
+                f.request.fingerprints.clone(),
+                f.request.hashes.clone(),
+            )
+            .await
+            .unwrap());
+        (repo, proofs)
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_resumes_tail() {
+        let f = retry_fixture();
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder.expect_record_offline_exchange().never();
+        let cloned = stored.clone();
+        clowder
+            .expect_signal_offline_exchange_event()
+            .withf(move |_, _, _, proofs, _, _| *proofs == cloned)
+            .times(1)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online
+            .expect_store_issued()
+            .with(always(), eq(expires_at), always())
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let srvc = fixture_service(repo.clone(), online, keys, clowder);
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+
+        let proofs = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
+        assert_eq!(proofs_json(&proofs), proofs_json(&stored));
+        let completed = repo.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(completed.state, ReservationState::Complete(stored));
+    }
+
+    async fn replay_with_failing_tail(signal_err: fn() -> Error) -> Result<Vec<cashu::Proof>> {
+        let f = retry_fixture();
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        let (repo, stored) = issued_fixture_store(&f, expires_at).await;
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .returning(move |_, _, _, _, _, _| Err(signal_err()));
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let mut online = crate::foreign::MockOnlineRepository::new();
+        online.expect_store_issued().never();
+        let srvc = fixture_service(repo.clone(), online, keys, clowder);
+        let ys: Vec<_> = f.request.fingerprints.iter().map(|fp| fp.y).collect();
+
+        let replay = exchange(&srvc, &f.request, time::OffsetDateTime::now_utc()).await;
+        let still = repo.search_reservation(&ys).await.unwrap().unwrap();
+        assert_eq!(
+            still.state,
+            ReservationState::Issued {
+                proofs: stored,
+                expires_at
+            }
+        );
+        replay
+    }
+
+    fn rejected(r: bcr_common::wire::clowder::ClowderRejection) -> Error {
+        Error::ClowderNatsClient(ClowderClientError::Rejected(r))
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_fails_is_retryable() {
+        let replay =
+            replay_with_failing_tail(|| Error::InvalidInput(String::from("clowder unavailable")))
+                .await;
+        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_transient_rejection_is_retryable() {
+        let replay = replay_with_failing_tail(|| {
+            rejected(bcr_common::wire::clowder::ClowderRejection::LedgerBusy)
+        })
+        .await;
+        assert!(matches!(replay, Err(Error::ServiceUnavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_tail_refused_is_not_retryable() {
+        let replay = replay_with_failing_tail(|| {
+            rejected(bcr_common::wire::clowder::ClowderRejection::InvalidProof)
+        })
+        .await;
+        assert!(matches!(
+            replay,
+            Err(Error::ClowderNatsClient(ClowderClientError::Rejected(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_replay_bad_signature_is_refused() {
+        let f = retry_fixture();
+        let repo = completed_fixture_store(&f).await;
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_sign().never();
+        let srvc = fixture_service(
+            repo,
+            crate::foreign::MockOnlineRepository::new(),
+            keys,
+            crate::foreign::MockClowderClient::new(),
+        );
+        let forged = OfflineExchangeRequest {
+            wallet_signature: f.other_request.wallet_signature,
+            ..f.request.clone()
+        };
+
+        let replay = exchange(&srvc, &forged, time::OffsetDateTime::now_utc()).await;
+        assert!(matches!(replay, Err(Error::InvalidInput(_))));
     }
 
     fn redeem_request(amounts: &[u64]) -> bcr_common::wire::exchange::RedeemOfflineExchangeRequest {
@@ -1107,5 +1649,18 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
+    }
+
+    #[test]
+    fn fixture_exchange_digest() {
+        let f = retry_fixture();
+        let digest = exchange_digest(
+            &f.alpha_id,
+            &f.evidence_digest,
+            &f.request.fingerprints,
+            &f.request.hashes,
+            &f.request.wallet_pk,
+        );
+        assert_eq!(digest, f.exchange_digest);
     }
 }

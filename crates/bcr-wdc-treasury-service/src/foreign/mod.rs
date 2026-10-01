@@ -70,12 +70,6 @@ pub trait OnlineRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OfflineRepository: Send + Sync {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()>;
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -94,6 +88,35 @@ pub trait OfflineRepository: Send + Sync {
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
     /// First writer wins on the digest: `false` if the entry was already redeemed.
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool>;
+    async fn reserve_exchange(
+        &self,
+        reservation: OfflineReservation,
+        ys: &[cashu::PublicKey],
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+    ) -> Result<bool>;
+    async fn search_reservation(
+        &self,
+        ys: &[cashu::PublicKey],
+    ) -> Result<Option<OfflineReservation>>;
+    async fn complete_reservation(&self, exchange_digest: [u8; 32]) -> Result<()>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OfflineReservation {
+    pub exchange_digest: [u8; 32],
+    pub alpha_id: secp256k1::PublicKey,
+    pub evidence_digest: [u8; 32],
+    pub state: ReservationState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReservationState {
+    Issued {
+        proofs: Vec<cashu::Proof>,
+        expires_at: TStamp,
+    },
+    Complete(Vec<cashu::Proof>),
 }
 
 #[cfg_attr(test, mockall::automock)]
