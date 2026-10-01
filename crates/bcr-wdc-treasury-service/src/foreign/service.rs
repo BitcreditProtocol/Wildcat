@@ -189,10 +189,6 @@ impl Service {
         }
     }
 
-    /// Signals and records issued proofs, then marks the exchange complete; a replay of an
-    /// exchange that stopped part way runs this again with the stored proofs. A failure
-    /// leaves it Issued, so no proofs leave unannounced; it is retryable unless the node
-    /// refused the signal for good, which is passed through.
     async fn announce_offline_exchange(
         &self,
         request: OfflineExchangeRequest,
@@ -401,7 +397,6 @@ impl Service {
     }
 }
 
-/// Retryable: the exchange is held by a concurrent request.
 fn exchange_in_progress() -> Error {
     Error::ServiceUnavailable(SUError::Unknown)
 }
@@ -880,8 +875,6 @@ mod tests {
         }
     }
 
-    /// Clowder and keys that accept, record and price the fixture's exchange once; the
-    /// returned keyset signs it.
     fn fixture_exchange_mocks(
         f: &RetryFixture,
         runs: usize,
@@ -976,7 +969,6 @@ mod tests {
         serde_json::to_string(proofs).unwrap()
     }
 
-    /// The fixture's exchange, already signed, stored and marked complete.
     async fn completed_fixture_store(
         f: &RetryFixture,
     ) -> Arc<crate::persistence::inmemory::OfflineRepository> {
@@ -1108,8 +1100,6 @@ mod tests {
         assert_eq!(proofs_json(&proofs), proofs_json(&[f.proof]));
     }
 
-    /// The fixture's exchange stopped after its proofs were stored, before they were
-    /// announced; the proofs are HTLC-locked like issued offline eCash.
     async fn issued_fixture_store(
         f: &RetryFixture,
         expires_at: TStamp,
@@ -1183,8 +1173,6 @@ mod tests {
         assert_eq!(completed.state, ReservationState::Complete(stored));
     }
 
-    /// Replays the Issued fixture exchange with a signal failing with `signal_err`, and
-    /// checks it stays Issued with its stored proofs and expiry.
     async fn replay_with_failing_tail(signal_err: fn() -> Error) -> Result<Vec<cashu::Proof>> {
         let f = retry_fixture();
         let expires_at = time::OffsetDateTime::now_utc() + time::Duration::days(7);
