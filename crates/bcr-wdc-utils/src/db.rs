@@ -4,6 +4,42 @@
 
 // ----- end imports
 
+pub enum DBBackend {
+    Surreal,
+    Postgres,
+    DefaultPostgres,
+}
+
+pub fn select_db_backend(
+    component: &str,
+    migrated: bool,
+    pg_configuration: postgres::DBConnConfig,
+) -> DBBackend {
+    let we_have_connections = pg_configuration.max_connections > 0;
+    match (migrated, we_have_connections) {
+        (true, true) => DBBackend::Postgres,
+        (false, false) => DBBackend::Surreal,
+        (true, false) => {
+            tracing::warn!("################################################################");
+            tracing::warn!("#  WARNING: {component} is marked as migrated to PostgreSQL");
+            tracing::warn!("#  but PostgreSQL is NOT configured (max_connections == 0):");
+            tracing::warn!("#  running on SurrealDB, writes to migrated tables will fail.");
+            tracing::warn!("#  Set repository_new.max_connections > 0.");
+            tracing::warn!("################################################################");
+            DBBackend::DefaultPostgres
+        }
+        (false, true) => {
+            tracing::warn!("################################################################");
+            tracing::warn!("#  WARNING: {component} is marked as migrated to PostgreSQL");
+            tracing::warn!("#  but PostgreSQL is NOT configured (max_connections == 0):");
+            tracing::warn!("#  running on SurrealDB, writes to migrated tables will fail.");
+            tracing::warn!("#  Set repository_new.max_connections > 0.");
+            tracing::warn!("################################################################");
+            DBBackend::Surreal
+        }
+    }
+}
+
 pub mod surreal {
     #[derive(Debug, Clone, serde::Deserialize)]
     pub struct DBConnConfig {

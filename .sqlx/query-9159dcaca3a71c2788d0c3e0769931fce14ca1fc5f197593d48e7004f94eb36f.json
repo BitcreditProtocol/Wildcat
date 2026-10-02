@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_onchain_melt_ops (qid, expiry, status, input_ys, blob)\n            VALUES( $1, $2, $3, $4, $5)\n            RETURNING qid\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "qid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "TextArray",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9159dcaca3a71c2788d0c3e0769931fce14ca1fc5f197593d48e7004f94eb36f"
+}

@@ -14,7 +14,7 @@ use bcr_common::{
         ebill::Client as EbClient, treasury as cl_treasury,
     },
 };
-use bcr_wdc_utils::{nut19, routine};
+use bcr_wdc_utils::{db as db_utils, nut19, routine};
 // ----- local modules
 mod admin;
 pub mod config;
@@ -47,6 +47,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         foreign,
         ebill,
         vault,
+        repository_new,
         core_url,
         ebill_url,
         clowder_rest_url,
@@ -54,6 +55,18 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         clowder_nkey_seed,
         cache_expiry_sec,
     } = cfg;
+
+    // one PostgreSQL pool shared by every repository
+    let pg_pool = if repository_new.max_connections > 0 {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(repository_new.max_connections)
+            .connect(&repository_new.connection)
+            .await
+            .expect("Failed to connect to PostgreSQL");
+        Some(pool)
+    } else {
+        None
+    };
 
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
@@ -87,9 +100,29 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         min_feerate_sat_per_vb,
         ..
     } = onchain;
-    let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
+    let surreal_onchain = persistence::surreal::DBOnChain::new(onchain_repo)
         .await
         .expect("Failed to create repository");
+    let migrated = surreal_onchain
+        .is_migrated()
+        .await
+        .expect("Failed to read onchain migration marker");
+    let onchain_repo: Arc<dyn onchain::Repository> =
+        match db_utils::select_db_backend("treasury onchain", migrated, repository_new.clone()) {
+            db_utils::DBBackend::Surreal => Arc::new(surreal_onchain),
+            db_utils::DBBackend::Postgres => {
+                let pool = pg_pool
+                    .clone()
+                    .expect("PostgreSQL pool when max_connections > 0");
+                Arc::new(persistence::sqlx::DBOnChain::from_pool(pool))
+            }
+            db_utils::DBBackend::DefaultPostgres => {
+                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                    .await
+                    .expect("Failed to connect to PostgreSQL");
+                Arc::new(persistence::sqlx::DBOnChain::from_pool(pool))
+            }
+        };
     let clowder_cl = onchain::ClowderCl {
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
@@ -102,7 +135,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         melt_quote_expiry: time::Duration::seconds(melt_quote_expiry_seconds as i64),
         mint_quote_expiry: time::Duration::seconds(mint_quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
-        repo: Arc::new(onchain_repo),
+        repo: onchain_repo,
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         melt_fee_ppk,
@@ -116,9 +149,29 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         multiplier,
         ..
     } = ebill;
-    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
+    let surreal_ebill = persistence::surreal::DBEbill::new(mintops)
         .await
         .expect("Failed to create ebill repository");
+    let migrated = surreal_ebill
+        .is_migrated()
+        .await
+        .expect("Failed to read ebill migration marker");
+    let ebill_repo: Box<dyn ebill::Repository> =
+        match db_utils::select_db_backend("treasury ebill", migrated, repository_new.clone()) {
+            db_utils::DBBackend::Surreal => Box::new(surreal_ebill),
+            db_utils::DBBackend::Postgres => {
+                let pool = pg_pool
+                    .clone()
+                    .expect("PostgreSQL pool when max_connections > 0");
+                Box::new(persistence::sqlx::DBEbill::from_pool(pool))
+            }
+            db_utils::DBBackend::DefaultPostgres => {
+                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                    .await
+                    .expect("Failed to connect to PostgreSQL");
+                Box::new(persistence::sqlx::DBEbill::from_pool(pool))
+            }
+        };
     let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
@@ -132,7 +185,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         "Multiplier must be greater than zero"
     );
     let ebill = ebill::Service {
-        repo: Box::new(ebill_repo),
+        repo: ebill_repo,
         wildcatcl: Box::new(wdccl),
         clowdercl: Box::new(clwdcl),
         multiplier,
@@ -146,13 +199,33 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         offline_exchange_lock_secs,
         ..
     } = foreign;
-    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
+    let surreal_online = persistence::surreal::DBForeignOnline::new(online_repo)
         .await
         .expect("Failed to create foreign online repository");
+    let migrated = surreal_online
+        .is_migrated()
+        .await
+        .expect("Failed to read foreign online migration marker");
+    let onlinerepo: Arc<dyn foreign::OnlineRepository> = match db_utils::select_db_backend(
+        "treasury foreign online",
+        migrated,
+        repository_new.clone(),
+    ) {
+        db_utils::DBBackend::Surreal => Arc::new(surreal_online),
+        db_utils::DBBackend::Postgres => {
+            let pool = pg_pool.clone().expect("PostgreSQL pool");
+            Arc::new(persistence::sqlx::DBForeignOnline::from_pool(pool))
+        }
+        db_utils::DBBackend::DefaultPostgres => {
+            let pool = sqlx::PgPool::connect(&repository_new.connection)
+                .await
+                .expect("Failed to connect to PostgreSQL");
+            Arc::new(persistence::sqlx::DBForeignOnline::from_pool(pool))
+        }
+    };
     let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
         .await
         .expect("Failed to create foreign offline repository");
-    let onlinerepo = Arc::new(foreign_online_repo);
     let offlinerepo = Arc::new(foreign_offline_repo);
     let clowder = Arc::new(foreign::clients::ClowderCl {
         rest: clowder_client.clone(),
@@ -177,10 +250,28 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
 
     // vault
-    let config::Vault { db, .. } = vault;
-    let vault_repo = persistence::surreal::DBVault::new(db)
+    let config::Vault { db } = vault;
+    let surreal_vault = persistence::surreal::DBVault::new(db)
         .await
         .expect("Failed to create vault repository");
+    let migrated = surreal_vault
+        .is_migrated()
+        .await
+        .expect("Failed to read vault migration marker");
+    let vault_repo: Box<dyn vault::Repository> =
+        match db_utils::select_db_backend("treasury vault", migrated, repository_new.clone()) {
+            db_utils::DBBackend::Surreal => Box::new(surreal_vault),
+            db_utils::DBBackend::Postgres => {
+                let pool = pg_pool.clone().expect("PostgreSQL pool");
+                Box::new(persistence::sqlx::DBVault::from_pool(pool))
+            }
+            db_utils::DBBackend::DefaultPostgres => {
+                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                    .await
+                    .expect("Failed to connect to PostgreSQL");
+                Box::new(persistence::sqlx::DBVault::from_pool(pool))
+            }
+        };
     let wdccl = vault::WildcatCl {
         core: core_client.clone(),
     };
@@ -191,7 +282,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     let my_url = cashu::MintUrl::from_str(url_response.mint_url.as_str())
         .expect("cashu::MintUrl == reqwest::Url");
     let vault = vault::Service {
-        repo: Box::new(vault_repo),
+        repo: vault_repo,
         wdc_cl: Box::new(wdccl),
         my_url,
         mint_id: bcr_common::core::NodeId::new(my_pk, info.network),
