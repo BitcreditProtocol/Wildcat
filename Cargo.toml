@@ -9,6 +9,7 @@ resolver = "2"
 members = [
     "crates/bcr-wdc-admin-aggregator",
     "crates/bcr-wdc-core-service",
+    "crates/bcr-wdc-mint-service",
     "crates/bcr-wdc-quote-service",
     "crates/bcr-wdc-treasury-service",
     "crates/bcr-wdc-utils",
@@ -20,15 +21,15 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "3c914f0"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "a299a7a"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
-bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
+bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
+bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bip39 = {version = "2"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
-time = {version = "0.3", features = ["serde", "formatting", "parsing", "macros"]}
 ciborium = {version = "0.2"}
 config = {version = "0.15"}
 futures = {version = "0.3"}
@@ -43,6 +44,7 @@ sqlx = {version = "0.8"}
 strum = {version = "0.28"}
 surrealdb = {version = "2.2"}
 thiserror = {version = "2"}
+time = {version = "0.3", features = ["serde", "formatting", "parsing", "macros"]}
 tokio = {version = "1"}
 tokio-util = {version = "0.7"}
 tracing = {version = "0.1"}

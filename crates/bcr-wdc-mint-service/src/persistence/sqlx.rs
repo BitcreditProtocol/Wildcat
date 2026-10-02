@@ -1,0 +1,1058 @@
+// ----- standard library imports
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    str::FromStr,
+};
+// ----- extra library imports
+use anyhow::anyhow;
+use async_trait::async_trait;
+use bcr_common::{
+    cashu::{self, nut01::MintKeyPair},
+    client::admin::core::{BRError, RNFError},
+    ecash,
+};
+use bcr_wdc_utils::{keys as keys_utils, postgres};
+use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
+use sqlx::types::Json;
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+// ----- local imports
+use crate::{
+    error::{Error, Result},
+    persistence, vault, TStamp,
+};
+
+// ----- end imports
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for keysets
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum KeysetBlob {
+    V1(KeysetBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct KeysetBlobV1 {
+    valid_from: u64,
+    derivation_path: DerivationPath,
+    derivation_path_index: Option<u32>,
+    amounts: Vec<u64>,
+    input_fee_ppk: u64,
+    keys: HashMap<String, MintKeyPair>, // Use String for the key to make it JSON serializable
+}
+
+#[derive(sqlx::FromRow)]
+struct KeysetRow {
+    kid: String,
+    unit: String,
+    active: bool,
+    final_expiry: Option<i64>,
+    blob: Json<KeysetBlob>,
+}
+
+fn keyset_to_row(entry: keys_utils::MintKeysEntry) -> Result<KeysetRow> {
+    let final_expiry = entry
+        .final_expiry
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+    let jsonable_keys = entry
+        .keys
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect::<HashMap<String, MintKeyPair>>();
+    let blob = KeysetBlob::V1(KeysetBlobV1 {
+        valid_from: entry.valid_from,
+        derivation_path: entry.derivation_path,
+        derivation_path_index: entry.derivation_path_index,
+        amounts: entry.amounts,
+        input_fee_ppk: entry.input_fee_ppk,
+        keys: jsonable_keys,
+    });
+    Ok(KeysetRow {
+        kid: entry.id.to_string(),
+        unit: entry.unit.to_string(),
+        active: entry.active,
+        final_expiry,
+        blob: Json(blob),
+    })
+}
+
+fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
+    let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+    let unit =
+        cashu::CurrencyUnit::from_str(&row.unit).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+    let final_expiry = row
+        .final_expiry
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+    let KeysetBlob::V1(blob) = row.blob.0;
+    let keys = blob
+        .keys
+        .into_iter()
+        .map(|(k, v)| {
+            let key = cashu::Amount::from_str(&k).expect("parsable amount");
+            Ok((key, v))
+        })
+        .collect::<Result<BTreeMap<cashu::Amount, MintKeyPair>>>()?;
+    let entry = keys_utils::MintKeysEntry {
+        id: kid,
+        unit,
+        active: row.active,
+        valid_from: blob.valid_from,
+        derivation_path: blob.derivation_path,
+        derivation_path_index: blob.derivation_path_index,
+        amounts: blob.amounts,
+        input_fee_ppk: blob.input_fee_ppk,
+        final_expiry,
+        keys: cashu::nut01::MintKeys::new(keys),
+    };
+    Ok(entry)
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for signatures
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum SignatureBlob {
+    V1(cashu::BlindSignature),
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for proofs
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ProofBlob {
+    V0 {
+        kid: cashu::Id,
+        witness: Option<cashu::Witness>,
+        c: cashu::PublicKey,
+        secret: cashu::secret::Secret,
+    },
+    V1(cashu::Proof),
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for commitments
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum CommitmentBlob {
+    V1(CommitmentBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CommitmentBlobV1 {
+    wallet_key: cashu::PublicKey,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+}
+
+#[derive(sqlx::FromRow)]
+struct CommitmentRow {
+    signature: String,
+    expiration: TStamp,
+    blob: Json<CommitmentBlob>,
+}
+
+fn commitment_to_row(
+    expiration: TStamp,
+    wallet_key: cashu::PublicKey,
+    signature: schnorr::Signature,
+    fp_digest: [u8; 32],
+    signed: persistence::SignatureOwner,
+) -> CommitmentRow {
+    CommitmentRow {
+        signature: signature.to_string(),
+        expiration,
+        blob: Json(CommitmentBlob::V1(CommitmentBlobV1 {
+            wallet_key,
+            fp_digest,
+            signed,
+        })),
+    }
+}
+
+fn commitment_from_row(
+    row: CommitmentRow,
+    inputs: Vec<cashu::PublicKey>,
+    outputs: Vec<cashu::PublicKey>,
+) -> Result<persistence::StoredCommitment> {
+    let CommitmentBlob::V1(blob) = row.blob.0;
+    Ok(persistence::StoredCommitment {
+        inputs,
+        outputs,
+        expiration: row.expiration,
+        fp_digest: blob.fp_digest,
+        signed: blob.signed,
+    })
+}
+
+fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKey>> {
+    keys.into_iter()
+        .map(|key| {
+            cashu::PublicKey::from_str(&key).map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+        })
+        .collect()
+}
+
+///////////////////////////////////////////////////////////////////////// Repository
+#[derive(Debug, Clone)]
+pub struct Repository {
+    pool: PgPool,
+}
+
+impl Repository {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+pub async fn insert_v0(
+    repository: &Repository,
+    proofs: Vec<persistence::surreal::ProofDBEntry>,
+) -> Result<()> {
+    let p_len = proofs.len();
+    let mut y_strs = Vec::with_capacity(proofs.len());
+    let mut blob_values = Vec::with_capacity(proofs.len());
+    for proof in proofs {
+        let y = cashu::PublicKey::from_str(&proof.id.key().to_string())
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let blob = ProofBlob::V0 {
+            kid: proof.kid,
+            witness: proof.witness,
+            c: proof.c,
+            secret: proof.secret,
+        };
+        let blob_value =
+            serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        y_strs.push(y.to_string());
+        blob_values.push(blob_value);
+    }
+    let mut tx = repository
+        .pool
+        .begin()
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    let result = sqlx::query!(
+        r#"INSERT INTO core_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y) DO UPDATE
+            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+            WHERE core_proofs.blob IS NULL"#,
+        &y_strs,
+        &blob_values,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    if result.rows_affected() != p_len as u64 {
+        tx.rollback()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let err = BRError::Generic(String::from("proofs are already spent"));
+        return Err(Error::InvalidInput(err));
+    }
+    tx.commit()
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+    Ok(())
+}
+
+#[async_trait]
+impl persistence::Repository for Repository {
+    async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
+        let row = keyset_to_row(entry)?;
+        let kid = row.kid.clone();
+        let json_blob =
+            serde_json::to_value(&row.blob).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO core_keys (kid, unit, active, final_expiry, blob)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (kid) DO NOTHING
+            RETURNING kid
+            "#,
+            row.kid,
+            row.unit,
+            row.active,
+            row.final_expiry,
+            json_blob,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::Conflict(format!("keyset already exists: {kid}")));
+        }
+        Ok(())
+    }
+
+    async fn keys_info(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySetInfo>> {
+        let row = sqlx::query_as!(
+            KeysetRow,
+            r#"
+            SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
+            FROM core_keys
+            WHERE kid = $1
+            "#,
+            kid.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let info = row.map(keyset_from_row).transpose()?.map(From::from);
+        Ok(info)
+    }
+
+    async fn keys_load(&self, kid: cashu::Id) -> Result<Option<ecash::MintKeySet>> {
+        let row = sqlx::query_as!(
+            KeysetRow,
+            r#"
+            SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
+            FROM core_keys
+            WHERE kid = $1
+            "#,
+            kid.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let set = row.map(keyset_from_row).transpose()?.map(From::from);
+        Ok(set)
+    }
+
+    async fn keys_list_info(
+        &self,
+        unit: Option<cashu::CurrencyUnit>,
+        min_expiration_tstamp: Option<u64>,
+        max_expiration_tstamp: Option<u64>,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
+        let min_expiration_tstamp = min_expiration_tstamp
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let max_expiration_tstamp = max_expiration_tstamp
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let mut qb: QueryBuilder<'_, Postgres> =
+            QueryBuilder::new("SELECT kid, unit, active, final_expiry, blob FROM core_keys");
+        let any_filter =
+            unit.is_some() || min_expiration_tstamp.is_some() || max_expiration_tstamp.is_some();
+        if any_filter {
+            qb.push(" WHERE ");
+            let mut separated = qb.separated(" AND ");
+            if let Some(unit) = unit {
+                separated
+                    .push("unit = ")
+                    .push_bind_unseparated(unit.to_string());
+            }
+            if let Some(min_expiration_tstamp) = min_expiration_tstamp {
+                separated
+                    .push("final_expiry >= ")
+                    .push_bind_unseparated(min_expiration_tstamp);
+            }
+            if let Some(max_expiration_tstamp) = max_expiration_tstamp {
+                separated
+                    .push("final_expiry <= ")
+                    .push_bind_unseparated(max_expiration_tstamp);
+            }
+        }
+        let rows = qb
+            .build_query_as::<KeysetRow>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let infos = rows
+            .into_iter()
+            .map(keyset_from_row)
+            .collect::<Result<Vec<keys_utils::MintKeysEntry>>>()?
+            .into_iter()
+            .map(ecash::MintKeySetInfo::from)
+            .collect();
+        Ok(infos)
+    }
+
+    async fn keys_infos_for_expiration_date(
+        &self,
+        expire: u64,
+    ) -> Result<Vec<ecash::MintKeySetInfo>> {
+        let expire = i64::try_from(expire).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let rows = sqlx::query_as!(
+            KeysetRow,
+            r#"
+            SELECT kid, unit, active, final_expiry, blob as "blob: Json<KeysetBlob>"
+            FROM core_keys
+            WHERE final_expiry >= $1
+            ORDER BY final_expiry ASC
+            "#,
+            expire
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        let infos = rows
+            .into_iter()
+            .map(keyset_from_row)
+            .collect::<Result<Vec<keys_utils::MintKeysEntry>>>()?
+            .into_iter()
+            .map(ecash::MintKeySetInfo::from)
+            .collect();
+        Ok(infos)
+    }
+    async fn signature_store(
+        &self,
+        y: cashu::PublicKey,
+        signature: cashu::BlindSignature,
+    ) -> Result<()> {
+        let blob = SignatureBlob::V1(signature);
+        let blob_value =
+            serde_json::to_value(&blob).map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO core_signatures (y, blob)
+            VALUES ($1, $2)
+            ON CONFLICT (y) DO NOTHING
+            RETURNING y
+            "#,
+            y.to_string(),
+            blob_value
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::Conflict(format!("signature already exists: {y}")));
+        }
+        Ok(())
+    }
+
+    async fn signature_load(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT blob as "blob: Json<SignatureBlob>"
+            FROM core_signatures
+            WHERE y = $1
+            "#,
+            blind.blinded_secret.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Ok(None);
+        };
+        match row.blob.0 {
+            SignatureBlob::V1(signature) => Ok(Some(signature)),
+        }
+    }
+
+    async fn swap_finalize(
+        &self,
+        proofs: Vec<cashu::Proof>,
+        signatures: Vec<persistence::StoredSignature>,
+        commitment: schnorr::Signature,
+    ) -> Result<()> {
+        let mut proof_ys = Vec::with_capacity(proofs.len());
+        let mut proof_blobs = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof
+                .y()
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?
+                .to_string();
+            let blob = serde_json::to_value(ProofBlob::V1(proof))
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            proof_ys.push(y);
+            proof_blobs.push(blob);
+        }
+        let mut signature_ys = Vec::with_capacity(signatures.len());
+        let mut signature_blobs = Vec::with_capacity(signatures.len());
+        for stored in signatures {
+            let y = stored.y.to_string();
+            let blob = serde_json::to_value(SignatureBlob::V1(stored.signature))
+                .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+            signature_ys.push(y);
+            signature_blobs.push(blob);
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if !proof_ys.is_empty() {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_proofs (y, blob)
+                SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+                ON CONFLICT (y)
+                DO UPDATE
+                SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+                WHERE core_proofs.blob IS NULL
+                "#,
+                &proof_ys,
+                &proof_blobs
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            if result.rows_affected() != proof_ys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("proofs already spent")));
+            }
+        }
+        if !signature_ys.is_empty() {
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_signatures (y, blob)
+                SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &signature_ys,
+                &signature_blobs
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+            if result.rows_affected() != signature_ys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from(
+                    "one or more signatures already exist",
+                )));
+            }
+        }
+        let deleted = sqlx::query!(
+            "DELETE FROM core_commitments WHERE signature = $1",
+            commitment.to_string()
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if deleted.rows_affected() != 1 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            return Err(Error::ResourceNotFound(RNFError::Generic(
+                commitment.to_string(),
+            )));
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+        const ERROR_MSG: &str = "proofs already spent";
+        if tokens.is_empty() {
+            return Ok(());
+        }
+        let mut y_strs = Vec::with_capacity(tokens.len());
+        let mut blob_values = Vec::with_capacity(tokens.len());
+        let mut unique_ys = HashSet::with_capacity(tokens.len());
+        for token in tokens {
+            let y = token
+                .y()
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?
+                .to_string();
+            let blob = ProofBlob::V1(token);
+            let blob_value =
+                serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            y_strs.push(y.clone());
+            blob_values.push(blob_value);
+            if !unique_ys.insert(y) {
+                return Err(Error::Conflict(String::from(ERROR_MSG)));
+            }
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO core_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y)
+            DO UPDATE
+            SET signature = NULL, deadline = NULL, blob = EXCLUDED.blob
+            WHERE core_proofs.blob IS NULL
+            "#,
+            &y_strs,
+            &blob_values,
+        )
+        .execute(&mut *tx)
+        .await;
+        let result = result.map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        if result.rows_affected() != y_strs.len() as u64 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+            return Err(Error::Conflict(String::from(ERROR_MSG)));
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = tokens.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM core_proofs
+            WHERE y = ANY($1::text[]) AND blob IS NOT NULL
+            "#,
+            &y_strs
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT blob as "blob!: Json<ProofBlob>"
+            FROM core_proofs
+            WHERE y = $1 AND blob IS NOT NULL
+            "#,
+            y.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Ok(None);
+        };
+        match row.blob.0 {
+            ProofBlob::V0 { witness, .. } => {
+                let state = cashu::ProofState {
+                    y,
+                    state: cashu::State::Spent,
+                    witness,
+                };
+                Ok(Some(state))
+            }
+            ProofBlob::V1(proof) => {
+                let state = cashu::ProofState {
+                    y,
+                    state: cashu::State::Spent,
+                    witness: proof.witness,
+                };
+                Ok(Some(state))
+            }
+        }
+    }
+    async fn commitment_store(
+        &self,
+        inputs: Vec<cashu::PublicKey>,
+        outputs: Vec<cashu::PublicKey>,
+        expiration: TStamp,
+        wallet_key: cashu::PublicKey,
+        signature: schnorr::Signature,
+        fp_digest: [u8; 32],
+        signed: persistence::SignatureOwner,
+    ) -> Result<()> {
+        let row = commitment_to_row(expiration, wallet_key, signature, fp_digest, signed);
+        let signature = row.signature.clone();
+        let input_keys: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let output_keys: Vec<String> = outputs.iter().map(ToString::to_string).collect();
+        let blob_value =
+            serde_json::to_value(&row.blob).map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let inserted = sqlx::query_scalar!(
+            r#"
+            INSERT INTO core_commitments (signature, expiration, blob)
+            VALUES ($1, $2::timestamptz, $3)
+            ON CONFLICT (signature) DO NOTHING
+            RETURNING signature
+            "#,
+            &row.signature,
+            &row.expiration,
+            blob_value
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        if inserted.is_none() {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            return Err(Error::Conflict(format!(
+                "commitment already exists: {signature}"
+            )));
+        }
+        if !input_keys.is_empty() {
+            let signatures = vec![row.signature.clone(); input_keys.len()];
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_proofs (y, signature)
+                SELECT * FROM UNNEST($1::text[], $2::text[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &input_keys,
+                &signatures
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            if result.rows_affected() != input_keys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("inputs already used")));
+            }
+        }
+        if !output_keys.is_empty() {
+            let signatures = vec![row.signature.clone(); output_keys.len()];
+            let result = sqlx::query!(
+                r#"
+                INSERT INTO core_commitment_outputs (y, signature)
+                SELECT * FROM UNNEST($1::text[], $2::text[])
+                ON CONFLICT (y) DO NOTHING
+                "#,
+                &output_keys,
+                &signatures
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            if result.rows_affected() != output_keys.len() as u64 {
+                tx.rollback()
+                    .await
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+                return Err(Error::Conflict(String::from("outputs already used")));
+            }
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn commitment_load(
+        &self,
+        signature: &schnorr::Signature,
+    ) -> Result<persistence::StoredCommitment> {
+        let signature = signature.to_string();
+        let row = sqlx::query_as!(
+            CommitmentRow,
+            r#"
+            SELECT signature, expiration, blob as "blob: Json<CommitmentBlob>"
+            FROM core_commitments
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
+        .ok_or_else(|| Error::ResourceNotFound(RNFError::Generic(signature.clone())))?;
+        let input_keys = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM core_proofs
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let output_keys = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM core_commitment_outputs
+            WHERE signature = $1
+            "#,
+            &signature
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        commitment_from_row(
+            row,
+            parse_commitment_public_keys(input_keys)?,
+            parse_commitment_public_keys(output_keys)?,
+        )
+    }
+
+    async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {
+        if inputs.is_empty() {
+            return Ok(false);
+        }
+        let input_keys: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let contains = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM core_proofs
+                WHERE y = ANY($1::text[]) AND signature IS NOT NULL
+            )
+            "#,
+            &input_keys
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(contains.unwrap_or_default())
+    }
+
+    async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool> {
+        if outputs.is_empty() {
+            return Ok(false);
+        }
+        let output_keys: Vec<String> = outputs.iter().map(ToString::to_string).collect();
+        let contains = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM core_commitment_outputs
+                WHERE y = ANY($1::text[])
+            )
+            "#,
+            &output_keys
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(contains.unwrap_or_default())
+    }
+
+    async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM core_commitments
+            WHERE signature = $1
+            "#,
+            commitment.to_string()
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM core_commitments
+            WHERE expiration < $1::timestamptz
+            "#,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(())
+    }
+    async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        let y_strs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let deadlines = vec![deadline; y_strs.len()];
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO core_proofs (y, deadline)
+            SELECT * FROM UNNEST($1::text[], $2::timestamptz[])
+            ON CONFLICT (y) DO NOTHING
+            "#,
+            &y_strs,
+            &deadlines
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        if result.rows_affected() != y_strs.len() as u64 {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+            return Err(Error::Conflict(String::from("conflicting ys")));
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let y_strs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        let reserved: Vec<String> = sqlx::query_scalar!(
+            r#"
+            SELECT y
+            FROM core_proofs
+            WHERE y = ANY($1::text[]) AND deadline IS NOT NULL
+            "#,
+            &y_strs
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        let reserved_set: HashSet<String> = reserved.into_iter().collect();
+        Ok(y_strs
+            .into_iter()
+            .map(|y| reserved_set.contains(&y))
+            .collect())
+    }
+
+    async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM core_proofs
+            WHERE deadline IS NOT NULL AND deadline < $1::timestamptz
+            "#,
+            now
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned vault proof blob
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum VaultProofBlob {
+    V1(cashu::Proof),
+}
+// ///////////////////////////////////////////////////////////////////////// DBVault
+
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    pool: PgPool,
+}
+
+impl DBVault {
+    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(cfg.max_connections)
+            .connect(&cfg.connection)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(Self { pool })
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut y_strs = Vec::with_capacity(proofs.len());
+        let mut blob_values = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            let blob = VaultProofBlob::V1(proof);
+            let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+            y_strs.push(y.to_string());
+            blob_values.push(blob_value);
+        }
+        sqlx::query!(
+            r#"
+            INSERT INTO treasury_vault_proofs (y, blob)
+            SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+            ON CONFLICT (y) DO UPDATE SET blob = EXCLUDED.blob
+            "#,
+            &y_strs,
+            &blob_values
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let y_strs: Vec<String> = ys.into_iter().map(|y| y.to_string()).collect();
+        let results = sqlx::query(
+            r#"
+            SELECT blob FROM treasury_vault_proofs WHERE y = ANY($1::text[])
+            "#,
+        )
+        .bind(&y_strs)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let blobs: Vec<Json<VaultProofBlob>> = results
+            .into_iter()
+            .map(|row| {
+                let blob: Json<VaultProofBlob> =
+                    row.try_get("blob").map_err(|e| Error::DB(anyhow!(e)))?;
+                Ok(blob)
+            })
+            .collect::<Result<_>>()?;
+        let proofs = blobs
+            .into_iter()
+            .map(|blob| match blob.0 {
+                VaultProofBlob::V1(proof) => proof,
+            })
+            .collect();
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let results = sqlx::query!(
+            r#"
+            SELECT y FROM treasury_vault_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(results.len());
+        for row in results {
+            let y = cashu::PublicKey::from_str(&row.y).map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query(
+            r#"
+            DELETE FROM treasury_vault_proofs WHERE y = ANY($1::text[])
+            "#,
+        )
+        .bind(&y_strs)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}

@@ -8,7 +8,7 @@ use bcr_common::{
 };
 use bcr_wdc_utils::nut19;
 // ----- local imports
-use crate::{error::Result, service};
+use crate::{core, core::service, error::Result, vault};
 
 // ----- end imports
 
@@ -130,9 +130,10 @@ pub async fn commit_to_swap(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, cache))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, vault_srvc, cache))]
 pub async fn swap_tokens(
     State(ctrl): State<Arc<service::Service>>,
+    State(vault_srvc): State<Arc<vault::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_swap::SwapRequest>,
 ) -> Result<Json<wire_swap::SwapResponse>> {
@@ -142,6 +143,7 @@ pub async fn swap_tokens(
         let response = nut19::swap::blob_to_response(blob);
         return Ok(Json(response));
     }
+    let treasury = core::clients::VaultSrvc { vault: vault_srvc };
     let wire_swap::SwapRequest {
         inputs,
         outputs,
@@ -152,8 +154,13 @@ pub async fn swap_tokens(
         .into_iter()
         .map(cashu::BlindedMessage::from)
         .collect();
-    let c_signatures = ctrl.swap(c_inputs, c_outputs, commitment, now).await?;
-    let signatures = c_signatures.into_iter().map(From::from).collect();
+    let c_signatures = ctrl
+        .swap(&treasury, c_inputs, c_outputs, commitment, now)
+        .await?;
+    let signatures = c_signatures
+        .into_iter()
+        .map(ecash::BlindSignature::from)
+        .collect::<Vec<_>>();
     let response = wire_swap::SwapResponse { signatures };
     let blob = nut19::swap::response_to_blob(&response);
     cache.store_and_clean(key, blob, now).await;

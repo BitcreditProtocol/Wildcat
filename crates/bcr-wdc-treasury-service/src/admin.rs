@@ -107,6 +107,26 @@ pub async fn generate_fees_token(
     Ok(Json(response))
 }
 
+impl From<foreign::MintBalance> for wire_treasury::ForeignBalanceEntry {
+    fn from(balance: foreign::MintBalance) -> Self {
+        Self {
+            mint_id: balance.mint_id,
+            settled: balance.settled,
+            unsettled: balance.unsettled,
+        }
+    }
+}
+
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn foreign_balance(
+    State(ctrl): State<Arc<foreign::Service>>,
+) -> Result<Json<wire_treasury::ForeignBalanceResponse>> {
+    let balances = ctrl.balance().await?;
+    let balances = balances.into_iter().map(Into::into).collect();
+    let response = wire_treasury::ForeignBalanceResponse { balances };
+    Ok(Json(response))
+}
+
 fn convert_denied_meltop(mo: onchain::DeniedMeltOperation) -> wire_treasury::DeniedMeltOp {
     wire_treasury::DeniedMeltOp {
         id: mo.qid,

@@ -25,6 +25,9 @@ build-docker-core-service: build-docker-base-image
 build-docker-treasury-service: build-docker-base-image
     docker build -t wildcat/treasury-service -f docker/treasury-service/Dockerfile .
 
+build-docker-mint-service: build-docker-base-image
+    docker build -t wildcat/mint-service -f docker/mint-service/Dockerfile .
+
 build-docker-quote-service: build-docker-base-image
     docker build -t wildcat/quote-service -f docker/quote-service/Dockerfile .
 
@@ -43,7 +46,7 @@ build-docker-balance-collector: build-docker-base-image
 build-docker-e2e-tests: build-docker-base-image
     docker build -t wildcat/e2e-tests -f docker/e2e-tests/Dockerfile .
 
-build-docker-images: build-docker-core-service build-docker-treasury-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator
+build-docker-images: build-docker-core-service build-docker-treasury-service build-docker-mint-service build-docker-quote-service build-docker-wallet-aggregator build-docker-admin-aggregator
 
 openapi-generate-docs:
   @cargo run --package bcr-wdc-admin-aggregator --bin gen_api

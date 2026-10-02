@@ -54,6 +54,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_foreign_online_settled_balance() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_settled_balance(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_settled_balance(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_settled_balance_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_settled_balance(db).await;
+    }
+    async fn foreign_online_settled_balance(db: impl foreign::OnlineRepository) {
+        assert!(db.settled_balance().await.unwrap().is_empty());
+
+        let first = core::generate_random_keypair().public_key();
+        let second = core::generate_random_keypair().public_key();
+        db.store(first, generate_test_proofs(2)).await.unwrap();
+        db.store(first, generate_test_proofs(3)).await.unwrap();
+        db.store(second, generate_test_proofs(1)).await.unwrap();
+
+        let balances = db.settled_balance().await.unwrap();
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
+        assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
+    }
+
+    #[tokio::test]
     async fn test_foreign_online_store_search_htlc() {
         let db = init_inmemory_foreign_online_db();
         foreign_online_store_search_htlc(db).await;
@@ -198,6 +226,31 @@ mod tests {
         assert!(db.claim_redemption([7u8; 32]).await.unwrap());
         assert!(!db.claim_redemption([7u8; 32]).await.unwrap());
         assert!(db.claim_redemption([8u8; 32]).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_unsettled_balance() {
+        foreign_offline_unsettled_balance(inmemory::OfflineRepository::default()).await;
+        foreign_offline_unsettled_balance(init_surreal_foreign_offline_db().await).await;
+    }
+    async fn foreign_offline_unsettled_balance(db: impl foreign::OfflineRepository) {
+        assert!(db.unsettled_balance().await.unwrap().is_empty());
+
+        let first = core::generate_random_keypair().public_key();
+        let second = core::generate_random_keypair().public_key();
+        db.store_proofs(first, generate_test_proofs(2))
+            .await
+            .unwrap();
+        db.store_proofs(first, generate_test_proofs(3))
+            .await
+            .unwrap();
+        db.store_proofs(second, generate_test_proofs(1))
+            .await
+            .unwrap();
+        let balances = db.unsettled_balance().await.unwrap();
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
+        assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository

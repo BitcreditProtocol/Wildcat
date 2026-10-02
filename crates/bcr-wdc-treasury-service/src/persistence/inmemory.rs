@@ -5,7 +5,10 @@ use std::{
 };
 // ----- extra library imports
 use async_trait::async_trait;
-use bcr_common::{cashu, wire::keys::ProofFingerprint};
+use bcr_common::{
+    cashu::{self, ProofsMethods},
+    wire::keys::ProofFingerprint,
+};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use uuid::Uuid;
 // ----- local imports
@@ -48,6 +51,20 @@ impl foreign::OnlineRepository for OnlineRepository {
             .filter(|entry| entry.mint_id == mint_id)
             .flat_map(|entry| entry.proofs.clone());
         Ok(list.collect())
+    }
+
+    async fn settled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        let locked = self.proofs.lock().unwrap();
+        let mut balances: HashMap<secp256k1::PublicKey, cashu::Amount> = HashMap::new();
+        for entry in locked.iter() {
+            // A mint can have several entries: one per store() call.
+            let total = entry.proofs.total_amount()?;
+            let running = balances.entry(entry.mint_id).or_default();
+            *running = running
+                .checked_add(total)
+                .ok_or_else(|| Error::Internal(String::from("settled balance overflow")))?;
+        }
+        Ok(balances)
     }
 
     async fn store_htlc(
@@ -174,6 +191,14 @@ impl foreign::OfflineRepository for OfflineRepository {
     async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
         let locked = self.proofs.lock().unwrap();
         Ok(locked.get(&mint_id).cloned().unwrap_or_default())
+    }
+    async fn unsettled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        let locked = self.proofs.lock().unwrap();
+        let mut balances = HashMap::with_capacity(locked.len());
+        for (mint_id, proofs) in locked.iter() {
+            balances.insert(*mint_id, proofs.total_amount()?);
+        }
+        Ok(balances)
     }
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.proofs.lock().unwrap();
