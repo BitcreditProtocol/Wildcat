@@ -98,15 +98,14 @@ async fn main() {
         return;
     }
     // Connect to PostgreSQL (destination)
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.ebill.new).await;
-    let sqlx_ebill = sqlx::DBEbill::new(cfg.appcfg.ebill.new)
+    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.repository_new).await;
+    let sqlx_ebill = sqlx::DBEbill::new(cfg.appcfg.repository_new.clone())
         .await
         .expect("Failed to connect to PostgreSQL");
-    bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.vault.new).await;
-    let sqlx_vault = sqlx::DBVault::new(cfg.appcfg.vault.new)
+    let sqlx_vault = sqlx::DBVault::new(cfg.appcfg.repository_new.clone())
         .await
         .expect("Failed to connect to PostgreSQL");
-    let sqlx_onchain = sqlx::DBOnChain::new(cfg.appcfg.onchain.new)
+    let sqlx_onchain = sqlx::DBOnChain::new(cfg.appcfg.repository_new)
         .await
         .expect("Failed to connect to PostgreSQL");
     if !ebill_migrated {
