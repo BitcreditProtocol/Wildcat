@@ -10,7 +10,7 @@ use bcr_common::{
     core, core_tests, ecash,
     wire::keys as wire_keys,
 };
-use bcr_wdc_core_service::test_utils::dummy_attestation_for;
+use bcr_wdc_mint_service::test_utils::dummy_attestation_for;
 use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
 // ----- local imports
 
@@ -18,7 +18,7 @@ use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
 
 #[tokio::test]
 async fn swap() {
-    let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
+    let (server, controller) = bcr_wdc_mint_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
     let client = CoreClient::new(server_url);
     let (info, keyset) = core_tests::generate_random_ecash_keyset();
@@ -41,7 +41,7 @@ async fn swap() {
         .await
         .expect("store");
     let amounts = vec![Amount::from(8_u64)];
-    let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+    let c_blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
         .into_iter()
         .map(|bbb| bbb.0)
         .collect();
@@ -52,16 +52,20 @@ async fn swap() {
         .map(wire_keys::ProofFingerprint::try_from)
         .collect::<Result<_, _>>()
         .unwrap();
-    let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
+    let mint_kp = bcr_wdc_mint_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
     let expiry =
         (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
     let wallet_kp = core::generate_random_keypair();
-    let c_blinds = blinds.iter().cloned().map(From::from).collect::<Vec<_>>();
+    let blinds = c_blinds
+        .iter()
+        .cloned()
+        .map(ecash::BlindedMessage::from)
+        .collect::<Vec<_>>();
     let (_, commitment) = client
         .commit_swap(
             proof_fps.clone(),
-            c_blinds.clone(),
+            blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -70,15 +74,12 @@ async fn swap() {
         .await
         .unwrap();
     let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
-    client
-        .swap(proofs, c_blinds, commitment)
-        .await
-        .expect("swap");
+    client.swap(proofs, blinds, commitment).await.expect("swap");
 }
 
 #[tokio::test]
 async fn swap_p2pk() {
-    let (server, controller) = bcr_wdc_core_service::test_utils::build_test_server(None).await;
+    let (server, controller) = bcr_wdc_mint_service::test_utils::build_test_server(None).await;
     let server_url = server.server_address().expect("address");
     let client = CoreClient::new(server_url);
     let (info, mint_keyset) = core_tests::generate_random_ecash_keyset();
@@ -139,37 +140,41 @@ async fn swap_p2pk() {
         .collect::<Vec<_>>();
 
     let mint_keys = cashu::Keys::from(mint_keyset.keys.clone());
-    let mut correct_proofs =
+    let mut c_correct_proofs =
         construct_proofs(signatures.clone(), rs.clone(), secrets.clone(), &mint_keys).unwrap();
-    for p in correct_proofs.iter_mut() {
+    for p in c_correct_proofs.iter_mut() {
         let _ = p.sign_p2pk(p2pk_secret.clone());
     }
     // Swap 2,2,4 proofs into a single 8 blinded message
     let single_amount = [Amount::from(8)];
-    let blinds: Vec<cashu::BlindedMessage> =
+    let c_blinds: Vec<cashu::BlindedMessage> =
         signatures_test::generate_blinds(mint_keyset.id.into(), &single_amount)
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-    let correct_fps: Vec<wire_keys::ProofFingerprint> = correct_proofs
+    let correct_fps: Vec<wire_keys::ProofFingerprint> = c_correct_proofs
         .iter()
         .cloned()
         .map(wire_keys::ProofFingerprint::try_from)
         .collect::<Result<_, _>>()
         .unwrap();
-    for (p, fps) in correct_proofs.iter().zip(correct_fps.iter()) {
+    for (p, fps) in c_correct_proofs.iter().zip(correct_fps.iter()) {
         assert_eq!(p.y().unwrap(), fps.y);
     }
-    let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
+    let mint_kp = bcr_wdc_mint_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
     let wallet_kp = core::generate_random_keypair();
     let expiry =
         (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
-    let c_blinds = blinds.iter().cloned().map(From::from).collect::<Vec<_>>();
+    let blinds = c_blinds
+        .iter()
+        .cloned()
+        .map(ecash::BlindedMessage::from)
+        .collect::<Vec<_>>();
     let (_, commitment) = client
         .commit_swap(
             correct_fps.clone(),
-            c_blinds.clone(),
+            blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -177,13 +182,13 @@ async fn swap_p2pk() {
         )
         .await
         .unwrap();
-    let c_correct_proofs: Vec<_> = correct_proofs
+    let correct_proofs: Vec<_> = c_correct_proofs
         .iter()
         .cloned()
         .map(ecash::Proof::from)
         .collect();
     let res = client
-        .swap(c_correct_proofs, c_blinds, commitment)
+        .swap(correct_proofs, blinds, commitment)
         .await
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));

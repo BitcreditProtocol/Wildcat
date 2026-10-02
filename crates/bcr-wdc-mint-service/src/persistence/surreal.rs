@@ -20,7 +20,7 @@ use surrealdb::{
 // ----- local imports
 use crate::{
     error::{Error, Result},
-    persistence, TStamp,
+    persistence, vault, TStamp,
 };
 
 // ----- end imports
@@ -34,7 +34,6 @@ const SIGNATURES_TABLE: &str = "signatures";
 const PROOFS_TABLE: &str = "proofs";
 const COMMITMENTS_TABLE: &str = "commitments";
 const RESERVED_YS_TABLE: &str = "reserved_ys";
-const MIGRATIONS_TABLE: &str = "migrations";
 
 #[derive(Debug, Clone)]
 pub struct Repository {
@@ -65,7 +64,6 @@ async fn connect_surreal(cfg: surreal::DBConnConfig) -> SurrealResult<Surreal<An
 #[async_trait]
 impl persistence::Repository for Repository {
     async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
-        self.ensure_writable(&[KEYS_TABLE]).await?;
         let rid = RecordId::from_table_key(KEYS_TABLE, entry.id.to_string());
         let dbentry = convert_to_keysdbentry(entry, KEYS_TABLE);
         let _resp: Option<KeysDBEntry> = self
@@ -162,7 +160,6 @@ impl persistence::Repository for Repository {
         y: cashu::PublicKey,
         signature: cashu::BlindSignature,
     ) -> Result<()> {
-        self.ensure_writable(&[SIGNATURES_TABLE]).await?;
         Repository::signature_store(self, y, signature).await
     }
 
@@ -179,8 +176,6 @@ impl persistence::Repository for Repository {
         signatures: Vec<persistence::StoredSignature>,
         commitment: schnorr::Signature,
     ) -> Result<()> {
-        self.ensure_writable(&[PROOFS_TABLE, SIGNATURES_TABLE, COMMITMENTS_TABLE])
-            .await?;
         const CONFLICT_MSG: &str = "duplicate proofs or signatures";
         let commitment_rid = RecordId::from_table_key(COMMITMENTS_TABLE, commitment.to_string());
         let existing_commitment: Option<CommitmentDBEntry> = self
@@ -244,7 +239,6 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
-        self.ensure_writable(&[PROOFS_TABLE]).await?;
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         for tk in tokens {
             let db_entry = convert_to_db(tk, PROOFS_TABLE)?;
@@ -265,7 +259,6 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
-        self.ensure_writable(&[PROOFS_TABLE]).await?;
         for tk in tokens {
             let rid = cpk_to_record_id(PROOFS_TABLE, *tk);
             let _p: Option<cashu::Proof> = self
@@ -305,7 +298,6 @@ impl persistence::Repository for Repository {
         fp_digest: [u8; 32],
         signed: persistence::SignatureOwner,
     ) -> Result<()> {
-        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_store(
             self, inputs, outputs, expiration, wallet_key, commitment, fp_digest, signed,
         )
@@ -328,17 +320,14 @@ impl persistence::Repository for Repository {
     }
 
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
-        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_delete(self, commitment).await
     }
 
     async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
-        self.ensure_writable(&[COMMITMENTS_TABLE]).await?;
         Repository::commitment_clean_expired(self, now).await
     }
 
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
-        self.ensure_writable(&[RESERVED_YS_TABLE]).await?;
         Repository::ys_store(self, inputs, deadline).await
     }
 
@@ -347,7 +336,6 @@ impl persistence::Repository for Repository {
     }
 
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
-        self.ensure_writable(&[RESERVED_YS_TABLE]).await?;
         Repository::ys_clean_expired(self, now).await
     }
 }
@@ -875,130 +863,110 @@ impl Repository {
     }
 }
 
-////////////////////////////////////////////////////////////////////////// Migrations DB
-/// One record per table migrated to PostgreSQL, keyed by the table name.
+/////////////////////////////////////////////////////////////////////////////// Vault DB
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct MigrationDBEntry {
+struct VaultProofDBEntry {
     id: RecordId,
-    #[serde(with = "time::serde::rfc3339")]
-    migrated_at: TStamp,
+    proof: cashu::Proof,
+}
+impl std::convert::From<VaultProofDBEntry> for cashu::Proof {
+    fn from(entry: VaultProofDBEntry) -> Self {
+        entry.proof
+    }
 }
 
-impl Repository {
-    async fn is_migrated(&self, table: &str) -> Result<bool> {
-        let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
-        let entry: Option<MigrationDBEntry> = self
-            .db
-            .select(rid)
-            .await
-            .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
-        Ok(entry.is_some())
+#[derive(Debug, Clone)]
+pub struct DBVault {
+    pub(super) db: Surreal<Any>,
+}
+
+impl DBVault {
+    const PROOFS_TABLE: &'static str = "vault_proofs";
+
+    pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
+        let db_connection = Surreal::<Any>::init();
+        db_connection.connect(config.connection).await?;
+        db_connection.use_ns(config.namespace).await?;
+        db_connection.use_db(config.database).await?;
+        Ok(Self { db: db_connection })
     }
 
-    async fn mark_migrated(&self, table: &str) -> Result<()> {
-        let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
-        let entry = MigrationDBEntry {
-            id: rid.clone(),
-            migrated_at: time::OffsetDateTime::now_utc(),
-        };
-        let _: Option<MigrationDBEntry> = self
+    pub async fn dump(&self) -> Result<Vec<cashu::Proof>> {
+        let entries: Vec<VaultProofDBEntry> = self
             .db
-            .upsert(rid)
-            .content(entry)
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
             .await
-            .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = entries.into_iter().map(Into::into).collect();
+        Ok(proofs)
+    }
+}
+
+#[async_trait]
+impl vault::Repository for DBVault {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        let mut entries: Vec<VaultProofDBEntry> = Vec::with_capacity(proofs.len());
+        for proof in proofs {
+            let y = proof.y()?;
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry = VaultProofDBEntry { id: rid, proof };
+            entries.push(entry);
+        }
+        let _: Vec<VaultProofDBEntry> = self
+            .db
+            .insert(Self::PROOFS_TABLE)
+            .content(entries)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
 
-    pub async fn is_keys_migrated(&self) -> Result<bool> {
-        self.is_migrated(KEYS_TABLE).await
-    }
-    pub async fn mark_keys_migrated(&self) -> Result<()> {
-        self.mark_migrated(KEYS_TABLE).await
-    }
-
-    pub async fn is_signatures_migrated(&self) -> Result<bool> {
-        self.is_migrated(SIGNATURES_TABLE).await
-    }
-    pub async fn mark_signatures_migrated(&self) -> Result<()> {
-        self.mark_migrated(SIGNATURES_TABLE).await
-    }
-
-    pub async fn is_commitments_migrated(&self) -> Result<bool> {
-        self.is_migrated(COMMITMENTS_TABLE).await
-    }
-    pub async fn mark_commitments_migrated(&self) -> Result<()> {
-        self.mark_migrated(COMMITMENTS_TABLE).await
-    }
-
-    pub async fn is_reserved_ys_migrated(&self) -> Result<bool> {
-        self.is_migrated(RESERVED_YS_TABLE).await
-    }
-    pub async fn mark_reserved_ys_migrated(&self) -> Result<()> {
-        self.mark_migrated(RESERVED_YS_TABLE).await
-    }
-
-    pub async fn is_proofs_migrated(&self) -> Result<bool> {
-        self.is_migrated(PROOFS_TABLE).await
-    }
-    pub async fn mark_proofs_migrated(&self) -> Result<()> {
-        self.mark_migrated(PROOFS_TABLE).await
-    }
-
-    /// Refuses writes to tables already migrated to PostgreSQL, so a service
-    /// still pointing at SurrealDB cannot diverge from the migrated data.
-    async fn ensure_writable(&self, tables: &[&str]) -> Result<()> {
-        for table in tables {
-            if self.is_migrated(table).await? {
-                tracing::error!("write to table {table} refused: already migrated to PostgreSQL");
-                return Err(Error::ServiceUnavailable);
+    async fn load_proofs(&self, ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::Proof>> {
+        let mut proofs = Vec::with_capacity(ys.len());
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let entry: Option<VaultProofDBEntry> = self
+                .db
+                .select(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            if let Some(entry) = entry {
+                proofs.push(entry.proof);
             }
         }
+        Ok(proofs)
+    }
+
+    async fn list_ys(&self) -> Result<Vec<cashu::PublicKey>> {
+        let rids: Vec<RecordId> = self
+            .db
+            .query("SELECT VALUE id FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ys = Vec::with_capacity(rids.len());
+        for rid in rids {
+            let y = cashu::PublicKey::from_str(&rid.key().to_string())
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y);
+        }
+        Ok(ys)
+    }
+
+    async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        for y in ys {
+            let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
+            let _: Option<VaultProofDBEntry> = self
+                .db
+                .delete(rid)
+                .await
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+        }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    // inherent methods shadow the trait ones, which hold the write guard
-    use crate::persistence::Repository as Repo;
-
-    async fn init_db() -> Repository {
-        let sdb = Surreal::<Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        Repository::from_db(sdb)
-    }
-
-    #[tokio::test]
-    async fn mark_migrated_sets_marker() {
-        let db = init_db().await;
-        assert!(!db.is_reserved_ys_migrated().await.unwrap());
-        db.mark_reserved_ys_migrated().await.unwrap();
-        assert!(db.is_reserved_ys_migrated().await.unwrap());
-        // marking again is harmless
-        db.mark_reserved_ys_migrated().await.unwrap();
-        assert!(!db.is_keys_migrated().await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn writes_refused_once_migrated() {
-        let db = init_db().await;
-        let y = cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key());
-        let deadline = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
-        Repo::ys_store(&db, vec![y], deadline).await.unwrap();
-        db.mark_reserved_ys_migrated().await.unwrap();
-        let y2 = cashu::PublicKey::from(bcr_common::core::generate_random_keypair().public_key());
-        let res = Repo::ys_store(&db, vec![y2], deadline).await;
-        assert!(matches!(res, Err(Error::ServiceUnavailable)));
-        let res = Repo::ys_clean_expired(&db, deadline).await;
-        assert!(matches!(res, Err(Error::ServiceUnavailable)));
-        // reads still work
-        assert_eq!(
-            Repo::ys_contains(&db, &[y, y2]).await.unwrap(),
-            vec![true, false]
-        );
     }
 }

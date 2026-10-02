@@ -3,7 +3,7 @@ use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{cashu, core, wire::keys as wire_keys};
+use bcr_common::{cashu, client::admin::treasury::SUError, core, wire::keys as wire_keys};
 use bcr_wdc_utils::surreal;
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 use surrealdb::{
@@ -346,11 +346,26 @@ impl DBOnChain {
             .collect();
         Ok(ops)
     }
+
+    pub async fn is_mintops_migrated(&self) -> Result<bool> {
+        is_table_migrated(&self.db, Self::MINTS_TABLE).await
+    }
+    pub async fn mark_mintops_migrated(&self) -> Result<()> {
+        mark_table_migrated(&self.db, Self::MINTS_TABLE).await
+    }
+
+    pub async fn is_meltops_migrated(&self) -> Result<bool> {
+        is_table_migrated(&self.db, Self::MELTS_TABLE).await
+    }
+    pub async fn mark_meltops_migrated(&self) -> Result<()> {
+        mark_table_migrated(&self.db, Self::MELTS_TABLE).await
+    }
 }
 
 #[async_trait]
 impl onchain::Repository for DBOnChain {
     async fn store_mintop(&self, op: onchain::MintOperation) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MINTS_TABLE]).await?;
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, op.qid);
         let db_op = OnChainMintOperationDBEntry::from(op);
         let _: Option<OnChainMintOperationDBEntry> = self
@@ -375,6 +390,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        ensure_writable(&self.db, &[Self::MINTS_TABLE]).await?;
         self.mintops_mark_expired(now)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -391,6 +407,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn update_mintop_status(&self, qid: Uuid, status: onchain::MintStatus) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MINTS_TABLE]).await?;
         let rid = RecordId::from_table_key(Self::MINTS_TABLE, qid);
         let db_status = MintStatusDBEntry::from(status);
         let entry: Option<OnChainMintOperationDBEntry> = self
@@ -409,6 +426,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MELTS_TABLE]).await?;
         self.meltops_mark_expired(now)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -465,6 +483,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MELTS_TABLE]).await?;
         let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
         let entry: Option<OnChainMeltOpDbEntry> = self
             .db
@@ -482,6 +501,7 @@ impl onchain::Repository for DBOnChain {
     }
 
     async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        ensure_writable(&self.db, &[Self::MELTS_TABLE]).await?;
         self.meltops_mark_expired(now)
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?;
@@ -610,11 +630,19 @@ impl DBEbill {
         let ops = ops.into_iter().map(ebill::MintOperation::from).collect();
         Ok(ops)
     }
+
+    pub async fn is_mint_ops_migrated(&self) -> Result<bool> {
+        is_table_migrated(&self.db, Self::MINT_OPS).await
+    }
+    pub async fn mark_mint_ops_migrated(&self) -> Result<()> {
+        mark_table_migrated(&self.db, Self::MINT_OPS).await
+    }
 }
 
 #[async_trait]
 impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MINT_OPS]).await?;
         let uid = mint_op.uid;
         let entry = convert_to_ebillmintopdbentry(mint_op, Self::MINT_OPS);
         let res: SurrealResult<Option<EbillMintOpDBEntry>> =
@@ -674,6 +702,7 @@ impl ebill::Repository for DBEbill {
         old: cashu::Amount,
         new: cashu::Amount,
     ) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MINT_OPS]).await?;
         let rid = RecordId::from_table_key(Self::MINT_OPS, uid);
         let before: Option<EbillMintOpDBEntry> = self
             .db
@@ -708,6 +737,40 @@ struct ForeignProofDBEntry {
     proof: cashu::Proof,
     // storing as String, otherwise array::group() merges them into one entry
     mint_id: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct ForeignBalanceDBEntry {
+    mint_id: String,
+    total: u64,
+}
+
+async fn foreign_balance_by_mint(
+    db: &Surreal<Any>,
+    table: &'static str,
+) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+    let entries: Vec<ForeignBalanceDBEntry> = db
+        .query(
+            "
+            SELECT mint_id, math::sum(proof.amount) AS total
+            FROM type::table($table)
+            GROUP BY mint_id
+            ",
+        )
+        .bind(("table", table))
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?
+        .take(0)
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+    let balances = entries
+        .into_iter()
+        .map(|entry| {
+            let mint_id =
+                secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
+            (mint_id, cashu::Amount::from(entry.total))
+        })
+        .collect();
+    Ok(balances)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -777,6 +840,12 @@ impl foreign::OnlineRepository for DBForeignOnline {
             .map_err(|e| Error::DB(anyhow!(e)))?;
         let proofs = entries.into_iter().map(|entry| entry.proof).collect();
         Ok(proofs)
+    }
+
+    async fn settled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        foreign_balance_by_mint(&self.db, Self::FOREIGNS_TABLE).await
     }
 
     async fn store_htlc(
@@ -944,7 +1013,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             let entry = ForeignFingerprintDBEntry {
                 id: rid.clone(),
                 amount: fp.amount,
-                keyset_id: fp.keyset_id,
+                keyset_id: fp.keyset_id.into(),
                 y: fp.y,
                 c: fp.c,
                 dleq: fp.dleq,
@@ -975,7 +1044,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         };
         let fp = wire_keys::ProofFingerprint {
             amount: entry.amount,
-            keyset_id: entry.keyset_id,
+            keyset_id: entry.keyset_id.into(),
             y: entry.y,
             c: entry.c,
             dleq: entry.dleq,
@@ -1035,6 +1104,12 @@ impl foreign::OfflineRepository for DBForeignOffline {
             ret_val.push(entry.proof);
         }
         Ok(ret_val)
+    }
+
+    async fn unsettled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        foreign_balance_by_mint(&self.db, Self::PROOFS_TABLE).await
     }
 
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
@@ -1133,11 +1208,19 @@ impl DBVault {
         let proofs = entries.into_iter().map(Into::into).collect();
         Ok(proofs)
     }
+
+    pub async fn is_proofs_migrated(&self) -> Result<bool> {
+        is_table_migrated(&self.db, Self::PROOFS_TABLE).await
+    }
+    pub async fn mark_proofs_migrated(&self) -> Result<()> {
+        mark_table_migrated(&self.db, Self::PROOFS_TABLE).await
+    }
 }
 
 #[async_trait]
 impl vault::Repository for DBVault {
     async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        ensure_writable(&self.db, &[Self::PROOFS_TABLE]).await?;
         let mut entries: Vec<VaultProofDBEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = proof.y()?;
@@ -1189,6 +1272,7 @@ impl vault::Repository for DBVault {
     }
 
     async fn delete_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        ensure_writable(&self.db, &[Self::PROOFS_TABLE]).await?;
         for y in ys {
             let rid = RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string());
             let _: Option<VaultProofDBEntry> = self
@@ -1201,11 +1285,55 @@ impl vault::Repository for DBVault {
     }
 }
 
+////////////////////////////////////////////////////////////////////////// Migrations DB
+/// One record per table migrated to PostgreSQL, keyed by the table name.
+const MIGRATIONS_TABLE: &str = "migrations";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct MigrationDBEntry {
+    id: RecordId,
+    #[serde(with = "time::serde::rfc3339")]
+    migrated_at: TStamp,
+}
+
+async fn is_table_migrated(db: &Surreal<Any>, table: &str) -> Result<bool> {
+    let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
+    let entry: Option<MigrationDBEntry> =
+        db.select(rid).await.map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok(entry.is_some())
+}
+
+async fn mark_table_migrated(db: &Surreal<Any>, table: &str) -> Result<()> {
+    let rid = RecordId::from_table_key(MIGRATIONS_TABLE, table);
+    let entry = MigrationDBEntry {
+        id: rid.clone(),
+        migrated_at: time::OffsetDateTime::now_utc(),
+    };
+    let _: Option<MigrationDBEntry> = db
+        .upsert(rid)
+        .content(entry)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok(())
+}
+
+/// Refuses writes to tables already migrated to PostgreSQL, so a service
+/// still pointing at SurrealDB cannot diverge from the migrated data.
+async fn ensure_writable(db: &Surreal<Any>, tables: &[&str]) -> Result<()> {
+    for table in tables {
+        if is_table_migrated(db, table).await? {
+            tracing::error!("write to table {table} refused: already migrated to PostgreSQL");
+            return Err(Error::ServiceUnavailable(SUError::Unknown));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::foreign::OfflineRepository;
-    use bcr_common::{core, core_tests};
+    use bcr_common::{core, core_tests, ecash};
     use bitcoin::hashes::Hash;
 
     async fn init_foreignoffline_mem_db() -> DBForeignOffline {
@@ -1226,14 +1354,14 @@ mod tests {
         let fps = vec![
             wire_keys::ProofFingerprint {
                 amount: 10,
-                keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
+                keyset_id: ecash::Id::from_bytes(&[1; 33]).unwrap(),
                 y,
                 c,
                 dleq: None,
             },
             wire_keys::ProofFingerprint {
                 amount: 10,
-                keyset_id: cashu::Id::from_bytes(&[1; 33]).unwrap(),
+                keyset_id: ecash::Id::from_bytes(&[1; 33]).unwrap(),
                 y: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 c: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 dleq: None,
@@ -1281,5 +1409,41 @@ mod tests {
         for proof in proofs {
             assert!(result.contains(&proof));
         }
+    }
+    async fn init_vault_mem_db() -> DBVault {
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        DBVault { db: sdb }
+    }
+
+    #[tokio::test]
+    async fn mark_proofs_migrated_sets_marker() {
+        let db = init_vault_mem_db().await;
+        assert!(!db.is_proofs_migrated().await.unwrap());
+        db.mark_proofs_migrated().await.unwrap();
+        assert!(db.is_proofs_migrated().await.unwrap());
+        // marking again is harmless
+        db.mark_proofs_migrated().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn vault_writes_refused_once_migrated() {
+        use crate::vault::Repository as _;
+        let db = init_vault_mem_db().await;
+        let amounts = vec![cashu::Amount::from(8u64)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        db.store_proofs(proofs.clone()).await.unwrap();
+        db.mark_proofs_migrated().await.unwrap();
+        let more = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let res = db.store_proofs(more).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let res = db.delete_proofs(&ys).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        // reads still work
+        assert_eq!(db.load_proofs(ys).await.unwrap(), proofs);
     }
 }

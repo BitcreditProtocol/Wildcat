@@ -22,11 +22,22 @@ use crate::{error::Result, TStamp};
 
 pub use service::Service;
 
+/// Foreign eCash held from one issuing mint.
+#[derive(Debug, Clone)]
+pub struct MintBalance {
+    pub mint_id: secp256k1::PublicKey,
+    /// Swapped and owned outright.
+    pub settled: cashu::Amount,
+    /// Held, but the issuing mint is offline so it cannot be swapped yet.
+    pub unsettled: cashu::Amount,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OnlineRepository: Send + Sync {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
+    async fn settled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
 
     async fn store_htlc(
         &self,
@@ -77,6 +88,7 @@ pub trait OfflineRepository: Send + Sync {
     ) -> Result<()>;
     #[allow(dead_code)]
     async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
+    async fn unsettled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
@@ -223,7 +235,7 @@ fn fingerprints_vec_to_map(
     let mut map: HashMap<cashu::Id, Vec<(wire_keys::ProofFingerprint, Sha256Hash)>> =
         HashMap::new();
     for (fp, hash) in input.into_iter().zip(hashes) {
-        map.entry(fp.keyset_id).or_default().push((fp, hash));
+        map.entry(fp.keyset_id.into()).or_default().push((fp, hash));
     }
     map
 }

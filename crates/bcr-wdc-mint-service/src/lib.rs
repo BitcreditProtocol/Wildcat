@@ -1,0 +1,520 @@
+// ----- standard library imports
+use std::str::FromStr;
+use std::sync::{atomic::AtomicU64, Arc};
+// ----- extra library imports
+use axum::{
+    extract::FromRef,
+    routing::{get, post},
+    Router,
+};
+use bcr_common::cashu;
+use bcr_common::client::{
+    self,
+    admin::{core as core_ep, treasury as treasury_ep},
+};
+use bcr_wdc_utils::nut19;
+// ----- local modules
+mod admin;
+pub mod config;
+pub mod core;
+pub mod error;
+pub mod persistence;
+pub mod vault;
+mod web;
+// remaining treasury modules land here: onchain, ebill, foreign
+// local imports
+use crate::{
+    core::{clients, factory, service},
+    persistence::Repository,
+};
+
+// ----- end imports
+
+use bcr_common::TStamp;
+
+#[derive(Clone, FromRef)]
+pub struct AppController {
+    pub service: Arc<service::Service>,
+    pub vault: Arc<vault::Service>,
+    pub cache: Arc<dyn nut19::Cache>,
+}
+
+impl AppController {
+    pub async fn new(seed: &[u8], cfg: config::App) -> Self {
+        let config::App {
+            repository,
+            repository_new,
+            clowder_url,
+            clowder_nkey_seed,
+            clowder_rest_url,
+            starting_derivation_path,
+            max_expiry_sec,
+            minimum_keyset_fees_ppk,
+            cache_expiry_sec,
+            settle_window_sec,
+            vault: vault_cfg,
+        } = cfg;
+        let repository = if repository_new.max_connections > 0 {
+            let db = persistence::sqlx::Repository::new(repository_new)
+                .await
+                .expect("failed to create sqlx repository");
+            let repository: Arc<dyn Repository> = Arc::new(db);
+            repository
+        } else {
+            let db = persistence::surreal::Repository::new(repository)
+                .await
+                .expect("Failed to create repository");
+            let repository: Arc<dyn Repository> = Arc::new(db);
+            repository
+        };
+        let keygen = factory::KeysFactory::new(seed, starting_derivation_path);
+        let clowder_cl =
+            client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
+                .await
+                .expect("Failed to create clowder client");
+        let clowder_cl = Arc::new(clowder_cl);
+        let clowder_rest = bcr_common::client::admin::clowder::Client::new(clowder_rest_url);
+        let info = clowder_rest
+            .get_info()
+            .await
+            .expect("Failed to get clowder info");
+        let alpha_id = bitcoin::secp256k1::PublicKey::from_slice(&info.node_id.to_bytes())
+            .expect("secp256k1::PublicKey == cashu::PublicKey");
+        let mint_url = clowder_rest
+            .get_mint_url(&alpha_id)
+            .await
+            .expect("Failed to get mint url");
+        let my_url = cashu::MintUrl::from_str(mint_url.mint_url.as_str())
+            .expect("cashu::MintUrl == reqwest::Url");
+        let mint_id = bcr_common::core::NodeId::new(alpha_id, info.network);
+        let clowder = clients::ClowderCl {
+            nats: clowder_cl,
+            rest: clowder_rest,
+        };
+        let max_expiry = time::Duration::seconds(max_expiry_sec as i64);
+        let settle_window_tout =
+            time::OffsetDateTime::now_utc() + time::Duration::seconds(settle_window_sec as i64);
+        let service = service::Service {
+            repository: repository.clone(),
+            clowder: Box::new(clowder),
+            keygen,
+            min_keyset_fees_ppk: AtomicU64::new(minimum_keyset_fees_ppk),
+            max_expiry,
+            alpha_id,
+            settle_window_deadline: settle_window_tout,
+        };
+        let config::Vault { db: vault_db, .. } = vault_cfg;
+        let vault_repo = persistence::surreal::DBVault::new(vault_db)
+            .await
+            .expect("Failed to create vault repository");
+        let vault = vault::Service {
+            repo: Box::new(vault_repo),
+            my_url,
+            mint_id,
+        };
+        let cache_expiry = time::Duration::seconds(cache_expiry_sec as i64);
+        let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
+        Self {
+            service: Arc::new(service),
+            vault: Arc::new(vault),
+            cache,
+        }
+    }
+}
+
+pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<service::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
+    let web = Router::new()
+        .route("/health", get(get_health))
+        .route(core_ep::web_ep::KEYSET_INFO_V1, get(web::lookup_keyset))
+        .route(core_ep::web_ep::LIST_KEYSET_INFO_V1, get(web::list_keysets))
+        .route(core_ep::web_ep::KEYS_V1, get(web::lookup_keys_v1))
+        .route(core_ep::web_ep::KEYS_V2, get(web::lookup_keys_v2))
+        .route(core_ep::web_ep::RESTORE_V1, post(web::restore))
+        .route(core_ep::web_ep::SWAP_V1, post(web::swap_tokens))
+        .route(core_ep::web_ep::SWAP_COMMIT_V1, post(web::commit_to_swap))
+        .route(
+            core_ep::web_ep::SIGNED_SWAP_COMMIT_V1,
+            post(web::signed_commit_to_swap),
+        )
+        .route(core_ep::web_ep::CHECK_STATE_V1, post(web::check_state));
+    // separate admin as it will likely have different auth requirements
+    let admin = Router::new()
+        .route(core_ep::admin_ep::NEW_KEYSET, post(admin::new_keyset))
+        .route(core_ep::admin_ep::SIGN, post(admin::sign_blind))
+        .route(core_ep::admin_ep::VERIFY_PROOF, post(admin::verify_proof))
+        .route(
+            core_ep::admin_ep::VERIFY_FINGERPRINT,
+            post(admin::verify_fingerprint),
+        )
+        .route(core_ep::admin_ep::BURN, post(admin::burn_tokens))
+        .route(core_ep::admin_ep::RECOVER, post(admin::recover_tokens))
+        .route(core_ep::admin_ep::RESERVE, post(admin::reserve_ys))
+        .route(
+            treasury_ep::admin_ep::FEES_STORE_PROOFS,
+            post(admin::store_fees_proofs),
+        )
+        .route(
+            treasury_ep::admin_ep::FEES_TOKEN,
+            get(admin::generate_fees_token),
+        );
+
+    Router::new().merge(web).merge(admin).with_state(ctrl)
+}
+
+async fn get_health() -> &'static str {
+    "{ \"status\": \"OK\" }"
+}
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+    use bcr_wdc_utils::MintKeysEntry;
+    use bitcoin::bip32 as btc32;
+    use std::str::FromStr;
+
+    pub fn test_controller() -> AppController {
+        let seed = [0u8; 32];
+        let derivation_path = btc32::DerivationPath::default();
+        let repository = Arc::new(persistence::inmemory::Repository::default());
+        let keygen = factory::KeysFactory::new(&seed, derivation_path);
+        let service = service::Service {
+            repository,
+            clowder: Box::new(clients::DummyClowderClient),
+            keygen,
+            min_keyset_fees_ppk: Default::default(),
+            max_expiry: time::Duration::seconds(3600),
+            alpha_id: mint_kp().public_key(),
+            settle_window_deadline: TStamp::UNIX_EPOCH,
+        };
+        let vault = vault::Service {
+            repo: Box::new(persistence::inmemory::VaultMap::default()),
+            my_url: cashu::MintUrl::from_str("http://localhost:3338").expect("MintUrl"),
+            mint_id: bcr_common::core::NodeId::new(
+                mint_kp().public_key(),
+                bitcoin::Network::Regtest,
+            ),
+        };
+        AppController {
+            service: Arc::new(service),
+            vault: Arc::new(vault),
+            cache: Arc::new(nut19::Dummy),
+        }
+    }
+
+    pub fn dummy_attestation() -> bcr_common::wire::attestation::IssuanceAttestation {
+        let kp = mint_kp();
+        let signature = secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
+        bcr_common::wire::attestation::IssuanceAttestation {
+            beta_id: kp.public_key(),
+            fp_digest: [0u8; 32],
+            coords_mac: [0u8; 32],
+            signature,
+        }
+    }
+
+    pub fn dummy_attestation_for(
+        inputs: &[bcr_common::wire::keys::ProofFingerprint],
+    ) -> bcr_common::wire::attestation::IssuanceAttestation {
+        let mut attestation = dummy_attestation();
+        attestation.fp_digest = bcr_common::wire::attestation::fp_digest(inputs);
+        attestation
+    }
+
+    pub fn attested_fingerprints(
+        inputs: Vec<bcr_common::wire::keys::ProofFingerprint>,
+    ) -> bcr_common::wire::attestation::AttestedFingerprints {
+        let attestation = dummy_attestation_for(&inputs);
+        bcr_common::wire::attestation::AttestedFingerprints {
+            inputs,
+            attestation,
+        }
+    }
+
+    pub fn mint_kp() -> secp256k1::Keypair {
+        let sk = secp256k1::SecretKey::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &sk)
+    }
+
+    pub async fn build_test_server(
+        keyset: Option<MintKeysEntry>,
+    ) -> (axum_test::TestServer, AppController) {
+        let cfg = axum_test::TestServerConfig {
+            transport: Some(axum_test::Transport::HttpRandomPort),
+            ..Default::default()
+        };
+        let cntrl = test_controller();
+        if let Some(entry) = keyset {
+            cntrl
+                .service
+                .repository
+                .keys_store(entry)
+                .await
+                .expect("store keyset");
+        }
+        let server = axum_test::TestServer::new_with_config(routes(cntrl.clone()), cfg)
+            .expect("failed to start test server");
+        (server, cntrl)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The same adapter `web::swap_tokens` builds: fee proofs go to the in-process vault.
+    fn treasury(ctrl: &AppController) -> clients::VaultSrvc {
+        clients::VaultSrvc {
+            vault: ctrl.vault.clone(),
+        }
+    }
+    use bcr_common::{
+        cashu, core, core_tests,
+        wire::{keys as wire_keys, swap as wire_swap},
+    };
+    use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
+
+    #[tokio::test]
+    async fn commit_swap() {
+        let controller = test_utils::test_controller();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = MintKeysEntry {
+            id: kinfo.id.into(),
+            unit: kinfo.unit.clone(),
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path.clone(),
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts.clone(),
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys.clone(),
+        };
+        controller
+            .service
+            .repository
+            .keys_store(entry)
+            .await
+            .expect("store");
+        assert!(controller.service.info(kinfo.id.into()).await.is_ok());
+        let amounts = vec![cashu::Amount::from(8_u64)];
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id.into(), &amounts)
+            .into_iter()
+            .map(|bbb| bbb.0)
+            .collect();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mint_kp = test_utils::mint_kp();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+        let wallet_kp = core::generate_random_keypair();
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: wallet_kp.public_key(),
+        };
+        let (content, commitment) = controller
+            .service
+            .commit_to_swap(request, now)
+            .await
+            .unwrap();
+        core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn swap() {
+        let controller = test_utils::test_controller();
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = MintKeysEntry {
+            id: kinfo.id.into(),
+            unit: kinfo.unit.clone(),
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path.clone(),
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts.clone(),
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: keyset.keys.clone(),
+        };
+        controller
+            .service
+            .repository
+            .keys_store(entry)
+            .await
+            .expect("store");
+        assert!(controller.service.info(kinfo.id.into()).await.is_ok());
+        let amounts = vec![cashu::Amount::from(8_u64)];
+        let blinds: Vec<_> = signatures_test::generate_blinds(kinfo.id.into(), &amounts)
+            .into_iter()
+            .map(|bbb| bbb.0)
+            .collect();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mint_kp = test_utils::mint_kp();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+        let wallet_kp = core::generate_random_keypair();
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: wallet_kp.public_key(),
+        };
+        let (content, commitment) = controller
+            .service
+            .commit_to_swap(request, now)
+            .await
+            .unwrap();
+        core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
+            .unwrap();
+
+        controller
+            .service
+            .swap(&treasury(&controller), proofs, blinds, commitment, now)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn swap_p2pk() {
+        let controller = test_utils::test_controller();
+        let (kinfo, mint_keyset) = core_tests::generate_random_ecash_keyset();
+        let kid = kinfo.id;
+        let entry = MintKeysEntry {
+            id: kinfo.id.into(),
+            unit: kinfo.unit,
+            active: kinfo.active,
+            valid_from: kinfo.valid_from,
+            derivation_path: kinfo.derivation_path,
+            derivation_path_index: kinfo.derivation_path_index,
+            amounts: kinfo.amounts,
+            input_fee_ppk: kinfo.input_fee_ppk,
+            final_expiry: kinfo.final_expiry,
+            keys: mint_keyset.keys.clone(),
+        };
+        controller
+            .service
+            .repository
+            .keys_store(entry)
+            .await
+            .expect("store");
+        let p2pk_secret = cashu::SecretKey::generate();
+        let conditions = cashu::SpendingConditions::new_p2pk(p2pk_secret.public_key(), None);
+        let amounts = [cashu::Amount::from(2)];
+        let output: Vec<_> = amounts
+            .iter()
+            .map(|amount| {
+                let secret: cashu::nut10::Secret = conditions.clone().into();
+                let secret: cashu::secret::Secret = secret.try_into().unwrap();
+                let (blinded, r) = cashu::dhke::blind_message(&secret.to_bytes(), None).unwrap();
+                let blinded_message = cashu::BlindedMessage::new(*amount, kid.into(), blinded);
+                (blinded_message, secret, r)
+            })
+            .collect();
+        let signatures: Vec<_> = output
+            .iter()
+            .map(|(blinded_message, _, _)| {
+                let mint_secret = mint_keyset
+                    .keys
+                    .get(&blinded_message.amount)
+                    .unwrap()
+                    .secret_key
+                    .clone();
+                let c = cashu::dhke::sign_message(&mint_secret, &blinded_message.blinded_secret)
+                    .unwrap();
+                cashu::nuts::BlindSignature {
+                    amount: blinded_message.amount,
+                    keyset_id: mint_keyset.id.into(),
+                    c,
+                    dleq: None,
+                }
+            })
+            .collect();
+        let rs = output.iter().map(|(_, _, r)| r.clone()).collect::<Vec<_>>();
+        let secrets = output
+            .iter()
+            .map(|(_, secret, _)| secret.clone())
+            .collect::<Vec<_>>();
+
+        let mint_keys = cashu::Keys::from(mint_keyset.keys.clone());
+        let mut proofs = cashu::dhke::construct_proofs(
+            signatures.clone(),
+            rs.clone(),
+            secrets.clone(),
+            &mint_keys,
+        )
+        .unwrap();
+        let blinds: Vec<cashu::BlindedMessage> =
+            signatures_test::generate_blinds(mint_keyset.id.into(), &amounts)
+                .into_iter()
+                .map(|bbb| bbb.0)
+                .collect();
+        let wallet_kp = core::generate_random_keypair();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: wallet_kp.public_key(),
+        };
+        let (_, commitment) = controller
+            .service
+            .commit_to_swap(request, now)
+            .await
+            .unwrap();
+
+        let res = controller
+            .service
+            .swap(
+                &treasury(&controller),
+                proofs.clone(),
+                blinds.clone(),
+                commitment,
+                now,
+            )
+            .await;
+        assert!(res.is_err());
+        for p in proofs.iter_mut() {
+            let _ = p.sign_p2pk(p2pk_secret.clone());
+        }
+        controller
+            .service
+            .swap(
+                &treasury(&controller),
+                proofs.clone(),
+                blinds,
+                commitment,
+                now,
+            )
+            .await
+            .unwrap();
+    }
+}

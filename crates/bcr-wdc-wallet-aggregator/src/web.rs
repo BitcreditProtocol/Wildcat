@@ -62,7 +62,8 @@ pub async fn post_swap(
         outputs,
         commitment,
     } = request;
-    let htlc_unlocked = test_for_htlc(&inputs, &ctrl.treasury_client).await?;
+    let c_inputs: cashu::Proofs = inputs.iter().cloned().map(cashu::Proof::from).collect();
+    let htlc_unlocked = test_for_htlc(&c_inputs, &ctrl.treasury_client).await?;
     tracing::info!("HTLC unlocked in intermint exchange: {}", htlc_unlocked);
     let signatures = ctrl.core_client.swap(inputs, outputs, commitment).await?;
     Ok(Json(wire_swap::SwapResponse { signatures }))
