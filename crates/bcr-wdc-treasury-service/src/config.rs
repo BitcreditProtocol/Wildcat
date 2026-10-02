@@ -12,6 +12,7 @@ pub struct App {
     pub foreign: Foreign,
     pub ebill: Ebill,
     pub vault: Vault,
+    pub repository_new: postgres::DBConnConfig,
     pub core_url: ClientUrl,
     pub ebill_url: ClientUrl,
     pub clowder_rest_url: ClientUrl,
@@ -24,7 +25,6 @@ pub struct App {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Onchain {
     pub db: surreal::DBConnConfig,
-    pub new: postgres::DBConnConfig,
     pub monitor_interval_sec: u32,
     pub melt_quote_expiry_seconds: u32,
     pub mint_quote_expiry_seconds: u32,
@@ -42,7 +42,6 @@ fn default_min_feerate_sat_per_vb() -> f64 {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Foreign {
     pub online_repo: surreal::DBConnConfig,
-    pub new_online_repo: postgres::DBConnConfig,
     pub offline_repo: surreal::DBConnConfig,
     /// How much sooner the eCash this mint issues expires than the collateral it
     /// holds, so it can reclaim before its own claim lapses.
@@ -65,7 +64,6 @@ fn default_offline_exchange_lock_secs() -> u64 {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Ebill {
     pub db: surreal::DBConnConfig,
-    pub new: postgres::DBConnConfig,
     #[serde(default = "default_multiplier")]
     pub multiplier: cashu::Amount,
 }
@@ -77,5 +75,4 @@ fn default_multiplier() -> cashu::Amount {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Vault {
     pub db: surreal::DBConnConfig,
-    pub new: postgres::DBConnConfig,
 }

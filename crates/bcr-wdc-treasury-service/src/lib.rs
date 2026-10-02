@@ -47,6 +47,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         foreign,
         ebill,
         vault,
+        repository_new,
         core_url,
         ebill_url,
         clowder_rest_url,
@@ -87,9 +88,17 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         min_feerate_sat_per_vb,
         ..
     } = onchain;
-    let onchain_repo = persistence::surreal::DBOnChain::new(onchain_repo)
-        .await
-        .expect("Failed to create repository");
+    let onchain_repo: Arc<dyn onchain::Repository> = if repository_new.max_connections > 0 {
+        let db = persistence::sqlx::DBOnChain::new(repository_new.clone())
+            .await
+            .expect("Failed to create sqlx onchain repository");
+        Arc::new(db)
+    } else {
+        let db = persistence::surreal::DBOnChain::new(onchain_repo)
+            .await
+            .expect("Failed to create repository");
+        Arc::new(db)
+    };
     let clowder_cl = onchain::ClowderCl {
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
@@ -102,7 +111,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         melt_quote_expiry: time::Duration::seconds(melt_quote_expiry_seconds as i64),
         mint_quote_expiry: time::Duration::seconds(mint_quote_expiry_seconds as i64),
         wdc: Arc::new(wdc),
-        repo: Arc::new(onchain_repo),
+        repo: onchain_repo,
         clowder_cl: Arc::new(clowder_cl),
         min_mint_threshold,
         melt_fee_ppk,
@@ -116,9 +125,17 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         multiplier,
         ..
     } = ebill;
-    let ebill_repo = persistence::surreal::DBEbill::new(mintops)
-        .await
-        .expect("Failed to create ebill repository");
+    let ebill_repo: Box<dyn ebill::Repository> = if repository_new.max_connections > 0 {
+        let db = persistence::sqlx::DBEbill::new(repository_new.clone())
+            .await
+            .expect("Failed to create sqlx ebill repository");
+        Box::new(db)
+    } else {
+        let db = persistence::surreal::DBEbill::new(mintops)
+            .await
+            .expect("Failed to create ebill repository");
+        Box::new(db)
+    };
     let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
         ebill: Box::new(ebill_client),
@@ -132,7 +149,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         "Multiplier must be greater than zero"
     );
     let ebill = ebill::Service {
-        repo: Box::new(ebill_repo),
+        repo: ebill_repo,
         wildcatcl: Box::new(wdccl),
         clowdercl: Box::new(clwdcl),
         multiplier,
@@ -146,13 +163,20 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         offline_exchange_lock_secs,
         ..
     } = foreign;
-    let foreign_online_repo = persistence::surreal::DBForeignOnline::new(online_repo)
-        .await
-        .expect("Failed to create foreign online repository");
+    let onlinerepo: Arc<dyn foreign::OnlineRepository> = if repository_new.max_connections > 0 {
+        let db = persistence::sqlx::DBForeignOnline::new(repository_new.clone())
+            .await
+            .expect("Failed to create sqlx foreign online repository");
+        Arc::new(db)
+    } else {
+        let db = persistence::surreal::DBForeignOnline::new(online_repo)
+            .await
+            .expect("Failed to create foreign online repository");
+        Arc::new(db)
+    };
     let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
         .await
         .expect("Failed to create foreign offline repository");
-    let onlinerepo = Arc::new(foreign_online_repo);
     let offlinerepo = Arc::new(foreign_offline_repo);
     let clowder = Arc::new(foreign::clients::ClowderCl {
         rest: clowder_client.clone(),
@@ -177,10 +201,18 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
 
     // vault
-    let config::Vault { db, .. } = vault;
-    let vault_repo = persistence::surreal::DBVault::new(db)
-        .await
-        .expect("Failed to create vault repository");
+    let config::Vault { db } = vault;
+    let vault_repo: Box<dyn vault::Repository> = if repository_new.max_connections > 0 {
+        let db = persistence::sqlx::DBVault::new(repository_new)
+            .await
+            .expect("Failed to create sqlx vault repository");
+        Box::new(db)
+    } else {
+        let db = persistence::surreal::DBVault::new(db)
+            .await
+            .expect("Failed to create vault repository");
+        Box::new(db)
+    };
     let wdccl = vault::WildcatCl {
         core: core_client.clone(),
     };
@@ -191,7 +223,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     let my_url = cashu::MintUrl::from_str(url_response.mint_url.as_str())
         .expect("cashu::MintUrl == reqwest::Url");
     let vault = vault::Service {
-        repo: Box::new(vault_repo),
+        repo: vault_repo,
         wdc_cl: Box::new(wdccl),
         my_url,
         mint_id: bcr_common::core::NodeId::new(my_pk, info.network),
