@@ -7,7 +7,6 @@ use bcr_common::{
     cashu::{self, ProofsMethods},
     core::BillId,
 };
-use bcr_wdc_utils::postgres;
 use sqlx::types::Json;
 use sqlx::PgPool;
 use sqlx::Row;
@@ -44,15 +43,6 @@ pub struct DBEbill {
 }
 
 impl DBEbill {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -234,15 +224,6 @@ pub struct DBForeignOnline {
 }
 
 impl DBForeignOnline {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -515,15 +496,6 @@ pub struct DBVault {
 }
 
 impl DBVault {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -816,15 +788,6 @@ pub struct DBOnChain {
 }
 
 impl DBOnChain {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -974,18 +937,18 @@ impl onchain::Repository for DBOnChain {
     async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
         self.meltops_mark_expired(now).await?;
         let (qid, status, expiry, ys, blob) = onchain_meltop_to_row(op)?;
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             INSERT INTO treasury_onchain_melt_ops (qid, expiry, status, input_ys, blob)
             VALUES( $1, $2, $3, $4, $5)
             RETURNING qid
             "#,
+            qid,
+            expiry,
+            status.to_string(),
+            &ys,
+            &blob
         )
-        .bind(qid)
-        .bind(expiry)
-        .bind(status.to_string())
-        .bind(&ys)
-        .bind(&blob)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;

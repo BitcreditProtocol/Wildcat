@@ -10,7 +10,7 @@ use bcr_common::client::{
     self,
     admin::{core, treasury::Client as TreasuryClient},
 };
-use bcr_wdc_utils::nut19;
+use bcr_wdc_utils::{db, nut19};
 // ----- local modules
 mod admin;
 pub mod clients;
@@ -48,18 +48,28 @@ impl AppController {
             cache_expiry_sec,
             settle_window_sec,
         } = cfg;
-        let repository = if repository_new.max_connections > 0 {
-            let db = persistence::sqlx::Repository::new(repository_new)
-                .await
-                .expect("failed to create sqlx repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
-        } else {
-            let db = persistence::surreal::Repository::new(repository)
-                .await
-                .expect("Failed to create repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
+        let surreal_db = persistence::surreal::Repository::new(repository)
+            .await
+            .expect("Failed to create repository");
+        let migrated = surreal_db
+            .is_migrated()
+            .await
+            .expect("Failed to read migration marker");
+        let backend = db::select_db_backend("core-service", migrated, repository_new.clone());
+        let repository: Arc<dyn Repository> = match backend {
+            db::DBBackend::Postgres => {
+                let db = persistence::sqlx::Repository::new(repository_new)
+                    .await
+                    .expect("failed to create sqlx repository");
+                Arc::new(db)
+            }
+            db::DBBackend::Surreal => Arc::new(surreal_db),
+            db::DBBackend::DefaultPostgres => {
+                let pool = sqlx::postgres::PgPool::connect(&repository_new.connection)
+                    .await
+                    .expect("Failed to connect to PostgreSQL");
+                Arc::new(persistence::sqlx::Repository::from_pool(pool))
+            }
         };
         let keygen = factory::Factory::new(seed, starting_derivation_path);
         let clowder_cl =
