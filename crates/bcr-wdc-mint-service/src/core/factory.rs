@@ -7,8 +7,14 @@ use bcr_common::{
 use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::{
     bip32 as btc32,
-    hashes::{sha256::Hash as Sha256, Hash},
+    hashes::{
+        hmac::{Hmac, HmacEngine},
+        sha256::Hash as Sha256,
+        sha512::Hash as Sha512,
+        Hash, HashEngine,
+    },
 };
+use secp256k1::schnorr;
 // ----- local imports
 use crate::TStamp;
 
@@ -26,6 +32,14 @@ impl KeysFactory {
         let master =
             btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL");
         Self { master, derivation }
+    }
+    /// NUT-13 seed for the fee outputs of the swap behind `commitment`, so a retry
+    /// regenerates the same fee blinded messages.
+    pub fn swap_fees_seed(&self, commitment: &schnorr::Signature) -> [u8; 64] {
+        let mut engine = HmacEngine::<Sha512>::new(&self.master.private_key.secret_bytes());
+        engine.input(b"bcr-wdc/swap-fees/v1");
+        engine.input(&commitment.serialize());
+        Hmac::<Sha512>::from_engine(engine).to_byte_array()
     }
     pub fn generate(
         &self,

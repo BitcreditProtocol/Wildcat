@@ -1,6 +1,6 @@
 // ----- standard library imports
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -403,21 +403,23 @@ impl Service {
             Err(error @ Error::ResourceNotFound(_)) => {
                 // The commitment is gone exactly when `swap_finalize` has already run for it
                 // (it deletes the commitment on success). If these inputs are already spent and
-                // the client's own outputs already carry a signature, this is a retry of a swap
-                // that already finalized but whose reply was lost: replay the stored signatures
-                // rather than fail a swap that already happened. Clowder is not signalled again:
-                // it was already notified (or will time out and reconcile) the first time, and
-                // without a known-idempotent handler on its side a second signal risks being
-                // read as a second, distinct swap.
-                return match self.recover_finalized_swap(&inputs, &outputs).await? {
-                    Some(signatures) => {
-                        tracing::info!(
-                            "replayed stored signatures for a finalized swap retry, commitment {commitment}"
-                        );
-                        Ok(signatures)
-                    }
-                    None => Err(error),
+                // the client's own outputs and this commitment's fee outputs already carry a
+                // signature, this is a retry of a swap that already finalized but whose reply or
+                // Clowder signal was lost: signal Clowder again with the original fees and replay
+                // the stored signatures rather than fail a swap that already happened.
+                let Some((fees, signatures)) = self
+                    .recover_finalized_swap(&inputs, &outputs, &commitment)
+                    .await?
+                else {
+                    return Err(error);
                 };
+                self.clowder
+                    .signal_swap_event(inputs, outputs, fees, commitment, signatures.clone())
+                    .await?;
+                tracing::info!(
+                    "replayed stored signatures for a finalized swap retry, commitment {commitment}"
+                );
+                return Ok(signatures);
             }
             Err(error) => return Err(error),
         };
@@ -462,7 +464,9 @@ impl Service {
         let kinfos = kinfo.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
         let signatures = self.generate_signatures(&outputs).await?;
-        let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
+        let fee_premints = self
+            .generate_fees_premints(&inputs, &outputs, &commitment)
+            .await?;
         let fees = self.sign_fees(fee_premints).await?;
 
         let mut stored_signatures = outputs
@@ -494,14 +498,16 @@ impl Service {
         Ok(signatures)
     }
 
-    /// `Some(signatures)` when every input is already spent and every requested output already
-    /// carries a stored signature: i.e. this exact swap already finalized. `None` otherwise,
-    /// meaning the missing commitment is a genuine error rather than a retry.
+    /// `Some((fees, signatures))` when every input is already spent and every requested output
+    /// and every fee output derived from `commitment` already carries a stored signature: i.e.
+    /// this exact swap already finalized. `None` otherwise, meaning the missing commitment is a
+    /// genuine error rather than a retry.
     async fn recover_finalized_swap(
         &self,
         inputs: &[cashu::Proof],
         outputs: &[cashu::BlindedMessage],
-    ) -> Result<Option<Vec<cashu::BlindSignature>>> {
+        commitment: &schnorr::Signature,
+    ) -> Result<Option<(Vec<cashu::BlindSignature>, Vec<cashu::BlindSignature>)>> {
         for proof in inputs {
             let y = proof.y()?;
             match self.repository.proofs_contains(y).await? {
@@ -509,8 +515,27 @@ impl Service {
                 _ => return Ok(None),
             }
         }
-        let mut signatures = Vec::with_capacity(outputs.len());
-        for blind in outputs {
+        let Some(signatures) = self.load_signatures(outputs).await? else {
+            return Ok(None);
+        };
+        let fee_blinds = self
+            .generate_fees_premints(inputs, outputs, commitment)
+            .await?
+            .iter()
+            .flat_map(cashu::PreMintSecrets::blinded_messages)
+            .collect::<Vec<_>>();
+        let Some(fees) = self.load_signatures(&fee_blinds).await? else {
+            return Ok(None);
+        };
+        Ok(Some((fees, signatures)))
+    }
+
+    async fn load_signatures(
+        &self,
+        blinds: &[cashu::BlindedMessage],
+    ) -> Result<Option<Vec<cashu::BlindSignature>>> {
+        let mut signatures = Vec::with_capacity(blinds.len());
+        for blind in blinds {
             match self.repository.signature_load(blind).await? {
                 Some(signature) => signatures.push(signature),
                 None => return Ok(None),
@@ -519,12 +544,16 @@ impl Service {
         Ok(Some(signatures))
     }
 
+    /// Fee outputs are derived from `commitment`, so a retry of the same swap regenerates
+    /// the same blinded messages, in the same order.
     async fn generate_fees_premints(
         &self,
         inputs: &[cashu::Proof],
         outputs: &[cashu::BlindedMessage],
+        commitment: &schnorr::Signature,
     ) -> Result<Vec<cashu::PreMintSecrets>> {
-        let unique_kids: HashSet<_> = inputs.iter().map(|proof| proof.keyset_id).collect();
+        let unique_kids: BTreeSet<_> = inputs.iter().map(|proof| proof.keyset_id).collect();
+        let seed = self.keygen.swap_fees_seed(commitment);
         let mut premints = Vec::with_capacity(unique_kids.len());
         for kid in unique_kids {
             let inputs_amount = inputs
@@ -540,12 +569,15 @@ impl Service {
             }
             let keyset = self.keys(kid).await?;
             let c_keyset = core_keys::to_keyset(&keyset, None);
-            let premint = cashu::PreMintSecrets::random(
+            let premint = cashu::PreMintSecrets::from_seed(
                 kid,
+                0,
+                &seed,
                 inputs_amount - outputs_amount,
                 &cashu::amount::SplitTarget::None,
                 &bcr_wdc_utils::keys::to_fee_and_amounts(&c_keyset),
-            )?;
+            )
+            .map_err(|e| Error::Internal(format!("failed to derive fee outputs: {e}")))?;
             premints.push(premint);
         }
         Ok(premints)
