@@ -616,9 +616,7 @@ mod tests {
 
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_sqlx_commitment_store_rejects_spent_or_reserved_fingerprints(
-        pool: ::sqlx::PgPool,
-    ) {
+    async fn test_sqlx_commitment_store_rejects_spent_fingerprints(pool: ::sqlx::PgPool) {
         let db = sqlx::Repository::from_pool(pool);
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let proof =
@@ -626,33 +624,62 @@ mod tests {
                 .pop()
                 .unwrap();
         let spent_y = proof.y().unwrap();
-        let reserved_y = random_cdk_pks(1).pop().unwrap();
         let fresh_y = random_cdk_pks(1).pop().unwrap();
         let expiration = TStamp::from_unix_timestamp(100000).unwrap();
         db.proofs_insert(vec![proof]).await.unwrap();
+
+        let signature = signatures_test::random_schnorr_signature();
+        let result = db
+            .commitment_store(
+                vec![spent_y, fresh_y],
+                random_cdk_pks(1),
+                expiration,
+                random_wallet_key(),
+                signature,
+                [0_u8; 32],
+                SignatureOwner::Unsigned,
+            )
+            .await;
+
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        assert!(matches!(
+            db.commitment_load(&signature).await,
+            Err(Error::ResourceNotFound(_))
+        ));
+        assert!(!db.commitment_contains_inputs(&[fresh_y]).await.unwrap());
+    }
+
+    // A y reserved by `ys_store` can only reach `commitment_store` through the same request
+    // that reserved it: any other request trying to reserve an overlapping y fails at
+    // `ys_store` itself and never gets here. So an existing reservation on an input is this
+    // commitment's own, and `commitment_store` claims it rather than treating it as a conflict.
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_commitment_store_claims_reserved_fingerprints(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let reserved_y = random_cdk_pks(1).pop().unwrap();
+        let fresh_y = random_cdk_pks(1).pop().unwrap();
+        let expiration = TStamp::from_unix_timestamp(100000).unwrap();
         db.ys_store(vec![reserved_y], expiration).await.unwrap();
 
-        for unavailable_y in [spent_y, reserved_y] {
-            let signature = signatures_test::random_schnorr_signature();
-            let result = db
-                .commitment_store(
-                    vec![unavailable_y, fresh_y],
-                    random_cdk_pks(1),
-                    expiration,
-                    random_wallet_key(),
-                    signature,
-                    [0_u8; 32],
-                    SignatureOwner::Unsigned,
-                )
-                .await;
+        let signature = signatures_test::random_schnorr_signature();
+        db.commitment_store(
+            vec![reserved_y, fresh_y],
+            random_cdk_pks(1),
+            expiration,
+            random_wallet_key(),
+            signature,
+            [0_u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
 
-            assert!(matches!(result, Err(Error::Conflict(_))));
-            assert!(matches!(
-                db.commitment_load(&signature).await,
-                Err(Error::ResourceNotFound(_))
-            ));
-            assert!(!db.commitment_contains_inputs(&[fresh_y]).await.unwrap());
-        }
+        assert!(db
+            .commitment_contains_inputs(&[reserved_y, fresh_y])
+            .await
+            .unwrap());
+        assert_eq!(db.ys_contains(&[reserved_y]).await.unwrap(), vec![false]);
     }
 
     #[::sqlx::test(migrations = "../../migrations")]
