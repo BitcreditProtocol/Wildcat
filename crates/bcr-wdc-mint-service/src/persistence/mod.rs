@@ -64,6 +64,11 @@ pub trait Repository: Send + Sync {
         signed: SignatureOwner,
     ) -> Result<()>;
     async fn commitment_load(&self, signature: &schnorr::Signature) -> Result<StoredCommitment>;
+    /// Finds the pending commitment, if any, that already reserved this input.
+    async fn commitment_find_by_input(
+        &self,
+        input: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>>;
     async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn commitment_contains_outputs(&self, outputs: &[cashu::PublicKey]) -> Result<bool>;
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()>;
@@ -92,6 +97,7 @@ pub struct StoredCommitment {
     pub inputs: Vec<cashu::PublicKey>,
     pub outputs: Vec<cashu::PublicKey>,
     pub expiration: TStamp,
+    pub wallet_key: cashu::PublicKey,
     pub fp_digest: [u8; 32],
     pub signed: SignatureOwner,
 }

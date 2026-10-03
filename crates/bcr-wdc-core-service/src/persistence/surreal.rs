@@ -319,6 +319,13 @@ impl persistence::Repository for Repository {
         Repository::commitment_load(self, signature).await
     }
 
+    async fn commitment_find_by_input(
+        &self,
+        input: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>> {
+        Repository::commitment_find_by_input(self, input).await
+    }
+
     async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {
         Repository::commitment_contains_inputs(self, inputs).await
     }
@@ -777,9 +784,31 @@ impl Repository {
             inputs: commitment_entry.inputs,
             outputs: commitment_entry.outputs,
             expiration: commitment_entry.expiration,
+            wallet_key: commitment_entry.wallet_key,
             fp_digest: commitment_entry.fp_digest,
             signed: commitment_entry.signed.into(),
         })
+    }
+
+    async fn commitment_find_by_input(
+        &self,
+        input: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>> {
+        let entry: Option<CommitmentDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table) WHERE array::is_empty(array::intersect(inputs, $ys)) = false LIMIT 1")
+            .bind(("table", COMMITMENTS_TABLE))
+            .bind(("ys", vec![input]))
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        entry
+            .map(|entry| {
+                schnorr::Signature::from_str(&entry.id.key().to_string())
+                    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+            })
+            .transpose()
     }
 
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {

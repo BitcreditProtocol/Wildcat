@@ -301,9 +301,21 @@ impl persistence::Repository for Repository {
             inputs: comm.0.clone(),
             outputs: comm.1.clone(),
             expiration: comm.2,
+            wallet_key: comm.3,
             fp_digest: comm.4,
             signed: comm.5,
         })
+    }
+
+    async fn commitment_find_by_input(
+        &self,
+        input: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>> {
+        let locked = self.commitments.lock().unwrap();
+        Ok(locked
+            .iter()
+            .find(|(_, (inputs, _, _, _, _, _))| inputs.contains(&input))
+            .map(|(signature, _)| *signature))
     }
 
     async fn commitment_contains_inputs(&self, ys: &[cashu::PublicKey]) -> Result<bool> {

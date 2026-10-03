@@ -183,6 +183,7 @@ fn commitment_from_row(
         inputs,
         outputs,
         expiration: row.expiration,
+        wallet_key: blob.wallet_key,
         fp_digest: blob.fp_digest,
         signed: blob.signed,
     })
@@ -797,6 +798,23 @@ impl persistence::Repository for Repository {
             parse_commitment_public_keys(input_keys)?,
             parse_commitment_public_keys(output_keys)?,
         )
+    }
+
+    async fn commitment_find_by_input(
+        &self,
+        input: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>> {
+        let signature: Option<String> = sqlx::query_scalar(
+            "SELECT signature FROM core_proofs WHERE y = $1 AND signature IS NOT NULL",
+        )
+        .bind(input.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        signature
+            .map(|s| schnorr::Signature::from_str(&s))
+            .transpose()
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))
     }
 
     async fn commitment_contains_inputs(&self, inputs: &[cashu::PublicKey]) -> Result<bool> {

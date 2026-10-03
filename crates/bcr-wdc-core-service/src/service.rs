@@ -271,15 +271,17 @@ impl Service {
         let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_commit(&core_fps, &c_outputs, &kinfos)?;
         let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
-        if !self
-            .check_state(&ys, now)
-            .await?
-            .iter()
-            .all(|state| matches!(state.state, cashu::State::Unspent))
-        {
-            return Err(Error::InvalidInput(BRError::Generic(String::from(
-                "One or more proofs are not unspent",
-            ))));
+        for state in self.check_state(&ys, now).await? {
+            match state.state {
+                // Reserved inputs are not rejected here: `reserve` below fails on a genuine
+                // conflict, and that failure path already recovers an identical retry.
+                cashu::State::Unspent | cashu::State::Reserved => {}
+                _ => {
+                    return Err(Error::InvalidInput(BRError::Generic(String::from(
+                        "One or more proofs are not unspent",
+                    ))));
+                }
+            }
         }
         self.verify_fingerprints(&core_fps).await?;
         let bs: Vec<cashu::PublicKey> = request
@@ -287,32 +289,102 @@ impl Service {
             .iter()
             .map(|blind| blind.blinded_secret)
             .collect();
+        let wallet_key: cashu::PublicKey = request.wallet_key.into();
+        // An identical retry (same inputs, outputs, expiry and wallet key) returns the
+        // original commitment instead of tripping the conflict checks below.
+        if let Some(signature) = self
+            .find_identical_commitment(&ys, &bs, expiry, wallet_key)
+            .await?
+        {
+            return Ok((reencode_commit_request(&request)?, signature));
+        }
         if self.repository.commitment_contains_outputs(&bs).await? {
             return Err(Error::InvalidInput(BRError::Generic(String::from(
                 "blinded messages committed",
             ))));
         }
-        let wallet_key = request.wallet_key;
+        // Reserve the inputs before Clowder is asked to sign: a concurrent request over an
+        // overlapping set of ys fails here instead of racing this one to commitment_store.
+        // The deadline mirrors the commitment's own expiry, so a request that fails after this
+        // point releases its reservation the same way check_state already reaps expired ones.
+        if let Err(error) = self.reserve(ys.clone(), expiry).await {
+            return match self
+                .find_identical_commitment(&ys, &bs, expiry, wallet_key)
+                .await?
+            {
+                Some(signature) => Ok((reencode_commit_request(&request)?, signature)),
+                None => Err(error),
+            };
+        }
         let fp_digest = request.inputs.attestation.fp_digest;
-        let (content, commitment) = self.clowder.commit_to_swap(request).await?;
+        let content = reencode_commit_request(&request)?;
+        let (_, commitment) = self.clowder.commit_to_swap(request).await?;
         match self
             .repository
             .commitment_store(
-                ys,
-                bs,
+                ys.clone(),
+                bs.clone(),
                 expiry,
-                wallet_key.into(),
+                wallet_key,
                 commitment,
                 fp_digest,
                 signed,
             )
             .await
         {
-            Ok(()) | Err(Error::Conflict(_)) => Ok((content, commitment)),
+            Ok(()) => Ok((content, commitment)),
+            Err(error @ Error::Conflict(_)) => {
+                match self
+                    .find_identical_commitment(&ys, &bs, expiry, wallet_key)
+                    .await?
+                {
+                    Some(signature) => Ok((content, signature)),
+                    None => {
+                        tracing::error!("failed to store commitment: {error}");
+                        Err(error)
+                    }
+                }
+            }
             Err(error) => {
                 tracing::error!("failed to store commitment: {error}");
                 Err(error)
             }
+        }
+    }
+
+    /// On a request identical to one already committed (same inputs, outputs, expiry and
+    /// wallet key), returns that commitment instead of a fresh `Conflict`: a wallet retrying
+    /// a timed-out or lost response must get its original commitment back, not an error.
+    async fn find_identical_commitment(
+        &self,
+        ys: &[cashu::PublicKey],
+        bs: &[cashu::PublicKey],
+        expiry: TStamp,
+        wallet_key: cashu::PublicKey,
+    ) -> Result<Option<schnorr::Signature>> {
+        let Some(y) = ys.first() else {
+            return Ok(None);
+        };
+        let Some(signature) = self.repository.commitment_find_by_input(*y).await? else {
+            return Ok(None);
+        };
+        let stored = self.repository.commitment_load(&signature).await?;
+        let mut stored_inputs = stored.inputs;
+        stored_inputs.sort();
+        let mut requested_inputs = ys.to_vec();
+        requested_inputs.sort();
+        let mut stored_outputs = stored.outputs;
+        stored_outputs.sort();
+        let mut requested_outputs = bs.to_vec();
+        requested_outputs.sort();
+        if stored_inputs == requested_inputs
+            && stored_outputs == requested_outputs
+            && stored.expiration == expiry
+            && stored.wallet_key == wallet_key
+        {
+            Ok(Some(signature))
+        } else {
+            Ok(None)
         }
     }
 
@@ -325,13 +397,40 @@ impl Service {
     ) -> Result<Vec<cashu::BlindSignature>> {
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
+        let stored_commitment = match self.repository.commitment_load(&commitment).await {
+            Ok(stored) => stored,
+            Err(error @ Error::ResourceNotFound(_)) => {
+                // The commitment is gone exactly when `swap_finalize` has already run for it
+                // (it deletes the commitment on success). If these inputs are already spent and
+                // the client's own outputs already carry a signature, this is a retry of a swap
+                // that finalized but whose response (the signal to Clowder, or the reply itself)
+                // was lost: replay the stored signatures and try the Clowder signal again, rather
+                // than fail a swap that already happened.
+                return match self.recover_finalized_swap(&inputs, &outputs).await? {
+                    Some(signatures) => {
+                        self.clowder
+                            .signal_swap_event(
+                                inputs,
+                                outputs,
+                                Vec::new(),
+                                commitment,
+                                signatures.clone(),
+                            )
+                            .await?;
+                        Ok(signatures)
+                    }
+                    None => Err(error),
+                };
+            }
+            Err(error) => return Err(error),
+        };
         let StoredCommitment {
             outputs: committed_outputs,
             expiration,
             fp_digest: committed_fp_digest,
             signed,
             ..
-        } = self.repository.commitment_load(&commitment).await?;
+        } = stored_commitment;
         if now < self.settle_window_deadline && !matches!(signed, SignatureOwner::Beta) {
             return Err(Error::ServiceUnavailable);
         }
@@ -368,15 +467,6 @@ impl Service {
         let signatures = self.generate_signatures(&outputs).await?;
         let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
         let fees = self.sign_fees(fee_premints).await?;
-        self.clowder
-            .signal_swap_event(
-                inputs.clone(),
-                outputs.clone(),
-                fees.signatures.clone(),
-                commitment,
-                signatures.clone(),
-            )
-            .await?;
 
         let mut stored_signatures = outputs
             .iter()
@@ -387,11 +477,49 @@ impl Service {
             })
             .collect::<Vec<_>>();
         stored_signatures.extend(fees.stored_signatures);
+        // Persist the swap as spent before telling Clowder about it: a failed store must fail
+        // the request, not notify Clowder of a spend that was never recorded.
+        let notified_inputs = inputs.clone();
+        let notified_outputs = outputs.clone();
         self.repository
             .swap_finalize(inputs, stored_signatures, commitment)
             .await?;
         self.treasury.store_proofs(fees.proofs).await?;
+        self.clowder
+            .signal_swap_event(
+                notified_inputs,
+                notified_outputs,
+                fees.signatures.clone(),
+                commitment,
+                signatures.clone(),
+            )
+            .await?;
         Ok(signatures)
+    }
+
+    /// `Some(signatures)` when every input is already spent and every requested output already
+    /// carries a stored signature: i.e. this exact swap already finalized. `None` otherwise,
+    /// meaning the missing commitment is a genuine error rather than a retry.
+    async fn recover_finalized_swap(
+        &self,
+        inputs: &[cashu::Proof],
+        outputs: &[cashu::BlindedMessage],
+    ) -> Result<Option<Vec<cashu::BlindSignature>>> {
+        for proof in inputs {
+            let y = proof.y()?;
+            match self.repository.proofs_contains(y).await? {
+                Some(state) if matches!(state.state, cashu::State::Spent) => {}
+                _ => return Ok(None),
+            }
+        }
+        let mut signatures = Vec::with_capacity(outputs.len());
+        for blind in outputs {
+            match self.repository.signature_load(blind).await? {
+                Some(signature) => signatures.push(signature),
+                None => return Ok(None),
+            }
+        }
+        Ok(Some(signatures))
     }
 
     async fn generate_fees_premints(
@@ -496,11 +624,17 @@ fn cross_check_commits_swaps<T: PartialEq>(committed: &[T], swap: &[T]) -> bool 
             .all(|committed| swap.iter().any(|item| item == committed))
 }
 
+fn reencode_commit_request(request: &wire_swap::SwapCommitmentRequest) -> Result<String> {
+    let (content, _) = signature::serialize_borsh_msg_b64(request)
+        .map_err(|e| Error::Internal(format!("failed to serialize commitment: {e}")))?;
+    Ok(content)
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use bcr_common::core_tests;
+    use bcr_common::{core_tests, wire::keys as wire_keys};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::{
         bip32::DerivationPath,
@@ -618,15 +752,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn swap_does_not_store_signatures_when_proof_insertion_fails() {
+    async fn swap_ordering_does_not_signal_clowder_when_persist_fails() {
         let repository = Arc::new(inmemory::Repository::default());
         let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
         repository.proofs_insert(proofs.clone()).await.unwrap();
         let mut clowder = MockClowderClient::new();
-        clowder
-            .expect_signal_swap_event()
-            .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
+        clowder.expect_signal_swap_event().times(0);
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(0);
         let service = service(repository.clone(), clowder, treasury);
@@ -636,6 +767,350 @@ mod tests {
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
         assert!(repository.commitment_load(&commitment).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_rejects_overlapping_outputs_via_commitment_store() {
+        let repository = inmemory::Repository::default();
+        let (mut kinfo, mut keyset) = core_tests::generate_random_ecash_keyset();
+        kinfo.input_fee_ppk = 0;
+        keyset.input_fee_ppk = 0;
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs_a = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proofs_b = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let outputs: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0.blinded_secret)
+            .collect();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = now + time::Duration::minutes(1);
+        let wallet_key = bcr_common::core::generate_random_keypair()
+            .public_key()
+            .into();
+        let commitment_a = schnorr::Signature::from_slice(&[11u8; 64]).unwrap();
+        let commitment_b = schnorr::Signature::from_slice(&[12u8; 64]).unwrap();
+
+        repository
+            .commitment_store(
+                proofs_a.iter().map(|proof| proof.y().unwrap()).collect(),
+                outputs.clone(),
+                expiry,
+                wallet_key,
+                commitment_a,
+                [0u8; 32],
+                SignatureOwner::Unsigned,
+            )
+            .await
+            .expect("first commitment over these outputs must succeed");
+
+        let result = repository
+            .commitment_store(
+                proofs_b.iter().map(|proof| proof.y().unwrap()).collect(),
+                outputs,
+                expiry,
+                wallet_key,
+                commitment_b,
+                [0u8; 32],
+                SignatureOwner::Unsigned,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(Error::Conflict(_))),
+            "a second commitment over already-committed outputs (disjoint inputs) must fail atomically, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_rejects_overlapping_inputs_before_calling_clowder() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder.expect_commit_to_swap().times(1).returning(|_| {
+            Ok((
+                String::new(),
+                schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
+            ))
+        });
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        let blinds_a: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let request_a = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps.clone()),
+            outputs: blinds_a.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        service
+            .commit_to_swap(request_a, now)
+            .await
+            .expect("first commitment over these inputs must succeed");
+
+        let blinds_b: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let request_b = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds_b.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        let result = service.commit_to_swap(request_b, now).await;
+
+        assert!(
+            matches!(result, Err(Error::Conflict(_))),
+            "a second commitment over already-reserved inputs must fail before Clowder signs it again, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_reservation_expires_after_failed_commit() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::seconds(30)).unix_timestamp() as u64;
+
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder
+            .expect_commit_to_swap()
+            .times(1)
+            .returning(|_| Err(Error::ServiceUnavailable));
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        let ys: Vec<_> = proofs.iter().map(|proof| proof.y().unwrap()).collect();
+
+        let result = service.commit_to_swap(request, now).await;
+        assert!(result.is_err(), "Clowder failing must fail the request");
+        assert_eq!(
+            repository.ys_contains(&ys).await.unwrap(),
+            vec![true],
+            "the failed commit's inputs must stay reserved until the commitment's own expiry"
+        );
+
+        let after_expiry = time::OffsetDateTime::from_unix_timestamp(expiry as i64).unwrap()
+            + time::Duration::seconds(1);
+        repository.ys_clean_expired(after_expiry).await.unwrap();
+        assert_eq!(
+            repository.ys_contains(&ys).await.unwrap(),
+            vec![false],
+            "the reservation must release once the commitment's own expiry has passed"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_identical_commit_retry_returns_stored_commitment() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder.expect_commit_to_swap().times(1).returning(|_| {
+            Ok((
+                String::new(),
+                schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
+            ))
+        });
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+
+        let (content_a, commitment_a) = service
+            .commit_to_swap(request.clone(), now)
+            .await
+            .expect("the first request must succeed");
+
+        let (content_b, commitment_b) = service
+            .commit_to_swap(request, now)
+            .await
+            .expect("an identical retry must return the original commitment, not Conflict");
+
+        assert_eq!(commitment_a, commitment_b);
+        assert_eq!(content_a, content_b);
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_different_commit_retry_over_same_inputs_conflicts() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+            .iter()
+            .cloned()
+            .map(wire_keys::ProofFingerprint::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let now = time::OffsetDateTime::now_utc();
+        let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
+
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder.expect_commit_to_swap().times(1).returning(|_| {
+            Ok((
+                String::new(),
+                schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
+            ))
+        });
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        let blinds_a: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let request_a = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps.clone()),
+            outputs: blinds_a.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        service
+            .commit_to_swap(request_a, now)
+            .await
+            .expect("the first request must succeed");
+
+        let blinds_b: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect();
+        let request_b = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(proof_fps),
+            outputs: blinds_b.iter().cloned().map(From::from).collect(),
+            expiry,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        let result = service.commit_to_swap(request_b, now).await;
+
+        assert!(
+            matches!(result, Err(Error::Conflict(_))),
+            "a different request over the same already-committed inputs must fail, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_ordering_retry_after_notify_failure_returns_stored_signatures() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let notify_attempts = Arc::new(AtomicU64::new(0));
+        let notify_attempts_clone = notify_attempts.clone();
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_signal_swap_event()
+            .times(2)
+            .returning(move |_, _, _, _, _| {
+                if notify_attempts_clone.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(Error::ServiceUnavailable)
+                } else {
+                    Ok(())
+                }
+            });
+        let mut treasury = MockTreasuryService::new();
+        treasury.expect_store_proofs().times(1).returning(|_| Ok(()));
+        let service = service(repository.clone(), clowder, treasury);
+
+        let first = service
+            .swap(proofs.clone(), outputs.clone(), commitment, now)
+            .await;
+        assert!(
+            matches!(first, Err(Error::ServiceUnavailable)),
+            "a lost Clowder notification must fail the request, got {first:?}"
+        );
+        assert!(
+            repository.commitment_load(&commitment).await.is_err(),
+            "finalize already consumed the commitment before the notify failed"
+        );
+
+        let retried = service
+            .swap(proofs.clone(), outputs.clone(), commitment, now)
+            .await
+            .expect(
+                "retrying the same swap after finalize must succeed, with no double spend and no lost funds",
+            );
+
+        assert_eq!(retried.len(), outputs.len());
+        for (blind, signature) in outputs.iter().zip(retried.iter()) {
+            assert_eq!(
+                repository.signature_load(blind).await.unwrap().as_ref(),
+                Some(signature)
+            );
+        }
     }
 
     // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.
