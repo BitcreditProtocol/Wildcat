@@ -15,9 +15,10 @@ them without closing any exposure a deployer didn't already control.
 | Service           | Config key            | Env var                                  |
 |-------------------|------------------------|-------------------------------------------|
 | core-service      | `admin_bind_address`   | `CORE_SERVICE__ADMIN_BIND_ADDRESS`         |
+| mint-service      | `admin_bind_address`   | `MINT_SERVICE__ADMIN_BIND_ADDRESS`         |
 
-(Treasury, quote and mint-service gain the same setting and env-var pattern, prefixed
-with their own service name, as they are split.)
+(Treasury and quote-service gain the same setting and env-var pattern, prefixed with
+their own service name, as they are split.)
 
 ## Internal callers of core-service's admin endpoints
 

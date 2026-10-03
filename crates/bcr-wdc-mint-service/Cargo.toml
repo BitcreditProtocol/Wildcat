@@ -36,4 +36,5 @@ uuid.workspace = true
 bcr-common = {workspace = true, features = ["test-utils"]}
 bcr-wdc-mint-service = {workspace = true, features = ["test-utils"]}
 mockall = {workspace = true}
+reqwest = {workspace = true}
 surrealdb = {workspace = true, features = ["kv-mem"]}

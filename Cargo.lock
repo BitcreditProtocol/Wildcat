@@ -712,6 +712,7 @@ dependencies = [
  "futures",
  "itertools 0.15.0",
  "mockall",
+ "reqwest 0.13.5",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",

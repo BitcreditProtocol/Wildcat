@@ -122,14 +122,14 @@ impl AppController {
     }
 }
 
-pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
+pub fn web_routes<Cntrlr>() -> Router<Cntrlr>
 where
     Cntrlr: Send + Sync + Clone + 'static,
     Arc<service::Service>: FromRef<Cntrlr>,
     Arc<vault::Service>: FromRef<Cntrlr>,
     Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
-    let web = Router::new()
+    Router::new()
         .route("/health", get(get_health))
         .route(core_ep::web_ep::KEYSET_INFO_V1, get(web::lookup_keyset))
         .route(core_ep::web_ep::LIST_KEYSET_INFO_V1, get(web::list_keysets))
@@ -142,9 +142,17 @@ where
             core_ep::web_ep::SIGNED_SWAP_COMMIT_V1,
             post(web::signed_commit_to_swap),
         )
-        .route(core_ep::web_ep::CHECK_STATE_V1, post(web::check_state));
-    // separate admin as it will likely have different auth requirements
-    let admin = Router::new()
+        .route(core_ep::web_ep::CHECK_STATE_V1, post(web::check_state))
+}
+
+pub fn admin_routes<Cntrlr>() -> Router<Cntrlr>
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<service::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
+    Router::new()
         .route(core_ep::admin_ep::NEW_KEYSET, post(admin::new_keyset))
         .route(core_ep::admin_ep::SIGN, post(admin::sign_blind))
         .route(core_ep::admin_ep::VERIFY_PROOF, post(admin::verify_proof))
@@ -162,9 +170,20 @@ where
         .route(
             treasury_ep::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
-        );
+        )
+}
 
-    Router::new().merge(web).merge(admin).with_state(ctrl)
+pub fn routes<Cntrlr>(ctrl: Cntrlr) -> Router
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<service::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
+    Router::new()
+        .merge(web_routes())
+        .merge(admin_routes())
+        .with_state(ctrl)
 }
 
 async fn get_health() -> &'static str {
