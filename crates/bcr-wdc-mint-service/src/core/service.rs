@@ -1015,12 +1015,15 @@ mod tests {
         // The real ClowderCl implementation's `content` is always the request's own canonical
         // encoding (see ClowderCl::commit_to_swap), so the mock mirrors that here: a retry must
         // see the same bytes whether they come from Clowder or from the local dedup path.
-        clowder.expect_commit_to_swap().times(1).returning(|request| {
-            Ok((
-                reencode_commit_request(&request)?,
-                schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
-            ))
-        });
+        clowder
+            .expect_commit_to_swap()
+            .times(1)
+            .returning(|request| {
+                Ok((
+                    reencode_commit_request(&request)?,
+                    schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
+                ))
+            });
         let service = service(repository.clone(), clowder);
 
         let request = wire_swap::SwapCommitmentRequest {
@@ -1131,10 +1134,8 @@ mod tests {
         let signalled: Arc<std::sync::Mutex<Vec<SignalledSwap>>> = Arc::default();
         let captured = signalled.clone();
         let mut clowder = MockClowderClient::new();
-        clowder
-            .expect_signal_swap_event()
-            .times(2)
-            .returning(move |_, _, fees, commitment, signatures| {
+        clowder.expect_signal_swap_event().times(2).returning(
+            move |_, _, fees, commitment, signatures| {
                 let mut captured = captured.lock().unwrap();
                 captured.push((fees, commitment, signatures));
                 if captured.len() == 1 {
@@ -1142,9 +1143,13 @@ mod tests {
                 } else {
                     Ok(())
                 }
-            });
+            },
+        );
         let mut treasury = MockTreasuryService::new();
-        treasury.expect_store_proofs().times(1).returning(|_| Ok(()));
+        treasury
+            .expect_store_proofs()
+            .times(1)
+            .returning(|_| Ok(()));
         let service = service(repository.clone(), clowder);
 
         let first = service
