@@ -649,10 +649,10 @@ mod tests {
         assert!(!db.commitment_contains_inputs(&[fresh_y]).await.unwrap());
     }
 
-    // A y reserved by `ys_store` can only reach `commitment_store` through the same request
-    // that reserved it: any other request trying to reserve an overlapping y fails at
-    // `ys_store` itself and never gets here. So an existing reservation on an input is this
-    // commitment's own, and `commitment_store` claims it rather than treating it as a conflict.
+    // A swap request reserves its inputs with `ys_store` before `commitment_store`. Any other
+    // reservation on an overlapping y (an admin reserve or another request's) makes that
+    // `ys_store` fail first, so a reservation `commitment_store` sees is this request's own,
+    // and it claims it rather than treating it as a conflict.
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
     async fn test_sqlx_commitment_store_claims_reserved_fingerprints(pool: ::sqlx::PgPool) {
