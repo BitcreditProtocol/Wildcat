@@ -39,12 +39,18 @@ rather than silently pointing at the public listener):
 ## admin-aggregator's outbound clients
 
 admin-aggregator calls core-, quote- and treasury-service's admin endpoints, so its
-`appcfg` in `config.toml` names each admin listener explicitly, none defaulted:
+`appcfg` names each admin listener explicitly, none defaulted. Nested keys are set
+from the environment with `__` between them (top-level keys keep the single `_`
+after the prefix, e.g. `ADMIN_AGGREGATOR_BIND_ADDRESS`):
 
-- `core_admin_url`: `new_keyset`.
-  `core_url` (public, unchanged) still serves `list_keyset_info`, `keyset_info`.
-- `quotes_admin_url` (replaces `quotes_url`): every quote call the aggregator makes is an admin endpoint.
-- `treasury_admin_url` (replaces `treasury_url`): every treasury call the aggregator makes is an admin endpoint.
+| Config key                  | Env var                                    | Calls                         |
+|-----------------------------|--------------------------------------------|-------------------------------|
+| `appcfg.core_admin_url`     | `ADMIN_AGGREGATOR_APPCFG__CORE_ADMIN_URL`     | `new_keyset`                  |
+| `appcfg.quotes_admin_url`   | `ADMIN_AGGREGATOR_APPCFG__QUOTES_ADMIN_URL`   | every quote call (replaces `quotes_url`) |
+| `appcfg.treasury_admin_url` | `ADMIN_AGGREGATOR_APPCFG__TREASURY_ADMIN_URL` | every treasury call (replaces `treasury_url`) |
+
+`appcfg.core_url` (`ADMIN_AGGREGATOR_APPCFG__CORE_URL`, public, unchanged) still
+serves `list_keyset_info` and `keyset_info`.
 
 ## Internal callers of core-service's admin endpoints
 

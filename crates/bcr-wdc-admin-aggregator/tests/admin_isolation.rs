@@ -137,7 +137,11 @@ fn config(b: &Backends) -> AppConfig {
 }
 
 async fn aggregator(b: &Backends) -> axum_test::TestServer {
-    let ctrl = AppController::new(config(b)).await;
+    aggregator_with(config(b)).await
+}
+
+async fn aggregator_with(cfg: AppConfig) -> axum_test::TestServer {
+    let ctrl = AppController::new(cfg).await;
     axum_test::TestServer::new(routes(ctrl)).expect("test server")
 }
 
@@ -175,4 +179,42 @@ async fn foreign_balance_goes_through_treasury_admin_listener() {
     let server = aggregator(&b).await;
     let resp = server.get(endpoints::FOREIGN_BALANCE).await;
     resp.assert_status_ok();
+}
+
+#[tokio::test]
+async fn enable_quote_minting_fails_with_only_the_quote_public_address() {
+    let b = spawn_backends().await;
+    let server = aggregator_with(AppConfig {
+        quotes_admin_url: url(b.quote.web),
+        ..config(&b)
+    })
+    .await;
+    let qid = uuid::Uuid::new_v4().to_string();
+    let resp = server
+        .patch(&endpoints::ENABLE_QUOTE_MINTING.replace("{qid}", &qid))
+        .await;
+    assert_ne!(resp.status_code(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn foreign_balance_fails_with_only_the_treasury_public_address() {
+    let b = spawn_backends().await;
+    let server = aggregator_with(AppConfig {
+        treasury_admin_url: url(b.treasury.web),
+        ..config(&b)
+    })
+    .await;
+    let resp = server.get(endpoints::FOREIGN_BALANCE).await;
+    assert_ne!(resp.status_code(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+#[should_panic(expected = "new_keyset")]
+async fn preflight_fails_with_only_the_core_public_address() {
+    let b = spawn_backends().await;
+    aggregator_with(AppConfig {
+        core_admin_url: url(b.core.web),
+        ..config(&b)
+    })
+    .await;
 }

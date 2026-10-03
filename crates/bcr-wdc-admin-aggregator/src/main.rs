@@ -13,7 +13,7 @@ struct MainConfig {
 async fn main() {
     let settings = config::Config::builder()
         .add_source(config::File::with_name("config.toml"))
-        .add_source(config::Environment::with_prefix("ADMIN_AGGREGATOR"))
+        .add_source(env_source())
         .build()
         .expect("Failed to build admin aggregator config");
     let maincfg: MainConfig = settings
@@ -36,6 +36,14 @@ async fn main() {
         .expect("Failed to start server");
 }
 
+/// `ADMIN_AGGREGATOR_<KEY>` for top-level keys, `__` between nested keys,
+/// e.g. `ADMIN_AGGREGATOR_APPCFG__CORE_ADMIN_URL`.
+fn env_source() -> config::Environment {
+    config::Environment::with_prefix("ADMIN_AGGREGATOR")
+        .prefix_separator("_")
+        .separator("__")
+}
+
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -54,5 +62,35 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_sets_top_level_and_nested_appcfg_keys() {
+        let env = [
+            ("ADMIN_AGGREGATOR_LOG_LEVEL", "info"),
+            (
+                "ADMIN_AGGREGATOR_APPCFG__CORE_ADMIN_URL",
+                "http://core:3339",
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let settings = config::Config::builder()
+            .add_source(env_source().source(Some(env)))
+            .build()
+            .expect("build");
+        assert_eq!(settings.get_string("log_level").expect("log_level"), "info");
+        assert_eq!(
+            settings
+                .get_string("appcfg.core_admin_url")
+                .expect("appcfg.core_admin_url"),
+            "http://core:3339"
+        );
     }
 }
