@@ -11,7 +11,7 @@ use bcr_common::{
 use bitcoin::secp256k1::PublicKey;
 use uuid::Uuid;
 // ----- local modules
-mod clients;
+pub(crate) mod clients;
 mod monitor;
 mod service;
 // ----- local imports

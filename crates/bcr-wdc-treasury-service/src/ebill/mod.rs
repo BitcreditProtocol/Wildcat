@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bcr_common::{cashu, core::BillId, ecash};
 use uuid::Uuid;
 // ----- local modules
-mod client;
+pub(crate) mod client;
 mod service;
 // ----- local imports
 use crate::{error::Result, TStamp};

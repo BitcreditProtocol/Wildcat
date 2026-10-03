@@ -26,26 +26,29 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct WildcatCl {
+    /// core-service's public (web) endpoints, e.g. `keys`, `check_state`.
     pub core_cl: Arc<CoreClient>,
+    /// core-service's admin-only endpoints, e.g. `sign`, `burn`, `reserve`.
+    pub core_admin_cl: Arc<CoreClient>,
 }
 
 #[async_trait]
 impl WildcatClient for WildcatCl {
     async fn sign(&self, blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>> {
         let c_blinds: Vec<_> = blinds.into_iter().map(From::from).collect();
-        let signatures = self.core_cl.sign(&c_blinds).await?;
+        let signatures = self.core_admin_cl.sign(&c_blinds).await?;
         Ok(signatures.into_iter().map(From::from).collect())
     }
 
     async fn burn(&self, inputs: Vec<cashu::Proof>) -> Result<()> {
         let c_inputs = inputs.into_iter().map(From::from).collect();
-        self.core_cl.burn(c_inputs).await?;
+        self.core_admin_cl.burn(c_inputs).await?;
         Ok(())
     }
 
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         let c_proofs = proofs.into_iter().map(From::from).collect();
-        self.core_cl.recover(c_proofs).await?;
+        self.core_admin_cl.recover(c_proofs).await?;
         Ok(())
     }
 
@@ -56,7 +59,7 @@ impl WildcatClient for WildcatCl {
                 PublicKey::from_slice(&y.to_bytes()).expect("cashu::PublicKey <-> secp::PublicKey")
             })
             .collect();
-        self.core_cl.reserve(c_inputs, deadline).await?;
+        self.core_admin_cl.reserve(c_inputs, deadline).await?;
         Ok(())
     }
 
@@ -86,7 +89,7 @@ impl WildcatClient for WildcatCl {
 
     async fn verify_fingerprints(&self, fps: &[wire_keys::ProofFingerprint]) -> Result<()> {
         for fp in fps {
-            self.core_cl.verify_fingerprint(fp).await?;
+            self.core_admin_cl.verify_fingerprint(fp).await?;
         }
         Ok(())
     }
@@ -94,7 +97,7 @@ impl WildcatClient for WildcatCl {
     async fn verify_proofs(&self, ps: &[cashu::Proof]) -> Result<()> {
         for p in ps {
             let c_proof = ecash::Proof::from(p.clone());
-            self.core_cl.verify_proof(&c_proof).await?;
+            self.core_admin_cl.verify_proof(&c_proof).await?;
         }
         Ok(())
     }
@@ -278,5 +281,132 @@ impl VaultService for VaultSrvc {
     async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         self.vault.store_proofs(proofs).await?;
         Ok(())
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyWildcatClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl WildcatClient for DummyWildcatClient {
+    async fn verify_fingerprints(&self, _fps: &[wire_keys::ProofFingerprint]) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn verify_proofs(&self, _proofs: &[cashu::Proof]) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn check_spendable(
+        &self,
+        _proofs: Vec<cashu::PublicKey>,
+    ) -> Result<Vec<cashu::ProofState>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign(&self, _blinds: Vec<cashu::BlindedMessage>) -> Result<Vec<cashu::BlindSignature>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn burn(&self, _inputs: Vec<cashu::Proof>) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn recover(&self, _inputs: Vec<cashu::Proof>) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn reserve_inputs(
+        &self,
+        _inputs: Vec<cashu::PublicKey>,
+        _deadline: TStamp,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn keyset_info(&self, _kid: cashu::Id) -> Result<ecash::KeySetInfo> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn keyset(&self, _kid: cashu::Id) -> Result<ecash::KeySet> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn get_active_keyset(&self) -> Result<cashu::Id> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyClowderClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl ClowderClient for DummyClowderClient {
+    async fn request_to_pay_bill(
+        &self,
+        _req: wire_clowder::RequestToPayEbillRequest,
+        _resp: wire_clowder::RequestToPayEbillResponse,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn request_onchain_mint_address(
+        &self,
+        _qid: Uuid,
+        _kid: cashu::Id,
+    ) -> Result<bitcoin::Address> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn verify_onchain_mint_payment(
+        &self,
+        _qid: Uuid,
+        _kid: cashu::Id,
+    ) -> Result<bitcoin::Amount> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn mint_onchain(
+        &self,
+        _qid: Uuid,
+        _kid: cashu::Id,
+        _signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign_onchain_mint_response(
+        &self,
+        _msg: &wire_mint::OnchainMintQuoteResponseBodyV1,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign_onchain_melt_response(
+        &self,
+        _msg: &wire_melt::MeltQuoteOnchainResponseBody,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn verify_onchain_address(
+        &self,
+        _address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<bitcoin::Address> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn melt_onchain(&self, _req: MeltOnchainOrder) -> Result<bitcoin::Txid> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn fetch_mint_signatures(
+        &self,
+        _qid: Uuid,
+        _mint_id: secp256k1::PublicKey,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn estimate_onchain_tx(
+        &self,
+        _amount: bitcoin::Amount,
+        _address: Option<bitcoin::Address<bitcoin::address::NetworkUnchecked>>,
+    ) -> Result<wire_clowder::OnchainTxEstimateResponse> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn get_onchain_reserve(&self) -> Result<bitcoin::Amount> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn authenticate_attestation(
+        &self,
+        _alpha_id: &PublicKey,
+        _inputs: &AttestedFingerprints,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
     }
 }

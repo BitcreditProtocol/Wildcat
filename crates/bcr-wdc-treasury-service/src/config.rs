@@ -13,6 +13,7 @@ pub struct App {
     pub ebill: Ebill,
     pub vault: Vault,
     pub core_url: ClientUrl,
+    pub core_admin_url: ClientUrl,
     pub ebill_url: ClientUrl,
     pub clowder_rest_url: ClientUrl,
     pub clowder_nats_url: ClientUrl,

@@ -16,5 +16,9 @@ COPY --from=rust-builder /wildcat/target/release/treasury-migrate ./migrate
 
 # Expose web server port
 EXPOSE 3338
+# Admin port (admin_bind_address, set via TREASURY_SERVICE__ADMIN_BIND_ADDRESS, no
+# default) must stay unpublished: it carries no auth of its own and is meant to be
+# reachable only from inside the deployment. See docs/admin-listener.md.
+EXPOSE 3339
 
 ENTRYPOINT ["/treasury-service/bcr-wdc-treasury-service"]

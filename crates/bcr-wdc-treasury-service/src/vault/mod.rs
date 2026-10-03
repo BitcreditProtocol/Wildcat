@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use bcr_common::cashu;
 // ----- local modules
-mod clients;
+pub(crate) mod clients;
 mod service;
 // ----- local imports
 use crate::error::Result;

@@ -7,6 +7,7 @@ use bcr_common::{
     client::clowder::{ClowderNatsClient, SignatoryNatsClient},
     client::{admin::clowder::Client as ClowderClient, core::Client as CoreClient},
     ecash,
+    core::maturity,
     wire::{
         attestation as wire_attestation, clowder as wire_clowder, exchange as wire_exchange,
         keys as wire_keys, swap as wire_swap,
@@ -23,27 +24,44 @@ use crate::{
 
 ///--------------------------- CrsatCoreClient
 pub struct CoreCl {
+    /// core-service's public (web) endpoints, e.g. `keys`, `check_state`.
     pub core: Arc<CoreClient>,
+    /// core-service's admin-only endpoints, e.g. `sign`, `burn`, `new_keyset`.
+    pub core_admin: Arc<CoreClient>,
 }
 
 #[async_trait]
 impl foreign::KeysClient for CoreCl {
     async fn get_keyset_with_expiration(&self, expiration: time::Date) -> Result<ecash::KeySet> {
-        let kinfo = self
-            .core
-            .get_or_create_keyset_with_expiration(expiration)
-            .await?;
+        // Mirrors bcr_common's `CoreClient::get_or_create_keyset_with_expiration`,
+        // split across the public listener (list) and the admin listener (create),
+        // since that method's single base URL can't reach both from one client.
+        let unit = CoreClient::currency_unit();
+        let filters = wire_keys::KeysetInfoFilters {
+            unit: Some(unit.clone()),
+            min_expiration: Some(expiration.saturating_sub(time::Duration::days(1))),
+            max_expiration: Some(expiration.saturating_add(time::Duration::days(1))),
+        };
+        let kinfos = self.core.list_keyset_info(filters).await?;
+        let expiration_tstamp = maturity::credit_expires_at(expiration);
+        let kinfo = match kinfos
+            .into_iter()
+            .find(|kinfo| kinfo.unit == unit && kinfo.final_expiry == Some(expiration_tstamp))
+        {
+            Some(kinfo) => kinfo,
+            None => self.core_admin.new_keyset(Some(expiration), 0).await?,
+        };
         let keyset = self.core.keys(kinfo.id.into()).await?;
         Ok(keyset)
     }
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let c_blinds: Vec<_> = blinds.iter().cloned().map(From::from).collect();
-        let signatures = self.core.sign(&c_blinds).await?;
+        let signatures = self.core_admin.sign(&c_blinds).await?;
         Ok(signatures.into_iter().map(From::from).collect())
     }
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
         let c_proofs = proofs.into_iter().map(From::from).collect();
-        self.core.burn(c_proofs).await?;
+        self.core_admin.burn(c_proofs).await?;
         Ok(())
     }
     async fn proof_states(
@@ -355,5 +373,137 @@ impl foreign::MintClientFactory for MintClientFactory {
             my_pk: self.my_pk,
             foreign_pk: mint_pk,
         }))
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyKeysClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl foreign::KeysClient for DummyKeysClient {
+    async fn get_keyset_with_expiration(&self, _expiration: time::Date) -> Result<ecash::KeySet> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign(&self, _blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn burn(&self, _proofs: Vec<cashu::Proof>) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn proof_states(
+        &self,
+        _ys: Vec<cashu::PublicKey>,
+    ) -> Result<HashMap<cashu::PublicKey, cashu::State>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyClowderClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl foreign::ClowderClient for DummyClowderClient {
+    async fn get_mint_url_from_pk(&self, _pk: &secp256k1::PublicKey) -> Result<reqwest::Url> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn get_myself_pk(&self) -> Result<secp256k1::PublicKey> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign_p2pk_proofs(&self, _proofs: &[cashu::Proof]) -> Result<Vec<cashu::Proof>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn can_accept_offline_exchange(
+        &self,
+        _fps: Vec<wire_keys::ProofFingerprint>,
+    ) -> Result<(reqwest::Url, secp256k1::PublicKey)> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn get_keyset_info(
+        &self,
+        _alpha_pk: &secp256k1::PublicKey,
+        _kid: &cashu::Id,
+    ) -> Result<ecash::KeySetInfo> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn get_keyset(
+        &self,
+        _alpha_pk: &secp256k1::PublicKey,
+        _kid: &cashu::Id,
+    ) -> Result<ecash::KeySet> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn is_offline(&self, _pk: secp256k1::PublicKey) -> Result<bool> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn check_htlc_proofs(
+        &self,
+        _issuer: secp256k1::PublicKey,
+        _proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn signal_online_exchange_event(
+        &self,
+        _inputs: Vec<cashu::Proof>,
+        _outputs: Vec<cashu::Proof>,
+        _path: Vec<secp256k1::PublicKey>,
+    ) -> Result<Vec<cashu::Proof>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn record_offline_exchange(
+        &self,
+        _request: &bcr_common::wire::exchange::OfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::exchange::RecordOfflineExchangeResponse> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn redeem_offline_exchange(
+        &self,
+        _request: &bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+    ) -> Result<bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn signal_burn_event(&self, _proofs: Vec<cashu::Proof>) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn signal_offline_redeem_event(
+        &self,
+        _request: bcr_common::wire::exchange::RedeemOfflineExchangeRequest,
+        _signatures: Vec<cashu::BlindSignature>,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn signal_offline_exchange_event(
+        &self,
+        _inputs: Vec<wire_keys::ProofFingerprint>,
+        _hashes: Vec<foreign::Sha256Hash>,
+        _wallet_pk: cashu::PublicKey,
+        _outputs: Vec<cashu::Proof>,
+        _exchange_digest: Option<[u8; 32]>,
+        _wallet_signature: Option<secp256k1::schnorr::Signature>,
+    ) -> Result<()> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+    async fn sign_swap_commitment_request(
+        &self,
+        _payload: wire_swap::SwapCommitmentRequest,
+    ) -> Result<(String, secp256k1::schnorr::Signature)> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
+    }
+}
+
+#[cfg(feature = "test-utils")]
+pub struct DummyMintClientFactory;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl foreign::MintClientFactory for DummyMintClientFactory {
+    async fn make_client(
+        &self,
+        _mint_url: reqwest::Url,
+        _mint_pk: secp256k1::PublicKey,
+    ) -> Result<Box<dyn ForeignClient>> {
+        Err(Error::Internal(String::from("test_utils dummy: not implemented")))
     }
 }

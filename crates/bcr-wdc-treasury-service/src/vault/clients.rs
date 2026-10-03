@@ -22,3 +22,19 @@ impl vault::WildcatClient for WildcatCl {
         CoreClient::currency_unit()
     }
 }
+
+#[cfg(feature = "test-utils")]
+pub struct DummyWildcatClient;
+
+#[cfg(feature = "test-utils")]
+#[async_trait]
+impl vault::WildcatClient for DummyWildcatClient {
+    async fn check_spent(&self, _ys: Vec<cashu::PublicKey>) -> Result<Vec<cashu::ProofState>> {
+        Err(crate::error::Error::Internal(String::from(
+            "test_utils dummy: not implemented",
+        )))
+    }
+    fn unit(&self) -> cashu::CurrencyUnit {
+        cashu::CurrencyUnit::default()
+    }
+}

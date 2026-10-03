@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    foreign, vault, TStamp,
+    foreign, onchain, vault, TStamp,
 };
 
 // ----- end imports
@@ -338,6 +338,113 @@ impl vault::Repository for VaultMap {
         for y in ys {
             locked.remove(y);
         }
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone)]
+pub struct OnchainMap {
+    mints: Arc<Mutex<HashMap<Uuid, onchain::MintOperation>>>,
+    melts: Arc<Mutex<HashMap<Uuid, onchain::MeltOperation>>>,
+    denied_melts: Arc<Mutex<HashMap<Uuid, onchain::DeniedMeltOperation>>>,
+}
+
+#[async_trait]
+impl onchain::Repository for OnchainMap {
+    async fn store_mintop(&self, op: onchain::MintOperation) -> Result<()> {
+        let mut locked = self.mints.lock().unwrap();
+        locked.insert(op.qid, op);
+        Ok(())
+    }
+
+    async fn load_mintop(&self, qid: Uuid) -> Result<onchain::MintOperation> {
+        let locked = self.mints.lock().unwrap();
+        locked
+            .get(&qid)
+            .cloned()
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
+    }
+
+    async fn update_mintop_status(&self, qid: Uuid, status: onchain::MintStatus) -> Result<()> {
+        let mut locked = self.mints.lock().unwrap();
+        let op = locked
+            .get_mut(&qid)
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        op.status = status;
+        Ok(())
+    }
+
+    async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        let mut locked = self.mints.lock().unwrap();
+        let mut pending = Vec::new();
+        for op in locked.values_mut() {
+            if matches!(op.status, onchain::MintStatus::Pending { .. }) && op.expiry < now {
+                op.status = onchain::MintStatus::Expired;
+            }
+            if matches!(op.status, onchain::MintStatus::Pending { .. }) {
+                pending.push(op.qid);
+            }
+        }
+        Ok(pending)
+    }
+
+    async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
+        let mut locked = self.melts.lock().unwrap();
+        for existing in locked.values_mut() {
+            if matches!(existing.status, onchain::MeltStatus::Pending) && existing.expiry < now {
+                existing.status = onchain::MeltStatus::Expired;
+            }
+        }
+        locked.insert(op.qid, op);
+        Ok(())
+    }
+
+    async fn load_meltop(&self, qid: Uuid) -> Result<onchain::MeltOperation> {
+        let locked = self.melts.lock().unwrap();
+        locked
+            .get(&qid)
+            .cloned()
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))
+    }
+
+    async fn update_meltop_status(&self, qid: Uuid, status: onchain::MeltStatus) -> Result<()> {
+        let mut locked = self.melts.lock().unwrap();
+        let op = locked
+            .get_mut(&qid)
+            .ok_or_else(|| Error::ResourceNotFound(qid.to_string()))?;
+        op.status = status;
+        Ok(())
+    }
+
+    async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>> {
+        let mut locked = self.melts.lock().unwrap();
+        let mut pending = Vec::new();
+        for op in locked.values_mut() {
+            if matches!(op.status, onchain::MeltStatus::Pending) && op.expiry < now {
+                op.status = onchain::MeltStatus::Expired;
+            }
+            if matches!(op.status, onchain::MeltStatus::Pending) {
+                pending.push(op.qid);
+            }
+        }
+        Ok(pending)
+    }
+
+    async fn store_denied_meltop(&self, op: onchain::DeniedMeltOperation) -> Result<()> {
+        let mut locked = self.denied_melts.lock().unwrap();
+        locked.insert(op.qid, op);
+        Ok(())
+    }
+
+    async fn list_denied_meltops(&self) -> Result<Vec<onchain::DeniedMeltOperation>> {
+        let locked = self.denied_melts.lock().unwrap();
+        Ok(locked.values().cloned().collect())
+    }
+
+    async fn delete_denied_meltop(&self, qid: Uuid) -> Result<()> {
+        let mut locked = self.denied_melts.lock().unwrap();
+        locked.remove(&qid);
         Ok(())
     }
 }

@@ -8,6 +8,9 @@ license.workspace = true
 name = "treasury-migrate"
 path = "src/bin/migrate.rs"
 
+[features]
+test-utils = ["bcr-wdc-utils/test-utils"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
@@ -36,8 +39,10 @@ uuid.workspace = true
 
 [dev-dependencies]
 bcr-common = {workspace = true, features = ["test-utils"] }
+bcr-wdc-treasury-service = {workspace = true, features = ["test-utils"]}
 bcr-wdc-utils = { workspace = true , features = ["test-utils"] }
 mockall.workspace = true
 rand.workspace = true
+reqwest.workspace = true
 secp256k1 = {workspace = true, features = ["global-context"]}
 surrealdb = {workspace = true, features = ["kv-mem"]}

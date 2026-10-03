@@ -48,6 +48,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         ebill,
         vault,
         core_url,
+        core_admin_url,
         ebill_url,
         clowder_rest_url,
         clowder_nats_url,
@@ -57,6 +58,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
 
     //clients
     let core_client = Arc::new(CoreClient::new(core_url));
+    let core_admin_client = Arc::new(CoreClient::new(core_admin_url));
     let ebill_client = EbClient::new(ebill_url);
     let clowder_client = Arc::new(ClowderClient::new(clowder_rest_url));
     let nkey_seed = clowder_nkey_seed.as_deref();
@@ -97,6 +99,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     };
     let wdc = onchain::WildcatCl {
         core_cl: core_client.clone(),
+        core_admin_cl: core_admin_client.clone(),
     };
     let onchain = onchain::Service {
         melt_quote_expiry: time::Duration::seconds(melt_quote_expiry_seconds as i64),
@@ -121,6 +124,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         .expect("Failed to create ebill repository");
     let wdccl = ebill::WildcatCl {
         core: core_client.clone(),
+        core_admin: core_admin_client.clone(),
         ebill: Box::new(ebill_client),
     };
     let clwdcl = ebill::ClwdrCl {
@@ -165,6 +169,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     });
     let foreigncore = Arc::new(foreign::clients::CoreCl {
         core: core_client.clone(),
+        core_admin: core_admin_client.clone(),
     });
     let foreign = foreign::Service {
         online_repo: onlinerepo.clone(),
@@ -239,7 +244,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
     (app_ctrl, monitors)
 }
 
-pub fn routes<Cntrlr>(app: Cntrlr) -> Router
+pub fn web_routes<Cntrlr>() -> Router<Cntrlr>
 where
     Cntrlr: Send + Sync + Clone + 'static,
     Arc<ebill::Service>: FromRef<Cntrlr>,
@@ -249,7 +254,7 @@ where
     Arc<ClowderNatsClient>: FromRef<Cntrlr>,
     Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
-    let web = Router::new()
+    Router::new()
         .route(
             cl_treasury::web_ep::EXCHANGE_ONLINE_V1,
             post(web::online_exchange),
@@ -286,8 +291,18 @@ where
             cl_treasury::web_ep::MINT_ONCHAIN_V1,
             post(web::mint_onchain),
         )
-        .route(cl_treasury::web_ep::EBILLMINT_V1, post(web::mint_ebill));
-    let admin = Router::new()
+        .route(cl_treasury::web_ep::EBILLMINT_V1, post(web::mint_ebill))
+}
+
+pub fn admin_routes<Cntrlr>() -> Router<Cntrlr>
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<ebill::Service>: FromRef<Cntrlr>,
+    Arc<onchain::Service>: FromRef<Cntrlr>,
+    Arc<foreign::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+{
+    Router::new()
         .route(
             cl_treasury::admin_ep::REQUEST_TO_PAY_EBILL,
             post(admin::request_to_pay_ebill),
@@ -327,6 +342,121 @@ where
         .route(
             cl_treasury::admin_ep::FOREIGN_BALANCE,
             get(admin::foreign_balance),
-        );
-    admin.merge(web).with_state(app)
+        )
+}
+
+pub fn routes<Cntrlr>(app: Cntrlr) -> Router
+where
+    Cntrlr: Send + Sync + Clone + 'static,
+    Arc<ebill::Service>: FromRef<Cntrlr>,
+    Arc<onchain::Service>: FromRef<Cntrlr>,
+    Arc<foreign::Service>: FromRef<Cntrlr>,
+    Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<ClowderNatsClient>: FromRef<Cntrlr>,
+    Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
+{
+    Router::new()
+        .merge(web_routes())
+        .merge(admin_routes())
+        .with_state(app)
+}
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    pub fn alpha_kp() -> secp256k1::Keypair {
+        let sk = secp256k1::SecretKey::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        secp256k1::Keypair::from_secret_key(secp256k1::global::SECP256K1, &sk)
+    }
+
+    /// Hand-rolled NATS server: just enough of the connect handshake
+    /// (`INFO` / `CONNECT` + `PING` / `PONG`) for `ClowderNatsClient::new` to
+    /// succeed without a real Clowder deployment.
+    async fn fake_clowder_nats_client() -> Arc<ClowderNatsClient> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind fake nats listener");
+        let addr = listener.local_addr().expect("local_addr");
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    if socket.write_all(b"INFO {}\r\n").await.is_err() {
+                        return;
+                    }
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match socket.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if buf[..n].windows(4).any(|w| w == b"PING")
+                                    && socket.write_all(b"PONG\r\n").await.is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        let url = reqwest::Url::parse(&format!("nats://{addr}")).expect("fake nats url");
+        let client = ClowderNatsClient::new(url, None)
+            .await
+            .expect("fake nats connect");
+        Arc::new(client)
+    }
+
+    pub async fn test_controller() -> AppController {
+        let alpha_id = alpha_kp().public_key();
+
+        let ebill = ebill::Service {
+            repo: Box::new(persistence::inmemory::EbillMintOpMap::default()),
+            wildcatcl: Box::new(ebill::client::DummyWildcatClient),
+            clowdercl: Box::new(ebill::client::DummyClowderClient),
+            multiplier: cashu::Amount::from(1u64),
+        };
+
+        let onchain = onchain::Service {
+            wdc: Arc::new(onchain::clients::DummyWildcatClient),
+            repo: Arc::new(persistence::inmemory::OnchainMap::default()),
+            clowder_cl: Arc::new(onchain::clients::DummyClowderClient),
+            melt_quote_expiry: time::Duration::seconds(3600),
+            mint_quote_expiry: time::Duration::seconds(3600),
+            min_mint_threshold: bitcoin::Amount::from_sat(1),
+            melt_fee_ppk: 0,
+            min_feerate_sat_per_vb: 0.1,
+            alpha_id,
+        };
+
+        let foreign = foreign::Service {
+            online_repo: Arc::new(persistence::inmemory::OnlineRepository::default()),
+            offline_repo: Arc::new(persistence::inmemory::OfflineRepository::default()),
+            keys: Arc::new(foreign::clients::DummyKeysClient),
+            clowder: Arc::new(foreign::clients::DummyClowderClient),
+            mint_factory: Arc::new(foreign::clients::DummyMintClientFactory),
+            exchange_lock_margin_secs: 60,
+            offline_exchange_lock_secs: 60,
+        };
+
+        let vault = vault::Service {
+            repo: Box::new(persistence::inmemory::VaultMap::default()),
+            wdc_cl: Box::new(vault::clients::DummyWildcatClient),
+            my_url: cashu::MintUrl::from_str("http://localhost:3338").expect("MintUrl"),
+            mint_id: bcr_common::core::NodeId::new(alpha_id, bitcoin::Network::Regtest),
+        };
+
+        AppController {
+            ebill: Arc::new(ebill),
+            onchain: Arc::new(onchain),
+            foreign: Arc::new(foreign),
+            vault: Arc::new(vault),
+            clwdr_nats: fake_clowder_nats_client().await,
+            cache: Arc::new(nut19::Dummy),
+        }
+    }
 }
