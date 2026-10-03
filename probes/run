@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Runs every probe for ticket #1071; exits non-zero when any fails.
+# Needs docker (a throwaway postgres:16-alpine for the sqlx backend) and cargo.
+set -uo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+pg=""
+copied=()
+cleanup() {
+  for f in "${copied[@]}"; do rm -f "$f"; done
+  [ -n "$pg" ] && docker rm -f "$pg" >/dev/null 2>&1
+}
+trap cleanup EXIT
+
+pg="$(docker run -d --rm -e POSTGRES_PASSWORD=probe -p 127.0.0.1::5432 postgres:16-alpine)" || {
+  echo "probes: cannot start postgres" >&2; exit 2; }
+for _ in $(seq 60); do
+  docker exec "$pg" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1 && break
+  sleep 1
+done
+port="$(docker port "$pg" 5432/tcp | head -1 | sed 's/.*://')"
+export PROBE_PG_URL="postgres://postgres:probe@127.0.0.1:${port}/postgres"
+
+status=0
+run_crate() {
+  local crate="$1" src="$2" name="$3"
+  local dst="crates/$crate/tests/$name.rs"
+  cp "probes/$src" "$dst"
+  copied+=("$dst")
+  echo "=== $crate: $src"
+  cargo test -j "${PROBE_JOBS:-1}" -p "$crate" --test "$name" -- --test-threads=1 || status=1
+}
+
+run_crate bcr-wdc-mint-service mint_swap_probes.rs zz_probe_1071
+[ -f probes/core_swap_probes.rs ] && run_crate bcr-wdc-core-service core_swap_probes.rs zz_probe_1071
+
+exit $status
