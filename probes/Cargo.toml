@@ -1,0 +1,25 @@
+[package]
+name = "wildcat-1072-probes"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+
+[dev-dependencies]
+axum = {version = "0.8", features = ["macros"]}
+axum-test = {version = "17"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "a299a7a", features = ["test-utils", "clwdr-client"]}
+bcr-wdc-admin-aggregator = {path = "../crates/bcr-wdc-admin-aggregator"}
+bcr-wdc-core-service = {path = "../crates/bcr-wdc-core-service", features = ["test-utils"]}
+bcr-wdc-mint-service = {path = "../crates/bcr-wdc-mint-service", features = ["test-utils"]}
+bcr-wdc-quote-service = {path = "../crates/bcr-wdc-quote-service", features = ["test-utils"]}
+bcr-wdc-treasury-service = {path = "../crates/bcr-wdc-treasury-service", features = ["test-utils"]}
+bcr-wdc-utils = {path = "../crates/bcr-wdc-utils", features = ["test-utils"]}
+futures = {version = "0.3"}
+reqwest = {version = "0.13", features = ["json"]}
+serde_json = {version = "1"}
+tokio = {version = "1", features = ["full"]}
+uuid = {version = "1", features = ["v4"]}
