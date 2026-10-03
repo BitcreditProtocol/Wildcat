@@ -736,6 +736,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bcr-common",
+ "bcr-wdc-quote-service",
  "bcr-wdc-utils",
  "bip39",
  "bitcoin",

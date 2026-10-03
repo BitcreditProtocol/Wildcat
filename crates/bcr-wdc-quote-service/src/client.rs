@@ -8,9 +8,9 @@ use bcr_common::{
         ebill::Client as EBillClient,
         treasury::{Client as TreasuryClient, Error as TreasuryError},
     },
-    core::BillId,
+    core::{maturity, BillId},
     ecash,
-    wire::{bill as wire_bill, quotes as wire_quotes},
+    wire::{bill as wire_bill, keys as wire_keys, quotes as wire_quotes},
 };
 use uuid::Uuid;
 // ----- local modules
@@ -24,7 +24,10 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct WildcatCl {
-    pub core: CoreClient,
+    /// core-service's public (web) endpoints, e.g. `keys`, `list_keyset_info`.
+    pub core_public: CoreClient,
+    /// core-service's admin-only endpoints, e.g. `sign`, `new_keyset`.
+    pub core_admin: CoreClient,
     pub treasury: TreasuryClient,
     pub ebill: EBillClient,
 }
@@ -35,15 +38,28 @@ impl WdcClient for WildcatCl {
         &self,
         redemption_date: time::Date,
     ) -> Result<cashu::Id> {
-        let kinfo = self
-            .core
-            .get_or_create_keyset_with_expiration(redemption_date)
-            .await?;
+        // Mirrors bcr_common's `CoreClient::get_or_create_keyset_with_expiration`,
+        // split across the public listener (list) and the admin listener (create),
+        // since that method's single base URL can't reach both from one client.
+        let unit = CoreClient::currency_unit();
+        let filters = wire_keys::KeysetInfoFilters {
+            unit: Some(unit.clone()),
+            min_expiration: Some(redemption_date.saturating_sub(time::Duration::days(1))),
+            max_expiration: Some(redemption_date.saturating_add(time::Duration::days(1))),
+        };
+        let kinfos = self.core_public.list_keyset_info(filters).await?;
+        let expiration_tstamp = maturity::credit_expires_at(redemption_date);
+        for kinfo in kinfos {
+            if kinfo.unit == unit && kinfo.final_expiry == Some(expiration_tstamp) {
+                return Ok(kinfo.id.into());
+            }
+        }
+        let kinfo = self.core_admin.new_keyset(Some(redemption_date), 0).await?;
         Ok(kinfo.id.into())
     }
 
     async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet> {
-        let keyset = self.core.keys(keyset_id).await?;
+        let keyset = self.core_public.keys(keyset_id).await?;
         Ok(keyset)
     }
 
@@ -63,7 +79,7 @@ impl WdcClient for WildcatCl {
 
     async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let c_msgs: Vec<_> = msgs.iter().cloned().map(From::from).collect();
-        let signatures = self.core.sign(&c_msgs).await?;
+        let signatures = self.core_admin.sign(&c_msgs).await?;
         let c_signatures = signatures.into_iter().map(From::from).collect();
         Ok(c_signatures)
     }

@@ -24,6 +24,7 @@ axum-test = {version = "17"}
 bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "a299a7a"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
+bcr-wdc-quote-service = {path = "./crates/bcr-wdc-quote-service"}
 bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
 bip39 = {version = "2"}

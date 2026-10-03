@@ -16,9 +16,25 @@ them without closing any exposure a deployer didn't already control.
 |-------------------|------------------------|-------------------------------------------|
 | core-service      | `admin_bind_address`   | `CORE_SERVICE__ADMIN_BIND_ADDRESS`         |
 | mint-service      | `admin_bind_address`   | `MINT_SERVICE__ADMIN_BIND_ADDRESS`         |
+| quote-service     | `admin_bind_address`   | `QUOTE_SERVICE__ADMIN_BIND_ADDRESS`        |
 
-(Treasury and quote-service gain the same setting and env-var pattern, prefixed with
-their own service name, as they are split.)
+(Treasury gains the same setting and env-var pattern, prefixed with its own service
+name, as it is split.)
+
+## quote-service's own outbound admin clients
+
+quote-service calls core-service's and treasury-service's admin endpoints
+internally (`appcfg.core_admin_url`, `appcfg.treasury_admin_url`, both read next to
+the existing `core_url` and no default either, so a missing setting fails startup
+rather than silently pointing at the public listener):
+
+- `core_admin_url` (env `QUOTE_SERVICE__CORE_ADMIN_URL`): `new_keyset`, `sign`.
+  `core_url` (public, unchanged) still serves `list_keyset_info`, `keys`.
+- `treasury_admin_url` (env `QUOTE_SERVICE__TREASURY_ADMIN_URL`): every call quote
+  makes to treasury (`new_ebill_mint_operation`, `ebill_mint_operation_status`,
+  `fees_store_proofs`) is an admin endpoint, so quote's whole treasury client now
+  points at the admin listener; there is no public treasury client left in
+  quote-service.
 
 ## Internal callers of core-service's admin endpoints
 
@@ -37,7 +53,8 @@ updated it must point at the admin address instead for the methods marked admin:
   `list_keyset_info`, `check_state` (public)
 - `bcr-wdc-treasury-service/src/foreign/clients.rs`: `sign`, `burn` (admin); `keys`,
   `check_state` (public)
-- `bcr-wdc-quote-service/src/client.rs`: `sign` (admin); `keys` (public)
+- `bcr-wdc-quote-service/src/client.rs`: `sign`, `new_keyset` (admin, now pointed at
+  `core_admin_url`); `list_keyset_info`, `keys` (public, unchanged) — done
 - `bcr-wdc-admin-aggregator/src/lib.rs`: `new_keyset` (admin)
 
 `bcr-wdc-mint-service/src/vault/clients.rs` and `bcr-wdc-wallet-aggregator` only call

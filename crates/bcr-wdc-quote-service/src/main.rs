@@ -5,8 +5,24 @@ use tracing_subscriber::{filter::LevelFilter, prelude::*};
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
+    #[serde(default)]
+    admin_bind_address: Option<std::net::SocketAddr>,
     appcfg: bcr_wdc_quote_service::AppConfig,
     log_level: String,
+}
+
+/// No default: a container that silently fell back to loopback would break every
+/// internal caller without closing any real exposure, so a missing setting must
+/// fail startup instead.
+fn require_admin_bind_address(
+    admin_bind_address: Option<std::net::SocketAddr>,
+) -> std::net::SocketAddr {
+    admin_bind_address.unwrap_or_else(|| {
+        panic!(
+            "missing required setting `admin_bind_address` (env QUOTE_SERVICE__ADMIN_BIND_ADDRESS): \
+             the admin listener has no default and must be set explicitly"
+        )
+    })
 }
 
 #[tokio::main]
@@ -28,18 +44,39 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
+    let admin_bind_address = require_admin_bind_address(maincfg.admin_bind_address);
+
     let (app, routine_hndl) = bcr_wdc_quote_service::init_app(maincfg.appcfg).await;
-    let router = bcr_wdc_quote_service::routes(app);
+    let web_router = bcr_wdc_quote_service::web_routes().with_state(app.clone());
+    let admin_router = bcr_wdc_quote_service::admin_routes().with_state(app);
 
-    let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
-        .await
-        .expect("Failed to bind to address");
-
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("Failed to start server");
+    bcr_wdc_utils::serve::serve_split(
+        web_router,
+        admin_router,
+        maincfg.bind_address,
+        admin_bind_address,
+        shutdown_signal(),
+    )
+    .await
+    .expect("Failed to start server");
     routine_hndl.stop().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn require_admin_bind_address_accepts_a_configured_value() {
+        let addr: std::net::SocketAddr = "127.0.0.1:3339".parse().unwrap();
+        assert_eq!(require_admin_bind_address(Some(addr)), addr);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin_bind_address")]
+    fn require_admin_bind_address_refuses_to_start_when_unset() {
+        require_admin_bind_address(None);
+    }
 }
 
 async fn shutdown_signal() {
