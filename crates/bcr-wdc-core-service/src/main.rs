@@ -2,17 +2,25 @@ use std::str::FromStr;
 use tokio::signal;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
-fn default_admin_bind_address() -> std::net::SocketAddr {
-    std::net::SocketAddr::from(([127, 0, 0, 1], 3339))
-}
-
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
-    #[serde(default = "default_admin_bind_address")]
-    admin_bind_address: std::net::SocketAddr,
+    #[serde(default)]
+    admin_bind_address: Option<std::net::SocketAddr>,
     appcfg: bcr_wdc_core_service::config::App,
     log_level: String,
+}
+
+/// No default: a container that silently fell back to loopback would break every
+/// internal caller without closing any real exposure, so a missing setting must
+/// fail startup instead.
+fn require_admin_bind_address(admin_bind_address: Option<std::net::SocketAddr>) -> std::net::SocketAddr {
+    admin_bind_address.unwrap_or_else(|| {
+        panic!(
+            "missing required setting `admin_bind_address` (env CORE_SERVICE__ADMIN_BIND_ADDRESS): \
+             the admin listener has no default and must be set explicitly"
+        )
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -49,6 +57,8 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing::subscriber::set_global_default");
 
+    let admin_bind_address = require_admin_bind_address(maincfg.admin_bind_address);
+
     let app = bcr_wdc_core_service::AppController::new(&seed, maincfg.appcfg).await;
     let web_router = bcr_wdc_core_service::web_routes().with_state(app.clone());
     let admin_router = bcr_wdc_core_service::admin_routes().with_state(app);
@@ -57,11 +67,28 @@ async fn main() {
         web_router,
         admin_router,
         maincfg.bind_address,
-        maincfg.admin_bind_address,
+        admin_bind_address,
         shutdown_signal(),
     )
     .await
     .expect("Failed to start server");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn require_admin_bind_address_accepts_a_configured_value() {
+        let addr: std::net::SocketAddr = "127.0.0.1:3339".parse().unwrap();
+        assert_eq!(require_admin_bind_address(Some(addr)), addr);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin_bind_address")]
+    fn require_admin_bind_address_refuses_to_start_when_unset() {
+        require_admin_bind_address(None);
+    }
 }
 
 async fn shutdown_signal() {
