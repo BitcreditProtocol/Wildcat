@@ -16,5 +16,8 @@ COPY --from=rust-builder /wildcat/target/release/core-migrate ./migrate
 
 # Expose web server port
 EXPOSE 3338
+# Admin port (bind_address for the admin router) must stay unpublished: it carries
+# no auth of its own and is meant to be reachable only from inside the deployment.
+EXPOSE 3339
 
 ENTRYPOINT ["/core-service/bcr-wdc-core-service"]

@@ -2,9 +2,15 @@ use std::str::FromStr;
 use tokio::signal;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
+fn default_admin_bind_address() -> std::net::SocketAddr {
+    std::net::SocketAddr::from(([127, 0, 0, 1], 3339))
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct MainConfig {
     bind_address: std::net::SocketAddr,
+    #[serde(default = "default_admin_bind_address")]
+    admin_bind_address: std::net::SocketAddr,
     appcfg: bcr_wdc_core_service::config::App,
     log_level: String,
 }
@@ -44,16 +50,18 @@ async fn main() {
         .expect("tracing::subscriber::set_global_default");
 
     let app = bcr_wdc_core_service::AppController::new(&seed, maincfg.appcfg).await;
-    let router = bcr_wdc_core_service::routes(app);
+    let web_router = bcr_wdc_core_service::web_routes().with_state(app.clone());
+    let admin_router = bcr_wdc_core_service::admin_routes().with_state(app);
 
-    let listener = tokio::net::TcpListener::bind(&maincfg.bind_address)
-        .await
-        .expect("Failed to bind to address");
-
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("Failed to start server");
+    bcr_wdc_utils::serve::serve_split(
+        web_router,
+        admin_router,
+        maincfg.bind_address,
+        maincfg.admin_bind_address,
+        shutdown_signal(),
+    )
+    .await
+    .expect("Failed to start server");
 }
 
 async fn shutdown_signal() {
