@@ -711,7 +711,9 @@ impl persistence::Repository for Repository {
                 r#"
                 INSERT INTO core_proofs (y, signature)
                 SELECT * FROM UNNEST($1::text[], $2::text[])
-                ON CONFLICT (y) DO NOTHING
+                ON CONFLICT (y) DO UPDATE
+                SET signature = EXCLUDED.signature, deadline = NULL
+                WHERE core_proofs.signature IS NULL AND core_proofs.blob IS NULL
                 "#,
                 &input_keys,
                 &signatures

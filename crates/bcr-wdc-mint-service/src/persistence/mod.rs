@@ -1246,6 +1246,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_commitment_store_claims_its_own_reservation() {
+        commitment_store_claims_its_own_reservation(init_memmap_db()).await;
+        commitment_store_claims_its_own_reservation(init_surreal_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_commitment_store_claims_its_own_reservation_sqlx(pool: ::sqlx::PgPool) {
+        commitment_store_claims_its_own_reservation(sqlx::Repository::from_pool(pool)).await;
+    }
+    async fn commitment_store_claims_its_own_reservation(db: impl Repository) {
+        let (proofs, blinds, _, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        let ys = proofs.ys().unwrap();
+        let deadline = time::OffsetDateTime::now_utc() + time::Duration::minutes(1);
+        db.ys_store(ys.clone(), deadline).await.unwrap();
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+
+        let other_commitment = schnorr::Signature::from_slice(&[43u8; 64]).unwrap();
+        let bs = blinds.iter().map(|b| b.blinded_secret).collect::<Vec<_>>();
+        let kp = core::generate_random_keypair();
+        let result = db
+            .commitment_store(
+                ys,
+                bs,
+                deadline,
+                kp.public_key().into(),
+                other_commitment,
+                [0u8; 32],
+                SignatureOwner::Unsigned,
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+    }
+
+    #[tokio::test]
     async fn test_swap_finalize_rolls_back_on_spent_proof() {
         swap_finalize_rolls_back_on_spent_proof(init_memmap_db()).await;
         swap_finalize_rolls_back_on_spent_proof(init_surreal_db().await).await;

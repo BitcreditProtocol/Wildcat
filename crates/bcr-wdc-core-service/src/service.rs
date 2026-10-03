@@ -317,8 +317,7 @@ impl Service {
             };
         }
         let fp_digest = request.inputs.attestation.fp_digest;
-        let content = reencode_commit_request(&request)?;
-        let (_, commitment) = self.clowder.commit_to_swap(request).await?;
+        let (content, commitment) = self.clowder.commit_to_swap(request).await?;
         match self
             .repository
             .commitment_store(
@@ -403,20 +402,16 @@ impl Service {
                 // The commitment is gone exactly when `swap_finalize` has already run for it
                 // (it deletes the commitment on success). If these inputs are already spent and
                 // the client's own outputs already carry a signature, this is a retry of a swap
-                // that finalized but whose response (the signal to Clowder, or the reply itself)
-                // was lost: replay the stored signatures and try the Clowder signal again, rather
-                // than fail a swap that already happened.
+                // that already finalized but whose reply was lost: replay the stored signatures
+                // rather than fail a swap that already happened. Clowder is not signalled again:
+                // it was already notified (or will time out and reconcile) the first time, and
+                // without a known-idempotent handler on its side a second signal risks being
+                // read as a second, distinct swap.
                 return match self.recover_finalized_swap(&inputs, &outputs).await? {
                     Some(signatures) => {
-                        self.clowder
-                            .signal_swap_event(
-                                inputs,
-                                outputs,
-                                Vec::new(),
-                                commitment,
-                                signatures.clone(),
-                            )
-                            .await?;
+                        tracing::info!(
+                            "replayed stored signatures for a finalized swap retry, commitment {commitment}"
+                        );
                         Ok(signatures)
                     }
                     None => Err(error),
@@ -971,9 +966,12 @@ mod tests {
         clowder
             .expect_authenticate_attestation()
             .returning(|_, _| Ok(()));
-        clowder.expect_commit_to_swap().times(1).returning(|_| {
+        // The real ClowderCl implementation's `content` is always the request's own canonical
+        // encoding (see ClowderCl::commit_to_swap), so the mock mirrors that here: a retry must
+        // see the same bytes whether they come from Clowder or from the local dedup path.
+        clowder.expect_commit_to_swap().times(1).returning(|request| {
             Ok((
-                String::new(),
+                reencode_commit_request(&request)?,
                 schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
             ))
         });
@@ -1068,19 +1066,11 @@ mod tests {
     async fn swap_ordering_retry_after_notify_failure_returns_stored_signatures() {
         let repository = Arc::new(inmemory::Repository::default());
         let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
-        let notify_attempts = Arc::new(AtomicU64::new(0));
-        let notify_attempts_clone = notify_attempts.clone();
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_signal_swap_event()
-            .times(2)
-            .returning(move |_, _, _, _, _| {
-                if notify_attempts_clone.fetch_add(1, Ordering::SeqCst) == 0 {
-                    Err(Error::ServiceUnavailable)
-                } else {
-                    Ok(())
-                }
-            });
+            .times(1)
+            .returning(|_, _, _, _, _| Err(Error::ServiceUnavailable));
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(1).returning(|_| Ok(()));
         let service = service(repository.clone(), clowder, treasury);
