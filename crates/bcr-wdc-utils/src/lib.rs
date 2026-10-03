@@ -2,6 +2,7 @@
 // ----- extra library imports
 // ----- local modules
 pub mod attestation;
+pub mod auth;
 #[cfg(feature = "auth")]
 pub mod client;
 pub mod db;
@@ -9,6 +10,7 @@ pub mod info;
 pub mod keys;
 pub mod nut19;
 pub mod routine;
+pub mod serve;
 pub mod signatures;
 pub use db::postgres;
 pub use db::surreal;

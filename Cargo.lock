@@ -794,11 +794,13 @@ version = "0.5.0-alpha"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "bcr-common",
  "bcr-wdc-utils",
  "bitcoin",
  "built",
  "ciborium",
+ "futures",
  "rand 0.8.8",
  "reqwest 0.13.5",
  "secp256k1 0.29.1",
