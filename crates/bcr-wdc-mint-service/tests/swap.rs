@@ -193,3 +193,60 @@ async fn swap_p2pk() {
         .expect("Swap with correct P2PK signatures should succeed");
     assert_eq!(res[0].amount, Amount::from(8));
 }
+
+#[tokio::test]
+async fn swap_after_identical_commit_retry() {
+    let (server, controller) = bcr_wdc_mint_service::test_utils::build_test_server(None).await;
+    let server_url = server.server_address().expect("address");
+    let client = CoreClient::new(server_url);
+    let (info, keyset) = core_tests::generate_random_ecash_keyset();
+    let entry = MintKeysEntry {
+        id: info.id.into(),
+        unit: info.unit,
+        active: info.active,
+        valid_from: info.valid_from,
+        derivation_path: info.derivation_path,
+        derivation_path_index: info.derivation_path_index,
+        amounts: info.amounts,
+        input_fee_ppk: info.input_fee_ppk,
+        final_expiry: info.final_expiry,
+        keys: keyset.keys.clone(),
+    };
+    controller
+        .service
+        .repository
+        .keys_store(entry)
+        .await
+        .expect("store");
+    let amounts = vec![Amount::from(8_u64)];
+    let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+        .into_iter()
+        .map(|bbb| ecash::BlindedMessage::from(bbb.0))
+        .collect();
+    let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+    let proof_fps: Vec<wire_keys::ProofFingerprint> = c_proofs
+        .iter()
+        .cloned()
+        .map(wire_keys::ProofFingerprint::try_from)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mint_pk = bcr_wdc_mint_service::test_utils::mint_kp().public_key();
+    let expiry =
+        (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
+    let wallet_pk = core::generate_random_keypair().public_key();
+    let commit = || {
+        client.commit_swap(
+            proof_fps.clone(),
+            blinds.clone(),
+            expiry,
+            wallet_pk,
+            mint_pk,
+            dummy_attestation_for(&proof_fps),
+        )
+    };
+    let (_, commitment) = commit().await.expect("first commit");
+    let (_, retried) = commit().await.expect("identical retry");
+    assert_eq!(commitment, retried);
+    let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
+    client.swap(proofs, blinds, commitment).await.expect("swap");
+}
