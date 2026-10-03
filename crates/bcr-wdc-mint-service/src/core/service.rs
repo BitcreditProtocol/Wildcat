@@ -661,14 +661,29 @@ mod tests {
         schnorr::Signature,
         TStamp,
     ) {
+        let amounts = [cashu::Amount::from(8u64)];
+        prepare_swap_with(repository, &amounts, &amounts, SignatureOwner::Alpha).await
+    }
+
+    async fn prepare_swap_with(
+        repository: &inmemory::Repository,
+        input_amounts: &[cashu::Amount],
+        output_amounts: &[cashu::Amount],
+        signed: SignatureOwner,
+    ) -> (
+        ecash::MintKeySet,
+        Vec<cashu::Proof>,
+        Vec<cashu::BlindedMessage>,
+        schnorr::Signature,
+        TStamp,
+    ) {
         let (mut kinfo, mut keyset) = core_tests::generate_random_ecash_keyset();
         kinfo.input_fee_ppk = 0;
         keyset.input_fee_ppk = 0;
         let entry = keys_utils::to_entry(kinfo, keyset.clone());
         repository.keys_store(entry).await.unwrap();
-        let amounts = [cashu::Amount::from(8u64)];
-        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        let outputs = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, input_amounts);
+        let outputs = signatures_test::generate_blinds(keyset.id.into(), output_amounts)
             .into_iter()
             .map(|generated| generated.0)
             .collect::<Vec<_>>();
@@ -687,7 +702,7 @@ mod tests {
                     .into(),
                 commitment,
                 fp_digest,
-                SignatureOwner::Alpha,
+                signed,
             )
             .await
             .unwrap();
@@ -1061,15 +1076,41 @@ mod tests {
         );
     }
 
+    type SignalledSwap = (
+        Vec<cashu::BlindSignature>,
+        schnorr::Signature,
+        Vec<cashu::BlindSignature>,
+    );
+
     #[tokio::test]
-    async fn swap_ordering_retry_after_notify_failure_returns_stored_signatures() {
+    async fn swap_retry_after_notify_failure_resignals_clowder_with_original_fees() {
         let repository = Arc::new(inmemory::Repository::default());
-        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let (_, proofs, outputs, commitment, now) = prepare_swap_with(
+            &repository,
+            &[cashu::Amount::from(16u64)],
+            &[
+                cashu::Amount::from(8u64),
+                cashu::Amount::from(4u64),
+                cashu::Amount::from(2u64),
+            ],
+            SignatureOwner::Unsigned,
+        )
+        .await;
+        let signalled: Arc<std::sync::Mutex<Vec<SignalledSwap>>> = Arc::default();
+        let captured = signalled.clone();
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_signal_swap_event()
-            .times(1)
-            .returning(|_, _, _, _, _| Err(Error::ServiceUnavailable));
+            .times(2)
+            .returning(move |_, _, fees, commitment, signatures| {
+                let mut captured = captured.lock().unwrap();
+                captured.push((fees, commitment, signatures));
+                if captured.len() == 1 {
+                    Err(Error::ServiceUnavailable)
+                } else {
+                    Ok(())
+                }
+            });
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(1).returning(|_| Ok(()));
         let service = service(repository.clone(), clowder);
@@ -1081,25 +1122,89 @@ mod tests {
             matches!(first, Err(Error::ServiceUnavailable)),
             "a lost Clowder notification must fail the request, got {first:?}"
         );
-        assert!(
-            repository.commitment_load(&commitment).await.is_err(),
-            "finalize already consumed the commitment before the notify failed"
+        assert!(matches!(
+            repository.proofs_contains(proofs[0].y().unwrap()).await.unwrap(),
+            Some(state) if matches!(state.state, cashu::State::Spent)
+        ));
+        let (first_fees, _, first_signatures) = signalled.lock().unwrap()[0].clone();
+        assert_eq!(
+            first_fees
+                .iter()
+                .fold(cashu::Amount::ZERO, |acc, fee| acc + fee.amount),
+            cashu::Amount::from(2u64)
         );
 
         let retried = service
             .swap(&treasury, proofs.clone(), outputs.clone(), commitment, now)
             .await
-            .expect(
-                "retrying the same swap after finalize must succeed, with no double spend and no lost funds",
-            );
-
-        assert_eq!(retried.len(), outputs.len());
+            .expect("retrying the same finalized swap must return its stored signatures");
+        assert_eq!(retried, first_signatures);
         for (blind, signature) in outputs.iter().zip(retried.iter()) {
             assert_eq!(
                 repository.signature_load(blind).await.unwrap().as_ref(),
                 Some(signature)
             );
         }
+        assert_eq!(
+            signalled.lock().unwrap()[1],
+            (first_fees, commitment, retried)
+        );
+
+        let other_commitment = signatures_test::random_schnorr_signature();
+        let mismatched = service
+            .swap(&treasury, proofs, outputs, other_commitment, now)
+            .await;
+        assert!(
+            matches!(mismatched, Err(Error::ResourceNotFound(_))),
+            "a commitment that did not finalize these inputs must not replay them, got {mismatched:?}"
+        );
+        assert_eq!(signalled.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn fee_premints_are_derived_from_the_commitment() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (_, proofs, outputs, commitment, _) = prepare_swap_with(
+            &repository,
+            &[cashu::Amount::from(16u64)],
+            &[cashu::Amount::from(8u64)],
+            SignatureOwner::Unsigned,
+        )
+        .await;
+        let service = service(repository, MockClowderClient::new());
+        let blinded = |premints: Vec<cashu::PreMintSecrets>| {
+            premints
+                .iter()
+                .flat_map(cashu::PreMintSecrets::blinded_messages)
+                .collect::<Vec<_>>()
+        };
+
+        let first = blinded(
+            service
+                .generate_fees_premints(&proofs, &outputs, &commitment)
+                .await
+                .unwrap(),
+        );
+        let again = blinded(
+            service
+                .generate_fees_premints(&proofs, &outputs, &commitment)
+                .await
+                .unwrap(),
+        );
+        let other = blinded(
+            service
+                .generate_fees_premints(
+                    &proofs,
+                    &outputs,
+                    &signatures_test::random_schnorr_signature(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        assert!(!first.is_empty());
+        assert_eq!(first, again);
+        assert_ne!(first, other);
     }
 
     // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.
