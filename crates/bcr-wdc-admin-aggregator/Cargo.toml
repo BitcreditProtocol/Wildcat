@@ -21,3 +21,7 @@ tracing-subscriber = {workspace = true}
 utoipa = {workspace = true, features = ["axum_extras", "yaml"]}
 utoipa-swagger-ui = {workspace = true, features = ["axum"]}
 uuid.workspace = true
+
+[dev-dependencies]
+axum-test.workspace = true
+tokio = {workspace = true, features = ["macros", "rt-multi-thread"]}

@@ -29,11 +29,16 @@ mod error;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
+    /// core-service's public listener: keyset listing and lookup.
     pub core_url: ClientUrl,
-    pub quotes_url: ClientUrl,
+    /// core-service's admin listener: keyset creation.
+    pub core_admin_url: ClientUrl,
+    /// quote-service's admin listener: every quote call the aggregator makes.
+    pub quotes_admin_url: ClientUrl,
     pub ebill_url: ClientUrl,
     pub clowder_url: ClientUrl,
-    pub treasury_url: ClientUrl,
+    /// treasury-service's admin listener: every treasury call the aggregator makes.
+    pub treasury_admin_url: ClientUrl,
 }
 
 #[derive(Clone, FromRef)]
@@ -51,16 +56,18 @@ impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
             core_url,
-            quotes_url,
+            core_admin_url,
+            quotes_admin_url,
             ebill_url,
             clowder_url,
-            treasury_url,
+            treasury_admin_url,
         } = cfg;
         let core_cl = CoreClient::new(core_url);
-        let quotes_cl = QuoteClient::new(quotes_url);
+        let core_admin_cl = CoreClient::new(core_admin_url);
+        let quotes_cl = QuoteClient::new(quotes_admin_url);
         let ebill_cl = EbillClient::new(ebill_url);
         let clwdr_cl = ClowderClient::new(clowder_url);
-        let treasury_cl = TreasuryClient::new(treasury_url);
+        let treasury_cl = TreasuryClient::new(treasury_admin_url);
 
         // pre-flight checklist
         let filter = wire_keys::KeysetInfoFilters {
@@ -76,7 +83,7 @@ impl AppController {
             tracing::warn!(
                 "pre-flight check warning: core service has no perpetual keysets configured"
             );
-            core_cl
+            core_admin_cl
                 .new_keyset(None, Self::MINIMUM_KEYSET_FEE_RATE_PPK)
                 .await
                 .expect("pre-flight check failed: core service is not responding to new_keyset");

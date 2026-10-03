@@ -36,6 +36,16 @@ rather than silently pointing at the public listener):
   points at the admin listener; there is no public treasury client left in
   quote-service.
 
+## admin-aggregator's outbound clients
+
+admin-aggregator calls core-, quote- and treasury-service's admin endpoints, so its
+`appcfg` in `config.toml` names each admin listener explicitly, none defaulted:
+
+- `core_admin_url`: `new_keyset`.
+  `core_url` (public, unchanged) still serves `list_keyset_info`, `keyset_info`.
+- `quotes_admin_url` (replaces `quotes_url`): every quote call the aggregator makes is an admin endpoint.
+- `treasury_admin_url` (replaces `treasury_url`): every treasury call the aggregator makes is an admin endpoint.
+
 ## Internal callers of core-service's admin endpoints
 
 core-service's admin routes (`/admin/keys`, `/admin/keys/sign`,
@@ -55,7 +65,8 @@ updated it must point at the admin address instead for the methods marked admin:
   `check_state` (public)
 - `bcr-wdc-quote-service/src/client.rs`: `sign`, `new_keyset` (admin, now pointed at
   `core_admin_url`); `list_keyset_info`, `keys` (public, unchanged) — done
-- `bcr-wdc-admin-aggregator/src/lib.rs`: `new_keyset` (admin)
+- `bcr-wdc-admin-aggregator/src/lib.rs`: `new_keyset` (admin, now pointed at
+  `core_admin_url`) — done
 
 `bcr-wdc-mint-service/src/vault/clients.rs` and `bcr-wdc-wallet-aggregator` only call
 core-service's public endpoints (`check_state`, `currency_unit`) and do not need to

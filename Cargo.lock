@@ -647,6 +647,7 @@ name = "bcr-wdc-admin-aggregator"
 version = "0.5.0-alpha"
 dependencies = [
  "axum",
+ "axum-test",
  "bcr-common",
  "bcr-wdc-utils",
  "config",
