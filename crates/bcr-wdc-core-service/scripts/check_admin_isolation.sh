@@ -13,17 +13,29 @@ ADMIN_SIGN_PATH="/admin/keys/sign"
 
 cd "${CRATE_DIR}"
 
+# `cargo run` keeps the compiled binary as its own child process, not its own
+# exec'd replacement, so killing only cargo's PID leaves that child running and
+# still bound to the port for the next invocation (`setsid` is not a fix here:
+# it silently does nothing when the caller is already a process group leader,
+# which a backgrounded job in a script often is). Kill the child by its actual
+# parent PID instead, which needs no session or process-group cooperation.
 cargo run --quiet --example admin_listener_demo --features test-utils &
 DEMO_PID=$!
 
 cleanup() {
+    pkill -P "${DEMO_PID}" >/dev/null 2>&1
     kill "${DEMO_PID}" >/dev/null 2>&1
     wait "${DEMO_PID}" 2>/dev/null
 }
 trap cleanup EXIT
 
+# cargo serializes on the target directory's build lock, which the fleet's full
+# check and other phases' builds can hold for minutes under a shared build slot
+# (see CLAUDE.md: "each one waits its turn"); a compiled binary itself starts in
+# a few seconds, so almost all of this budget is headroom for that queueing, not
+# a tolerance for a slow server.
 READY=0
-for _ in $(seq 1 60); do
+for _ in $(seq 1 300); do
     if curl --silent --output /dev/null --fail "http://${WEB_ADDR}/health"; then
         READY=1
         break
