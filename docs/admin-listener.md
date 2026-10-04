@@ -17,9 +17,19 @@ them without closing any exposure a deployer didn't already control.
 | core-service      | `admin_bind_address`   | `CORE_SERVICE__ADMIN_BIND_ADDRESS`         |
 | mint-service      | `admin_bind_address`   | `MINT_SERVICE__ADMIN_BIND_ADDRESS`         |
 | quote-service     | `admin_bind_address`   | `QUOTE_SERVICE__ADMIN_BIND_ADDRESS`        |
+| treasury-service  | `admin_bind_address`   | `TREASURY_SERVICE__ADMIN_BIND_ADDRESS`     |
 
-(Treasury gains the same setting and env-var pattern, prefixed with its own service
-name, as it is split.)
+## core-service's and wallet-aggregator's own outbound admin clients
+
+core-service calls treasury-service's admin endpoint `fees_store_proofs` after
+every swap, so its single `treasury_url` setting is renamed `treasury_admin_url`
+(env `CORE_SERVICE__APPCFG__TREASURY_ADMIN_URL`) and must point at treasury's
+admin listener; core-service has no public call into treasury left.
+
+wallet-aggregator calls treasury-service's admin endpoint `try_htlc` on every HTLC
+swap, so its `treasury_client_url` setting is renamed `treasury_admin_client_url`
+(env `WALLET_AGGREGATOR__APPCFG__TREASURY_ADMIN_CLIENT_URL`) and must point at
+treasury's admin listener.
 
 ## quote-service's own outbound admin clients
 
@@ -51,6 +61,17 @@ after the prefix, e.g. `ADMIN_AGGREGATOR_BIND_ADDRESS`):
 
 `appcfg.core_url` (`ADMIN_AGGREGATOR_APPCFG__CORE_URL`, public, unchanged) still
 serves `list_keyset_info` and `keyset_info`.
+
+## admin-aggregator's own auth
+
+admin-aggregator has no public portion to split off, so its whole API (everything
+but `/health`) requires `Authorization: Bearer <appcfg.admin_api_key>`
+(env `ADMIN_AGGREGATOR_APPCFG__ADMIN_API_KEY`), checked by
+`bcr_wdc_utils::auth::require_api_key`. The key must be a non-empty, printable
+ASCII string with no leading or trailing whitespace, since an HTTP header value
+can never carry such a key once it crosses a transport. Its swagger UI
+(`/swagger-ui`, `/api-docs/openapi.json`) is deliberately left undecorated, since
+it discloses only the API shape, not data.
 
 ## Internal callers of core-service's admin endpoints
 

@@ -40,7 +40,7 @@ impl AppController {
             repository_new,
             clowder_url,
             clowder_nkey_seed,
-            treasury_url,
+            treasury_admin_url,
             clowder_rest_url,
             starting_derivation_path,
             max_expiry_sec,
@@ -80,7 +80,7 @@ impl AppController {
         };
         let max_expiry = time::Duration::seconds(max_expiry_sec as i64);
         let treasury = clients::TreasuryCl {
-            cl: Box::new(TreasuryClient::new(treasury_url)),
+            cl: Box::new(TreasuryClient::new(treasury_admin_url)),
         };
         let settle_window_tout =
             time::OffsetDateTime::now_utc() + time::Duration::seconds(settle_window_sec as i64);

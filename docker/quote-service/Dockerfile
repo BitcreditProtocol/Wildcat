@@ -15,10 +15,10 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-quote-service .
 
 # Expose web server port
 EXPOSE 3338
-# Admin port (admin_bind_address, set via QUOTE_SERVICE__ADMIN_BIND_ADDRESS, has no
-# default and must be set explicitly) must stay unpublished: it carries no auth of
-# its own and is meant to be reachable only from inside the deployment. See
+# The admin listener (admin_bind_address, set via
+# QUOTE_SERVICE__ADMIN_BIND_ADDRESS, no default) carries no auth of its own
+# and must stay reachable only from inside the deployment: deliberately
+# not EXPOSEd, so `docker run -P` cannot publish it. See
 # docs/admin-listener.md.
-EXPOSE 3339
 
 ENTRYPOINT ["/quote-service/bcr-wdc-quote-service"]

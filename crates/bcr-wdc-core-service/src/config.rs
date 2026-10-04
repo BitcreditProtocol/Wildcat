@@ -14,7 +14,8 @@ pub struct App {
     pub clowder_url: client::Url,
     #[serde(default)]
     pub clowder_nkey_seed: Option<String>,
-    pub treasury_url: client::Url,
+    /// treasury-service's admin listener: `fees_store_proofs` is admin-only.
+    pub treasury_admin_url: client::Url,
     pub clowder_rest_url: client::Url,
     pub starting_derivation_path: btc32::DerivationPath,
     pub max_expiry_sec: u64,

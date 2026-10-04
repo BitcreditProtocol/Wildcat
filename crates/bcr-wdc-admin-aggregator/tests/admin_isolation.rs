@@ -25,6 +25,7 @@ use bcr_common::{
 use bcr_wdc_admin_aggregator::{endpoints, routes, AppConfig, AppController};
 
 const KID: &str = "009a1f293253e41e";
+const SECRET: &str = "test-admin-aggregator-secret";
 
 fn free_addr() -> SocketAddr {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -133,6 +134,7 @@ fn config(b: &Backends) -> AppConfig {
         ebill_url: unused.clone(),
         clowder_url: unused,
         treasury_admin_url: url(b.treasury.admin),
+        admin_api_key: SECRET.to_string(),
     }
 }
 
@@ -158,6 +160,7 @@ async fn keyset_info_goes_through_core_public_listener() {
     let server = aggregator(&b).await;
     let resp = server
         .get(&endpoints::KEYSET_INFO.replace("{kid}", KID))
+        .add_header("authorization", format!("Bearer {SECRET}"))
         .await;
     resp.assert_status_ok();
 }
@@ -169,6 +172,7 @@ async fn enable_quote_minting_goes_through_quote_admin_listener() {
     let qid = uuid::Uuid::new_v4().to_string();
     let resp = server
         .patch(&endpoints::ENABLE_QUOTE_MINTING.replace("{qid}", &qid))
+        .add_header("authorization", format!("Bearer {SECRET}"))
         .await;
     resp.assert_status_ok();
 }
@@ -177,7 +181,10 @@ async fn enable_quote_minting_goes_through_quote_admin_listener() {
 async fn foreign_balance_goes_through_treasury_admin_listener() {
     let b = spawn_backends().await;
     let server = aggregator(&b).await;
-    let resp = server.get(endpoints::FOREIGN_BALANCE).await;
+    let resp = server
+        .get(endpoints::FOREIGN_BALANCE)
+        .add_header("authorization", format!("Bearer {SECRET}"))
+        .await;
     resp.assert_status_ok();
 }
 
@@ -192,6 +199,7 @@ async fn enable_quote_minting_fails_with_only_the_quote_public_address() {
     let qid = uuid::Uuid::new_v4().to_string();
     let resp = server
         .patch(&endpoints::ENABLE_QUOTE_MINTING.replace("{qid}", &qid))
+        .add_header("authorization", format!("Bearer {SECRET}"))
         .await;
     assert_ne!(resp.status_code(), axum::http::StatusCode::OK);
 }
@@ -204,7 +212,10 @@ async fn foreign_balance_fails_with_only_the_treasury_public_address() {
         ..config(&b)
     })
     .await;
-    let resp = server.get(endpoints::FOREIGN_BALANCE).await;
+    let resp = server
+        .get(endpoints::FOREIGN_BALANCE)
+        .add_header("authorization", format!("Bearer {SECRET}"))
+        .await;
     assert_ne!(resp.status_code(), axum::http::StatusCode::OK);
 }
 
@@ -217,4 +228,25 @@ async fn preflight_fails_with_only_the_core_public_address() {
         ..config(&b)
     })
     .await;
+}
+
+#[tokio::test]
+async fn foreign_balance_refuses_missing_or_wrong_credentials() {
+    let b = spawn_backends().await;
+    let server = aggregator(&b).await;
+    let resp = server.get(endpoints::FOREIGN_BALANCE).await;
+    assert_eq!(resp.status_code(), axum::http::StatusCode::UNAUTHORIZED);
+    let resp = server
+        .get(endpoints::FOREIGN_BALANCE)
+        .add_header("authorization", "Bearer not-the-secret")
+        .await;
+    assert_eq!(resp.status_code(), axum::http::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn health_needs_no_credentials() {
+    let b = spawn_backends().await;
+    let server = aggregator(&b).await;
+    let resp = server.get(endpoints::HEALTH).await;
+    resp.assert_status_ok();
 }

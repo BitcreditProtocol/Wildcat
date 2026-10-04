@@ -39,6 +39,8 @@ pub struct AppConfig {
     pub clowder_url: ClientUrl,
     /// treasury-service's admin listener: every treasury call the aggregator makes.
     pub treasury_admin_url: ClientUrl,
+    /// Shared secret every request must present as `Authorization: Bearer <key>`.
+    pub admin_api_key: String,
 }
 
 #[derive(Clone, FromRef)]
@@ -48,6 +50,7 @@ pub struct AppController {
     pub ebill_cl: EbillClient,
     pub clwdr_cl: Arc<ClowderClient>,
     pub treasury_cl: TreasuryClient,
+    pub admin_api_key: String,
 }
 
 impl AppController {
@@ -61,6 +64,7 @@ impl AppController {
             ebill_url,
             clowder_url,
             treasury_admin_url,
+            admin_api_key,
         } = cfg;
         let core_cl = CoreClient::new(core_url);
         let core_admin_cl = CoreClient::new(core_admin_url);
@@ -94,6 +98,7 @@ impl AppController {
             ebill_cl,
             clwdr_cl: Arc::new(clwdr_cl),
             treasury_cl,
+            admin_api_key,
         }
     }
 }
@@ -149,8 +154,8 @@ pub mod endpoints {
 pub fn routes(ctrl: AppController) -> Router {
     let swagger = utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
+    let health = Router::new().route(endpoints::HEALTH, get(admin::get_health));
     let admin = Router::new()
-        .route(endpoints::HEALTH, get(admin::get_health))
         .route(endpoints::MINT_INFO, get(admin::get_mint_info))
         // core service
         .route(endpoints::KEYSET_INFO, get(admin::get_keyset_info))
@@ -254,7 +259,13 @@ pub fn routes(ctrl: AppController) -> Router {
             delete(admin::delete_denied_meltop),
         )
         .route(endpoints::FEES_TOKEN, get(admin::collect_fees_token));
-    Router::new().merge(admin).with_state(ctrl).merge(swagger)
+    let admin_api_key = ctrl.admin_api_key.clone();
+    let admin = bcr_wdc_utils::auth::require_api_key(admin, admin_api_key);
+    Router::new()
+        .merge(health)
+        .merge(admin)
+        .with_state(ctrl)
+        .merge(swagger)
 }
 
 #[derive(utoipa::OpenApi)]

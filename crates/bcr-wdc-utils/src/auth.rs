@@ -23,6 +23,20 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+/// RFC 7235 2.1: `credentials = auth-scheme [ 1*SP token68 ]`, and the scheme is
+/// case-insensitive. Splits on the first run of whitespace between scheme and
+/// token68, rather than requiring exactly one literal space, and trims outer
+/// whitespace a transport may not have (e.g. an inner tab).
+fn parse_bearer(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let mut parts = value.splitn(2, char::is_whitespace);
+    let scheme = parts.next()?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    Some(parts.next().unwrap_or("").trim())
+}
+
 async fn check_bearer_token(
     State(secret): State<Arc<str>>,
     req: Request,
@@ -32,7 +46,7 @@ async fn check_bearer_token(
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+        .and_then(parse_bearer);
 
     match presented {
         Some(token) if constant_time_eq(token.as_bytes(), secret.as_bytes()) => {
@@ -44,10 +58,24 @@ async fn check_bearer_token(
 
 /// Wraps `router` so every request must carry `Authorization: Bearer <secret>`,
 /// answering `401 Unauthorized` otherwise.
+///
+/// Panics if `secret` is empty, not ASCII, or carries leading/trailing
+/// whitespace: an HTTP header value never carries such whitespace once it
+/// crosses a transport, so a secret shaped like that could never be presented
+/// by its own correct caller, and an empty one would grant access to anyone
+/// presenting `Bearer ` with no token.
 pub fn require_api_key<S>(router: Router<S>, secret: impl Into<String>) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    let secret: Arc<str> = Arc::from(secret.into());
+    let secret = secret.into();
+    assert!(!secret.is_empty(), "require_api_key: secret must not be empty");
+    assert!(secret.is_ascii(), "require_api_key: secret must be ASCII");
+    assert_eq!(
+        secret,
+        secret.trim(),
+        "require_api_key: secret must not carry leading/trailing whitespace"
+    );
+    let secret: Arc<str> = Arc::from(secret);
     router.layer(middleware::from_fn_with_state(secret, check_bearer_token))
 }

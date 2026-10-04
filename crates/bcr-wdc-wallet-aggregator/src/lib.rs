@@ -23,7 +23,8 @@ pub use bcr_common::TStamp;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     core_client_url: bcr_common::client::Url,
-    treasury_client_url: bcr_common::client::Url,
+    /// treasury-service's admin listener: `try_htlc` is admin-only.
+    treasury_admin_client_url: bcr_common::client::Url,
     clwdr_rest_url: ClientUrl,
 }
 
@@ -39,12 +40,13 @@ impl AppController {
     pub async fn new(cfg: AppConfig) -> Self {
         let AppConfig {
             core_client_url,
-            treasury_client_url,
+            treasury_admin_client_url,
             clwdr_rest_url,
         } = cfg;
 
         let core_client = bcr_common::client::core::Client::new(core_client_url);
-        let treasury_client = bcr_common::client::treasury::Client::new(treasury_client_url);
+        let treasury_client =
+            bcr_common::client::treasury::Client::new(treasury_admin_client_url);
         let clwdr_rest_client = Arc::new(clowder::Client::new(clwdr_rest_url));
 
         Self {

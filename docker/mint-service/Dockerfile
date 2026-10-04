@@ -15,9 +15,10 @@ COPY --from=rust-builder /wildcat/target/release/bcr-wdc-mint-service .
 
 # Expose web server port
 EXPOSE 3338
-# Admin port (admin_bind_address, set via MINT_SERVICE__ADMIN_BIND_ADDRESS, no
-# default) must stay unpublished: it carries no auth of its own and is meant to be
-# reachable only from inside the deployment. See docs/admin-listener.md.
-EXPOSE 3339
+# The admin listener (admin_bind_address, set via
+# MINT_SERVICE__ADMIN_BIND_ADDRESS, no default) carries no auth of its own
+# and must stay reachable only from inside the deployment: deliberately
+# not EXPOSEd, so `docker run -P` cannot publish it. See
+# docs/admin-listener.md.
 
 ENTRYPOINT ["/mint-service/bcr-wdc-mint-service"]
