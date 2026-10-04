@@ -6,7 +6,9 @@ use std::net::SocketAddr;
 
 use adversarial_common::{free_addr, raw, statuses, wait_listening};
 use axum::Router;
-use bcr_common::client::admin::{core::admin_ep as core_admin, treasury::admin_ep as treasury_admin};
+use bcr_common::client::admin::{
+    core::admin_ep as core_admin, quote::admin_ep as quote_admin, treasury::admin_ep as treasury_admin,
+};
 use bcr_wdc_utils::serve::serve_split;
 
 async fn start(web: Router, admin: Router) -> (SocketAddr, SocketAddr) {
@@ -184,4 +186,61 @@ async fn core_admin_port_serves_no_web_routes() {
 async fn mint_admin_port_serves_no_web_routes() {
     let (_, a) = mint().await;
     assert_admin_serves_no_web(a, &["/health", "/v1/keysets", "/v1/keys/00ffffffffffffff", "/v1/checkstate"]).await;
+}
+
+fn fill(path: &str) -> String {
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut out = String::new();
+    let mut skip = false;
+    for c in path.chars() {
+        match c {
+            '{' => {
+                skip = true;
+                out.push_str(&id);
+            }
+            '}' => skip = false,
+            _ if skip => {}
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+async fn quote() -> (SocketAddr, SocketAddr) {
+    let c = bcr_wdc_quote_service::test_utils::test_controller();
+    start(
+        bcr_wdc_quote_service::web_routes::<bcr_wdc_quote_service::AppController>().with_state(c.clone()),
+        bcr_wdc_quote_service::admin_routes::<bcr_wdc_quote_service::AppController>().with_state(c),
+    )
+    .await
+}
+
+async fn treasury() -> (SocketAddr, SocketAddr) {
+    let c = bcr_wdc_treasury_service::test_utils::test_controller().await;
+    start(
+        bcr_wdc_treasury_service::web_routes::<bcr_wdc_treasury_service::AppController>().with_state(c.clone()),
+        bcr_wdc_treasury_service::admin_routes::<bcr_wdc_treasury_service::AppController>().with_state(c),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn quote_public_port_never_reaches_admin() {
+    let (w, a) = quote().await;
+    for p in [quote_admin::ENABLE_MINTING, quote_admin::UPDATE, quote_admin::LIST] {
+        assert_public_never_reaches(w, a, &fill(p)).await;
+    }
+}
+
+#[tokio::test]
+async fn treasury_public_port_never_reaches_admin() {
+    let (w, a) = treasury().await;
+    for p in [
+        treasury_admin::TRY_HTLC_SWAP,
+        treasury_admin::FEES_STORE_PROOFS,
+        treasury_admin::REQUEST_TO_PAY_EBILL,
+        treasury_admin::NEW_EBILL_MINTOP,
+    ] {
+        assert_public_never_reaches(w, a, &fill(p)).await;
+    }
 }

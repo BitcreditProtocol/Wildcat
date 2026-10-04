@@ -234,3 +234,86 @@ async fn every_method_without_key_is_refused() {
     let reached: Vec<_> = b.log.hits().into_iter().map(|h| format!("{} {}", h.method, h.path)).collect();
     assert!(leaks.is_empty() && reached.is_empty(), "unauthenticated: {leaks:?}; backend reached: {reached:?}");
 }
+
+/// Path spellings and credential shapes that are not `Authorization: Bearer <key>`
+/// must neither get a 2xx nor reach a backend.
+#[tokio::test]
+async fn path_and_credential_variants_without_key_are_refused() {
+    let b = backends().await;
+    let secret = "Vari4nt-Secret";
+    let p = start(&b, &format!("admin_api_key = \"{secret}\""), &[]).await.expect("start");
+    let fb = ep::FOREIGN_BALANCE;
+    let paths = [
+        format!("{fb}/"),
+        format!("/{fb}"),
+        fb.replace("/admin/", "//admin/"),
+        fb.replace("/admin/", "/./admin/"),
+        fb.replace("/admin/", "/x/../admin/"),
+        fb.replace("/admin/", "%2Fadmin/"),
+        fb.replace("foreign", "%66oreign"),
+        fb.to_uppercase(),
+        format!("{fb}?admin_api_key={secret}"),
+        format!("{fb};x"),
+    ];
+    let creds: Vec<Vec<(&str, String)>> = vec![
+        vec![("authorization", format!("Basic {secret}"))],
+        vec![("authorization", format!("Token {secret}"))],
+        vec![("authorization", secret.to_string())],
+        vec![("authorization", format!("Bearer {}", secret.to_lowercase()))],
+        vec![("authorization", format!("Bearer {}", &secret[..secret.len() - 1]))],
+        vec![("authorization", format!("Bearer {secret}x"))],
+        vec![("authorization", format!("Bearer {secret} {secret}"))],
+        vec![("authorization", format!("Bearer{secret}"))],
+        vec![("authorization", "Bearer".to_string())],
+        vec![("authorization", "Bearer x".to_string()), ("authorization", format!("Bearer {secret}"))],
+        vec![("proxy-authorization", format!("Bearer {secret}"))],
+        vec![("x-api-key", secret.to_string())],
+        vec![("cookie", format!("admin_api_key={secret}"))],
+    ];
+    let http = reqwest::Client::new();
+    let mut leaks = vec![];
+    b.log.clear();
+    for path in &paths {
+        let s = http.get(format!("http://{}{path}", p.addr)).send().await.expect("req").status().as_u16();
+        println!("GET {path} (no key) -> {s}");
+        if (200..300).contains(&s) {
+            leaks.push(format!("{path} -> {s}"));
+        }
+    }
+    for c in &creds {
+        let mut rb = http.get(format!("http://{}{fb}", p.addr));
+        for (k, v) in c {
+            rb = rb.header(*k, v);
+        }
+        let s = rb.send().await.expect("req").status().as_u16();
+        println!("GET {fb} {c:?} -> {s}");
+        if (200..300).contains(&s) {
+            leaks.push(format!("{c:?} -> {s}"));
+        }
+    }
+    let reached: Vec<_> = b.log.hits().into_iter().map(|h| format!("{} {}", h.method, h.path)).collect();
+    let right = get(p.addr, fb, Some(&format!("Bearer {secret}"))).await;
+    println!("control: right key -> {right}");
+    assert_ne!(right, 401, "control: right key refused");
+    assert!(leaks.is_empty() && reached.is_empty(), "unauthenticated: {leaks:?}; backend reached: {reached:?}");
+}
+
+/// A secret with an inner space or punctuation is accepted at startup, so its correct
+/// caller must be able to present it.
+#[tokio::test]
+async fn inner_space_and_punctuation_secrets_are_presentable() {
+    let b = backends().await;
+    for secret in ["two words", "a=b+c/d==", "with\\\"quote", "tab\\there"] {
+        let p = match start(&b, &format!("admin_api_key = \"{secret}\""), &[]).await {
+            Ok(p) => p,
+            Err(e) => {
+                println!("{secret:?}: refused at startup: {e}");
+                continue;
+            }
+        };
+        let raw = secret.replace("\\\"", "\"").replace("\\t", "\t");
+        let s = get(p.addr, ep::FOREIGN_BALANCE, Some(&format!("Bearer {raw}"))).await;
+        println!("{raw:?}: right key -> {s}");
+        assert_ne!(s, 401, "secret {raw:?} accepted at startup but its correct caller is refused");
+    }
+}
