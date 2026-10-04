@@ -38,9 +38,9 @@ internally (`appcfg.core_admin_url`, `appcfg.treasury_admin_url`, both read next
 the existing `core_url` and no default either, so a missing setting fails startup
 rather than silently pointing at the public listener):
 
-- `core_admin_url` (env `QUOTE_SERVICE__CORE_ADMIN_URL`): `new_keyset`, `sign`.
+- `core_admin_url` (env `QUOTE_SERVICE__APPCFG__CORE_ADMIN_URL`): `new_keyset`, `sign`.
   `core_url` (public, unchanged) still serves `list_keyset_info`, `keys`.
-- `treasury_admin_url` (env `QUOTE_SERVICE__TREASURY_ADMIN_URL`): every call quote
+- `treasury_admin_url` (env `QUOTE_SERVICE__APPCFG__TREASURY_ADMIN_URL`): every call quote
   makes to treasury (`new_ebill_mint_operation`, `ebill_mint_operation_status`,
   `fees_store_proofs`) is an admin endpoint, so quote's whole treasury client now
   points at the admin listener; there is no public treasury client left in

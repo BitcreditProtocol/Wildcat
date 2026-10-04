@@ -59,11 +59,13 @@ async fn check_bearer_token(
 /// Wraps `router` so every request must carry `Authorization: Bearer <secret>`,
 /// answering `401 Unauthorized` otherwise.
 ///
-/// Panics if `secret` is empty, not ASCII, or carries leading/trailing
-/// whitespace: an HTTP header value never carries such whitespace once it
-/// crosses a transport, so a secret shaped like that could never be presented
-/// by its own correct caller, and an empty one would grant access to anyone
-/// presenting `Bearer ` with no token.
+/// Panics if `secret` is empty, carries a byte outside the HTTP header
+/// `field-vchar` set (RFC 7230 3.2: visible ASCII plus internal space/tab,
+/// no control characters, no leading/trailing whitespace): a secret shaped
+/// like that could never be presented by its own correct caller — a
+/// transport that accepts it at all strips or rejects the offending bytes —
+/// and an empty one would grant access to anyone presenting `Bearer ` with
+/// no token.
 pub fn require_api_key<S>(router: Router<S>, secret: impl Into<String>) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -75,6 +77,10 @@ where
         secret,
         secret.trim(),
         "require_api_key: secret must not carry leading/trailing whitespace"
+    );
+    assert!(
+        secret.bytes().all(|b| b == b' ' || b == b'\t' || (0x21..=0x7e).contains(&b)),
+        "require_api_key: secret must contain only visible ASCII and internal space/tab, no control characters"
     );
     let secret: Arc<str> = Arc::from(secret);
     router.layer(middleware::from_fn_with_state(secret, check_bearer_token))
