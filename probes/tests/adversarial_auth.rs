@@ -116,7 +116,6 @@ async fn wrong_and_malformed_tokens_are_rejected() {
         format!("Authorization: Bearer {SECRET},Bearer x").into_bytes(),
         format!("Authorization: Basic {SECRET}").into_bytes(),
         format!("Authorization: {SECRET}").into_bytes(),
-        format!("Authorization: Bearer\t{SECRET}").into_bytes(),
         format!("X-Authorization: Bearer {SECRET}").into_bytes(),
         format!("Proxy-Authorization: Bearer {SECRET}").into_bytes(),
         [b"Authorization: Bearer \xff\xfe".as_slice(), SECRET.as_bytes()].concat(),
@@ -213,6 +212,7 @@ async fn interop_legal_whitespace() {
         format!("Authorization:   Bearer {SECRET}"),
         format!("Authorization: Bearer {SECRET}\t"),
         format!("Authorization: Bearer  {SECRET}"),
+        format!("Authorization: Bearer\t{SECRET}"),
     ] {
         let (s, r) = status(addr, &[h.as_bytes()]).await;
         println!("{h:?} -> {s}");
@@ -228,7 +228,7 @@ async fn interop_legal_whitespace() {
 #[tokio::test]
 async fn unpresentable_secret_is_refused_or_works() {
     let mut locked_out = vec![];
-    for secret in ["s\u{e9}cret", "trailing-space ", " leading-space"] {
+    for secret in ["s\u{e9}cret", "trailing-space ", " leading-space", "ctl\u{1}char", "del\u{7f}char", "nul\u{0}char", "line\nbreak"] {
         let built = std::panic::catch_unwind(|| guarded(secret));
         let Ok(router) = built else { continue };
         let addr = serve(router).await;

@@ -6,6 +6,7 @@ ROOT="$(cd "${HERE}/.." && pwd)"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target}"
 cp "${ROOT}/Cargo.lock" "${HERE}/Cargo.lock"
 FAIL=0
+cargo build --manifest-path "${ROOT}/Cargo.toml" -j1 --bin bcr-wdc-admin-aggregator --bin bcr-wdc-core-service --bin bcr-wdc-quote-service --bin bcr-wdc-wallet-aggregator || FAIL=1
 cargo test --manifest-path "${HERE}/Cargo.toml" -j1 --no-fail-fast -- --test-threads=2 || FAIL=1
 for s in "${HERE}"/sh/*.sh; do
   [ -e "$s" ] || continue

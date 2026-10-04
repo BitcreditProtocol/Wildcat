@@ -18,6 +18,7 @@ bcr-wdc-mint-service = {path = "../crates/bcr-wdc-mint-service", features = ["te
 bcr-wdc-quote-service = {path = "../crates/bcr-wdc-quote-service", features = ["test-utils"]}
 bcr-wdc-treasury-service = {path = "../crates/bcr-wdc-treasury-service", features = ["test-utils"]}
 bcr-wdc-utils = {path = "../crates/bcr-wdc-utils", features = ["test-utils"]}
+bcr-wdc-wallet-aggregator = {path = "../crates/bcr-wdc-wallet-aggregator"}
 futures = {version = "0.3"}
 reqwest = {version = "0.13", features = ["json"]}
 serde_json = {version = "1"}

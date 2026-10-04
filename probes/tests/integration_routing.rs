@@ -200,19 +200,19 @@ async fn quote_clients_reach_core_and_treasury_split() {
 }
 
 /// core-service -> treasury: core's own `clients::TreasuryCl` (fees storage on every
-/// swap) still has a single `treasury_url`, unchanged by the branch. Pointed at
-/// treasury's public listener (what `treasury_url` named at base).
+/// swap), built from `treasury_admin_url` since the fix. Pointed at treasury's admin
+/// listener, as the renamed setting and docs/admin-listener.md say.
 #[tokio::test]
-async fn core_treasury_client_reaches_treasury_via_treasury_url() {
+async fn core_treasury_client_reaches_treasury_via_treasury_admin_url() {
     use bcr_wdc_core_service::clients::{TreasuryCl, TreasuryService as _};
     let log = Log::default();
     let treasury = treasury_split(&log).await;
     let tcl = TreasuryCl {
-        cl: Box::new(TreasuryClient::new(treasury.web.clone())),
+        cl: Box::new(TreasuryClient::new(treasury.admin.clone())),
     };
     let res = tcl.store_proofs(vec![]).await;
-    println!("store_proofs via treasury_url(public): {res:?}");
-    assert_all_served(&log, "core -> treasury (treasury_url = treasury public listener)");
+    println!("store_proofs via treasury_admin_url: {res:?}");
+    assert_all_served(&log, "core -> treasury (treasury_admin_url = treasury admin listener)");
 }
 
 /// Same call against the base topology (one merged treasury router): served.
@@ -230,19 +230,17 @@ async fn core_treasury_client_was_served_at_base() {
 }
 
 /// End to end in core-service: an unsigned swap with core's treasury client pointed at
-/// treasury's public listener. Swap finalises (inputs spent) before
-/// `treasury.store_proofs` fails, so the wallet gets an error and its inputs are gone.
-#[tokio::test]
-async fn core_swap_with_treasury_url_on_public_listener() {
+/// `treasury_url`. Returns the swap result and the inputs' states afterwards.
+async fn core_swap_via(
+    treasury_url: bcr_common::client::Url,
+) -> (Result<Vec<cashu::BlindSignature>, String>, Vec<cashu::State>) {
     use bcr_wdc_core_service::{clients, service, test_utils};
-    let log = Log::default();
-    let treasury = treasury_split(&log).await;
     let base = test_utils::test_controller();
     let svc = service::Service {
         repository: base.service.repository.clone(),
         clowder: Box::new(clients::DummyClowderClient),
         treasury: Box::new(clients::TreasuryCl {
-            cl: Box::new(TreasuryClient::new(treasury.web.clone())),
+            cl: Box::new(TreasuryClient::new(treasury_url)),
         }),
         keygen: base.service.keygen.clone(),
         min_keyset_fees_ppk: AtomicU64::new(0),
@@ -288,26 +286,73 @@ async fn core_swap_with_treasury_url_on_public_listener() {
     let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
     let res = svc.swap(proofs.clone(), blinds.clone(), commitment, now).await;
     let states = svc.check_state(&ys, now).await.expect("check_state");
-    println!("swap result: {res:?}\ninput states after swap: {states:?}");
-    println!("{}", log.dump());
-    assert!(
-        res.is_ok(),
-        "swap failed with treasury_url on treasury's public listener: {res:?}; \
-         input states afterwards: {:?}",
-        states.iter().map(|s| s.state).collect::<Vec<_>>()
+    (
+        res.map_err(|e| format!("{e:?}")),
+        states.iter().map(|s| s.state).collect(),
+    )
+}
+
+/// The same swap must end the same way with `treasury_admin_url` on treasury's admin
+/// listener as it did at base with `treasury_url` on treasury's single merged router.
+#[tokio::test]
+async fn core_swap_with_treasury_admin_url_matches_base() {
+    let base_log = Log::default();
+    let base = treasury_merged(&base_log).await;
+    let (base_res, base_states) = core_swap_via(base.url.clone()).await;
+    println!("base: {base_res:?} {base_states:?}\n{}", base_log.dump());
+    let log = Log::default();
+    let treasury = treasury_split(&log).await;
+    let (res, states) = core_swap_via(treasury.admin.clone()).await;
+    println!("split: {res:?} {states:?}\n{}", log.dump());
+    assert_all_served(&log, "core swap -> treasury admin");
+    assert_eq!(
+        (res.is_ok(), format!("{:?}", res.as_ref().err()), states),
+        (base_res.is_ok(), format!("{:?}", base_res.as_ref().err()), base_states),
+        "swap ends differently with treasury_admin_url than at base"
     );
 }
 
 /// wallet-aggregator (public) calls `treasury_client.try_htlc` (admin_ep::TRY_HTLC_SWAP)
-/// for HTLC inputs of a swap, through `treasury_client_url`, unchanged by the branch.
+/// for HTLC inputs of a swap. Real `AppConfig` (deserialized, `treasury_admin_client_url`
+/// = treasury admin listener) and real router, swap posted over TCP.
 #[tokio::test]
-async fn wallet_aggregator_try_htlc_reaches_treasury_public() {
+async fn wallet_aggregator_htlc_swap_reaches_treasury_admin() {
     let log = Log::default();
     let treasury = treasury_split(&log).await;
-    let tcl = TreasuryClient::new(treasury.web.clone());
-    let res = tcl.try_htlc(String::from("00")).await;
-    println!("try_htlc via treasury public: {res:?}");
-    assert_all_served(&log, "wallet-aggregator -> treasury (treasury_client_url = public)");
+    let (core, _) = core_split(&log).await;
+    let clowder = stub("clowder", &log).await;
+    let cfg: bcr_wdc_wallet_aggregator::AppConfig = serde_json::from_value(serde_json::json!({
+        "core_client_url": core.web.as_str(),
+        "treasury_admin_client_url": treasury.admin.as_str(),
+        "clwdr_rest_url": clowder.url.as_str(),
+    }))
+    .expect("wallet-aggregator AppConfig");
+    let ctrl = bcr_wdc_wallet_aggregator::AppController::new(cfg).await;
+    let wa = spawn_single(bcr_wdc_wallet_aggregator::routes(ctrl).await.expect("routes")).await;
+    let i = inputs();
+    let mut proof = i.proofs[0].clone();
+    proof.witness = Some(cashu::Witness::HTLCWitness(cashu::HTLCWitness {
+        preimage: "00".repeat(32),
+        signatures: None,
+    }));
+    let body = serde_json::json!({
+        "inputs": [ecash::Proof::from(proof)],
+        "outputs": i.blinds.iter().cloned().map(ecash::BlindedMessage::from).collect::<Vec<_>>(),
+        "commitment": "01".repeat(64),
+    });
+    let resp = reqwest::Client::new()
+        .post(wa.url.join("/v1/swap").unwrap())
+        .json(&body)
+        .send()
+        .await
+        .expect("post swap");
+    println!("wallet-aggregator /v1/swap -> {}", resp.status());
+    assert!(
+        log.hits().iter().any(|h| h.path.ends_with("try_htlc_swap")),
+        "try_htlc never reached treasury:\n{}",
+        log.dump()
+    );
+    assert_all_served(&log, "wallet-aggregator -> treasury (treasury_admin_client_url = admin)");
 }
 
 #[tokio::test]
@@ -339,6 +384,7 @@ async fn admin_aggregator_every_endpoint_reaches_a_serving_listener() {
         ebill_url: ebill.url.clone(),
         clowder_url: clowder.url.clone(),
         treasury_admin_url: treasury.admin.clone(),
+        admin_api_key: "integration-lens-secret".to_string(),
     };
     let ctrl = AppController::new(cfg).await;
     let agg = spawn_single(routes(ctrl)).await;
@@ -394,7 +440,9 @@ async fn admin_aggregator_every_endpoint_reaches_a_serving_listener() {
     for (method, path, body) in calls {
         let before = log.hits().len() + side.hits().len();
         let u = agg.url.join(&sub(path)).unwrap();
-        let rb = http.request(reqwest::Method::from_str(method).unwrap(), u);
+        let rb = http
+            .request(reqwest::Method::from_str(method).unwrap(), u)
+            .header("authorization", "Bearer integration-lens-secret");
         let rb = match body {
             Some(b) => rb.json(&b),
             None => rb,

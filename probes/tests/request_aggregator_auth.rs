@@ -83,6 +83,7 @@ async fn aggregator() -> SocketAddr {
         ebill_url: url(unused),
         clowder_url: url(unused),
         treasury_admin_url: url(treasury_admin),
+        admin_api_key: "test-request-lens-secret".to_string(),
     })
     .await;
     serve(routes(ctrl)).await
