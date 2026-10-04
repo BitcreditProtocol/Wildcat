@@ -396,31 +396,11 @@ impl Service {
     ) -> Result<Vec<cashu::BlindSignature>> {
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
-        let stored_commitment = match self.repository.commitment_load(&commitment).await {
-            Ok(stored) => stored,
-            Err(error @ Error::ResourceNotFound(_)) => {
-                // The commitment is gone exactly when `swap_finalize` has already run for it
-                // (it deletes the commitment on success). If these inputs are already spent and
-                // the client's own outputs and this commitment's fee outputs already carry a
-                // signature, this is a retry of a swap that already finalized but whose reply or
-                // Clowder signal was lost: signal Clowder again with the original fees and replay
-                // the stored signatures rather than fail a swap that already happened.
-                let Some((fees, signatures)) = self
-                    .recover_finalized_swap(&inputs, &outputs, &commitment)
-                    .await?
-                else {
-                    return Err(error);
-                };
-                self.clowder
-                    .signal_swap_event(inputs, outputs, fees, commitment, signatures.clone())
-                    .await?;
-                tracing::info!(
-                    "replayed stored signatures for a finalized swap retry, commitment {commitment}"
-                );
-                return Ok(signatures);
-            }
-            Err(error) => return Err(error),
-        };
+        // The commitment is gone exactly when `swap_finalize` has already run for it (it
+        // deletes the commitment on success). Nothing here can tell that retry apart from a
+        // forged commitment over someone else's already-spent inputs, so both fail the request
+        // rather than re-signing or re-signaling Clowder for a commitment that isn't this one's.
+        let stored_commitment = self.repository.commitment_load(&commitment).await?;
         let StoredCommitment {
             outputs: committed_outputs,
             expiration,
@@ -494,52 +474,6 @@ impl Service {
             )
             .await?;
         Ok(signatures)
-    }
-
-    /// `Some((fees, signatures))` when every input is already spent and every requested output
-    /// and every fee output derived from `commitment` already carries a stored signature: i.e.
-    /// this exact swap already finalized. `None` otherwise, meaning the missing commitment is a
-    /// genuine error rather than a retry.
-    async fn recover_finalized_swap(
-        &self,
-        inputs: &[cashu::Proof],
-        outputs: &[cashu::BlindedMessage],
-        commitment: &schnorr::Signature,
-    ) -> Result<Option<(Vec<cashu::BlindSignature>, Vec<cashu::BlindSignature>)>> {
-        for proof in inputs {
-            let y = proof.y()?;
-            match self.repository.proofs_contains(y).await? {
-                Some(state) if matches!(state.state, cashu::State::Spent) => {}
-                _ => return Ok(None),
-            }
-        }
-        let Some(signatures) = self.load_signatures(outputs).await? else {
-            return Ok(None);
-        };
-        let fee_blinds = self
-            .generate_fees_premints(inputs, outputs, commitment)
-            .await?
-            .iter()
-            .flat_map(cashu::PreMintSecrets::blinded_messages)
-            .collect::<Vec<_>>();
-        let Some(fees) = self.load_signatures(&fee_blinds).await? else {
-            return Ok(None);
-        };
-        Ok(Some((fees, signatures)))
-    }
-
-    async fn load_signatures(
-        &self,
-        blinds: &[cashu::BlindedMessage],
-    ) -> Result<Option<Vec<cashu::BlindSignature>>> {
-        let mut signatures = Vec::with_capacity(blinds.len());
-        for blind in blinds {
-            match self.repository.signature_load(blind).await? {
-                Some(signature) => signatures.push(signature),
-                None => return Ok(None),
-            }
-        }
-        Ok(Some(signatures))
     }
 
     /// Fee outputs are derived from `commitment`, so a retry of the same swap regenerates
@@ -1119,7 +1053,7 @@ mod tests {
     );
 
     #[tokio::test]
-    async fn swap_retry_after_notify_failure_resignals_clowder_with_original_fees() {
+    async fn swap_retry_after_notify_failure_never_resignals_clowder() {
         let repository = Arc::new(inmemory::Repository::default());
         let (_, proofs, outputs, commitment, now) = prepare_swap_with(
             &repository,
@@ -1135,17 +1069,13 @@ mod tests {
         let signalled: Arc<std::sync::Mutex<Vec<SignalledSwap>>> = Arc::default();
         let captured = signalled.clone();
         let mut clowder = MockClowderClient::new();
-        clowder.expect_signal_swap_event().times(2).returning(
-            move |_, _, fees, commitment, signatures| {
-                let mut captured = captured.lock().unwrap();
-                captured.push((fees, commitment, signatures));
-                if captured.len() == 1 {
-                    Err(Error::ServiceUnavailable)
-                } else {
-                    Ok(())
-                }
-            },
-        );
+        clowder
+            .expect_signal_swap_event()
+            .times(1)
+            .returning(move |_, _, fees, commitment, signatures| {
+                captured.lock().unwrap().push((fees, commitment, signatures));
+                Err(Error::ServiceUnavailable)
+            });
         let mut treasury = MockTreasuryService::new();
         treasury
             .expect_store_proofs()
@@ -1164,29 +1094,18 @@ mod tests {
             repository.proofs_contains(proofs[0].y().unwrap()).await.unwrap(),
             Some(state) if matches!(state.state, cashu::State::Spent)
         ));
-        let (first_fees, _, first_signatures) = signalled.lock().unwrap()[0].clone();
-        assert_eq!(
-            first_fees
-                .iter()
-                .fold(cashu::Amount::ZERO, |acc, fee| acc + fee.amount),
-            cashu::Amount::from(2u64)
-        );
 
+        // The swap is already finalized (persisted and signed), but nothing can tell this
+        // retry apart from a forged commitment over someone else's already-spent inputs: the
+        // retry fails too, and Clowder is not told a second time.
         let retried = service
             .swap(proofs.clone(), outputs.clone(), commitment, now)
-            .await
-            .expect("retrying the same finalized swap must return its stored signatures");
-        assert_eq!(retried, first_signatures);
-        for (blind, signature) in outputs.iter().zip(retried.iter()) {
-            assert_eq!(
-                repository.signature_load(blind).await.unwrap().as_ref(),
-                Some(signature)
-            );
-        }
-        assert_eq!(
-            signalled.lock().unwrap()[1],
-            (first_fees, commitment, retried)
+            .await;
+        assert!(
+            matches!(retried, Err(Error::ResourceNotFound(_))),
+            "retrying a finalized swap must not replay it, got {retried:?}"
         );
+        assert_eq!(signalled.lock().unwrap().len(), 1, "Clowder signalled only once");
 
         let other_commitment = signatures_test::random_schnorr_signature();
         let mismatched = service.swap(proofs, outputs, other_commitment, now).await;
@@ -1194,7 +1113,7 @@ mod tests {
             matches!(mismatched, Err(Error::ResourceNotFound(_))),
             "a commitment that did not finalize these inputs must not replay them, got {mismatched:?}"
         );
-        assert_eq!(signalled.lock().unwrap().len(), 2);
+        assert_eq!(signalled.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

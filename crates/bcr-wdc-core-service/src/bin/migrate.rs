@@ -1,5 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
+use bcr_common::cashu;
 use bcr_wdc_core_service::{
     config::App as AppCfg,
     persistence::{sqlx, surreal, Repository},
@@ -151,6 +152,8 @@ async fn main() {
     // committed / reserved / spent. SurrealDB keeps them apart and lets the same `y`
     // appear in all three, so migrating in this order lets the spend win: `insert_v0`
     // upgrades a committed or reserved row to a spent one.
+    let mut committed_ys: std::collections::HashSet<cashu::PublicKey> =
+        std::collections::HashSet::new();
     if !commitments_migrated {
         let commitments = surreal_repository
             .dump_commitments()
@@ -159,6 +162,7 @@ async fn main() {
         println!("Found {} commitments in SurrealDB", commitments.len());
         for commitment in commitments {
             let signature = commitment.signature;
+            committed_ys.extend(commitment.inputs.iter().cloned());
             if let Err(error) = sqlx_repository
                 .commitment_store(
                     commitment.inputs,
@@ -188,6 +192,11 @@ async fn main() {
             .expect("Failed to list reserved ys from SurrealDB");
         println!("Found {} reserved ys in SurrealDB", reserved_ys.len());
         for (y, deadline) in reserved_ys {
+            // A pending swap commitment reserves its own inputs, so the same `y` can show
+            // up here too: the commitment already holds it, so skip it rather than fail.
+            if committed_ys.contains(&y) {
+                continue;
+            }
             if let Err(error) = sqlx_repository.ys_store(vec![y], deadline).await {
                 eprintln!("Failed to migrate reserved y {y}: {error}");
                 std::process::exit(1);

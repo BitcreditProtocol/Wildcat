@@ -707,6 +707,11 @@ impl persistence::Repository for Repository {
         }
         if !input_keys.is_empty() {
             let signatures = vec![row.signature.clone(); input_keys.len()];
+            // A row claimed here is this request's own reservation only if its deadline is
+            // this commitment's own expiry: `commit_to_swap_inner` reserves with that exact
+            // deadline just before calling this. Any other reservation (a melt, an admin
+            // RESERVE, or another swap commit) has its own deadline and is left alone, so the
+            // conflict below rejects it instead of letting this commitment take it over.
             let result = sqlx::query!(
                 r#"
                 INSERT INTO core_proofs (y, signature)
@@ -714,9 +719,11 @@ impl persistence::Repository for Repository {
                 ON CONFLICT (y) DO UPDATE
                 SET signature = EXCLUDED.signature, deadline = NULL
                 WHERE core_proofs.signature IS NULL AND core_proofs.blob IS NULL
+                    AND core_proofs.deadline = $3::timestamptz
                 "#,
                 &input_keys,
-                &signatures
+                &signatures,
+                row.expiration
             )
             .execute(&mut *tx)
             .await

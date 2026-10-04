@@ -1287,18 +1287,34 @@ mod tests {
             swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
         let ys = proofs.ys().unwrap();
         let deadline = time::OffsetDateTime::now_utc() + time::Duration::minutes(1);
+        // The same `deadline` reserves and then is handed to `commitment_store`, exactly as
+        // `commit_to_swap_inner` reserves with its own `expiry` just before storing the
+        // commitment with that same value: only this makes the reservation claimable as "its
+        // own" rather than someone else's (a melt or an admin RESERVE).
         db.ys_store(ys.clone(), deadline).await.unwrap();
-        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
-
-        let other_commitment = schnorr::Signature::from_slice(&[43u8; 64]).unwrap();
         let bs = blinds.iter().map(|b| b.blinded_secret).collect::<Vec<_>>();
         let kp = core::generate_random_keypair();
+        db.commitment_store(
+            ys.clone(),
+            bs,
+            deadline,
+            kp.public_key().into(),
+            commitment,
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+
+        let other_commitment = schnorr::Signature::from_slice(&[43u8; 64]).unwrap();
+        let other_bs = blinds.iter().map(|b| b.blinded_secret).collect::<Vec<_>>();
+        let other_kp = core::generate_random_keypair();
         let result = db
             .commitment_store(
                 ys,
-                bs,
+                other_bs,
                 deadline,
-                kp.public_key().into(),
+                other_kp.public_key().into(),
                 other_commitment,
                 [0u8; 32],
                 SignatureOwner::Unsigned,

@@ -901,9 +901,12 @@ async fn probe_replay_with_foreign_commitment() {
     per_backend!(replay_with_foreign_commitment);
 }
 
-/// When Clowder is unreachable after the swap persisted, the request fails; a retry (also
-/// after a restart) returns the same signatures, streams them, and the fee proofs reach the
-/// treasury exactly once.
+/// When Clowder is unreachable after the swap persisted, the request fails. There is no safe
+/// way left to tell that a retry with the same commitment is this same swap rather than a
+/// forged commitment over someone else's already-spent inputs (see
+/// `probe_replay_with_foreign_commitment`), so the retry (also after a restart) fails too,
+/// even though the signatures already exist in storage: exactly one Clowder signal is ever
+/// sent for this swap.
 async fn stream_failure_then_retry(name: &'static str) {
     let h = Harness::new(name).await;
     let t = now();
@@ -917,30 +920,23 @@ async fn stream_failure_then_retry(name: &'static str) {
     let first = h.swap(&proofs, &blinds, c, t).await;
     assert!(first.is_err(), "swap reported success though Clowder was not told");
     let restarted = h.restarted();
-    let sigs = restarted
+    let retry = restarted
         .swap(h.treasury.as_ref(), proofs.clone(), blinds.clone(), c, t)
-        .await
-        .expect("retry after restart");
-    let stored: Vec<_> = {
-        let mut v = Vec::new();
-        for b in &blinds {
-            v.push(h.repo.signature_load(b).await.unwrap().unwrap());
-        }
-        v
-    };
-    assert_eq!(sigs, stored);
-    assert_eq!(h.signals().len(), 1);
-    assert_eq!(h.signals()[0].signatures, sigs);
-    let fee_total: u64 = h.treasury.proofs.lock().unwrap().iter().map(|p| u64::from(p.amount)).sum();
-    assert_eq!(fee_total, 6, "treasury fee proofs after retry");
+        .await;
+    assert!(
+        retry.is_err(),
+        "retry after restart replayed a finalized swap instead of failing"
+    );
+    assert_eq!(h.signals().len(), 0, "Clowder was never successfully told");
 }
 #[tokio::test]
 async fn probe_stream_failure_then_retry() {
     per_backend!(stream_failure_then_retry);
 }
 
-/// A treasury outage after the swap persisted: once the retry succeeds, the fee proofs are in
-/// the treasury (they are not lost) and Clowder was told.
+/// A treasury outage after the swap persisted: the request fails, and so does a retry with the
+/// same commitment, for the same reason as `stream_failure_then_retry`. The fee proofs already
+/// signed are not re-sent to the treasury either, since the retry never reaches that step.
 async fn treasury_failure_then_retry(name: &'static str) {
     let h = Harness::new(name).await;
     let t = now();
@@ -952,14 +948,42 @@ async fn treasury_failure_then_retry(name: &'static str) {
         .expect("commit");
     h.treasury.fail.store(1, Ordering::SeqCst);
     assert!(h.swap(&proofs, &blinds, c, t).await.is_err());
-    h.swap(&proofs, &blinds, c, t).await.expect("retry");
-    assert_eq!(h.signals().len(), 1, "Clowder signals");
-    let fee_total: u64 = h.treasury.proofs.lock().unwrap().iter().map(|p| u64::from(p.amount)).sum();
-    assert_eq!(fee_total, 8, "fee proofs lost: treasury holds {fee_total} of 8");
+    let retry = h.swap(&proofs, &blinds, c, t).await;
+    assert!(retry.is_err(), "retry replayed a finalized swap instead of failing");
+    assert_eq!(h.signals().len(), 0, "Clowder signals");
 }
 #[tokio::test]
 async fn probe_treasury_failure_then_retry() {
     per_backend!(treasury_failure_then_retry);
+}
+
+/// Finding #1 (critical): a retry of a finalized swap must not be able to smuggle a
+/// commitment the mint never issued through to Clowder. Even when the inputs are spent and the
+/// outputs already carry a signature (an honest retry would look identical), a forged
+/// commitment over them is rejected outright rather than replayed.
+async fn finalized_swap_retry_never_signals_twice(name: &'static str) {
+    let h = Harness::new(name).await;
+    let t = now();
+    let proofs = h.proofs(&[1]);
+    let blinds = h.blinds(&[1]);
+    let (_, c) = h
+        .commit(&proofs, &blinds, in_secs(t, 120), wallet(), t)
+        .await
+        .expect("commit");
+    h.swap(&proofs, &blinds, c, t).await.expect("swap");
+    assert_eq!(h.signals().len(), 1, "one Clowder signal for the original swap");
+    for _ in 0..8 {
+        let _ = h.swap(&proofs, &blinds, c, t).await;
+    }
+    assert_eq!(
+        h.signals().len(),
+        1,
+        "every retry of a finalized swap must not re-signal Clowder"
+    );
+}
+#[tokio::test]
+async fn probe_finalized_swap_retry_never_signals_twice() {
+    per_backend!(finalized_swap_retry_never_signals_twice);
 }
 
 // ------------------------------------------------------------------ probes: over HTTP
@@ -1074,4 +1098,44 @@ async fn probe_http_replay_with_foreign_commitment() {
     let forged = schnorr::Signature::from_slice(&[0x5a; 64]).unwrap();
     let r = client.swap(proofs, blinds, forged).await;
     assert!(r.is_err(), "POST swap with a never-issued commitment answered 200 with signatures");
+}
+
+// ------------------------------------------------------------------ probes: persistence (sqlx only)
+
+/// Finding #2 (high, sqlx/Postgres only): a melt or admin reservation holds a `y` with its own
+/// deadline. A swap commitment over that same input must not claim the row: only a reservation
+/// made with this commitment's own expiry (the one `commit_to_swap_inner` takes just before
+/// calling this) may be claimed.
+#[tokio::test]
+async fn probe_commitment_store_cannot_steal_other_reservation() {
+    let repo = sqlx_repo().await;
+    let t = now();
+    let y = core_tests::generate_random_ecash_proofs(
+        &core_tests::generate_random_ecash_keyset().1,
+        &[cashu::Amount::from(8u64)],
+    )
+    .ys()
+    .unwrap()[0];
+    let melt_deadline = t + time::Duration::seconds(600);
+    repo.ys_store(vec![y], melt_deadline).await.expect("melt/admin reservation");
+    let signature = schnorr::Signature::from_slice(&[0x11; 64]).unwrap();
+    let outcome = repo
+        .commitment_store(
+            vec![y],
+            vec![],
+            t + time::Duration::seconds(120),
+            wallet().into(),
+            signature,
+            [0u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await;
+    assert!(
+        outcome.is_err(),
+        "a swap commitment took over a reservation it never made"
+    );
+    assert!(
+        repo.ys_contains(&[y]).await.unwrap()[0],
+        "the melt/admin reservation must still hold the input"
+    );
 }
