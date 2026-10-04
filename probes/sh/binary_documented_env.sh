@@ -64,7 +64,7 @@ EOF
 # check <binary> <toml-fn> <key> <ENV_VAR> <value>
 check() {
   local bin="$1" tomlfn="$2" key="$3" var="$4" val="$5" dir out
-  [ "${CONTROL:-}" = 1 ] || grep -q "${var}" "${DOC}" || { echo "  (${var} not documented, skipped)"; return; }
+  grep -q "${var}" "${DOC}" || { echo "  (${var} not documented, skipped)"; return; }
   dir="$(mktemp -d)"
   "${tomlfn}" "${key}" > "${dir}/config.toml"
   out="$(cd "${dir}" && env -i PATH="${PATH}" CORE_SERVICE_MNEMONIC="${MNEMONIC}" "${var}=${val}" \
@@ -73,7 +73,7 @@ check() {
   rm -rf "${dir}"
   if grep -qE "missing (configuration )?(field|required setting) [\"\`]([a-z_]+\.)?${key}[\"\`]" <<<"${out}"; then
     echo "  ${var}: IGNORED -> $(grep -m1 -oE "missing (configuration )?(field|required setting) [\"\`]([a-z_]+\.)?${key}[\"\`]" <<<"${out}")"
-    [ "${CONTROL:-}" = 1 ] || FAILS+=("${bin}: documented ${var} does not set ${key}")
+    FAILS+=("${bin}: documented ${var} does not set ${key}")
   else
     echo "  ${var}: honoured (exit ${st}; next startup step: $(grep -m1 -oE "panicked at [^:]+:[0-9]+|Failed to [a-z ]+|Error[^,]{0,60}" <<<"${out}" || echo 'still running'))"
   fi
@@ -87,11 +87,9 @@ echo "== core-service"
 check bcr-wdc-core-service core_toml treasury_admin_url CORE_SERVICE__APPCFG__TREASURY_ADMIN_URL http://127.0.0.1:9
 check bcr-wdc-core-service core_toml admin_bind_address CORE_SERVICE__ADMIN_BIND_ADDRESS 127.0.0.1:0
 echo "== quote-service"
-check bcr-wdc-quote-service quote_toml core_admin_url QUOTE_SERVICE__CORE_ADMIN_URL http://127.0.0.1:9
-check bcr-wdc-quote-service quote_toml treasury_admin_url QUOTE_SERVICE__TREASURY_ADMIN_URL http://127.0.0.1:9
+check bcr-wdc-quote-service quote_toml core_admin_url QUOTE_SERVICE__APPCFG__CORE_ADMIN_URL http://127.0.0.1:9
+check bcr-wdc-quote-service quote_toml treasury_admin_url QUOTE_SERVICE__APPCFG__TREASURY_ADMIN_URL http://127.0.0.1:9
 check bcr-wdc-quote-service quote_toml admin_bind_address QUOTE_SERVICE__ADMIN_BIND_ADDRESS 127.0.0.1:0
-echo "  control (undocumented, nested under APPCFG):"
-CONTROL=1 check bcr-wdc-quote-service quote_toml core_admin_url QUOTE_SERVICE__APPCFG__CORE_ADMIN_URL http://127.0.0.1:9
 echo "== wallet-aggregator"
 check bcr-wdc-wallet-aggregator wallet_toml treasury_admin_client_url WALLET_AGGREGATOR__APPCFG__TREASURY_ADMIN_CLIENT_URL http://127.0.0.1:9
 
