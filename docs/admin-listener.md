@@ -31,6 +31,13 @@ swap, so its `treasury_client_url` setting is renamed `treasury_admin_client_url
 (env `WALLET_AGGREGATOR__APPCFG__TREASURY_ADMIN_CLIENT_URL`) and must point at
 treasury's admin listener.
 
+treasury-service itself calls core-service's admin endpoints (sign, burn, recover,
+reserve, verify) from its ebill, onchain and foreign clients, so it reads a second
+`appcfg.core_admin_url` (env `TREASURY_SERVICE__APPCFG__CORE_ADMIN_URL`, no default,
+next to the existing `core_url`) and must point it at core-service's admin listener;
+`core_url` (public, unchanged) still serves `keyset_info`, `keys`,
+`list_keyset_info`, `check_state`.
+
 ## quote-service's own outbound admin clients
 
 quote-service calls core-service's and treasury-service's admin endpoints
@@ -79,17 +86,19 @@ core-service's admin routes (`/admin/keys`, `/admin/keys/sign`,
 `/admin/keys/verify/proof`, `/admin/keys/verify/fingerprint`, `/admin/burn`,
 `/admin/swap/recover`, `/admin/reserve`) are called internally through
 `bcr_common::client::core::Client` (re-exported from `client::admin::core::Client`),
-the same client type used for its public (`web_ep`) endpoints. Today every caller
-below points that one client at core-service's public address; once each caller is
-updated it must point at the admin address instead for the methods marked admin:
+the same client type used for its public (`web_ep`) endpoints. Every caller below is
+now pointed at core-service's admin address for the methods marked admin; the
+methods marked public still use core-service's public address:
 
-- `bcr-wdc-treasury-service/src/ebill/client.rs`: `sign`, `burn`, `recover` (admin);
-  `keyset_info` (public)
-- `bcr-wdc-treasury-service/src/onchain/clients.rs`: `sign`, `burn`, `recover`,
-  `reserve`, `verify_fingerprint`, `verify_proof` (admin); `keyset_info`, `keys`,
-  `list_keyset_info`, `check_state` (public)
-- `bcr-wdc-treasury-service/src/foreign/clients.rs`: `sign`, `burn` (admin); `keys`,
-  `check_state` (public)
+- `bcr-wdc-treasury-service` (`src/lib.rs`): builds a second `CoreClient` from
+  `appcfg.core_admin_url` (env `TREASURY_SERVICE__APPCFG__CORE_ADMIN_URL`, no
+  default, next to the existing `core_url`) and passes it to:
+  - `src/ebill/client.rs`: `sign`, `burn`, `recover` (admin); `keyset_info` (public)
+  - `src/onchain/clients.rs`: `sign`, `burn`, `recover`, `reserve`,
+    `verify_fingerprint`, `verify_proof` (admin); `keyset_info`, `keys`,
+    `list_keyset_info`, `check_state` (public)
+  - `src/foreign/clients.rs`: `sign`, `burn` (admin); `keys`, `check_state`
+    (public)
 - `bcr-wdc-quote-service/src/client.rs`: `sign`, `new_keyset` (admin, now pointed at
   `core_admin_url`); `list_keyset_info`, `keys` (public, unchanged) — done
 - `bcr-wdc-admin-aggregator/src/lib.rs`: `new_keyset` (admin, now pointed at
