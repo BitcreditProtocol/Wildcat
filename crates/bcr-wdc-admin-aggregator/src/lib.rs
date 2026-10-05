@@ -127,6 +127,8 @@ pub mod endpoints {
     pub const GET_CLOWDER_STATUS: &str = "/v1/admin/clowder/status/{pk}";
     pub const GET_CLOWDER_ADD_RESERVE: &str = "/v1/admin/clowder/add_reserve/{rid}";
     pub const POST_CLOWDER_ADD_RESERVE: &str = "/v1/admin/clowder/add_reserve";
+    pub const GET_CLOWDER_EIOU_DEPOSIT: &str = "/v1/admin/clowder/eiou_deposit/{rid}";
+    pub const POST_CLOWDER_EIOU_DEPOSIT: &str = "/v1/admin/clowder/eiou_deposit";
     pub const GET_CLOWDER_ONCHAIN_HISTORY: &str = "/v1/admin/clowder/history/onchain";
     pub const GET_CLOWDER_KEYSETS_BALANCE: &str = "/v1/admin/clowder/history/keysets";
     // Treasury-Client
@@ -226,6 +228,14 @@ pub fn routes(ctrl: AppController) -> Router {
             post(admin::post_add_reserve),
         )
         .route(
+            endpoints::GET_CLOWDER_EIOU_DEPOSIT,
+            get(admin::get_eiou_deposit_status),
+        )
+        .route(
+            endpoints::POST_CLOWDER_EIOU_DEPOSIT,
+            post(admin::post_eiou_deposit),
+        )
+        .route(
             endpoints::GET_CLOWDER_ONCHAIN_HISTORY,
             get(admin::get_onchain_history),
         )
@@ -287,6 +297,9 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_clowder::Coverage,
         wire_clowder::AddReserveRequest,
         wire_clowder::AddReserveResponse,
+        wire_clowder::EiouDepositRequest,
+        wire_clowder::EiouDepositResponse,
+        wire_clowder::EiouDepositStatus,
         wire_clowder::OnchainOperationsResponse,
         wire_clowder::KeysetsBalanceResponse,
         // treasury service
@@ -337,6 +350,8 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_clowder_status,
         admin::get_add_reserve_status,
         admin::post_add_reserve,
+        admin::get_eiou_deposit_status,
+        admin::post_eiou_deposit,
         admin::get_onchain_history,
         admin::get_keysets_balance,
         // treasury service
