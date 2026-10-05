@@ -50,6 +50,9 @@ impl axum::response::IntoResponse for Error {
             Error::QuotesClient(QuotesClientError::ResourceNotFound(e)) => {
                 (StatusCode::NOT_FOUND, e.to_string())
             }
+            Error::ClowderClient(ClowderClientError::ResourceNotFound(e)) => {
+                (StatusCode::NOT_FOUND, e.to_string())
+            }
             Error::ResourceNotFound(e) => {
                 (StatusCode::NOT_FOUND, format!("resource not found: {e}"))
             }

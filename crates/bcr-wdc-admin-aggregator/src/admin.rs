@@ -839,6 +839,43 @@ pub async fn get_add_reserve_status(
 }
 
 #[utoipa::path(
+    post,
+    path = endpoints::POST_CLOWDER_EIOU_DEPOSIT,
+    request_body(content = wire_clowder::EiouDepositRequest, content_type = "application/json"),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::EiouDepositResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn post_eiou_deposit(
+    State(ctrl): State<AppController>,
+    Json(req): Json<wire_clowder::EiouDepositRequest>,
+) -> Result<Json<wire_clowder::EiouDepositResponse>> {
+    let response = ctrl.clwdr_cl.add_eiou(&req).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = endpoints::GET_CLOWDER_EIOU_DEPOSIT,
+    params(
+        ("rid" = Uuid, Path, description = "the eiou deposit request id")
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::EiouDepositResponse, content_type = "application/json"),
+        (status = 404, description = "eiou deposit id not found"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_eiou_deposit_status(
+    State(ctrl): State<AppController>,
+    Path(rid): Path<Uuid>,
+) -> Result<Json<wire_clowder::EiouDepositResponse>> {
+    let response = ctrl.clwdr_cl.get_eiou(rid).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
     get,
     path = endpoints::GET_CLOWDER_ONCHAIN_HISTORY,
     params(
