@@ -12,7 +12,7 @@ pub mod surreal;
 mod tests {
     use super::*;
     use crate::{ebill, error::Error, foreign, onchain, vault};
-    use bcr_common::{cashu, core, core_tests};
+    use bcr_common::{cashu, core, core_tests, wire::exchange::OfflineExchangeRequest};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use std::str::FromStr;
     use uuid::Uuid;
@@ -251,6 +251,111 @@ mod tests {
         assert_eq!(balances.len(), 2);
         assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
         assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
+    }
+
+    fn reservation(exchange_digest: [u8; 32]) -> foreign::OfflineReservation {
+        foreign::OfflineReservation {
+            exchange_digest,
+            alpha_id: core::generate_random_keypair().public_key(),
+            evidence_digest: [2u8; 32],
+            state: foreign::ReservationState::Issued {
+                proofs: generate_test_proofs(2),
+                expires_at: time::OffsetDateTime::from_unix_timestamp(1_900_000_000).unwrap(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_reservation() {
+        foreign_offline_reservation(inmemory::OfflineRepository::default()).await;
+        foreign_offline_reservation(init_surreal_foreign_offline_db().await).await;
+    }
+    async fn foreign_offline_reservation(db: impl foreign::OfflineRepository) {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/offline_exchange_retry.json"
+        ))
+        .unwrap();
+        let request: OfflineExchangeRequest =
+            serde_json::from_value(fixture["request"].clone()).unwrap();
+        let ys: Vec<cashu::PublicKey> = (0..3)
+            .map(|_| cashu::PublicKey::from(core::generate_random_keypair().public_key()))
+            .collect();
+        let first = reservation([1u8; 32]);
+        let second = reservation([2u8; 32]);
+        assert_eq!(db.search_reservation(&ys).await.unwrap(), None);
+        assert!(db
+            .reserve_exchange(first.clone(), &ys[..1], vec![], vec![])
+            .await
+            .unwrap());
+        assert!(!db
+            .reserve_exchange(
+                second.clone(),
+                &[ys[1], ys[0]],
+                request.fingerprints.clone(),
+                request.hashes.clone()
+            )
+            .await
+            .unwrap());
+        assert_eq!(db.search_reservation(&ys[1..2]).await.unwrap(), None);
+        assert!(db.search_fp(&request.hashes[0]).await.unwrap().is_none());
+        assert!(!db
+            .reserve_exchange(first.clone(), &ys[2..], vec![], vec![])
+            .await
+            .unwrap());
+        assert_eq!(db.search_reservation(&ys[2..]).await.unwrap(), None);
+        assert!(db
+            .reserve_exchange(
+                second.clone(),
+                &ys[1..],
+                request.fingerprints.clone(),
+                request.hashes.clone()
+            )
+            .await
+            .unwrap());
+        assert_eq!(
+            db.search_reservation(&ys[2..]).await.unwrap(),
+            Some(second.clone())
+        );
+        let (fp_mint, _) = db.search_fp(&request.hashes[0]).await.unwrap().unwrap();
+        assert_eq!(fp_mint, second.alpha_id);
+
+        for _ in 0..2 {
+            db.complete_reservation(first.exchange_digest)
+                .await
+                .unwrap();
+        }
+        let foreign::ReservationState::Issued { proofs, .. } = first.state else {
+            unreachable!()
+        };
+        let completed = db.search_reservation(&ys[..1]).await.unwrap().unwrap();
+        assert_eq!(completed.state, foreign::ReservationState::Complete(proofs));
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_reservation_store_issued_idempotent() {
+        foreign_online_store_issued_idempotent(init_inmemory_foreign_online_db()).await;
+        foreign_online_store_issued_idempotent(init_surreal_foreign_online_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_reservation_store_issued_idempotent_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_store_issued_idempotent(db).await;
+    }
+    async fn foreign_online_store_issued_idempotent(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-replay");
+        let now = time::OffsetDateTime::now_utc();
+        let mut proofs = generate_test_proofs(2);
+        for _ in 0..2 {
+            db.store_issued(hash, now, proofs.clone()).await.unwrap();
+        }
+        let mut expired = db
+            .list_expired_issued(now + time::Duration::hours(1))
+            .await
+            .unwrap();
+        expired.sort_by_key(|p| p.y().unwrap());
+        proofs.sort_by_key(|p| p.y().unwrap());
+        assert_eq!(expired, proofs);
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository
