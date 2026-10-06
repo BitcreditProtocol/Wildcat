@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO core_proofs (y, signature)\n                SELECT * FROM UNNEST($1::text[], $2::text[])\n                ON CONFLICT (y) DO UPDATE\n                SET signature = EXCLUDED.signature, deadline = NULL\n                WHERE core_proofs.signature IS NULL AND core_proofs.blob IS NULL\n                    AND core_proofs.deadline = $3::timestamptz\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a9f39d1969431f9fad7133ca718310c38890c27926edd87206e0ba1dddee75a"
+}

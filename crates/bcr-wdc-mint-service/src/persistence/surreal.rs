@@ -331,6 +331,10 @@ impl persistence::Repository for Repository {
         Repository::ys_store(self, inputs, deadline).await
     }
 
+    async fn ys_release(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        Repository::ys_release(self, inputs, deadline).await
+    }
+
     async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
         Repository::ys_contains(self, inputs).await
     }
@@ -827,6 +831,21 @@ impl Repository {
                 }
                 _ => Error::ReservedYsRepository(anyhow!(e)),
             })?;
+        Ok(())
+    }
+
+    async fn ys_release(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        let rids: Vec<RecordId> = inputs
+            .iter()
+            .map(|y| cpk_to_record_id(RESERVED_YS_TABLE, *y))
+            .collect();
+        self.db
+            .query("DELETE FROM type::table($table) WHERE id IN $rids AND deadline = $deadline")
+            .bind(("table", RESERVED_YS_TABLE))
+            .bind(("rids", rids))
+            .bind(("deadline", bcr_wdc_utils::surreal::tstamp_param(deadline)))
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
     }
 

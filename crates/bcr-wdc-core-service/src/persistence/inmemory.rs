@@ -347,6 +347,16 @@ impl persistence::Repository for Repository {
         Ok(())
     }
 
+    async fn ys_release(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        let mut locked = self.reserved_ys.write().unwrap();
+        for input in &inputs {
+            if locked.get(input) == Some(&deadline) {
+                locked.remove(input);
+            }
+        }
+        Ok(())
+    }
+
     async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>> {
         let locked = self.reserved_ys.read().unwrap();
         let results: Vec<bool> = inputs.iter().map(|y| locked.contains_key(y)).collect();

@@ -710,10 +710,14 @@ impl persistence::Repository for Repository {
                 r#"
                 INSERT INTO core_proofs (y, signature)
                 SELECT * FROM UNNEST($1::text[], $2::text[])
-                ON CONFLICT (y) DO NOTHING
+                ON CONFLICT (y) DO UPDATE
+                SET signature = EXCLUDED.signature, deadline = NULL
+                WHERE core_proofs.signature IS NULL AND core_proofs.blob IS NULL
+                    AND core_proofs.deadline = $3::timestamptz
                 "#,
                 &input_keys,
-                &signatures
+                &signatures,
+                row.expiration
             )
             .execute(&mut *tx)
             .await
@@ -900,6 +904,26 @@ impl persistence::Repository for Repository {
         tx.commit()
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn ys_release(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        let y_strs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM core_proofs
+            WHERE y = ANY($1::text[]) AND deadline = $2::timestamptz
+                AND signature IS NULL AND blob IS NULL
+            "#,
+            &y_strs,
+            deadline
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
     }
 
