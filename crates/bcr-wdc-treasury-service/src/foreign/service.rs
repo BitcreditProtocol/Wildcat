@@ -357,6 +357,7 @@ async fn try_offline_htlc_swap(
             "preimage does not match fingerprint",
         )));
     }
+    core::signature::verify_spending_conditions(&proof)?;
     let keys = clowder.get_keyset(&mint_id, &proof.keyset_id).await?;
     let key = keys
         .keys
@@ -423,6 +424,27 @@ mod tests {
         )
         .unwrap();
         (proof, preimage)
+    }
+
+    fn generate_proof_for_offline_exchange(
+        keyset: &ecash::MintKeySet,
+        amount: cashu::Amount,
+        secret: cashu::secret::Secret,
+    ) -> cashu::Proof {
+        let (blinded, r) = cashu::dhke::blind_message(secret.as_bytes(), None).unwrap();
+        let blinded_message = cashu::BlindedMessage::new(amount, keyset.id.into(), blinded);
+        let signature = core::signature::sign_ecash(keyset, &blinded_message).unwrap();
+        core::signature::unblind_ecash_signature(
+            &keys_utils::to_keyset(keyset, None),
+            cashu::PreMint {
+                secret,
+                blinded_message,
+                r,
+                amount,
+            },
+            signature,
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -1046,15 +1068,11 @@ mod tests {
         let mut clowder = crate::foreign::MockClowderClient::new();
         let factory = crate::foreign::MockMintClientFactory::new();
         let foreign_kp = core::generate_random_keypair();
-        let wallet_kp = core::generate_random_keypair();
-        let myself_kp = core::generate_random_keypair();
         let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
-        let (foreign_proof, _) = generate_htlc_proof_for_online_exchange(
-            &foreign_keyset.clone(),
+        let foreign_proof = generate_proof_for_offline_exchange(
+            &foreign_keyset,
             cashu::Amount::from(256),
-            time::OffsetDateTime::now_utc() + time::Duration::minutes(90),
-            cashu::PublicKey::from(wallet_kp.public_key()),
-            cashu::PublicKey::from(myself_kp.public_key()),
+            cashu::secret::Secret::new(rand::random::<u64>().to_string()),
         );
         // Offline-exchange preimage is the original alpha proof's secret string (not 32-byte hex),
         // so the online path decodes nothing and falls through to the offline swap.
@@ -1107,5 +1125,44 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(cashu::Amount::from(256), amount);
+    }
+
+    #[tokio::test]
+    async fn try_swap_htlc_offline_rejects_locked_secret() {
+        let owner = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let p2pk = cashu::SpendingConditions::new_p2pk(owner, None);
+        let htlc = cashu::SpendingConditions::new_htlc_hash(&"0".repeat(64), None).unwrap();
+        let (_, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        for conditions in [p2pk, htlc] {
+            let secret = cashu::nut10::Secret::from(conditions).try_into().unwrap();
+            let foreign_proof = generate_proof_for_offline_exchange(
+                &foreign_keyset,
+                cashu::Amount::from(256),
+                secret,
+            );
+            let preimage = foreign_proof.secret.to_string();
+            let search_response = (
+                core::generate_random_keypair().public_key(),
+                bcr_common::wire::keys::ProofFingerprint::try_from(foreign_proof).unwrap(),
+            );
+            let mut offlinerepo = crate::foreign::MockOfflineRepository::new();
+            offlinerepo
+                .expect_search_fp()
+                .times(1)
+                .returning(move |_| Ok(Some(search_response.clone())));
+            let srvc = Service {
+                online_repo: Arc::new(crate::foreign::MockOnlineRepository::new()),
+                offline_repo: Arc::new(offlinerepo),
+                keys: Arc::new(crate::foreign::MockKeysClient::new()),
+                clowder: Arc::new(crate::foreign::MockClowderClient::new()),
+                mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+                exchange_lock_margin_secs: 15 * 60,
+                offline_exchange_lock_secs: 7 * 24 * 3600,
+            };
+            let result = srvc
+                .try_swap_htlc(&preimage, time::OffsetDateTime::now_utc())
+                .await;
+            assert!(matches!(result, Err(Error::BcrEcash(_))), "{result:?}");
+        }
     }
 }
