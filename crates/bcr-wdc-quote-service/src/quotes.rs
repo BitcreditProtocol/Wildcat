@@ -220,7 +220,7 @@ impl Quote {
             ttl, discounted, ..
         } = self.status
         {
-            if tstamp > ttl {
+            if tstamp >= ttl {
                 self.status = Status::OfferExpired {
                     tstamp: ttl,
                     discounted,

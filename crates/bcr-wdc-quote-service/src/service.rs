@@ -134,7 +134,7 @@ impl Service {
         pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<uuid::Uuid> {
-        validate_basic_ebill_rules(&bill, time::OffsetDateTime::now_utc().date())?;
+        validate_basic_ebill_rules(&bill, submitted)?;
         let holder_id = &bill.endorsees.last().unwrap_or(&bill.payee).node_id();
         let mut quotes = self.quotes.search_by_bill(&bill.id, holder_id).await?;
 
@@ -305,20 +305,20 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
-        let matures_at = credit_expires_at(quote.bill.maturity_date);
-        if matures_at <= submitted {
+        let credit_ends = credit_ends_at(quote.bill.maturity_date)?;
+        if credit_ends <= submitted {
             return Err(Error::InvalidInput(String::from(
                 "bill matured, cannot offer",
             )));
         }
-        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date);
+        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date)?;
         let kid = self
             .wdc_client
             .get_keyset_with_expiration_date(expiration_date)
             .await?;
         let expiration = ttl
             .unwrap_or(calculate_default_expiration_date_for_quote(submitted))
-            .min(matures_at);
+            .min(credit_ends);
         quote.offer(kid, expiration, discounted)?;
         self.quotes
             .update_status_if_pending(quote.id, quote.status)
@@ -466,17 +466,23 @@ impl Service {
     }
 }
 
-fn credit_expires_at(maturity_date: time::Date) -> TStamp {
-    TStamp::from_unix_timestamp(maturity::credit_expires_at(maturity_date) as i64)
-        .expect("day-aligned unix seconds fit a TStamp")
+const MATURITY_OUT_OF_RANGE: &str = "maturity date out of range";
+
+fn credit_ends_at(maturity_date: time::Date) -> Result<TStamp> {
+    TStamp::from_unix_timestamp(
+        (maturity::credit_expires_at(maturity_date) + maturity::SECS_PER_DAY) as i64,
+    )
+    .map_err(|_| Error::InvalidInput(String::from(MATURITY_OUT_OF_RANGE)))
 }
 
 pub fn calculate_default_expiration_date_for_quote(now: crate::TStamp) -> super::TStamp {
     now + time::Duration::days(2)
 }
 
-pub fn calculate_expiration_from_maturity(maturity_date: time::Date) -> time::Date {
-    maturity_date + time::Duration::days(2)
+pub fn calculate_expiration_from_maturity(maturity_date: time::Date) -> Result<time::Date> {
+    maturity_date
+        .checked_add(time::Duration::days(2))
+        .ok_or(Error::InvalidInput(String::from(MATURITY_OUT_OF_RANGE)))
 }
 
 async fn mint_fees(
@@ -502,11 +508,10 @@ async fn mint_fees(
     Ok(prfs)
 }
 
-fn validate_basic_ebill_rules(bill: &BillInfo, today: time::Date) -> Result<()> {
-    if bill.maturity_date < today {
-        return Err(Error::InvalidInput(String::from(
-            "maturity date must be >= today",
-        )));
+fn validate_basic_ebill_rules(bill: &BillInfo, now: TStamp) -> Result<()> {
+    calculate_expiration_from_maturity(bill.maturity_date)?;
+    if credit_ends_at(bill.maturity_date)? <= now {
+        return Err(Error::InvalidInput(String::from("bill matured")));
     }
     if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
         return Err(Error::InvalidInput(format!(
@@ -553,24 +558,28 @@ mod tests {
 
     #[test]
     fn test_validate_basic_ebill_rules_maturity_date() {
-        let today =
-            time::Date::from_calendar_date(2026, time::Month::try_from(1u8).unwrap(), 1).unwrap();
+        let today = time::macros::date!(2026 - 01 - 01);
+        let last_second = today.with_hms(23, 59, 59).unwrap().assume_utc();
         let mut bill = generate_random_bill();
 
         bill.maturity_date = today;
-        assert!(validate_basic_ebill_rules(&bill, today).is_ok());
+        assert!(validate_basic_ebill_rules(&bill, last_second).is_ok());
+        assert!(validate_basic_ebill_rules(&bill, last_second + time::Duration::SECOND).is_err());
 
         bill.maturity_date = today - time::Duration::days(1);
-        assert!(validate_basic_ebill_rules(&bill, today).is_err());
+        assert!(validate_basic_ebill_rules(&bill, last_second).is_err());
+
+        bill.maturity_date = time::Date::MAX;
+        assert!(validate_basic_ebill_rules(&bill, last_second).is_err());
     }
 
     #[tokio::test]
     async fn test_offer_ttl_clamped_to_bill_maturity() {
-        let submitted = time::OffsetDateTime::now_utc();
+        let submitted = time::macros::datetime!(2026-01-01 12:00 UTC);
         let mut bill = generate_random_bill();
-        bill.maturity_date = (submitted + time::Duration::days(1)).date();
-        let matures_at = credit_expires_at(bill.maturity_date);
-        let expiration_date = calculate_expiration_from_maturity(bill.maturity_date);
+        bill.maturity_date = submitted.date();
+        let credit_ends = credit_ends_at(bill.maturity_date).unwrap();
+        let expiration_date = calculate_expiration_from_maturity(bill.maturity_date).unwrap();
         let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
         let qid = quote.id;
 
@@ -599,15 +608,16 @@ mod tests {
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
             .await
             .unwrap();
-        assert_eq!(ttl, matures_at);
+        assert_eq!(ttl, credit_ends);
+        assert_eq!(ttl, time::macros::datetime!(2026-01-02 00:00 UTC));
         assert!(ttl < calculate_default_expiration_date_for_quote(submitted));
     }
 
     #[tokio::test]
     async fn test_offer_rejected_once_bill_matured() {
-        let submitted = time::OffsetDateTime::now_utc();
         let mut bill = generate_random_bill();
-        bill.maturity_date = submitted.date();
+        bill.maturity_date = time::macros::date!(2026 - 01 - 01);
+        let submitted = credit_ends_at(bill.maturity_date).unwrap();
         let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
         let qid = quote.id;
 
@@ -627,6 +637,25 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_offer_expires_when_bill_matures() {
+        let mut bill = generate_random_bill();
+        bill.maturity_date = time::macros::date!(2026 - 01 - 01);
+        let credit_ends = credit_ends_at(bill.maturity_date).unwrap();
+        let mut quote = Quote::new(
+            bill,
+            keys_utils::publics()[0],
+            credit_ends - time::Duration::HOUR,
+        );
+        let kid = core_tests::generate_random_ecash_keyset().0.id;
+        quote
+            .offer(kid.into(), credit_ends, btc::Amount::from_sat(1000))
+            .unwrap();
+
+        assert!(!quote.check_expire(credit_ends - time::Duration::NANOSECOND));
+        assert!(quote.check_expire(credit_ends));
     }
 
     #[tokio::test]
