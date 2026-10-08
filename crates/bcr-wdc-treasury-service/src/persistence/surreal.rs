@@ -50,12 +50,77 @@ impl From<BlindedMessageDBEntry> for cashu::BlindedMessage {
     }
 }
 
+/// Deserializes a `cashu::SecretKey` stored either as a hex string or, for records
+/// written before secret keys were stored as hex, as raw bytes.
+///
+/// `cashu::SecretKey` writes bytes to SurrealDB (not human readable), but serde reads
+/// internally tagged enums through a human-readable buffer, which expects a hex string.
+fn deserialize_secret_hex<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct SecretHexVisitor;
+    impl<'de> serde::de::Visitor<'de> for SecretHexVisitor {
+        type Value = String;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a secret key as hex string or byte array")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> std::result::Result<String, E> {
+            let sk = cashu::SecretKey::from_hex(v).map_err(E::custom)?;
+            Ok(sk.to_secret_hex())
+        }
+
+        fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> std::result::Result<String, E> {
+            let sk = cashu::SecretKey::from_slice(v).map_err(E::custom)?;
+            Ok(sk.to_secret_hex())
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> std::result::Result<String, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut bytes = Vec::with_capacity(32);
+            while let Some(b) = seq.next_element::<u8>()? {
+                bytes.push(b);
+            }
+            self.visit_bytes(&bytes)
+        }
+    }
+    deserializer.deserialize_any(SecretHexVisitor)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BlindSignatureDleqDBEntry {
+    #[serde(deserialize_with = "deserialize_secret_hex")]
+    e: String,
+    #[serde(deserialize_with = "deserialize_secret_hex")]
+    s: String,
+}
+impl From<cashu::BlindSignatureDleq> for BlindSignatureDleqDBEntry {
+    fn from(d: cashu::BlindSignatureDleq) -> Self {
+        Self {
+            e: d.e.to_secret_hex(),
+            s: d.s.to_secret_hex(),
+        }
+    }
+}
+impl From<BlindSignatureDleqDBEntry> for cashu::BlindSignatureDleq {
+    fn from(d: BlindSignatureDleqDBEntry) -> Self {
+        Self {
+            e: cashu::SecretKey::from_hex(&d.e).expect("dleq.e <--> String"),
+            s: cashu::SecretKey::from_hex(&d.s).expect("dleq.s <--> String"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct BlindSignatureDBEntry {
     amount: cashu::Amount,
     keyset_id: cashu::Id,
     c: cashu::PublicKey,
-    dleq: Option<cashu::BlindSignatureDleq>,
+    dleq: Option<BlindSignatureDleqDBEntry>,
 }
 impl From<cashu::BlindSignature> for BlindSignatureDBEntry {
     fn from(s: cashu::BlindSignature) -> Self {
@@ -63,7 +128,7 @@ impl From<cashu::BlindSignature> for BlindSignatureDBEntry {
             amount: s.amount,
             keyset_id: s.keyset_id,
             c: s.c,
-            dleq: s.dleq,
+            dleq: s.dleq.map(Into::into),
         }
     }
 }
@@ -73,7 +138,7 @@ impl From<BlindSignatureDBEntry> for cashu::BlindSignature {
             amount: s.amount,
             keyset_id: s.keyset_id,
             c: s.c,
-            dleq: s.dleq,
+            dleq: s.dleq.map(Into::into),
         }
     }
 }
@@ -1445,5 +1510,88 @@ mod tests {
         assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
         // reads still work
         assert_eq!(db.load_proofs(ys).await.unwrap(), proofs);
+    }
+
+    #[tokio::test]
+    async fn onchain_paid_mintop_legacy_bytes_dleq_readable() {
+        use crate::onchain::Repository as _;
+
+        // Layout used before DLEQ secret keys were stored as hex:
+        // cashu::SecretKey is written as bytes to SurrealDB.
+        #[derive(serde::Serialize)]
+        struct LegacyBlindSignature {
+            amount: cashu::Amount,
+            keyset_id: cashu::Id,
+            c: cashu::PublicKey,
+            dleq: Option<cashu::BlindSignatureDleq>,
+        }
+        #[derive(serde::Serialize)]
+        #[serde(tag = "status")]
+        enum LegacyMintStatus {
+            Paid {
+                signatures: Vec<LegacyBlindSignature>,
+            },
+        }
+        #[derive(serde::Serialize)]
+        struct LegacyMintOperation {
+            qid: Uuid,
+            kid: cashu::Id,
+            recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+            target: bitcoin::Amount,
+            #[serde(with = "time::serde::rfc3339")]
+            expiry: TStamp,
+            status: LegacyMintStatus,
+        }
+
+        let sdb = Surreal::<Any>::init();
+        sdb.connect("mem://").await.unwrap();
+        sdb.use_ns("test").await.unwrap();
+        sdb.use_db("test").await.unwrap();
+        let db = DBOnChain { db: sdb };
+
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let mut signatures =
+            core_tests::generate_ecash_signatures(&keyset, &[cashu::Amount::from(8u64)]);
+        signatures[0].dleq = Some(cashu::BlindSignatureDleq {
+            e: cashu::SecretKey::generate(),
+            s: cashu::SecretKey::generate(),
+        });
+        let qid = Uuid::new_v4();
+        let legacy = LegacyMintOperation {
+            qid,
+            kid: keyset.id.into(),
+            recipient: bitcoin::Address::from_str("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC").unwrap(),
+            target: bitcoin::Amount::ZERO,
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            status: LegacyMintStatus::Paid {
+                signatures: signatures
+                    .iter()
+                    .map(|s| LegacyBlindSignature {
+                        amount: s.amount,
+                        keyset_id: s.keyset_id,
+                        c: s.c,
+                        dleq: s.dleq.clone(),
+                    })
+                    .collect(),
+            },
+        };
+        let rid = RecordId::from_table_key(DBOnChain::MINTS_TABLE, qid);
+        db.db
+            .query("CREATE $rid CONTENT $content")
+            .bind(("rid", rid))
+            .bind(("content", legacy))
+            .await
+            .unwrap()
+            .check()
+            .unwrap();
+
+        let loaded = db.load_mintop(qid).await.unwrap();
+        let onchain::MintStatus::Paid { signatures: loaded } = loaded.status else {
+            panic!("expected Paid status");
+        };
+        assert_eq!(loaded, signatures);
+        let dumped = db.dump_mintops().await.unwrap();
+        assert_eq!(dumped.len(), 1);
+        assert_eq!(dumped[0].qid, qid);
     }
 }
