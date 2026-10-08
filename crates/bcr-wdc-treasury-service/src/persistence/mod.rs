@@ -654,11 +654,20 @@ mod tests {
             status: onchain::MintStatus::Pending { blinds },
         };
         db.store_mintop(op.clone()).await.unwrap();
-        let signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
-        let status = onchain::MintStatus::Paid { signatures };
+        let mut signatures = core_tests::generate_ecash_signatures(&keys.1, &amounts);
+        signatures[0].dleq = Some(cashu::BlindSignatureDleq {
+            e: cashu::SecretKey::generate(),
+            s: cashu::SecretKey::generate(),
+        });
+        let status = onchain::MintStatus::Paid {
+            signatures: signatures.clone(),
+        };
         db.update_mintop_status(op.qid, status).await.unwrap();
         let res = db.load_mintop(op.qid).await.unwrap();
-        assert!(matches!(res.status, onchain::MintStatus::Paid { .. }));
+        let onchain::MintStatus::Paid { signatures: loaded } = res.status else {
+            panic!("expected Paid status");
+        };
+        assert_eq!(loaded, signatures);
     }
 
     #[tokio::test]
