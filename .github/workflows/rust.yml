@@ -65,16 +65,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+      # `shell: bash` turns on pipefail. Without it the step exits with sarif-fmt's status,
+      # so a clippy compile error could never fail the step.
       - name: Clippy
+        shell: bash
         run:
           cargo clippy
           --all-features
           --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
-        continue-on-error: true
 
       - name: Cargo deny 
         run: cargo deny check
-        continue-on-error: true
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
