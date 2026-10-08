@@ -188,6 +188,13 @@ async fn main() {
             .expect("Failed to list reserved ys from SurrealDB");
         println!("Found {} reserved ys in SurrealDB", reserved_ys.len());
         for (y, deadline) in reserved_ys {
+            if sqlx_repository
+                .commitment_contains_inputs(&[y])
+                .await
+                .expect("Failed to check committed ys in PostgreSQL")
+            {
+                continue;
+            }
             if let Err(error) = sqlx_repository.ys_store(vec![y], deadline).await {
                 eprintln!("Failed to migrate reserved y {y}: {error}");
                 std::process::exit(1);

@@ -294,26 +294,30 @@ impl Service {
         }
         let wallet_key = request.wallet_key;
         let fp_digest = request.inputs.attestation.fp_digest;
-        let (content, commitment) = self.clowder.commit_to_swap(request).await?;
-        match self
-            .repository
-            .commitment_store(
-                ys,
-                bs,
-                expiry,
-                wallet_key.into(),
-                commitment,
-                fp_digest,
-                signed,
-            )
-            .await
-        {
-            Ok(()) | Err(Error::Conflict(_)) => Ok((content, commitment)),
-            Err(error) => {
-                tracing::error!("failed to store commitment: {error}");
-                Err(error)
+        self.reserve(ys.clone(), expiry).await?;
+        let committed: Result<_> = async {
+            let (content, commitment) = self.clowder.commit_to_swap(request).await?;
+            self.repository
+                .commitment_store(
+                    ys.clone(),
+                    bs,
+                    expiry,
+                    wallet_key.into(),
+                    commitment,
+                    fp_digest,
+                    signed,
+                )
+                .await
+                .inspect_err(|error| tracing::error!("failed to store commitment: {error}"))?;
+            Ok((content, commitment))
+        }
+        .await;
+        if committed.is_err() {
+            if let Err(error) = self.repository.ys_release(ys, expiry).await {
+                tracing::error!("failed to release reservation: {error}");
             }
         }
+        committed
     }
 
     pub async fn swap(
@@ -368,15 +372,6 @@ impl Service {
         let signatures = self.generate_signatures(&outputs).await?;
         let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
         let fees = self.sign_fees(fee_premints).await?;
-        self.clowder
-            .signal_swap_event(
-                inputs.clone(),
-                outputs.clone(),
-                fees.signatures.clone(),
-                commitment,
-                signatures.clone(),
-            )
-            .await?;
 
         let mut stored_signatures = outputs
             .iter()
@@ -388,9 +383,20 @@ impl Service {
             .collect::<Vec<_>>();
         stored_signatures.extend(fees.stored_signatures);
         self.repository
-            .swap_finalize(inputs, stored_signatures, commitment)
+            .swap_finalize(inputs.clone(), stored_signatures, commitment)
             .await?;
-        self.treasury.store_proofs(fees.proofs).await?;
+        let (stored, signalled) = tokio::join!(
+            self.treasury.store_proofs(fees.proofs),
+            self.clowder.signal_swap_event(
+                inputs,
+                outputs,
+                fees.signatures,
+                commitment,
+                signatures.clone(),
+            ),
+        );
+        stored?;
+        signalled?;
         Ok(signatures)
     }
 
@@ -623,10 +629,7 @@ mod tests {
         let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
         repository.proofs_insert(proofs.clone()).await.unwrap();
         let mut clowder = MockClowderClient::new();
-        clowder
-            .expect_signal_swap_event()
-            .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
+        clowder.expect_signal_swap_event().times(0);
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(0);
         let service = service(repository.clone(), clowder, treasury);
@@ -636,6 +639,115 @@ mod tests {
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
         assert!(repository.commitment_load(&commitment).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn swap_signals_clowder_when_treasury_fails_after_persisting() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_signal_swap_event()
+            .times(1)
+            .returning(|_, _, _, _, _| Ok(()));
+        let mut treasury = MockTreasuryService::new();
+        treasury
+            .expect_store_proofs()
+            .times(1)
+            .returning(|_| Err(Error::ServiceUnavailable));
+        let service = service(repository.clone(), clowder, treasury);
+
+        let result = service.swap(proofs.clone(), outputs, commitment, now).await;
+        assert!(matches!(result, Err(Error::ServiceUnavailable)));
+
+        assert!(repository
+            .proofs_contains(proofs[0].y().unwrap())
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    async fn prepare_commit(
+        repository: &inmemory::Repository,
+    ) -> (
+        wire_swap::SwapCommitmentRequest,
+        Vec<cashu::PublicKey>,
+        TStamp,
+    ) {
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        repository
+            .keys_store(keys_utils::to_entry(kinfo, keyset.clone()))
+            .await
+            .unwrap();
+        let amounts = [cashu::Amount::from(8u64)];
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let ys = proofs.iter().map(|proof| proof.y().unwrap()).collect();
+        let fps = proofs
+            .into_iter()
+            .map(|proof| proof.try_into().unwrap())
+            .collect();
+        let outputs = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0.into())
+            .collect();
+        let now = time::OffsetDateTime::now_utc();
+        let request = wire_swap::SwapCommitmentRequest {
+            inputs: crate::test_utils::attested_fingerprints(fps),
+            outputs,
+            expiry: (now + time::Duration::minutes(1)).unix_timestamp() as u64,
+            wallet_key: bcr_common::core::generate_random_keypair().public_key(),
+        };
+        (request, ys, now)
+    }
+
+    #[tokio::test]
+    async fn commit_to_swap_reserves_inputs_before_clowder_signs() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (request, ys, now) = prepare_commit(&repository).await;
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        let reserved = repository.clone();
+        let reserved_ys = ys.clone();
+        clowder
+            .expect_commit_to_swap()
+            .times(1)
+            .returning(move |_| {
+                let contains = futures::executor::block_on(reserved.ys_contains(&reserved_ys));
+                assert_eq!(contains.unwrap(), vec![true]);
+                Ok((
+                    String::new(),
+                    schnorr::Signature::from_slice(&[9u8; 64]).unwrap(),
+                ))
+            });
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        service.commit_to_swap(request.clone(), now).await.unwrap();
+        let result = service.commit_to_swap(request, now).await;
+
+        assert!(result.is_err());
+        assert!(repository.commitment_contains_inputs(&ys).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn commit_to_swap_releases_reservation_when_clowder_fails() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (request, ys, now) = prepare_commit(&repository).await;
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_authenticate_attestation()
+            .returning(|_, _| Ok(()));
+        clowder
+            .expect_commit_to_swap()
+            .times(1)
+            .returning(|_| Err(Error::ServiceUnavailable));
+        let service = service(repository.clone(), clowder, MockTreasuryService::new());
+
+        let result = service.commit_to_swap(request, now).await;
+
+        assert!(matches!(result, Err(Error::ServiceUnavailable)));
+        assert_eq!(repository.ys_contains(&ys).await.unwrap(), vec![false]);
     }
 
     // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.

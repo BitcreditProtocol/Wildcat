@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM core_proofs\n            WHERE y = ANY($1::text[]) AND deadline = $2::timestamptz\n                AND signature IS NULL AND blob IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b4b791fb902abaf535a9c8b30ef9abda5feda0b61e17bbfa0814a0139093112c"
+}
