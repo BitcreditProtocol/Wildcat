@@ -34,6 +34,7 @@ const SIGNATURES_TABLE: &str = "signatures";
 const PROOFS_TABLE: &str = "proofs";
 const COMMITMENTS_TABLE: &str = "commitments";
 const RESERVED_YS_TABLE: &str = "reserved_ys";
+const MIGRATIONS_TABLE: &str = "migrations";
 
 #[derive(Debug, Clone)]
 pub struct Repository {
@@ -64,6 +65,7 @@ async fn connect_surreal(cfg: surreal::DBConnConfig) -> SurrealResult<Surreal<An
 #[async_trait]
 impl persistence::Repository for Repository {
     async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
+        self.ensure_writable().await?;
         let rid = RecordId::from_table_key(KEYS_TABLE, entry.id.to_string());
         let dbentry = convert_to_keysdbentry(entry, KEYS_TABLE);
         let _resp: Option<KeysDBEntry> = self
@@ -160,6 +162,7 @@ impl persistence::Repository for Repository {
         y: cashu::PublicKey,
         signature: cashu::BlindSignature,
     ) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::signature_store(self, y, signature).await
     }
 
@@ -176,6 +179,7 @@ impl persistence::Repository for Repository {
         signatures: Vec<persistence::StoredSignature>,
         commitment: schnorr::Signature,
     ) -> Result<()> {
+        self.ensure_writable().await?;
         const CONFLICT_MSG: &str = "duplicate proofs or signatures";
         let commitment_rid = RecordId::from_table_key(COMMITMENTS_TABLE, commitment.to_string());
         let existing_commitment: Option<CommitmentDBEntry> = self
@@ -239,6 +243,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
+        self.ensure_writable().await?;
         let mut entries: Vec<ProofDBEntry> = Vec::with_capacity(tokens.len());
         for tk in tokens {
             let db_entry = convert_to_db(tk, PROOFS_TABLE)?;
@@ -259,6 +264,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()> {
+        self.ensure_writable().await?;
         for tk in tokens {
             let rid = cpk_to_record_id(PROOFS_TABLE, *tk);
             let _p: Option<cashu::Proof> = self
@@ -298,6 +304,7 @@ impl persistence::Repository for Repository {
         fp_digest: [u8; 32],
         signed: persistence::SignatureOwner,
     ) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::commitment_store(
             self, inputs, outputs, expiration, wallet_key, commitment, fp_digest, signed,
         )
@@ -320,14 +327,17 @@ impl persistence::Repository for Repository {
     }
 
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::commitment_delete(self, commitment).await
     }
 
     async fn commitment_clean_expired(&self, now: TStamp) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::commitment_clean_expired(self, now).await
     }
 
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::ys_store(self, inputs, deadline).await
     }
 
@@ -336,6 +346,7 @@ impl persistence::Repository for Repository {
     }
 
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()> {
+        self.ensure_writable().await?;
         Repository::ys_clean_expired(self, now).await
     }
 }
@@ -861,6 +872,64 @@ impl Repository {
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?;
         Ok(())
     }
+}
+
+////////////////////////////////////////////////////////////////////////// Migrations DB
+/// The whole core DB is migrated to PostgreSQL at once: a single record marks it.
+const MIGRATION_KEY: &str = "core";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct MigrationDBEntry {
+    id: RecordId,
+    #[serde(with = "time::serde::rfc3339")]
+    migrated_at: TStamp,
+}
+
+impl Repository {
+    pub async fn is_migrated(&self) -> Result<bool> {
+        is_marked_migrated(&self.db, MIGRATION_KEY).await
+    }
+
+    pub async fn mark_migrated(&self) -> Result<()> {
+        mark_migrated(&self.db, MIGRATION_KEY).await
+    }
+
+    /// Refuses writes once the DB is migrated to PostgreSQL, so a service
+    /// still pointing at SurrealDB cannot diverge from the migrated data.
+    async fn ensure_writable(&self) -> Result<()> {
+        ensure_writable(&self.db, MIGRATION_KEY).await
+    }
+}
+
+async fn is_marked_migrated(db: &Surreal<Any>, key: &str) -> Result<bool> {
+    let rid = RecordId::from_table_key(MIGRATIONS_TABLE, key);
+    let entry: Option<MigrationDBEntry> = db
+        .select(rid)
+        .await
+        .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
+    Ok(entry.is_some())
+}
+
+async fn mark_migrated(db: &Surreal<Any>, key: &str) -> Result<()> {
+    let rid = RecordId::from_table_key(MIGRATIONS_TABLE, key);
+    let entry = MigrationDBEntry {
+        id: rid.clone(),
+        migrated_at: time::OffsetDateTime::now_utc(),
+    };
+    let _: Option<MigrationDBEntry> = db
+        .upsert(rid)
+        .content(entry)
+        .await
+        .map_err(|e| Error::Internal(format!("migrations repository: {e}")))?;
+    Ok(())
+}
+
+async fn ensure_writable(db: &Surreal<Any>, key: &str) -> Result<()> {
+    if is_marked_migrated(db, key).await? {
+        tracing::error!("write refused: {key} DB already migrated to PostgreSQL");
+        return Err(Error::ServiceUnavailable);
+    }
+    Ok(())
 }
 
 /////////////////////////////////////////////////////////////////////////////// Vault DB

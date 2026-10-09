@@ -12,7 +12,10 @@ use bcr_common::{
     ecash,
 };
 use bcr_wdc_utils::{keys as keys_utils, postgres};
-use bitcoin::{bip32::DerivationPath, secp256k1::schnorr};
+use bitcoin::{
+    bip32::DerivationPath,
+    secp256k1::{self as secp, schnorr},
+};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 // ----- local imports
@@ -38,7 +41,8 @@ struct KeysetBlobV1 {
     derivation_path_index: Option<u32>,
     amounts: Vec<u64>,
     input_fee_ppk: u64,
-    keys: HashMap<String, MintKeyPair>, // Use String for the key to make it JSON serializable
+    // amount (as String, to be a JSON object key) -> secret key; the public key is derived on load
+    keys: HashMap<String, secp::SecretKey>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -59,8 +63,8 @@ fn keyset_to_row(entry: keys_utils::MintKeysEntry) -> Result<KeysetRow> {
     let jsonable_keys = entry
         .keys
         .iter()
-        .map(|(k, v)| (k.to_string(), v.clone()))
-        .collect::<HashMap<String, MintKeyPair>>();
+        .map(|(k, v)| (k.to_string(), *v.secret_key))
+        .collect::<HashMap<String, secp::SecretKey>>();
     let blob = KeysetBlob::V1(KeysetBlobV1 {
         valid_from: entry.valid_from,
         derivation_path: entry.derivation_path,
@@ -79,7 +83,7 @@ fn keyset_to_row(entry: keys_utils::MintKeysEntry) -> Result<KeysetRow> {
 }
 
 fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
-    let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+    let kid = ecash::Id::from_str(&row.kid).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let unit =
         cashu::CurrencyUnit::from_str(&row.unit).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let final_expiry = row
@@ -93,11 +97,12 @@ fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
         .into_iter()
         .map(|(k, v)| {
             let key = cashu::Amount::from_str(&k).expect("parsable amount");
-            Ok((key, v))
+            let pair = MintKeyPair::from_secret_key(cashu::SecretKey::from(v));
+            Ok((key, pair))
         })
         .collect::<Result<BTreeMap<cashu::Amount, MintKeyPair>>>()?;
     let entry = keys_utils::MintKeysEntry {
-        id: kid,
+        id: kid.into(),
         unit,
         active: row.active,
         valid_from: blob.valid_from,
@@ -116,7 +121,7 @@ fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
 enum SignatureBlob {
-    V1(cashu::BlindSignature),
+    V1(ecash::BlindSignature),
 }
 
 // ///////////////////////////////////////////////////////////////////////// Versioned blob for proofs
@@ -125,12 +130,12 @@ enum SignatureBlob {
 #[serde(tag = "version", content = "data")]
 enum ProofBlob {
     V0 {
-        kid: cashu::Id,
+        kid: ecash::Id,
         witness: Option<cashu::Witness>,
-        c: cashu::PublicKey,
-        secret: cashu::secret::Secret,
+        c: secp::PublicKey,
+        secret: String,
     },
-    V1(cashu::Proof),
+    V1(ecash::Proof),
 }
 
 // ///////////////////////////////////////////////////////////////////////// Versioned blob for commitments
@@ -143,7 +148,7 @@ enum CommitmentBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct CommitmentBlobV1 {
-    wallet_key: cashu::PublicKey,
+    wallet_key: secp::PublicKey,
     fp_digest: [u8; 32],
     signed: persistence::SignatureOwner,
 }
@@ -166,7 +171,7 @@ fn commitment_to_row(
         signature: signature.to_string(),
         expiration,
         blob: Json(CommitmentBlob::V1(CommitmentBlobV1 {
-            wallet_key,
+            wallet_key: *wallet_key,
             fp_digest,
             signed,
         })),
@@ -191,9 +196,21 @@ fn commitment_from_row(
 fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKey>> {
     keys.into_iter()
         .map(|key| {
-            cashu::PublicKey::from_str(&key).map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+            secp::PublicKey::from_str(&key)
+                .map(cashu::PublicKey::from)
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))
         })
         .collect()
+}
+
+/// The single pool shared by every mint repository, so `max_connections` caps the
+/// whole service rather than each repository.
+pub async fn connect(cfg: &postgres::DBConnConfig) -> Result<PgPool> {
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(cfg.max_connections)
+        .connect(&cfg.connection)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))
 }
 
 ///////////////////////////////////////////////////////////////////////// Repository
@@ -203,15 +220,6 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -228,10 +236,10 @@ pub async fn insert_v0(
         let y = cashu::PublicKey::from_str(&proof.id.key().to_string())
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         let blob = ProofBlob::V0 {
-            kid: proof.kid,
+            kid: proof.kid.into(),
             witness: proof.witness,
-            c: proof.c,
-            secret: proof.secret,
+            c: *proof.c,
+            secret: proof.secret.to_string(),
         };
         let blob_value =
             serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
@@ -415,7 +423,7 @@ impl persistence::Repository for Repository {
         y: cashu::PublicKey,
         signature: cashu::BlindSignature,
     ) -> Result<()> {
-        let blob = SignatureBlob::V1(signature);
+        let blob = SignatureBlob::V1(signature.into());
         let blob_value =
             serde_json::to_value(&blob).map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
         let result = sqlx::query!(
@@ -456,7 +464,7 @@ impl persistence::Repository for Repository {
             return Ok(None);
         };
         match row.blob.0 {
-            SignatureBlob::V1(signature) => Ok(Some(signature)),
+            SignatureBlob::V1(signature) => Ok(Some(signature.into())),
         }
     }
 
@@ -473,7 +481,7 @@ impl persistence::Repository for Repository {
                 .y()
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?
                 .to_string();
-            let blob = serde_json::to_value(ProofBlob::V1(proof))
+            let blob = serde_json::to_value(ProofBlob::V1(proof.into()))
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
             proof_ys.push(y);
             proof_blobs.push(blob);
@@ -482,7 +490,7 @@ impl persistence::Repository for Repository {
         let mut signature_blobs = Vec::with_capacity(signatures.len());
         for stored in signatures {
             let y = stored.y.to_string();
-            let blob = serde_json::to_value(SignatureBlob::V1(stored.signature))
+            let blob = serde_json::to_value(SignatureBlob::V1(stored.signature.into()))
                 .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?;
             signature_ys.push(y);
             signature_blobs.push(blob);
@@ -571,7 +579,7 @@ impl persistence::Repository for Repository {
                 .y()
                 .map_err(|e| Error::ProofRepository(anyhow!(e)))?
                 .to_string();
-            let blob = ProofBlob::V1(token);
+            let blob = ProofBlob::V1(token.into());
             let blob_value =
                 serde_json::to_value(&blob).map_err(|e| Error::ProofRepository(anyhow!(e)))?;
             y_strs.push(y.clone());

@@ -12,7 +12,7 @@ use bcr_common::client::{
     self,
     admin::{core as core_ep, treasury as treasury_ep},
 };
-use bcr_wdc_utils::nut19;
+use bcr_wdc_utils::{db, nut19, postgres};
 // ----- local modules
 mod admin;
 pub mod config;
@@ -54,19 +54,23 @@ impl AppController {
             settle_window_sec,
             vault: vault_cfg,
         } = cfg;
-        let repository = if repository_new.max_connections > 0 {
-            let db = persistence::sqlx::Repository::new(repository_new)
-                .await
-                .expect("failed to create sqlx repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
-        } else {
-            let db = persistence::surreal::Repository::new(repository)
-                .await
-                .expect("Failed to create repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
-        };
+        // one PostgreSQL pool, created on first use and shared by every repository
+        let mut pg_pool: Option<sqlx::PgPool> = None;
+        let surreal_db = persistence::surreal::Repository::new(repository)
+            .await
+            .expect("Failed to create repository");
+        let migrated = surreal_db
+            .is_migrated()
+            .await
+            .expect("Failed to read core migration marker");
+        let repository: Arc<dyn Repository> =
+            match db::select_db_backend("mint core", migrated, repository_new.clone()) {
+                db::DBBackend::Surreal => Arc::new(surreal_db),
+                db::DBBackend::Postgres | db::DBBackend::DefaultPostgres => {
+                    let pool = shared_pool(&mut pg_pool, &repository_new).await;
+                    Arc::new(persistence::sqlx::Repository::from_pool(pool))
+                }
+            };
         let keygen = factory::KeysFactory::new(seed, starting_derivation_path);
         let clowder_cl =
             client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
@@ -264,6 +268,27 @@ pub mod test_utils {
             .expect("failed to start test server");
         (server, cntrl)
     }
+}
+
+/// The PostgreSQL pool every repository shares, connected on first use: with
+/// `max_connections > 0` it is sized by the config, otherwise sqlx's default applies.
+async fn shared_pool(
+    pool: &mut Option<sqlx::PgPool>,
+    cfg: &postgres::DBConnConfig,
+) -> sqlx::PgPool {
+    if let Some(pool) = pool {
+        return pool.clone();
+    }
+    let new_pool = if cfg.max_connections > 0 {
+        persistence::sqlx::connect(cfg).await
+    } else {
+        sqlx::PgPool::connect(&cfg.connection)
+            .await
+            .map_err(|e| error::Error::DB(anyhow::anyhow!(e)))
+    }
+    .expect("Failed to connect to PostgreSQL");
+    *pool = Some(new_pool.clone());
+    new_pool
 }
 
 #[cfg(test)]
