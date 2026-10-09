@@ -7,8 +7,8 @@ use bcr_common::{cashu, client::admin::treasury::SUError, core, wire::keys as wi
 use bcr_wdc_utils::surreal;
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 use surrealdb::{
-    engine::any::Any, error::Db as SurrealDBError, Error as SurrealError, RecordId,
-    Result as SurrealResult, Surreal,
+    engine::any::Any, error::Api as SurrealApiError, error::Db as SurrealDBError,
+    Error as SurrealError, RecordId, Result as SurrealResult, Surreal,
 };
 use uuid::Uuid;
 // ----- local imports
@@ -218,7 +218,7 @@ struct OnChainMeltOpDbEntry {
     fees: cashu::Amount,
     #[serde(with = "time::serde::rfc3339")]
     expiry: TStamp,
-    commitment: String,
+    commitment: Option<String>,
     input_ys: Vec<String>,
     fp_digest: [u8; 32],
     status: MeltStatusDBEntry,
@@ -234,8 +234,9 @@ impl From<OnChainMeltOpDbEntry> for onchain::MeltOperation {
             fees: entry.fees,
             expiry: entry.expiry,
             status: entry.status.into(),
-            commitment: secp256k1::schnorr::Signature::from_str(&entry.commitment)
-                .expect("commitment <--> String"),
+            commitment: entry.commitment.map(|c| {
+                secp256k1::schnorr::Signature::from_str(&c).expect("commitment <--> String")
+            }),
             wallet_key: cashu::PublicKey::from_str(&entry.wallet_key)
                 .expect("wallet_key <--> String"),
             input_ys: entry
@@ -256,7 +257,7 @@ fn convert_to_onchainmeltop(op: onchain::MeltOperation, table: &str) -> OnChainM
         target: op.target,
         fees: op.fees,
         expiry: op.expiry,
-        commitment: op.commitment.to_string(),
+        commitment: op.commitment.map(|c| c.to_string()),
         input_ys: op.input_ys.into_iter().map(|y| y.to_string()).collect(),
         fp_digest: op.fp_digest,
         status: op.status.into(),
@@ -274,6 +275,7 @@ impl DBOnChain {
     const MELTS_TABLE: &'static str = "onchain_melts";
     const MINTS_TABLE: &'static str = "onchain_mints";
     const DENIED_TABLE: &'static str = "onchain_denied";
+    const MELTS_GUARD_TABLE: &'static str = "onchain_melts_guard";
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -469,6 +471,95 @@ impl onchain::Repository for DBOnChain {
         } else {
             Ok(())
         }
+    }
+
+    async fn reserve_meltop(
+        &self,
+        op: onchain::MeltOperation,
+        now: TStamp,
+        reserve: bitcoin::Amount,
+    ) -> Result<bitcoin::Amount> {
+        ensure_writable(&self.db, &[Self::MELTS_TABLE]).await?;
+        self.meltops_mark_expired(now)
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let outflow = op
+            .outflow()
+            .ok_or_else(|| Error::InvalidInput(String::from("meltop: fees exceed inputs")))?;
+        let entry = convert_to_onchainmeltop(op, Self::MELTS_TABLE);
+        let mut query = self
+            .db
+            .query(
+                "
+            BEGIN;
+            UPSERT $guard SET seq = (seq ?? 0) + 1;
+            LET $committed = $outflow + math::sum(
+                SELECT VALUE available - fees
+                FROM type::table($table)
+                WHERE status.status = $status
+            );
+            LET $locked = !array::is_empty(
+                SELECT VALUE id
+                FROM type::table($table)
+                WHERE
+                    status.status = $status
+                    AND
+                    !array::is_empty(array::intersect(input_ys, $input_ys))
+            );
+            IF !$locked AND $committed <= $reserve {
+                INSERT $content
+            };
+            $locked;
+            $committed;
+            COMMIT
+            ",
+            )
+            .bind((
+                "guard",
+                RecordId::from_table_key(Self::MELTS_GUARD_TABLE, "reserve"),
+            ))
+            .bind(("table", Self::MELTS_TABLE))
+            .bind(("status", onchain::MeltStatusDiscriminants::Pending))
+            .bind(("input_ys", entry.input_ys.clone()))
+            .bind(("outflow", outflow.to_sat()))
+            .bind(("reserve", reserve.to_sat()))
+            .bind(("content", entry))
+            .await
+            .map_err(surreal_tx_error)?;
+        let num_statements = query.num_statements();
+        let locked: Option<bool> = query.take(num_statements - 2).map_err(surreal_tx_error)?;
+        let committed: Option<u64> = query.take(num_statements - 1).map_err(surreal_tx_error)?;
+        if locked.unwrap_or(true) {
+            return Err(Error::InvalidInput(String::from(
+                "meltop: inputs already locked in",
+            )));
+        }
+        committed
+            .map(bitcoin::Amount::from_sat)
+            .ok_or_else(|| Error::DB(anyhow!("missing committed meltops outflow")))
+    }
+
+    async fn set_meltop_commitment(
+        &self,
+        qid: Uuid,
+        commitment: secp256k1::schnorr::Signature,
+    ) -> Result<()> {
+        ensure_writable(&self.db, &[Self::MELTS_TABLE]).await?;
+        let rid = RecordId::from_table_key(Self::MELTS_TABLE, qid);
+        let entry: Option<OnChainMeltOpDbEntry> = self
+            .db
+            .query("UPDATE $rid SET commitment = $commitment WHERE status.status = $status")
+            .bind(("rid", rid))
+            .bind(("commitment", commitment.to_string()))
+            .bind(("status", onchain::MeltStatusDiscriminants::Pending))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        if entry.is_none() {
+            return Err(Error::ResourceNotFound(qid.to_string()));
+        }
+        Ok(())
     }
 
     async fn load_meltop(&self, qid: Uuid) -> Result<onchain::MeltOperation> {
@@ -1319,6 +1410,20 @@ async fn mark_table_migrated(db: &Surreal<Any>, table: &str) -> Result<()> {
 
 /// Refuses writes to tables already migrated to PostgreSQL, so a service
 /// still pointing at SurrealDB cannot diverge from the migrated data.
+fn surreal_tx_error(e: SurrealError) -> Error {
+    let retryable = match &e {
+        SurrealError::Db(SurrealDBError::TxRetryable) => true,
+        SurrealError::Db(SurrealDBError::QueryNotExecutedDetail { message })
+        | SurrealError::Api(SurrealApiError::Query(message)) => message.contains("can be retried"),
+        _ => false,
+    };
+    if retryable {
+        Error::TxConflict
+    } else {
+        Error::DB(anyhow!(e))
+    }
+}
+
 async fn ensure_writable(db: &Surreal<Any>, tables: &[&str]) -> Result<()> {
     for table in tables {
         if is_table_migrated(db, table).await? {

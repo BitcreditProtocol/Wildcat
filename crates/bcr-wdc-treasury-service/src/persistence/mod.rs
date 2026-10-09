@@ -722,7 +722,7 @@ mod tests {
             fees: cashu::Amount::from(10u64),
             address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
             wallet_key,
-            commitment,
+            commitment: Some(commitment),
             expiry: now + time::Duration::hours(1),
             fp_digest: [7u8; 32],
             input_ys,
@@ -734,5 +734,110 @@ mod tests {
         assert_eq!(pending[0], qid);
         let loaded = db.load_meltop(qid).await.unwrap();
         assert_eq!(loaded.fp_digest, [7u8; 32]);
+    }
+
+    #[tokio::test]
+    async fn test_onchain_reserve_meltop() {
+        let db = init_surreal_onchain_db().await;
+        onchain_reserve_meltop(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_onchain_reserve_meltop_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBOnChain::from_pool(pool);
+        onchain_reserve_meltop(db).await;
+    }
+    async fn onchain_reserve_meltop(db: impl onchain::Repository) {
+        let now = time::OffsetDateTime::now_utc();
+        let reserve = bitcoin::Amount::from_sat(10_000);
+        let first = generate_meltop(6_000, now);
+        let committed = db
+            .reserve_meltop(first.clone(), now, reserve)
+            .await
+            .unwrap();
+        assert_eq!(committed, bitcoin::Amount::from_sat(6_000));
+        let second = generate_meltop(4_001, now);
+        let committed = db.reserve_meltop(second, now, reserve).await.unwrap();
+        assert_eq!(committed, bitcoin::Amount::from_sat(10_001));
+        let mut overlapping = generate_meltop(1, now);
+        overlapping.input_ys.push(first.input_ys[0]);
+        let err = db.reserve_meltop(overlapping, now, reserve).await;
+        assert!(matches!(err, Err(Error::InvalidInput(_))));
+        let third = generate_meltop(4_000, now);
+        let committed = db
+            .reserve_meltop(third.clone(), now, reserve)
+            .await
+            .unwrap();
+        assert_eq!(committed, reserve);
+        let mut pending = db.list_pending_meltops(now).await.unwrap();
+        pending.sort();
+        let mut expected = vec![first.qid, third.qid];
+        expected.sort();
+        assert_eq!(pending, expected);
+        assert!(db
+            .load_meltop(first.qid)
+            .await
+            .unwrap()
+            .commitment
+            .is_none());
+        let commitment = signature_tests::random_schnorr_signature();
+        db.set_meltop_commitment(first.qid, commitment)
+            .await
+            .unwrap();
+        let loaded = db.load_meltop(first.qid).await.unwrap();
+        assert_eq!(loaded.commitment, Some(commitment));
+        let err = db.set_meltop_commitment(Uuid::new_v4(), commitment).await;
+        assert!(matches!(err, Err(Error::ResourceNotFound(_))));
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_onchain_reserve_meltop_concurrent_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBOnChain::from_pool(pool);
+        onchain_reserve_meltop_concurrent(db).await;
+    }
+    async fn onchain_reserve_meltop_concurrent(db: impl onchain::Repository + 'static) {
+        const QUOTES: usize = 8;
+        let db = std::sync::Arc::new(db);
+        let now = time::OffsetDateTime::now_utc();
+        let reserve = bitcoin::Amount::from_sat(10_000);
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(QUOTES));
+        let tasks = (0..QUOTES).map(|_| {
+            let db = db.clone();
+            let barrier = barrier.clone();
+            let op = generate_meltop(6_000, now);
+            tokio::spawn(async move {
+                barrier.wait().await;
+                loop {
+                    match db.reserve_meltop(op.clone(), now, reserve).await {
+                        Err(Error::TxConflict) => continue,
+                        result => return result.unwrap(),
+                    }
+                }
+            })
+        });
+        let committed = futures::future::join_all(tasks).await;
+        let admitted = committed
+            .into_iter()
+            .filter(|c| *c.as_ref().unwrap() <= reserve)
+            .count();
+        assert_eq!(admitted, 1);
+        assert_eq!(db.list_pending_meltops(now).await.unwrap().len(), 1);
+    }
+
+    fn generate_meltop(outflow: u64, now: time::OffsetDateTime) -> onchain::MeltOperation {
+        onchain::MeltOperation {
+            qid: Uuid::new_v4(),
+            target: bitcoin::Amount::from_sat(outflow),
+            available: cashu::Amount::from(outflow + 10),
+            fees: cashu::Amount::from(10u64),
+            address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            commitment: None,
+            expiry: now + time::Duration::hours(1),
+            fp_digest: [7u8; 32],
+            input_ys: vec![core::generate_random_keypair().public_key().into()],
+            status: onchain::MeltStatus::Pending,
+        }
     }
 }

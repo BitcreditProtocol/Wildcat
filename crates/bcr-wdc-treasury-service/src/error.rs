@@ -78,6 +78,8 @@ pub enum Error {
     // internal errors
     #[error("Unavailable: {0}")]
     ServiceUnavailable(SUError),
+    #[error("transaction conflict")]
+    TxConflict,
     #[error("invalid inputs {0}")]
     InvalidInput(String),
     #[error("invalid outputs {0}")]
@@ -180,6 +182,10 @@ impl axum::response::IntoResponse for Error {
             Error::ServiceUnavailable(suerror) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::to_string(&suerror).unwrap_or_default(),
+            ),
+            Error::TxConflict => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                serde_json::to_string(&SUError::Unknown).unwrap_or_default(),
             ),
             Error::InvalidInput(e) => {
                 let v = serde_json::Value::String(e.to_string());
