@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::{collections::HashSet, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
@@ -19,6 +19,8 @@ use crate::{
 };
 
 // ----- end imports
+
+const MELT_RESERVE_ATTEMPTS: usize = 5;
 
 pub struct Service {
     pub wdc: Arc<dyn WildcatClient>,
@@ -124,10 +126,6 @@ impl Service {
         if !all_unspent {
             return Err(Error::InvalidInput(String::from("proofs already spent")));
         }
-        // unlocked fingerprints
-        let pending_ops = self.retrieve_pending_meltops(now).await?;
-        cross_check_locked_fps(input_ys.clone(), &pending_ops)?;
-        // amount > dust (after fees)
         let input_total =
             bitcoin::Amount::from_sat(inputs.inputs.iter().map(|fp| fp.amount).sum::<u64>());
         // valid address
@@ -151,6 +149,7 @@ impl Service {
                 admin_fees.to_sat(),
             )));
         }
+        // amount > dust (after fees)
         let dust = checked_address.script_pubkey().minimal_non_dust();
         if amount < dust {
             return Err(Error::InvalidInput(format!(
@@ -171,29 +170,6 @@ impl Service {
                 min_fee.to_sat(),
             )));
         }
-        // insufficient funds in clowder
-        let reserve = self.clowder_cl.get_onchain_reserve().await?;
-        let pending_outflow = pending_ops
-            .iter()
-            .try_fold(bitcoin::Amount::ZERO, |acc, op| {
-                acc.checked_add(op.outflow()?)
-            })
-            .ok_or_else(|| Error::Internal(String::from("pending meltop amounts inconsistent")))?;
-        let unreserved = reserve
-            .checked_sub(pending_outflow)
-            .unwrap_or(bitcoin::Amount::ZERO);
-        if outflow > unreserved {
-            let op = DeniedMeltOperation {
-                qid: Uuid::new_v4(),
-                inputs: input_total,
-                created: now,
-            };
-            self.repo.store_denied_meltop(op).await?;
-            let suerror = SUError::MeltOpSuspended(String::from(
-                "insufficient on-chain reserve, try again later",
-            ));
-            return Err(Error::ServiceUnavailable(suerror));
-        }
         // all ok, proceed
         let target = amount;
         let expiry = now + self.melt_quote_expiry;
@@ -208,7 +184,6 @@ impl Service {
             expiry: expiry.unix_timestamp().max(0) as u64,
             wallet_key,
         };
-        let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
         input_ys.sort();
         let op = onchain::MeltOperation {
             qid,
@@ -218,45 +193,68 @@ impl Service {
             fees: cashu::Amount::from(admin_fees.to_sat()),
             expiry,
             wallet_key,
-            input_ys,
+            input_ys: input_ys.clone(),
             fp_digest: inputs.attestation.fp_digest,
-            commitment,
+            commitment: None,
             status: onchain::MeltStatus::Pending,
         };
-        let inputs = op.input_ys.clone();
-        let expiry = op.expiry;
-        self.wdc.reserve_inputs(inputs, expiry).await?;
-        self.repo.store_meltop(op, now).await?;
-        Ok(wire_melt::MeltQuoteOnchainResponse {
-            content,
-            commitment,
-        })
-    }
-
-    async fn retrieve_pending_meltops(&self, now: TStamp) -> Result<Vec<onchain::MeltOperation>> {
-        let pendings_ids = self.repo.list_pending_meltops(now).await?;
-        let mut ops: Vec<onchain::MeltOperation> = Vec::with_capacity(pendings_ids.len());
-        for id in pendings_ids {
-            let op = self.repo.load_meltop(id).await;
-            let Ok(op) = op else {
-                tracing::error!("DB Failure, lost access to pending MeltOp with id {id}");
-                continue;
-            };
-            if op.expiry > now {
-                ops.push(op);
-            } else {
-                let res = self
-                    .repo
-                    .update_meltop_status(id, onchain::MeltStatus::Expired)
-                    .await;
-                if let Err(e) = res {
-                    tracing::error!(
-                        "DB Failure, lost access to update expired MeltOp with id {id}: {e}"
-                    );
-                }
+        let reserve = self.clowder_cl.get_onchain_reserve().await?;
+        let committed = self.reserve_meltop(op, now, reserve).await?;
+        if committed > reserve {
+            return Err(self.deny_meltop(input_total, now).await);
+        }
+        let result = async {
+            if committed > self.clowder_cl.get_onchain_reserve().await? {
+                return Err(self.deny_meltop(input_total, now).await);
+            }
+            self.wdc.reserve_inputs(input_ys, expiry).await?;
+            let (content, commitment) = self.clowder_cl.sign_onchain_melt_response(&body).await?;
+            self.repo.set_meltop_commitment(qid, commitment).await?;
+            Ok(wire_melt::MeltQuoteOnchainResponse {
+                content,
+                commitment,
+            })
+        }
+        .await;
+        if result.is_err() {
+            if let Err(err) = self
+                .repo
+                .update_meltop_status(qid, onchain::MeltStatus::Canceled)
+                .await
+            {
+                tracing::error!("DB Failure, failed to cancel MeltOp with id {qid}: {err}");
             }
         }
-        Ok(ops)
+        result
+    }
+
+    async fn reserve_meltop(
+        &self,
+        op: onchain::MeltOperation,
+        now: TStamp,
+        reserve: bitcoin::Amount,
+    ) -> Result<bitcoin::Amount> {
+        for _ in 1..MELT_RESERVE_ATTEMPTS {
+            match self.repo.reserve_meltop(op.clone(), now, reserve).await {
+                Err(Error::TxConflict) => continue,
+                result => return result,
+            }
+        }
+        self.repo.reserve_meltop(op, now, reserve).await
+    }
+
+    async fn deny_meltop(&self, inputs: bitcoin::Amount, now: TStamp) -> Error {
+        let op = DeniedMeltOperation {
+            qid: Uuid::new_v4(),
+            inputs,
+            created: now,
+        };
+        if let Err(e) = self.repo.store_denied_meltop(op).await {
+            return e;
+        }
+        Error::ServiceUnavailable(SUError::MeltOpSuspended(String::from(
+            "insufficient on-chain reserve, try again later",
+        )))
     }
 
     fn melt_fee(&self, amount: bitcoin::Amount) -> Result<bitcoin::Amount> {
@@ -317,6 +315,9 @@ impl Service {
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
+        let commitment = op
+            .commitment
+            .ok_or_else(|| Error::InvalidInput(String::from("Melt quote not committed")))?;
         let input_fps = wire_attestation::project_to_fingerprints(&inputs)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         if wire_attestation::fp_digest(&input_fps) != op.fp_digest {
@@ -341,7 +342,7 @@ impl Service {
             address: recipient,
             inputs: inputs.clone(),
             fees: fees_signatures,
-            commitment: op.commitment,
+            commitment,
         };
         let txid = self.clowder_cl.melt_onchain(order).await?;
         if let Err(e) = self.wdc.burn(inputs).await {
@@ -371,23 +372,6 @@ impl Service {
 fn min_network_fee(tx_vsize: u64, feerate_sat_per_vb: f64) -> bitcoin::Amount {
     let fees_sat = (tx_vsize as f64 * feerate_sat_per_vb).ceil() as u64;
     bitcoin::Amount::from_sat(fees_sat)
-}
-
-fn cross_check_locked_fps(
-    input_ys: Vec<cashu::PublicKey>,
-    pending_ops: &[onchain::MeltOperation],
-) -> Result<()> {
-    assert!(!input_ys.is_empty());
-    let input_set: HashSet<cashu::PublicKey> = HashSet::from_iter(input_ys);
-    for op in pending_ops {
-        let op_set: HashSet<cashu::PublicKey> = HashSet::from_iter(op.input_ys.clone());
-        if !input_set.is_disjoint(&op_set) {
-            return Err(Error::InvalidInput(String::from(
-                "some proofs are locked in pending melt operations",
-            )));
-        }
-    }
-    Ok(())
 }
 
 async fn generate_fee_premints(
@@ -441,6 +425,7 @@ fn extract_proofs(
 mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
+    use crate::persistence::surreal;
     use bcr_common::{core, core_tests, ecash, wire::clowder as wire_clowder};
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::hashes::Hash;
@@ -558,7 +543,7 @@ mod tests {
     #[tokio::test]
     async fn new_onchain_meltop_no_reserves() {
         let mut wdc = MockWildcatClient::new();
-        let mut repo = MockRepository::new();
+        let repo = surreal_repo_with_pending(99_000, 99_000).await;
         let mut clowder = MockClowderClient::new();
         wdc.expect_verify_fingerprints()
             .times(1)
@@ -586,33 +571,6 @@ mod tests {
             .expect_estimate_onchain_tx()
             .times(1)
             .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
-        let qid = Uuid::new_v4();
-        let cloned_qid = qid;
-        repo.expect_list_pending_meltops()
-            .times(1)
-            .returning(move |_| Ok(vec![cloned_qid]));
-        repo.expect_load_meltop()
-            .times(1)
-            .with(eq(qid))
-            .returning(move |_| {
-                Ok(onchain::MeltOperation {
-                    qid,
-                    available: cashu::Amount::from(99_000),
-                    address: String::new(),
-                    target: bitcoin::Amount::from_sat(99_000),
-                    expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-                    fees: cashu::Amount::ZERO,
-                    wallet_key: core::generate_random_keypair().public_key().into(),
-                    input_ys: vec![],
-                    fp_digest: [0u8; 32],
-                    commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64])
-                        .unwrap(),
-                    status: onchain::MeltStatus::Pending,
-                })
-            });
-        repo.expect_store_denied_meltop()
-            .times(1)
-            .returning(|_| Ok(()));
         clowder
             .expect_authenticate_attestation()
             .times(1)
@@ -646,6 +604,7 @@ mod tests {
             .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await;
         assert!(matches!(response, Err(Error::ServiceUnavailable(_))));
+        assert_only_prior_pending(&service).await;
     }
 
     #[tokio::test]
@@ -672,7 +631,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         clowder
             .expect_get_onchain_reserve()
-            .times(1)
+            .times(2)
             .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
         clowder
             .expect_verify_onchain_address()
@@ -682,9 +641,9 @@ mod tests {
             .expect_estimate_onchain_tx()
             .times(1)
             .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
-        repo.expect_list_pending_meltops()
+        repo.expect_reserve_meltop()
             .times(1)
-            .returning(|_| Ok(vec![]));
+            .returning(|op, _, _| Ok(op.outflow().unwrap()));
         clowder
             .expect_sign_onchain_melt_response()
             .times(1)
@@ -693,7 +652,9 @@ mod tests {
                     bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
                 Ok((String::new(), signature))
             });
-        repo.expect_store_meltop().times(1).returning(|_, _| Ok(()));
+        repo.expect_set_meltop_commitment()
+            .times(1)
+            .returning(|_, _| Ok(()));
         clowder
             .expect_authenticate_attestation()
             .times(1)
@@ -752,7 +713,7 @@ mod tests {
             fp_digest: wire_attestation::fp_digest(
                 &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
             ),
-            commitment: signature,
+            commitment: Some(signature),
             status: onchain::MeltStatus::Pending,
         };
         wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
@@ -840,7 +801,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: [1u8; 32],
-            commitment: signature,
+            commitment: Some(signature),
             status: onchain::MeltStatus::Pending,
         };
         wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
@@ -997,7 +958,7 @@ mod tests {
             fp_digest: wire_attestation::fp_digest(
                 &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
             ),
-            commitment: signature,
+            commitment: Some(signature),
             status: onchain::MeltStatus::Pending,
         };
         wdc.expect_verify_proofs().times(1).returning(|_| Ok(()));
@@ -1072,7 +1033,7 @@ mod tests {
 
     fn melt_quote_mocks() -> (MockWildcatClient, MockRepository, MockClowderClient) {
         let mut wdc = MockWildcatClient::new();
-        let mut repo = MockRepository::new();
+        let repo = MockRepository::new();
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_authenticate_attestation()
@@ -1091,8 +1052,59 @@ mod tests {
                 })
                 .collect())
         });
-        repo.expect_list_pending_meltops().returning(|_| Ok(vec![]));
         (wdc, repo, clowder)
+    }
+
+    fn dummy_commitment() -> bitcoin::secp256k1::schnorr::Signature {
+        bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap()
+    }
+
+    async fn init_surreal_onchain_repo() -> surreal::DBOnChain {
+        let cfg = bcr_wdc_utils::surreal::DBConnConfig {
+            connection: String::from("mem://"),
+            namespace: String::from("test"),
+            database: String::from("test"),
+        };
+        surreal::DBOnChain::new(cfg).await.unwrap()
+    }
+
+    async fn surreal_repo_with_pending(available: u64, target: u64) -> surreal::DBOnChain {
+        let repo = init_surreal_onchain_repo().await;
+        let now = time::OffsetDateTime::now_utc();
+        let op = onchain::MeltOperation {
+            qid: Uuid::new_v4(),
+            available: cashu::Amount::from(available),
+            address: String::new(),
+            target: bitcoin::Amount::from_sat(target),
+            expiry: now + time::Duration::seconds(3600),
+            fees: cashu::Amount::ZERO,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys: vec![core::generate_random_keypair().public_key().into()],
+            fp_digest: [0u8; 32],
+            commitment: Some(dummy_commitment()),
+            status: onchain::MeltStatus::Pending,
+        };
+        repo.store_meltop(op, now).await.unwrap();
+        repo
+    }
+
+    fn surreal_melt_service(
+        wdc: MockWildcatClient,
+        repo: surreal::DBOnChain,
+        clowder: MockClowderClient,
+    ) -> Service {
+        Service {
+            repo: Arc::new(repo),
+            ..melt_service(wdc, MockRepository::new(), clowder)
+        }
+    }
+
+    async fn assert_only_prior_pending(service: &Service) {
+        let now = time::OffsetDateTime::now_utc();
+        let pending = service.repo.list_pending_meltops(now).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        let op = service.repo.load_meltop(pending[0]).await.unwrap();
+        assert!(op.address.is_empty());
     }
 
     fn melt_service(
@@ -1233,7 +1245,6 @@ mod tests {
     // pending ops commit target + network fees, not just target
     async fn melt_quote_denies_on_pending_network_fees() {
         let mut wdc = MockWildcatClient::new();
-        let mut repo = MockRepository::new();
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_authenticate_attestation()
@@ -1259,34 +1270,113 @@ mod tests {
                 })
                 .collect())
         });
-        let pending = Uuid::new_v4();
-        repo.expect_list_pending_meltops()
-            .returning(move |_| Ok(vec![pending]));
-        repo.expect_load_meltop().returning(move |_| {
-            Ok(onchain::MeltOperation {
-                qid: pending,
-                available: cashu::Amount::from(99_000),
-                address: String::new(),
-                target: bitcoin::Amount::from_sat(50_000),
-                expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-                fees: cashu::Amount::ZERO,
-                wallet_key: core::generate_random_keypair().public_key().into(),
-                input_ys: vec![],
-                fp_digest: [0u8; 32],
-                commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap(),
-                status: onchain::MeltStatus::Pending,
-            })
-        });
-        repo.expect_store_denied_meltop()
-            .times(1)
-            .returning(|_| Ok(()));
-        let service = melt_service(wdc, repo, clowder);
+        let repo = surreal_repo_with_pending(99_000, 50_000).await;
+        let service = surreal_melt_service(wdc, repo, clowder);
         let request = melt_quote_request(&[512, 512], 800, 216);
         let err = service
             .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
             .await
             .unwrap_err();
         assert!(matches!(err, Error::ServiceUnavailable(_)));
+        assert_only_prior_pending(&service).await;
+    }
+
+    #[tokio::test]
+    async fn melt_quote_cancels_on_reserve_inputs_conflict() {
+        let (mut wdc, _, mut clowder) = melt_quote_mocks();
+        wdc.expect_reserve_inputs()
+            .times(1)
+            .returning(|_, _| Err(Error::InvalidInput(String::from("conflict"))));
+        clowder
+            .expect_estimate_onchain_tx()
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
+        clowder
+            .expect_get_onchain_reserve()
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        let repo = surreal_repo_with_pending(1_000, 1_000).await;
+        let service = surreal_melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        let err = service
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+        assert_only_prior_pending(&service).await;
+    }
+
+    #[tokio::test]
+    async fn melt_quote_denies_when_reserve_drops_after_admission() {
+        let (wdc, _, mut clowder) = melt_quote_mocks();
+        clowder
+            .expect_estimate_onchain_tx()
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
+        let mut reserves = [100_000, 1_000].into_iter();
+        clowder
+            .expect_get_onchain_reserve()
+            .times(2)
+            .returning(move || Ok(bitcoin::Amount::from_sat(reserves.next().unwrap())));
+        let repo = surreal_repo_with_pending(1_000, 1_000).await;
+        let service = surreal_melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        let err = service
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::ServiceUnavailable(_)));
+        assert_only_prior_pending(&service).await;
+    }
+
+    #[tokio::test]
+    async fn melt_quote_retries_reservation_conflicts() {
+        let (mut wdc, mut repo, mut clowder) = melt_quote_mocks();
+        wdc.expect_reserve_inputs().returning(|_, _| Ok(()));
+        clowder
+            .expect_estimate_onchain_tx()
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
+        clowder
+            .expect_get_onchain_reserve()
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        clowder
+            .expect_sign_onchain_melt_response()
+            .returning(|_| Ok((String::new(), dummy_commitment())));
+        let mut conflicts = MELT_RESERVE_ATTEMPTS - 1;
+        repo.expect_reserve_meltop()
+            .times(MELT_RESERVE_ATTEMPTS)
+            .returning(move |op, _, _| {
+                if conflicts == 0 {
+                    return Ok(op.outflow().unwrap());
+                }
+                conflicts -= 1;
+                Err(Error::TxConflict)
+            });
+        repo.expect_set_meltop_commitment().returning(|_, _| Ok(()));
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        service
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn melt_quote_gives_up_on_persistent_conflicts() {
+        let (wdc, mut repo, mut clowder) = melt_quote_mocks();
+        clowder
+            .expect_estimate_onchain_tx()
+            .returning(|_, _| Ok(dummy_estimate(216, 1.0)));
+        clowder
+            .expect_get_onchain_reserve()
+            .returning(|| Ok(bitcoin::Amount::from_sat(100_000)));
+        repo.expect_reserve_meltop()
+            .times(MELT_RESERVE_ATTEMPTS)
+            .returning(|_, _, _| Err(Error::TxConflict));
+        let service = melt_service(wdc, repo, clowder);
+        let request = melt_quote_request(&[512, 512], 800, 216);
+        let err = service
+            .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::TxConflict));
     }
 
     #[tokio::test]
