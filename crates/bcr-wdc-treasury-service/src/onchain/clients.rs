@@ -200,7 +200,7 @@ impl ClowderClient for ClowderCl {
             admin_fees: cashu::Amount::from(msg.melt_fee.to_sat()),
             network_fees: msg.network_fee,
             expiry: msg.expiry,
-            wallet_key: msg.wallet_key,
+            wallet_key: cashu::PublicKey::from(msg.wallet_key),
         };
         let response = self.nats.melt_quote_onchain(request).await?;
         let (content, _) = signature::serialize_borsh_msg_b64(msg)?;
