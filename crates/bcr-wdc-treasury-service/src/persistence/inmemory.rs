@@ -176,9 +176,10 @@ impl foreign::OfflineRepository for OfflineRepository {
 
     async fn remove_fps(&self, y: &[cashu::PublicKey]) -> Result<()> {
         let mut locked = self.fingerprints.lock().unwrap();
-        locked.retain(|_, (_, fp)| !y.contains(&fp.y));
+        locked.retain(|_, (_, fp)| !y.contains(&cashu::PublicKey::from(fp.y)));
         Ok(())
     }
+
     async fn store_proofs(
         &self,
         mint_id: secp256k1::PublicKey,

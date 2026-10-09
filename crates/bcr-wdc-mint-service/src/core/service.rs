@@ -21,7 +21,7 @@ use bcr_common::{
     wire::{attestation as wire_attestation, swap as wire_swap},
 };
 use bcr_wdc_utils::{keys as keys_utils, signatures as signatures_utils};
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1 as secp;
 use futures::future::JoinAll;
 use itertools::izip;
 use secp256k1::schnorr;
@@ -51,7 +51,7 @@ pub struct Service {
     pub keygen: KeysFactory,
     pub min_keyset_fees_ppk: AtomicU64,
     pub max_expiry: time::Duration,
-    pub alpha_id: PublicKey,
+    pub alpha_id: secp::PublicKey,
     pub settle_window_deadline: TStamp,
 }
 
@@ -271,7 +271,12 @@ impl Service {
         let kinfos = keys_utils::kinfos_list_to_map(kinfos);
         let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_commit(&core_fps, &c_outputs, &kinfos)?;
-        let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
+        let ys: Vec<cashu::PublicKey> = request
+            .inputs
+            .inputs
+            .iter()
+            .map(|fp| cashu::PublicKey::from(fp.y))
+            .collect();
         if !self
             .check_state(&ys, now)
             .await?

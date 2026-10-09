@@ -116,7 +116,11 @@ impl Service {
         bcr_wdc_utils::signatures::basic_fingerprints_checks(&core_fps)?;
         self.wdc.verify_fingerprints(&inputs.inputs).await?;
         // Unspent fingerprints
-        let mut input_ys = inputs.inputs.iter().map(|fp| fp.y).collect::<Vec<_>>();
+        let mut input_ys = inputs
+            .inputs
+            .iter()
+            .map(|fp| cashu::PublicKey::from(fp.y))
+            .collect::<Vec<_>>();
         let states = self.wdc.check_spendable(input_ys.clone()).await?;
         let all_unspent = states
             .iter()
@@ -217,7 +221,7 @@ impl Service {
             target,
             fees: cashu::Amount::from(admin_fees.to_sat()),
             expiry,
-            wallet_key,
+            wallet_key: cashu::PublicKey::from(wallet_key),
             input_ys,
             fp_digest: inputs.attestation.fp_digest,
             commitment,
@@ -299,11 +303,12 @@ impl Service {
         vault: &dyn onchain::VaultService,
     ) -> Result<wire_melt::MeltOnchainResponse> {
         let wire_melt::MeltOnchainRequest { inputs, .. } = request;
+        let c_inputs: Vec<cashu::Proof> = inputs.into_iter().map(From::from).collect();
         // verify proofs
-        bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
-        self.wdc.verify_proofs(&inputs).await?;
+        bcr_wdc_utils::signatures::basic_proofs_checks(&c_inputs)?;
+        self.wdc.verify_proofs(&c_inputs).await?;
         // verify not spent
-        let p_ys = inputs.ys()?;
+        let p_ys = c_inputs.ys()?;
         let states = self.wdc.check_spendable(p_ys.clone()).await?;
         let any_spent = states
             .iter()
@@ -317,7 +322,7 @@ impl Service {
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        let input_fps = wire_attestation::project_to_fingerprints(&inputs)
+        let input_fps = wire_attestation::project_to_fingerprints(&c_inputs)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         if wire_attestation::fp_digest(&input_fps) != op.fp_digest {
             return Err(Error::InvalidInput(String::from(
@@ -327,7 +332,7 @@ impl Service {
         // attestation was authenticated at quote time; op.fp_digest binds these proofs to it
         let unchecked = bitcoin::Address::from_str(&op.address)?;
         let recipient = self.clowder_cl.verify_onchain_address(unchecked).await?;
-        let fees_pre = generate_fee_premints(&self.wdc, &inputs, op.fees).await?;
+        let fees_pre = generate_fee_premints(&self.wdc, &c_inputs, op.fees).await?;
         let fees_signatures = self.wdc.sign(fees_pre.blinded_messages()).await?;
         let keyset = self.wdc.keyset(fees_pre.keyset_id).await?;
         let fees = extract_proofs(fees_pre, fees_signatures.clone(), keyset.into())?;
@@ -339,12 +344,12 @@ impl Service {
             target: op.target,
             network_fee,
             address: recipient,
-            inputs: inputs.clone(),
+            inputs: c_inputs.clone(),
             fees: fees_signatures,
             commitment: op.commitment,
         };
         let txid = self.clowder_cl.melt_onchain(order).await?;
-        if let Err(e) = self.wdc.burn(inputs).await {
+        if let Err(e) = self.wdc.burn(c_inputs).await {
             tracing::warn!("failed to mirror burn after settling melt {qid}: {e}");
         }
         if let Err(e) = vault.store_proofs(fees).await {
@@ -441,7 +446,11 @@ fn extract_proofs(
 mod tests {
     use super::*;
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
-    use bcr_common::{core, core_tests, ecash, wire::clowder as wire_clowder};
+    use bcr_common::{
+        core, core_tests,
+        ecash::{self, test_utils as ecash_test, ProofsMethods},
+        wire::clowder as wire_clowder,
+    };
     use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::hashes::Hash;
     use cashu::Amount;
@@ -736,7 +745,8 @@ mod tests {
         let mut clowder = MockClowderClient::new();
         let mut vault = MockVaultService::new();
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
@@ -750,7 +760,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: wire_attestation::fp_digest(
-                &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+                &wire_attestation::project_to_fingerprints(&c_proofs).unwrap(),
             ),
             commitment: signature,
             status: onchain::MeltStatus::Pending,
@@ -825,7 +835,8 @@ mod tests {
         let clowder = MockClowderClient::new();
         let vault = MockVaultService::new();
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
@@ -981,7 +992,8 @@ mod tests {
         let mut clowder = MockClowderClient::new();
         let mut vault = MockVaultService::new();
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
-        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
         let input_ys = proofs.ys().unwrap();
         let qid = Uuid::new_v4();
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
@@ -995,7 +1007,7 @@ mod tests {
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: wire_attestation::fp_digest(
-                &wire_attestation::project_to_fingerprints(&proofs).unwrap(),
+                &wire_attestation::project_to_fingerprints(&c_proofs).unwrap(),
             ),
             commitment: signature,
             status: onchain::MeltStatus::Pending,
@@ -1032,10 +1044,10 @@ mod tests {
             Ok(signatures)
         });
         wdc.expect_burn()
-            .with(eq(proofs.clone()))
+            .with(eq(c_proofs.clone()))
             .times(1)
             .returning(|_| Ok(()));
-        let expected_inputs = proofs.clone();
+        let expected_inputs = c_proofs.clone();
         clowder
             .expect_melt_onchain()
             .times(1)

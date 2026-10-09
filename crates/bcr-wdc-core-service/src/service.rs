@@ -270,7 +270,12 @@ impl Service {
         let kinfos = keys_utils::kinfos_list_to_map(kinfos);
         let kinfos = kinfos.into_iter().collect::<HashMap<_, _>>();
         swap::mint::verify_commit(&core_fps, &c_outputs, &kinfos)?;
-        let ys: Vec<cashu::PublicKey> = request.inputs.inputs.iter().map(|fp| fp.y).collect();
+        let ys: Vec<cashu::PublicKey> = request
+            .inputs
+            .inputs
+            .iter()
+            .map(|fp| cashu::PublicKey::from(fp.y))
+            .collect();
         if !self
             .check_state(&ys, now)
             .await?

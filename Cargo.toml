@@ -21,7 +21,7 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "a299a7a"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "990a134"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
 bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}

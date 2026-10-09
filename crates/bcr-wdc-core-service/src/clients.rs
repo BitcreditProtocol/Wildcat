@@ -255,7 +255,8 @@ pub struct TreasuryCl {
 
 #[async_trait]
 impl TreasuryService for TreasuryCl {
-    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+    async fn store_proofs(&self, c_proofs: Vec<cashu::Proof>) -> Result<()> {
+        let proofs: Vec<_> = c_proofs.into_iter().map(ecash::Proof::from).collect();
         self.cl.fees_store_proofs(proofs).await?;
         Ok(())
     }

@@ -1,4 +1,5 @@
 // ----- standard library imports
+use std::ops::Deref;
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
@@ -51,12 +52,12 @@ impl WdcClient for WildcatCl {
         &self,
         qid: Uuid,
         kid: cashu::Id,
-        pk: cashu::PublicKey,
+        c_pk: cashu::PublicKey,
         target: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()> {
         self.treasury
-            .new_ebill_mint_operation(qid, kid, pk, target, bill_id)
+            .new_ebill_mint_operation(qid, kid.into(), *c_pk.deref(), target, bill_id)
             .await?;
         Ok(())
     }
@@ -116,7 +117,8 @@ impl WdcClient for WildcatCl {
         Ok(ebill)
     }
 
-    async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+    async fn collect_fees(&self, c_proofs: Vec<cashu::Proof>) -> Result<()> {
+        let proofs: Vec<_> = c_proofs.into_iter().map(ecash::Proof::from).collect();
         self.treasury.fees_store_proofs(proofs).await?;
         Ok(())
     }

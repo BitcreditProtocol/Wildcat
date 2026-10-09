@@ -346,13 +346,13 @@ async fn try_offline_htlc_swap(
     let proof = cashu::Proof {
         amount,
         keyset_id: fp.keyset_id.into(),
-        c: fp.c,
+        c: cashu::PublicKey::from(fp.c),
         dleq: fp.dleq,
         witness: None,
         secret,
         p2pk_e: None,
     };
-    if proof.y()? != fp.y {
+    if proof.y()? != cashu::PublicKey::from(fp.y) {
         return Err(Error::InvalidInput(String::from(
             "preimage does not match fingerprint",
         )));
@@ -363,7 +363,7 @@ async fn try_offline_htlc_swap(
         .get(&proof.amount)
         .ok_or(Error::Internal(String::from("key amount not found")))?;
     proof.verify_dleq(*key)?;
-    repo.remove_fps(&[fp.y]).await?;
+    repo.remove_fps(&[cashu::PublicKey::from(fp.y)]).await?;
     repo.store_proofs(mint_id, vec![proof]).await?;
     // Backed now, so no longer the reclaim routine's to burn.
     issued.remove_issued_by_hash(&hash).await?;
