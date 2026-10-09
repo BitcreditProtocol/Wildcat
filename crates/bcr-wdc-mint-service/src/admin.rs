@@ -99,7 +99,8 @@ pub async fn store_fees_proofs(
     State(vault_srvc): State<Arc<vault::Service>>,
     Json(request): Json<wire_treasury::StoreProofsRequest>,
 ) -> Result<Json<wire_treasury::StoreProofsResponse>> {
-    vault_srvc.store_proofs(request.proofs).await?;
+    let c_proofs = request.proofs.into_iter().map(From::from).collect();
+    vault_srvc.store_proofs(c_proofs).await?;
     let response = wire_treasury::StoreProofsResponse {};
     Ok(Json(response))
 }

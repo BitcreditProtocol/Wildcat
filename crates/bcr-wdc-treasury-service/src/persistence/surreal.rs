@@ -1,5 +1,5 @@
 // ----- standard library imports
-use std::str::FromStr;
+use std::{ops::Deref, str::FromStr};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -1165,8 +1165,8 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 id: rid.clone(),
                 amount: fp.amount,
                 keyset_id: fp.keyset_id.into(),
-                y: fp.y,
-                c: fp.c,
+                y: cashu::PublicKey::from(fp.y),
+                c: cashu::PublicKey::from(fp.c),
                 dleq: fp.dleq,
                 mint_id: mint_id.to_string(),
             };
@@ -1196,8 +1196,8 @@ impl foreign::OfflineRepository for DBForeignOffline {
         let fp = wire_keys::ProofFingerprint {
             amount: entry.amount,
             keyset_id: entry.keyset_id.into(),
-            y: entry.y,
-            c: entry.c,
+            y: *entry.y.deref(),
+            c: *entry.c.deref(),
             dleq: entry.dleq,
         };
         let mint_id = secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
@@ -1500,8 +1500,8 @@ mod tests {
         let db = init_foreignoffline_mem_db().await;
 
         let alpha_id = core::generate_random_keypair().public_key();
-        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
-        let c = cashu::PublicKey::from(core::generate_random_keypair().public_key());
+        let y = core::generate_random_keypair().public_key();
+        let c = core::generate_random_keypair().public_key();
         let fps = vec![
             wire_keys::ProofFingerprint {
                 amount: 10,
@@ -1513,8 +1513,8 @@ mod tests {
             wire_keys::ProofFingerprint {
                 amount: 10,
                 keyset_id: ecash::Id::from_bytes(&[1; 33]).unwrap(),
-                y: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
-                c: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
+                y: core::generate_random_keypair().public_key(),
+                c: core::generate_random_keypair().public_key(),
                 dleq: None,
             },
         ];

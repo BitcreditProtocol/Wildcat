@@ -43,8 +43,8 @@ pub async fn new_ebill_mintop(
     let now = time::OffsetDateTime::now_utc();
     ctrl.new_minting_operation(
         request.quote_id,
-        request.kid,
-        request.pub_key,
+        request.kid.into(),
+        cashu::PublicKey::from(request.pub_key),
         request.target,
         request.bill_id,
         now,
@@ -56,7 +56,7 @@ pub async fn new_ebill_mintop(
 
 fn convert_ebill_mintop_status(status: ebill::MintOperation) -> wire_treasury::MintOperationStatus {
     wire_treasury::MintOperationStatus {
-        kid: status.kid,
+        kid: status.kid.into(),
         quote_id: status.uid,
         target: status.target,
         current: status.minted,
@@ -88,7 +88,8 @@ pub async fn store_fees_proofs(
     State(ctrl): State<Arc<vault::Service>>,
     Json(request): Json<wire_treasury::StoreProofsRequest>,
 ) -> Result<Json<wire_treasury::StoreProofsResponse>> {
-    ctrl.store_proofs(request.proofs).await?;
+    let c_proofs = request.proofs.into_iter().map(From::from).collect();
+    ctrl.store_proofs(c_proofs).await?;
     let response = wire_treasury::StoreProofsResponse {};
     Ok(Json(response))
 }

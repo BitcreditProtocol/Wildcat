@@ -614,10 +614,10 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bcr-common"
 version = "0.11.0"
-source = "git+https://github.com/BitcreditProtocol/bcr-common.git?rev=a299a7a#a299a7acca80ab738756bd2bdd8246f30f0f993b"
+source = "git+https://github.com/BitcreditProtocol/bcr-common.git?rev=990a134#990a134150949d9c6a25374df9cdec57ad7516e2"
 dependencies = [
  "async-nats",
- "bip39",
+ "bip39 3.0.0",
  "bitcoin",
  "borsh",
  "bytes",
@@ -675,7 +675,7 @@ dependencies = [
  "bcr-common",
  "bcr-wdc-core-service",
  "bcr-wdc-utils",
- "bip39",
+ "bip39 2.2.2",
  "bitcoin",
  "config",
  "futures",
@@ -706,7 +706,7 @@ dependencies = [
  "bcr-common",
  "bcr-wdc-mint-service",
  "bcr-wdc-utils",
- "bip39",
+ "bip39 2.2.2",
  "bitcoin",
  "config",
  "futures",
@@ -736,7 +736,7 @@ dependencies = [
  "axum",
  "bcr-common",
  "bcr-wdc-utils",
- "bip39",
+ "bip39 2.2.2",
  "bitcoin",
  "config",
  "mockall",
@@ -873,6 +873,17 @@ name = "bip39"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
+dependencies = [
+ "bitcoin_hashes 0.14.101",
+ "serde",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "bip39"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4559bb9225f8401dcea601cf8dc9ed81ea0dadd9cf7755fdefdd93ef7961e19e"
 dependencies = [
  "bitcoin_hashes 0.14.101",
  "serde",
@@ -3820,7 +3831,7 @@ checksum = "67bacf4195a119bc55d576ec6b54cc103723cb46fff5f907b8bdac8fd29ac4a0"
 dependencies = [
  "base64 0.22.1",
  "bech32 0.12.0",
- "bip39",
+ "bip39 2.2.2",
  "bitcoin_hashes 1.2.0",
  "cbc",
  "chacha20 0.9.1",

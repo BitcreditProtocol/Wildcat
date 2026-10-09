@@ -158,7 +158,7 @@ async fn swap_p2pk() {
         .collect::<Result<_, _>>()
         .unwrap();
     for (p, fps) in correct_proofs.iter().zip(correct_fps.iter()) {
-        assert_eq!(p.y().unwrap(), fps.y);
+        assert_eq!(p.y().unwrap(), cashu::PublicKey::from(fps.y));
     }
     let mint_kp = bcr_wdc_core_service::test_utils::mint_kp();
     let mint_pk = mint_kp.public_key();
