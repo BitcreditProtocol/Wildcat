@@ -954,7 +954,7 @@ impl persistence::Repository for Repository {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
 enum VaultProofBlob {
-    V1(cashu::Proof),
+    V1(ecash::Proof),
 }
 // ///////////////////////////////////////////////////////////////////////// DBVault
 
@@ -985,7 +985,7 @@ impl vault::Repository for DBVault {
         let mut blob_values = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
-            let blob = VaultProofBlob::V1(proof);
+            let blob = VaultProofBlob::V1(proof.into());
             let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             y_strs.push(y.to_string());
             blob_values.push(blob_value);
@@ -1027,7 +1027,7 @@ impl vault::Repository for DBVault {
         let proofs = blobs
             .into_iter()
             .map(|blob| match blob.0 {
-                VaultProofBlob::V1(proof) => proof,
+                VaultProofBlob::V1(proof) => cashu::Proof::from(proof),
             })
             .collect();
         Ok(proofs)
@@ -1062,5 +1062,25 @@ impl vault::Repository for DBVault {
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_common::core_tests;
+
+    #[test]
+    fn vault_proof_blob_serializes_like_cashu() {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = vec![cashu::Amount::from(8u64)];
+        let proof = core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+            .pop()
+            .unwrap();
+        let cashu_json = serde_json::to_value(&proof).unwrap();
+        let stored = serde_json::to_value(VaultProofBlob::V1(proof.clone().into())).unwrap();
+        assert_eq!(stored["data"], cashu_json);
+        let VaultProofBlob::V1(back) = serde_json::from_value(stored).unwrap();
+        assert_eq!(cashu::Proof::from(back), proof);
     }
 }
