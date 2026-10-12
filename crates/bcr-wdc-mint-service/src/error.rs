@@ -35,6 +35,8 @@ pub enum Error {
     ClowderClient(#[from] bcr_common::client::clowder::ClowderClientError),
     #[error("clowder rest client {0}")]
     ClowderRestClient(#[from] bcr_common::client::admin::clowder::Error),
+    #[error("ebill client {0}")]
+    EbillClient(#[from] bcr_common::client::ebill::Error),
     #[error("bcr_common::wallet {0}")]
     BcrWallet(#[from] bcr_common::wallet::Error),
     #[error("database error {0}")]
@@ -114,6 +116,7 @@ impl axum::response::IntoResponse for Error {
             }
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::CdkDhke(e) => {

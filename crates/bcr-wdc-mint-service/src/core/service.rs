@@ -138,15 +138,20 @@ impl Service {
         blinds: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
         let signatures = self.generate_signatures(blinds).await?;
-        for (blind, signature) in blinds.iter().zip(signatures.iter()) {
-            self.repository
-                .signature_store(blind.blinded_secret, signature.clone())
-                .await?;
-        }
+        // all or nothing: a failure here leaves no signature behind for restore
+        let stored = blinds
+            .iter()
+            .zip(signatures.iter().cloned())
+            .map(|(blind, signature)| StoredSignature {
+                y: blind.blinded_secret,
+                signature,
+            })
+            .collect();
+        self.repository.signatures_store(stored).await?;
         Ok(signatures)
     }
 
-    async fn generate_signatures(
+    pub async fn generate_signatures(
         &self,
         blinds: &[cashu::BlindedMessage],
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -165,6 +170,18 @@ impl Service {
             signatures.push(sign_ecash(current_keyset, blind)?);
         }
         Ok(signatures)
+    }
+
+    pub async fn store_signatures(
+        &self,
+        signatures: impl IntoIterator<Item = (cashu::PublicKey, cashu::BlindSignature)>,
+    ) -> Result<()> {
+        let stored: Vec<_> = signatures
+            .into_iter()
+            .map(|(y, signature)| StoredSignature { y, signature })
+            .collect();
+        self.repository.signatures_store(stored).await?;
+        Ok(())
     }
 
     pub async fn check_state(
@@ -643,6 +660,29 @@ mod tests {
     }
 
     // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.
+    #[tokio::test]
+    async fn sign_blinds_stores_nothing_when_a_blind_is_already_signed() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let entry = keys_utils::to_entry(kinfo, keyset.clone());
+        repository.keys_store(entry).await.unwrap();
+        let service = service(repository, MockClowderClient::new());
+        let amounts = [cashu::Amount::from(8u64), cashu::Amount::from(16u64)];
+        let blinds = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|generated| generated.0)
+            .collect::<Vec<_>>();
+        service.sign_blinds(&blinds[1..]).await.unwrap();
+
+        let result = service.sign_blinds(&blinds).await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        assert!(service
+            .search_signature(&blinds[0])
+            .await
+            .unwrap()
+            .is_none());
+    }
+
     #[tokio::test]
     async fn burn_accepts_locked_proofs_without_witness() {
         let repository = Arc::new(inmemory::Repository::default());
