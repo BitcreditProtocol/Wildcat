@@ -12,7 +12,7 @@ use bcr_common::client::{
     self,
     admin::{core as core_ep, treasury as treasury_ep},
 };
-use bcr_wdc_utils::{db, nut19, postgres};
+use bcr_wdc_utils::nut19;
 // ----- local modules
 mod admin;
 pub mod config;
@@ -43,7 +43,6 @@ impl AppController {
     pub async fn new(seed: &[u8], cfg: config::App) -> Self {
         let config::App {
             repository,
-            repository_new,
             clowder_url,
             clowder_nkey_seed,
             clowder_rest_url,
@@ -52,25 +51,19 @@ impl AppController {
             minimum_keyset_fees_ppk,
             cache_expiry_sec,
             settle_window_sec,
-            vault: vault_cfg,
         } = cfg;
-        // one PostgreSQL pool, created on first use and shared by every repository
-        let mut pg_pool: Option<sqlx::PgPool> = None;
-        let surreal_db = persistence::surreal::Repository::new(repository)
-            .await
-            .expect("Failed to create repository");
-        let migrated = surreal_db
-            .is_migrated()
-            .await
-            .expect("Failed to read core migration marker");
+        // one PostgreSQL pool shared by every repository: with `max_connections > 0` it is
+        // sized by the config, otherwise sqlx's default applies
+        let pool = if repository.max_connections > 0 {
+            persistence::sqlx::connect(&repository).await
+        } else {
+            sqlx::PgPool::connect(&repository.connection)
+                .await
+                .map_err(|e| error::Error::DB(anyhow::anyhow!(e)))
+        }
+        .expect("Failed to connect to PostgreSQL");
         let repository: Arc<dyn Repository> =
-            match db::select_db_backend("mint core", migrated, repository_new.clone()) {
-                db::DBBackend::Surreal => Arc::new(surreal_db),
-                db::DBBackend::Postgres | db::DBBackend::DefaultPostgres => {
-                    let pool = shared_pool(&mut pg_pool, &repository_new).await;
-                    Arc::new(persistence::sqlx::Repository::from_pool(pool))
-                }
-            };
+            Arc::new(persistence::sqlx::Repository::from_pool(pool.clone()));
         let keygen = factory::KeysFactory::new(seed, starting_derivation_path);
         let clowder_cl =
             client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
@@ -107,12 +100,8 @@ impl AppController {
             alpha_id,
             settle_window_deadline: settle_window_tout,
         };
-        let config::Vault { db: vault_db, .. } = vault_cfg;
-        let vault_repo = persistence::surreal::DBVault::new(vault_db)
-            .await
-            .expect("Failed to create vault repository");
         let vault = vault::Service {
-            repo: Box::new(vault_repo),
+            repo: Box::new(persistence::sqlx::DBVault::from_pool(pool)),
             my_url,
             mint_id,
         };
@@ -167,7 +156,6 @@ where
             treasury_ep::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
         );
-
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
 
@@ -268,27 +256,6 @@ pub mod test_utils {
             .expect("failed to start test server");
         (server, cntrl)
     }
-}
-
-/// The PostgreSQL pool every repository shares, connected on first use: with
-/// `max_connections > 0` it is sized by the config, otherwise sqlx's default applies.
-async fn shared_pool(
-    pool: &mut Option<sqlx::PgPool>,
-    cfg: &postgres::DBConnConfig,
-) -> sqlx::PgPool {
-    if let Some(pool) = pool {
-        return pool.clone();
-    }
-    let new_pool = if cfg.max_connections > 0 {
-        persistence::sqlx::connect(cfg).await
-    } else {
-        sqlx::PgPool::connect(&cfg.connection)
-            .await
-            .map_err(|e| error::Error::DB(anyhow::anyhow!(e)))
-    }
-    .expect("Failed to connect to PostgreSQL");
-    *pool = Some(new_pool.clone());
-    new_pool
 }
 
 #[cfg(test)]

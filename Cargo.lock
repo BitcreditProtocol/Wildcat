@@ -716,7 +716,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "surrealdb",
  "thiserror 2.0.21",
  "time",
  "tokio",
