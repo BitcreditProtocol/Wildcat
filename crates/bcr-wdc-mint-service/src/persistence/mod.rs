@@ -69,6 +69,7 @@ pub trait Repository: Send + Sync {
     async fn commitment_delete(&self, commitment: schnorr::Signature) -> Result<()>;
     async fn commitment_clean_expired(&self, now: TStamp) -> Result<()>;
     async fn ys_store(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
+    async fn ys_release(&self, inputs: Vec<cashu::PublicKey>, deadline: TStamp) -> Result<()>;
     async fn ys_contains(&self, inputs: &[cashu::PublicKey]) -> Result<Vec<bool>>;
     async fn ys_clean_expired(&self, now: TStamp) -> Result<()>;
     // no need to delete as inputs can only end up being burnt, and they will appear as spent in
@@ -624,7 +625,9 @@ mod tests {
         let fresh_y = random_cdk_pks(1).pop().unwrap();
         let expiration = TStamp::from_unix_timestamp(100000).unwrap();
         db.proofs_insert(vec![proof]).await.unwrap();
-        db.ys_store(vec![reserved_y], expiration).await.unwrap();
+        db.ys_store(vec![reserved_y], expiration + time::Duration::seconds(1))
+            .await
+            .unwrap();
 
         for unavailable_y in [spent_y, reserved_y] {
             let signature = signatures_test::random_schnorr_signature();
@@ -647,6 +650,31 @@ mod tests {
             ));
             assert!(!db.commitment_contains_inputs(&[fresh_y]).await.unwrap());
         }
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_sqlx_commitment_store_claims_own_reservation(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        let reserved_y = random_cdk_pks(1).pop().unwrap();
+        let fresh_y = random_cdk_pks(1).pop().unwrap();
+        let expiration = TStamp::from_unix_timestamp(100000).unwrap();
+        db.ys_store(vec![reserved_y], expiration).await.unwrap();
+
+        db.commitment_store(
+            vec![reserved_y, fresh_y],
+            random_cdk_pks(1),
+            expiration,
+            random_wallet_key(),
+            signatures_test::random_schnorr_signature(),
+            [0_u8; 32],
+            SignatureOwner::Unsigned,
+        )
+        .await
+        .unwrap();
+
+        assert!(db.commitment_contains_inputs(&[reserved_y]).await.unwrap());
+        assert_eq!(db.ys_contains(&[reserved_y]).await.unwrap(), vec![false]);
     }
 
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1157,6 +1185,31 @@ mod tests {
         db.ys_store(vec![input], future).await.unwrap();
         let result = db.ys_contains(&[input]).await.unwrap();
         assert_eq!(result, vec![true]);
+    }
+
+    #[tokio::test]
+    async fn test_reservedysrepo_release() {
+        let db = init_memmap_db();
+        reservedysrepo_release(db).await;
+        //
+        let db = init_surreal_db().await;
+        reservedysrepo_release(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_reservedysrepo_release_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        reservedysrepo_release(db).await;
+    }
+    async fn reservedysrepo_release(db: impl Repository) {
+        let inputs = random_cdk_pks(2);
+        let own = TStamp::from_unix_timestamp(100000).unwrap();
+        let other = TStamp::from_unix_timestamp(200000).unwrap();
+        db.ys_store(vec![inputs[0]], own).await.unwrap();
+        db.ys_store(vec![inputs[1]], other).await.unwrap();
+        db.ys_release(inputs.clone(), own).await.unwrap();
+        let result = db.ys_contains(&inputs).await.unwrap();
+        assert_eq!(result, vec![false, true]);
     }
 
     fn swap_finalization_fixture(
