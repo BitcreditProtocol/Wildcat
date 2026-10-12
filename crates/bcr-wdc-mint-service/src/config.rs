@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::client;
+use bcr_common::{cashu, client};
 use bcr_wdc_utils::postgres;
 use bitcoin::bip32 as btc32;
 // ----- local imports
@@ -19,4 +19,16 @@ pub struct App {
     pub minimum_keyset_fees_ppk: u64,
     pub cache_expiry_sec: u64,
     pub settle_window_sec: u64,
+    pub ebill: Ebill,
+    pub ebill_url: client::Url,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Ebill {
+    #[serde(default = "default_multiplier")]
+    pub multiplier: cashu::Amount,
+}
+
+fn default_multiplier() -> cashu::Amount {
+    cashu::Amount::ONE
 }
