@@ -4,3 +4,5 @@ pub mod factory;
 pub mod service;
 
 // ----- end imports
+
+pub use service::Service;
