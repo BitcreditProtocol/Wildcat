@@ -448,7 +448,7 @@ mod tests {
     use crate::onchain::{MockClowderClient, MockRepository, MockVaultService, MockWildcatClient};
     use bcr_common::{
         core, core_tests,
-        ecash::{self, test_utils as ecash_test, ProofsMethods},
+        ecash::{self, ProofsMethods},
         wire::clowder as wire_clowder,
     };
     use bcr_wdc_utils::signatures::test_utils as signatures_test;

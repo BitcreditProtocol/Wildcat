@@ -1,12 +1,9 @@
 // ----- standard library imports
-use std::str::FromStr;
+use std::{ops::Deref, str::FromStr};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{
-    cashu::{self, ProofsMethods},
-    core::BillId,
-};
+use bcr_common::{cashu, core::BillId, ecash};
 use sqlx::types::Json;
 use sqlx::PgPool;
 use sqlx::Row;
@@ -31,8 +28,8 @@ enum EbillMintOperationBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV1 {
-    target: cashu::Amount,
-    pub_key: cashu::PublicKey,
+    target: bitcoin::Amount,
+    pub_key: secp256k1::PublicKey,
 }
 
 // ///////////////////////////////////////////////////////////////////////// DBEbill
@@ -53,8 +50,8 @@ impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
         let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
-            target: mint_op.target,
-            pub_key: mint_op.pub_key,
+            target: bitcoin::Amount::from_sat(mint_op.target.to_u64()),
+            pub_key: *mint_op.pub_key.deref(),
         });
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
@@ -105,8 +102,8 @@ impl ebill::Repository for DBEbill {
             kid,
             minted: cashu::Amount::from(row.minted as u64),
             bill_id,
-            target: v1.target,
-            pub_key: v1.pub_key,
+            target: cashu::Amount::from(v1.target.to_sat()),
+            pub_key: cashu::PublicKey::from(v1.pub_key),
         })
     }
 
@@ -133,8 +130,8 @@ impl ebill::Repository for DBEbill {
             kid,
             minted: cashu::Amount::from(row.minted as u64),
             bill_id,
-            target: v1.target,
-            pub_key: v1.pub_key,
+            target: cashu::Amount::from(v1.target.to_sat()),
+            pub_key: cashu::PublicKey::from(v1.pub_key),
         }))
     }
 
@@ -160,8 +157,8 @@ impl ebill::Repository for DBEbill {
                 kid,
                 minted: cashu::Amount::from(row.minted as u64),
                 bill_id,
-                target: v1.target,
-                pub_key: v1.pub_key,
+                target: cashu::Amount::from(v1.target.to_sat()),
+                pub_key: cashu::PublicKey::from(v1.pub_key),
             });
         }
         Ok(ops)
@@ -201,13 +198,13 @@ impl ebill::Repository for DBEbill {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
 enum ForeignProofBlob {
-    V1(cashu::Proof),
+    V1(ecash::Proof),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
 enum ForeignHtlcProofBlob {
-    V1(cashu::Proof),
+    V1(ecash::Proof),
 }
 
 /////////////////////////////////////////////////////////////////////////// DBForeignOnline
@@ -238,7 +235,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         let mint_id = mint_id.to_string();
         let mut blobs = Vec::with_capacity(proofs.len());
         for proof in proofs {
-            let blob = ForeignProofBlob::V1(proof);
+            let blob = ForeignProofBlob::V1(proof.into());
             let jason = serde_json::to_string(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             blobs.push(jason);
         }
@@ -279,7 +276,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
                 serde_json::from_str(blob).map_err(|e| Error::DB(anyhow!(e)))?;
             match blob {
                 ForeignProofBlob::V1(proof) => {
-                    proofs.push(proof);
+                    proofs.push(cashu::Proof::from(proof));
                 }
             }
         }
@@ -310,7 +307,9 @@ impl foreign::OnlineRepository for DBForeignOnline {
                     ForeignProofBlob::V1(proof) => proofs.push(proof),
                 }
             }
-            balances.insert(mint_id, proofs.total_amount()?);
+            let total = cashu::Amount::try_sum(proofs.iter().map(|p| p.amount))
+                .expect("amounts are already checked");
+            balances.insert(mint_id, total);
         }
         Ok(balances)
     }
@@ -328,7 +327,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         for p in proofs {
             let y = p.y().map_err(|e| Error::DB(anyhow!(e)))?;
             ys.push(y.to_string());
-            let blob = ForeignHtlcProofBlob::V1(p);
+            let blob = ForeignHtlcProofBlob::V1(p.into());
             let jason = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             blobs.push(jason);
         }
@@ -378,7 +377,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             let mint_id =
                 secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
             let ForeignHtlcProofBlob::V1(proof) = row.blob.0;
-            proofs.push((mint_id, proof))
+            proofs.push((mint_id, cashu::Proof::from(proof)))
         }
         Ok(proofs)
     }
@@ -409,7 +408,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
         for p in proofs {
             let y = p.y().map_err(|e| Error::DB(anyhow!(e)))?;
             ys.push(y.to_string());
-            let blob = ForeignHtlcProofBlob::V1(p);
+            let blob = ForeignHtlcProofBlob::V1(p.into());
             let jason = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             blobs.push(jason);
         }
@@ -447,7 +446,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
             let blob: ForeignHtlcProofBlob =
                 serde_json::from_value(row.blob).map_err(|e| Error::DB(anyhow!(e)))?;
             match blob {
-                ForeignHtlcProofBlob::V1(proof) => proofs.push(proof),
+                ForeignHtlcProofBlob::V1(proof) => proofs.push(cashu::Proof::from(proof)),
             }
         }
         Ok(proofs)
@@ -486,7 +485,7 @@ impl foreign::OnlineRepository for DBForeignOnline {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version", content = "data")]
 enum VaultProofBlob {
-    V1(cashu::Proof),
+    V1(ecash::Proof),
 }
 // ///////////////////////////////////////////////////////////////////////// DBVault
 
@@ -508,7 +507,7 @@ impl vault::Repository for DBVault {
         let mut blob_values = Vec::with_capacity(proofs.len());
         for proof in proofs {
             let y = proof.y().map_err(|e| Error::DB(anyhow!(e)))?;
-            let blob = VaultProofBlob::V1(proof);
+            let blob = VaultProofBlob::V1(proof.into());
             let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
             y_strs.push(y.to_string());
             blob_values.push(blob_value);
@@ -544,7 +543,7 @@ impl vault::Repository for DBVault {
             .map(|row| {
                 let blob: sqlx::types::Json<VaultProofBlob> = row.get("blob");
                 match blob.0 {
-                    VaultProofBlob::V1(proof) => proof,
+                    VaultProofBlob::V1(proof) => cashu::Proof::from(proof),
                 }
             })
             .collect();
@@ -593,10 +592,10 @@ enum OnChainMintOpBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OnChainMintOpBlobV1 {
-    blinds: Option<Vec<cashu::BlindedMessage>>,
-    signatures: Option<Vec<cashu::BlindSignature>>,
+    blinds: Option<Vec<ecash::BlindedMessage>>,
+    signatures: Option<Vec<ecash::BlindSignature>>,
     recipient: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-    kid: cashu::Id,
+    kid: ecash::Id,
     target: bitcoin::Amount,
 }
 
@@ -612,16 +611,16 @@ fn onchain_mintop_to_row(
         blinds: None,
         signatures: None,
         recipient: op.recipient,
-        kid: op.kid,
+        kid: ecash::Id::from(op.kid),
         target: op.target,
     };
     let status = op.status.discriminant();
     match op.status {
         onchain::MintStatus::Pending { blinds } => {
-            blob_v1.blinds = Some(blinds);
+            blob_v1.blinds = Some(blinds.into_iter().map(Into::into).collect());
         }
         onchain::MintStatus::Paid { signatures } => {
-            blob_v1.signatures = Some(signatures);
+            blob_v1.signatures = Some(signatures.into_iter().map(Into::into).collect());
         }
         _ => {}
     };
@@ -649,12 +648,16 @@ fn onchain_mintop_from_row(
         onchain::MintStatusDiscriminants::Pending => {
             let blinds = blinds
                 .ok_or_else(|| Error::DB(anyhow!("Missing blinds in Pending mintop blob")))?;
-            onchain::MintStatus::Pending { blinds }
+            onchain::MintStatus::Pending {
+                blinds: blinds.into_iter().map(Into::into).collect(),
+            }
         }
         onchain::MintStatusDiscriminants::Paid => {
             let signatures = signatures
                 .ok_or_else(|| Error::DB(anyhow!("Missing signatures in Paid mintop blob")))?;
-            onchain::MintStatus::Paid { signatures }
+            onchain::MintStatus::Paid {
+                signatures: signatures.into_iter().map(Into::into).collect(),
+            }
         }
         onchain::MintStatusDiscriminants::Expired => onchain::MintStatus::Expired,
     };
@@ -663,7 +666,7 @@ fn onchain_mintop_from_row(
         expiry,
         status,
         recipient,
-        kid,
+        kid: cashu::Id::from(kid),
         target,
     };
     Ok(op)
@@ -679,10 +682,10 @@ enum OnChainMeltOpBlob {
 struct OnChainMeltOpBlobV1 {
     pub address: String,
     pub target: bitcoin::Amount,
-    pub available: cashu::Amount,
-    pub fees: cashu::Amount,
+    pub available: bitcoin::Amount,
+    pub fees: bitcoin::Amount,
     // network fees = available - target - fees
-    pub wallet_key: cashu::PublicKey,
+    pub wallet_key: secp256k1::PublicKey,
     pub fp_digest: [u8; 32],
     pub commitment: secp256k1::schnorr::Signature,
     pub tx: Option<bitcoin::Txid>,
@@ -699,11 +702,11 @@ fn onchain_meltop_to_row(
 )> {
     let mut blob_v1 = OnChainMeltOpBlobV1 {
         address: op.address,
-        available: op.available,
+        available: bitcoin::Amount::from_sat(op.available.to_u64()),
         target: op.target,
         commitment: op.commitment,
-        fees: op.fees,
-        wallet_key: op.wallet_key,
+        fees: bitcoin::Amount::from_sat(op.fees.to_u64()),
+        wallet_key: *op.wallet_key.deref(),
         fp_digest: op.fp_digest,
         tx: None,
     };
@@ -755,9 +758,9 @@ fn onchain_meltop_from_row(
         qid,
         address,
         target,
-        available,
-        fees,
-        wallet_key,
+        available: cashu::Amount::from(available.to_sat()),
+        fees: cashu::Amount::from(fees.to_sat()),
+        wallet_key: cashu::PublicKey::from(wallet_key),
         commitment,
         fp_digest,
         expiry,
@@ -896,6 +899,8 @@ impl onchain::Repository for DBOnChain {
                 )));
             }
             onchain::MintStatus::Paid { signatures } => {
+                let signatures: Vec<ecash::BlindSignature> =
+                    signatures.into_iter().map(Into::into).collect();
                 let sigs_val =
                     serde_json::to_value(&signatures).map_err(|e| Error::DB(anyhow!(e)))?;
                 sqlx::query!(
@@ -1114,5 +1119,89 @@ impl onchain::Repository for DBOnChain {
             return Err(Error::ResourceNotFound(qid.to_string()));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcr_common::core_tests;
+
+    fn random_proof() -> cashu::Proof {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = vec![cashu::Amount::from(8u64)];
+        core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+            .pop()
+            .unwrap()
+    }
+
+    #[test]
+    fn proof_blobs_serialize_like_cashu() {
+        let proof = random_proof();
+        let cashu_json = serde_json::to_value(&proof).unwrap();
+
+        let stored = serde_json::to_value(ForeignProofBlob::V1(proof.clone().into())).unwrap();
+        assert_eq!(stored["data"], cashu_json);
+        let ForeignProofBlob::V1(back) = serde_json::from_value(stored).unwrap();
+        assert_eq!(cashu::Proof::from(back), proof);
+
+        let stored = serde_json::to_value(ForeignHtlcProofBlob::V1(proof.clone().into())).unwrap();
+        assert_eq!(stored["data"], cashu_json);
+        let ForeignHtlcProofBlob::V1(back) = serde_json::from_value(stored).unwrap();
+        assert_eq!(cashu::Proof::from(back), proof);
+
+        let stored = serde_json::to_value(VaultProofBlob::V1(proof.clone().into())).unwrap();
+        assert_eq!(stored["data"], cashu_json);
+        let VaultProofBlob::V1(back) = serde_json::from_value(stored).unwrap();
+        assert_eq!(cashu::Proof::from(back), proof);
+    }
+
+    #[test]
+    fn mintop_blob_serializes_like_cashu() {
+        let proof = random_proof();
+        let blind = cashu::BlindedMessage::new(proof.amount, proof.keyset_id, proof.c);
+        let signature = cashu::BlindSignature {
+            amount: proof.amount,
+            keyset_id: proof.keyset_id,
+            c: proof.c,
+            dleq: None,
+        };
+        let recipient =
+            bitcoin::Address::from_str("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq").unwrap();
+        let expiry = TStamp::from_unix_timestamp(1_700_000_000).unwrap();
+        let ops = [
+            (
+                onchain::MintStatus::Pending {
+                    blinds: vec![blind.clone()],
+                },
+                "blinds",
+                serde_json::to_value(vec![blind]).unwrap(),
+            ),
+            (
+                onchain::MintStatus::Paid {
+                    signatures: vec![signature.clone()],
+                },
+                "signatures",
+                serde_json::to_value(vec![signature]).unwrap(),
+            ),
+        ];
+        for (status, field, cashu_json) in ops {
+            let op = onchain::MintOperation {
+                qid: Uuid::new_v4(),
+                expiry,
+                status,
+                recipient: recipient.clone(),
+                kid: proof.keyset_id,
+                target: bitcoin::Amount::from_sat(8),
+            };
+            let (qid, discriminant, expiry, blob) = onchain_mintop_to_row(op.clone()).unwrap();
+            assert_eq!(blob["data"][field], cashu_json);
+            let blob: OnChainMintOpBlob = serde_json::from_value(blob).unwrap();
+            let back = onchain_mintop_from_row(qid, discriminant, expiry, blob).unwrap();
+            assert_eq!(
+                serde_json::to_value(back.status).unwrap(),
+                serde_json::to_value(op.status).unwrap()
+            );
+        }
     }
 }
