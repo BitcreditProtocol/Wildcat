@@ -8,8 +8,10 @@ use async_trait::async_trait;
 use bcr_common::{cashu, client::admin::core::RNFError, ecash};
 use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::secp256k1::schnorr;
+use uuid::Uuid;
 // ----- local imports
 use crate::{
+    ebill,
     error::{Error, Result},
     persistence, vault, TStamp,
 };
@@ -395,6 +397,91 @@ impl vault::Repository for VaultMap {
         for y in ys {
             locked.remove(y);
         }
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+type MintOperationsReferences = (
+    HashMap<uuid::Uuid, ebill::MintOperation>,
+    HashMap<cashu::Id, Vec<uuid::Uuid>>,
+);
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone)]
+pub struct EbillMintOpMap {
+    mintops: Arc<RwLock<MintOperationsReferences>>,
+}
+#[async_trait]
+impl ebill::Repository for EbillMintOpMap {
+    async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
+        let mut wlocked = self.mintops.write().unwrap();
+        let (cs, cs_kid) = &mut *wlocked;
+        if cs.contains_key(&mint_op.uid) {
+            return Err(Error::Conflict(format!("mint_op {}", mint_op.uid)));
+        }
+        if cs.values().any(|op| op.bill_id == mint_op.bill_id) {
+            return Err(Error::Conflict(format!(
+                "mint_op for bill {}",
+                mint_op.bill_id
+            )));
+        }
+        let uid = mint_op.uid;
+        let kid = mint_op.kid;
+        cs.insert(mint_op.uid, mint_op);
+        cs_kid
+            .entry(kid)
+            .and_modify(|conds| conds.push(uid))
+            .or_insert(vec![uid]);
+        Ok(())
+    }
+    async fn mint_load(&self, uid: Uuid) -> Result<ebill::MintOperation> {
+        let rlocked = self.mintops.read().unwrap();
+        let (cs, _) = &*rlocked;
+        let op = cs
+            .get(&uid)
+            .ok_or(Error::ResourceNotFound(RNFError::Generic(uid.to_string())))?;
+        Ok(op.clone())
+    }
+    async fn mint_lookup_by_bill(
+        &self,
+        bill_id: bcr_common::core::BillId,
+    ) -> Result<Option<ebill::MintOperation>> {
+        let rlocked = self.mintops.read().unwrap();
+        let (cs, _) = &*rlocked;
+        Ok(cs.values().find(|op| op.bill_id == bill_id).cloned())
+    }
+    async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
+        let rlocked = self.mintops.read().unwrap();
+        let (cs, cs_kid) = &*rlocked;
+        let empty = Vec::default();
+        let uids = cs_kid.get(&kid).unwrap_or(&empty);
+        let mut a = Vec::with_capacity(uids.len());
+        for uid in uids {
+            if let Some(condition) = cs.get(uid) {
+                a.push(condition.clone())
+            }
+        }
+        Ok(a)
+    }
+    async fn mint_update_field(
+        &self,
+        uid: uuid::Uuid,
+        old: cashu::Amount,
+        new: cashu::Amount,
+    ) -> Result<()> {
+        let mut wlocked = self.mintops.write().unwrap();
+        let (cs, _) = &mut *wlocked;
+        let operation = cs.get_mut(&uid).ok_or(Error::Internal(format!(
+            "MintOperation internal uuid does not exist {uid}"
+        )))?;
+        if operation.minted != old {
+            return Err(Error::Internal(format!(
+                "MintOperation internal minted value changed {} != {}",
+                operation.minted, old
+            )));
+        }
+        operation.minted = new;
         Ok(())
     }
 }
