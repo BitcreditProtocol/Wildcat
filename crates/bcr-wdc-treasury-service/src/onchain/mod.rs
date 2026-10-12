@@ -174,7 +174,7 @@ pub struct MeltOperation {
     pub wallet_key: cashu::PublicKey,
     pub input_ys: Vec<cashu::PublicKey>,
     pub fp_digest: [u8; 32],
-    pub commitment: secp256k1::schnorr::Signature,
+    pub commitment: Option<secp256k1::schnorr::Signature>,
     pub status: MeltStatus,
 }
 
@@ -206,6 +206,17 @@ pub trait Repository: Send + Sync {
     // automatic update of status to `Expired` using `now` timestamp
     async fn list_pending_mintops(&self, now: TStamp) -> Result<Vec<Uuid>>;
     async fn store_meltop(&self, op: MeltOperation, now: TStamp) -> Result<()>;
+    async fn reserve_meltop(
+        &self,
+        op: MeltOperation,
+        now: TStamp,
+        reserve: bitcoin::Amount,
+    ) -> Result<bitcoin::Amount>;
+    async fn set_meltop_commitment(
+        &self,
+        qid: Uuid,
+        commitment: secp256k1::schnorr::Signature,
+    ) -> Result<()>;
     async fn load_meltop(&self, qid: Uuid) -> Result<MeltOperation>;
     async fn update_meltop_status(&self, qid: Uuid, status: MeltStatus) -> Result<()>;
     async fn list_pending_meltops(&self, now: TStamp) -> Result<Vec<Uuid>>;

@@ -684,7 +684,7 @@ struct OnChainMeltOpBlobV1 {
     // network fees = available - target - fees
     pub wallet_key: cashu::PublicKey,
     pub fp_digest: [u8; 32],
-    pub commitment: secp256k1::schnorr::Signature,
+    pub commitment: Option<secp256k1::schnorr::Signature>,
     pub tx: Option<bitcoin::Txid>,
 }
 
@@ -823,6 +823,41 @@ impl DBOnChain {
         .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
+
+    async fn insert_meltop<'c>(
+        executor: impl sqlx::PgExecutor<'c>,
+        op: onchain::MeltOperation,
+    ) -> Result<()> {
+        let (qid, status, expiry, ys, blob) = onchain_meltop_to_row(op)?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO treasury_onchain_melt_ops (qid, expiry, status, input_ys, blob)
+            VALUES( $1, $2, $3, $4, $5)
+            RETURNING qid
+            "#,
+            qid,
+            expiry,
+            status.to_string(),
+            &ys,
+            &blob
+        )
+        .fetch_optional(executor)
+        .await
+        .map_err(pg_error)?;
+        if result.is_none() {
+            return Err(Error::InvalidInput(String::from(
+                "meltop: inputs already locked in",
+            )));
+        }
+        Ok(())
+    }
+}
+
+fn pg_error(e: sqlx::Error) -> Error {
+    match e.as_database_error().and_then(|e| e.code()) {
+        Some(code) if code == "40001" => Error::TxConflict,
+        _ => Error::DB(anyhow!(e)),
+    }
 }
 
 #[async_trait]
@@ -936,26 +971,78 @@ impl onchain::Repository for DBOnChain {
 
     async fn store_meltop(&self, op: onchain::MeltOperation, now: TStamp) -> Result<()> {
         self.meltops_mark_expired(now).await?;
-        let (qid, status, expiry, ys, blob) = onchain_meltop_to_row(op)?;
-        let result = sqlx::query!(
+        Self::insert_meltop(&self.pool, op).await
+    }
+
+    async fn reserve_meltop(
+        &self,
+        op: onchain::MeltOperation,
+        now: TStamp,
+        reserve: bitcoin::Amount,
+    ) -> Result<bitcoin::Amount> {
+        self.meltops_mark_expired(now).await?;
+        let outflow = op
+            .outflow()
+            .ok_or_else(|| Error::InvalidInput(String::from("meltop: fees exceed inputs")))?;
+        let ys: Vec<String> = op.input_ys.iter().map(|y| y.to_string()).collect();
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN ISOLATION LEVEL SERIALIZABLE")
+            .await
+            .map_err(pg_error)?;
+        let row = sqlx::query!(
             r#"
-            INSERT INTO treasury_onchain_melt_ops (qid, expiry, status, input_ys, blob)
-            VALUES( $1, $2, $3, $4, $5)
-            RETURNING qid
+            SELECT
+                COALESCE(SUM(
+                    (blob->'data'->>'available')::bigint - (blob->'data'->>'fees')::bigint
+                ), 0)::bigint AS "pending!",
+                COALESCE(bool_or(input_ys && $2), false) AS "locked!"
+            FROM treasury_onchain_melt_ops
+            WHERE status = $1
             "#,
-            qid,
-            expiry,
-            status.to_string(),
+            onchain::MeltStatusDiscriminants::Pending.to_string(),
             &ys,
-            &blob
         )
-        .fetch_optional(&self.pool)
+        .fetch_one(&mut *tx)
         .await
-        .map_err(|e| Error::DB(anyhow!(e)))?;
-        if result.is_none() {
+        .map_err(pg_error)?;
+        let committed = u64::try_from(row.pending)
+            .ok()
+            .and_then(|pending| bitcoin::Amount::from_sat(pending).checked_add(outflow))
+            .ok_or_else(|| Error::DB(anyhow!("pending meltops outflow inconsistent")))?;
+        if !row.locked && committed <= reserve {
+            Self::insert_meltop(&mut *tx, op).await?;
+        }
+        tx.commit().await.map_err(pg_error)?;
+        if row.locked {
             return Err(Error::InvalidInput(String::from(
                 "meltop: inputs already locked in",
             )));
+        }
+        Ok(committed)
+    }
+
+    async fn set_meltop_commitment(
+        &self,
+        qid: Uuid,
+        commitment: secp256k1::schnorr::Signature,
+    ) -> Result<()> {
+        let commitment = serde_json::to_value(commitment).map_err(|e| Error::DB(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            UPDATE treasury_onchain_melt_ops
+            SET blob = jsonb_set(blob, '{data,commitment}', $2)
+            WHERE qid = $1 AND status = $3 AND blob->>'version' = 'V1'
+            "#,
+            qid,
+            commitment,
+            onchain::MeltStatusDiscriminants::Pending.to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(Error::ResourceNotFound(qid.to_string()));
         }
         Ok(())
     }

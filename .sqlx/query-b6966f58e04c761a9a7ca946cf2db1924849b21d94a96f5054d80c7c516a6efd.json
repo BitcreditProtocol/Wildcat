@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                COALESCE(SUM(\n                    (blob->'data'->>'available')::bigint - (blob->'data'->>'fees')::bigint\n                ), 0)::bigint AS \"pending!\",\n                COALESCE(bool_or(input_ys && $2), false) AS \"locked!\"\n            FROM treasury_onchain_melt_ops\n            WHERE status = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "locked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "b6966f58e04c761a9a7ca946cf2db1924849b21d94a96f5054d80c7c516a6efd"
+}
