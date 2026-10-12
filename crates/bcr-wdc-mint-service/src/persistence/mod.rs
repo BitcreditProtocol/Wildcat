@@ -9,7 +9,6 @@ use crate::{error::Result, TStamp};
 // ----- local modules
 pub mod inmemory;
 pub mod sqlx;
-pub mod surreal;
 
 // ----- end imports
 
@@ -115,13 +114,6 @@ mod tests {
         .collect()
     }
 
-    async fn init_surreal_db() -> impl Repository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::Repository::from_db(sdb)
-    }
     fn init_memmap_db() -> impl Repository {
         inmemory::Repository::default()
     }
@@ -131,9 +123,6 @@ mod tests {
     #[tokio::test]
     async fn test_keysrepo_info() {
         let db = init_memmap_db();
-        keysrepo_info(db).await;
-        //
-        let db = init_surreal_db().await;
         keysrepo_info(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -164,9 +153,6 @@ mod tests {
     #[tokio::test]
     async fn test_keysrepo_listinfo() {
         let db = init_memmap_db();
-        keysrepo_list_info(db).await;
-        //
-        let db = init_surreal_db().await;
         keysrepo_list_info(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -247,9 +233,6 @@ mod tests {
     #[tokio::test]
     async fn test_keysrepo_keyset() {
         let db = init_memmap_db();
-        keysrepo_keyset_test(db).await;
-        //
-        let db = init_surreal_db().await;
         keysrepo_keyset_test(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -334,9 +317,6 @@ mod tests {
     async fn test_signsrepo_store() {
         let db = init_memmap_db();
         signsrepo_store(db).await;
-        //
-        let db = init_surreal_db().await;
-        signsrepo_store(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -355,9 +335,6 @@ mod tests {
     #[tokio::test]
     async fn test_signsrepo_store_same_signature_twice() {
         let db = init_memmap_db();
-        signsrepo_store_same_signature_twice(db).await;
-        //
-        let db = init_surreal_db().await;
         signsrepo_store_same_signature_twice(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -380,9 +357,6 @@ mod tests {
     #[tokio::test]
     async fn test_proofsrepo_insert() {
         let db = init_memmap_db();
-        proofsrepo_insert(db).await;
-        //
-        let db = init_surreal_db().await;
         proofsrepo_insert(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -408,9 +382,6 @@ mod tests {
     async fn test_proofsrepo_insert_double_spent_all() {
         let db = init_memmap_db();
         proofsrepo_insert_double_spent_all(db).await;
-        //
-        let db = init_surreal_db().await;
-        proofsrepo_insert_double_spent_all(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -433,9 +404,6 @@ mod tests {
     #[tokio::test]
     async fn test_proofsrepo_insert_double_spent_partial() {
         let db = init_memmap_db();
-        proofsrepo_insert_double_spent_partial(db).await;
-        //
-        let db = init_surreal_db().await;
         proofsrepo_insert_double_spent_partial(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -464,9 +432,6 @@ mod tests {
     async fn test_proofsrepo_insert_double_spent_partial_still_valid() {
         let db = init_memmap_db();
         proofsrepo_insert_double_spent_partial_still_valid(db).await;
-        //
-        let db = init_surreal_db().await;
-        proofsrepo_insert_double_spent_partial_still_valid(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -493,9 +458,6 @@ mod tests {
     #[tokio::test]
     async fn test_proofsrepo_insert_duplicate_in_batch() {
         let db = init_memmap_db();
-        proofsrepo_insert_duplicate_in_batch(db).await;
-        //
-        let db = init_surreal_db().await;
         proofsrepo_insert_duplicate_in_batch(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -690,9 +652,6 @@ mod tests {
     async fn test_commitmentsrepo_store_duplicates() {
         let db = init_memmap_db();
         commitmentsrepo_store_duplicates(db).await;
-        //
-        let db = init_surreal_db().await;
-        commitmentsrepo_store_duplicates(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -752,9 +711,6 @@ mod tests {
     async fn test_commitmentsrepo_contains_inputs() {
         let db = init_memmap_db();
         commitmentsrepo_contains_inputs(db).await;
-        //
-        let db = init_surreal_db().await;
-        commitmentsrepo_contains_inputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -794,9 +750,6 @@ mod tests {
     async fn test_commitmentsrepo_contains_outputs() {
         let db = init_memmap_db();
         commitmentsrepo_contains_outputs(db).await;
-        //
-        let db = init_surreal_db().await;
-        commitmentsrepo_contains_outputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -835,9 +788,6 @@ mod tests {
     #[tokio::test]
     async fn test_commitmentsrepo_load() {
         let db = init_memmap_db();
-        commitmentsrepo_load(db).await;
-        //
-        let db = init_surreal_db().await;
         commitmentsrepo_load(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -879,9 +829,6 @@ mod tests {
     async fn test_commitmentsrepo_store_duplicate_signature() {
         let db = init_memmap_db();
         commitmentsrepo_store_duplicate_signature(db).await;
-        //
-        let db = init_surreal_db().await;
-        commitmentsrepo_store_duplicate_signature(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -920,9 +867,6 @@ mod tests {
     #[tokio::test]
     async fn test_commitmentsrepo_delete_releases_inputs_outputs() {
         let db = init_memmap_db();
-        commitmentsrepo_delete_releases_inputs_outputs(db).await;
-        //
-        let db = init_surreal_db().await;
         commitmentsrepo_delete_releases_inputs_outputs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -966,9 +910,6 @@ mod tests {
     #[tokio::test]
     async fn test_commitmentsrepo_clean_expired() {
         let db = init_memmap_db();
-        commitmentsrepo_clean_expired(db).await;
-        //
-        let db = init_surreal_db().await;
         commitmentsrepo_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1024,9 +965,6 @@ mod tests {
     async fn test_reservedysrepo_contains() {
         let db = init_memmap_db();
         reservedysrepo_contains(db).await;
-        //
-        let db = init_surreal_db().await;
-        reservedysrepo_contains(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1050,9 +988,6 @@ mod tests {
     #[tokio::test]
     async fn test_reservedysrepo_clean_expired() {
         let db = init_memmap_db();
-        reservedysrepo_clean_expired(db).await;
-        //
-        let db = init_surreal_db().await;
         reservedysrepo_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1083,9 +1018,6 @@ mod tests {
     async fn test_reservedysrepo_store_conflict() {
         let db = init_memmap_db();
         reservedysrepo_store_conflict(db).await;
-        //
-        let db = init_surreal_db().await;
-        reservedysrepo_store_conflict(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1111,9 +1043,6 @@ mod tests {
     async fn test_reservedysrepo_store_duplicate_batch() {
         let db = init_memmap_db();
         reservedysrepo_store_duplicate_batch(db).await;
-        //
-        let db = init_surreal_db().await;
-        reservedysrepo_store_duplicate_batch(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1133,9 +1062,6 @@ mod tests {
     #[tokio::test]
     async fn test_reservedysrepo_store_after_clean_expired() {
         let db = init_memmap_db();
-        reservedysrepo_store_after_clean_expired(db).await;
-        //
-        let db = init_surreal_db().await;
         reservedysrepo_store_after_clean_expired(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1213,7 +1139,6 @@ mod tests {
     #[tokio::test]
     async fn test_swap_finalize_is_atomic() {
         swap_finalize_is_atomic(init_memmap_db()).await;
-        swap_finalize_is_atomic(init_surreal_db().await).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1242,7 +1167,6 @@ mod tests {
     #[tokio::test]
     async fn test_swap_finalize_rolls_back_on_spent_proof() {
         swap_finalize_rolls_back_on_spent_proof(init_memmap_db()).await;
-        swap_finalize_rolls_back_on_spent_proof(init_surreal_db().await).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1267,7 +1191,6 @@ mod tests {
     #[tokio::test]
     async fn test_swap_finalize_rolls_back_on_existing_signature() {
         swap_finalize_rolls_back_on_existing_signature(init_memmap_db()).await;
-        swap_finalize_rolls_back_on_existing_signature(init_surreal_db().await).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1295,13 +1218,6 @@ mod tests {
     }
 
     //////////////////////////////////////////////////////////////////// vault::Repository
-    async fn init_surreal_vault_db() -> impl vault::Repository {
-        let sdb = surrealdb::Surreal::<surrealdb::engine::any::Any>::init();
-        sdb.connect("mem://").await.unwrap();
-        sdb.use_ns("test").await.unwrap();
-        sdb.use_db("test").await.unwrap();
-        surreal::DBVault { db: sdb }
-    }
     fn init_inmemory_vault_db() -> impl vault::Repository {
         inmemory::VaultMap::default()
     }
@@ -1315,8 +1231,6 @@ mod tests {
     #[tokio::test]
     async fn test_vault_store_load_proofs() {
         let db = init_inmemory_vault_db();
-        vault_store_load_proofs(db).await;
-        let db = init_surreal_vault_db().await;
         vault_store_load_proofs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1342,8 +1256,6 @@ mod tests {
     async fn test_vault_load_proofs_partial() {
         let db = init_inmemory_vault_db();
         vault_load_proofs_partial(db).await;
-        let db = init_surreal_vault_db().await;
-        vault_load_proofs_partial(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
@@ -1365,8 +1277,6 @@ mod tests {
     #[tokio::test]
     async fn test_vault_list_ys() {
         let db = init_inmemory_vault_db();
-        vault_list_ys(db).await;
-        let db = init_surreal_vault_db().await;
         vault_list_ys(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -1390,8 +1300,6 @@ mod tests {
     #[tokio::test]
     async fn test_vault_delete_proofs() {
         let db = init_inmemory_vault_db();
-        vault_delete_proofs(db).await;
-        let db = init_surreal_vault_db().await;
         vault_delete_proofs(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
