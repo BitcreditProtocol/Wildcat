@@ -80,6 +80,13 @@ pub trait WdcClient: Send + Sync {
     ) -> Result<Vec<wire_bill::BillHistoryBlock>>;
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill>;
     async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
+    async fn notify_new_ebill_quote(
+        &self,
+        qid: Uuid,
+        sum: btc::Amount,
+        drawee: String,
+        maturity_date: time::Date,
+    ) -> Result<()>;
 }
 
 // ---------- Service
@@ -113,9 +120,20 @@ impl Service {
         minting_pub_key: cashu::PublicKey,
         submitted: TStamp,
     ) -> Result<Uuid> {
+        let maturity = bill.maturity_date;
+        let sum = bill.sum;
+        let drawee = bill.drawee.name.clone();
         let quote = Quote::new(bill, minting_pub_key, submitted);
         let qid = quote.id;
         self.quotes.store(quote).await?;
+        // best-effort: a failed notification must not fail the quote request
+        if let Err(e) = self
+            .wdc_client
+            .notify_new_ebill_quote(qid, sum, drawee, maturity)
+            .await
+        {
+            tracing::error!("new ebill quote {qid} notification failed: {e}");
+        }
         Ok(qid)
     }
 
@@ -663,7 +681,11 @@ mod tests {
         let mut quotes = MockRepository::new();
         quotes.expect_search_by_bill().returning(|_, _| Ok(vec![]));
         quotes.expect_store().returning(|_| Ok(()));
-        let wdc_client = MockWdcClient::new();
+        let mut wdc_client = MockWdcClient::new();
+        wdc_client
+            .expect_notify_new_ebill_quote()
+            .times(1)
+            .returning(|_, _, _, _| Ok(()));
 
         let rnd_bill = generate_random_bill();
         let service = Service {
@@ -861,7 +883,11 @@ mod tests {
         repo.expect_update_status_if_offered()
             .returning(|_, _| Ok(()));
         repo.expect_store().returning(|_| Ok(()));
-        let wdc_client = MockWdcClient::new();
+        let mut wdc_client = MockWdcClient::new();
+        wdc_client
+            .expect_notify_new_ebill_quote()
+            .times(1)
+            .returning(|_, _, _, _| Ok(()));
 
         let service = Service {
             quotes: Box::new(repo),
