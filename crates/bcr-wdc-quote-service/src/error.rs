@@ -25,6 +25,8 @@ pub enum Error {
     EbillClient(#[from] bcr_common::client::ebill::Error),
     #[error("treasury client error {0}")]
     TreasuryClient(#[from] bcr_common::client::treasury::Error),
+    #[error("notification client error {0}")]
+    NotificationClient(#[from] bcr_common::client::admin::notification::Error),
 
     #[error("quote {0} incorrect status, expected {1}, found {2}")]
     InvalidQuoteStatus(
@@ -93,6 +95,7 @@ impl axum::response::IntoResponse for Error {
             Error::CoreClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::TreasuryClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::NotificationClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::QuotesRepository(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrCommonBorsh(e) => {
                 let v = serde_json::Value::String(format!("Invalid signature or public key: {e}"));
