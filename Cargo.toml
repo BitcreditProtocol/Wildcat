@@ -42,7 +42,7 @@ serde = {version = "1"}
 serde_json = {version = "1"}
 sqlx = {version = "0.8"}
 strum = {version = "0.28"}
-surrealdb = {version = "2.2"}
+surrealdb = {version = "2.7"}
 thiserror = {version = "2"}
 time = {version = "0.3", features = ["serde", "formatting", "parsing", "macros"]}
 tokio = {version = "1"}
