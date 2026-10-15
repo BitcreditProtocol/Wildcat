@@ -7,6 +7,8 @@ use bitcoin::bip32 as btc32;
 
 // ----- end imports
 
+pub const MAX_ORDER: u8 = 32;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MintKeysEntry {
     pub id: cashu::Id,
