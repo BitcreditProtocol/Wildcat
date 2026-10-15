@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use bcr_common::{cashu, core::signature as core_signature};
 use thiserror::Error;
 // ----- local imports
+use crate::keys as keys_utils;
 
 // ----- end imports
 
@@ -12,8 +13,8 @@ pub type ChecksResult<T> = std::result::Result<T, ChecksError>;
 pub enum ChecksError {
     #[error("vector is empty")]
     Empty,
-    #[error("element with zero amount not allowed")]
-    ZeroAmount,
+    #[error("element with invalid amount: {0}")]
+    InvalidAmount(String),
     #[error("non-unique elements")]
     NonUnique,
     #[error("spending conditions: {0}")]
@@ -21,14 +22,31 @@ pub enum ChecksError {
 }
 
 pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
-    // 1. no zero amounts
     let zero_inputs = blinds
         .iter()
         .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
-        return Err(ChecksError::ZeroAmount);
+        return Err(ChecksError::InvalidAmount(String::from("zero amount")));
     }
-    // 2. unique blinds
+    let denominations: Vec<cashu::Amount> = keys_utils::default_denominations()
+        .into_iter()
+        .map(cashu::Amount::from)
+        .collect();
+    for output in blinds {
+        if !denominations.contains(&output.amount) {
+            let msg = format!("invalid denomination: {}", output.amount);
+            return Err(ChecksError::InvalidAmount(msg));
+        }
+    }
+    let max_amount = cashu::Amount::from(bitcoin::Amount::MAX_MONEY.to_sat());
+    let total = blinds.iter().try_fold(cashu::Amount::ZERO, |acc, output| {
+        acc.checked_add(output.amount)
+    });
+    if total.is_none() || total.unwrap() > max_amount {
+        return Err(ChecksError::InvalidAmount(String::from(
+            "total amount overflow",
+        )));
+    }
     let unique_blinds: HashSet<_> = blinds.iter().map(|p| p.blinded_secret).collect();
     if unique_blinds.len() != blinds.len() {
         return Err(ChecksError::NonUnique);
@@ -37,18 +55,31 @@ pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()>
 }
 
 pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
-    // 1. no empty proofs
     if proofs.is_empty() {
         return Err(ChecksError::Empty);
     }
-    // 2. no zero amounts
     let zero_inputs = proofs
         .iter()
         .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
-        return Err(ChecksError::ZeroAmount);
+        return Err(ChecksError::InvalidAmount(String::from("zero amount")));
     }
-    // 3. unique proofs
+    let denominations = keys_utils::default_denominations();
+    let unknown_amount = proofs
+        .iter()
+        .any(|output| !denominations.contains(&output.amount.to_u64()));
+    if unknown_amount {
+        return Err(ChecksError::InvalidAmount(String::from("unknown_amount")));
+    }
+    let total = proofs.iter().try_fold(cashu::Amount::ZERO, |acc, output| {
+        acc.checked_add(output.amount)
+    });
+    let max_amount = cashu::Amount::from(bitcoin::Amount::MAX_MONEY.to_sat());
+    if total.is_none() || total.unwrap() > max_amount {
+        return Err(ChecksError::InvalidAmount(String::from(
+            "total amount overflow",
+        )));
+    }
     let unique_proofs: HashSet<_> = proofs.iter().map(|p| p.secret.clone()).collect();
     if unique_proofs.len() != proofs.len() {
         return Err(ChecksError::NonUnique);
@@ -70,7 +101,7 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
         .iter()
         .any(|output| output.amount == cashu::Amount::ZERO);
     if zero_inputs {
-        return Err(ChecksError::ZeroAmount);
+        return Err(ChecksError::InvalidAmount(String::from("zero amount")));
     }
     // 3. unique fingerprints
     let unique_fps: HashSet<_> = fps.iter().map(|p| p.y).collect();
@@ -183,13 +214,13 @@ mod tests {
         blinds[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_blinds_checks(&blinds),
-            Err(ChecksError::ZeroAmount)
+            Err(ChecksError::InvalidAmount(_))
         ));
         let mut proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         proofs[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_proofs_checks(&proofs),
-            Err(ChecksError::ZeroAmount)
+            Err(ChecksError::InvalidAmount(_))
         ));
     }
 
