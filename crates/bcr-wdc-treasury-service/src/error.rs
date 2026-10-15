@@ -154,7 +154,10 @@ impl axum::response::IntoResponse for Error {
                 match r {
                     Rej::CommitmentNotFound => (StatusCode::NOT_FOUND, j),
                     Rej::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-                    r if r.is_transient() => (StatusCode::SERVICE_UNAVAILABLE, j),
+                    r if r.is_transient() => (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        serde_json::to_string(&SUError::Unknown).unwrap_or_default(),
+                    ),
                     _ => (StatusCode::BAD_REQUEST, j),
                 }
             }

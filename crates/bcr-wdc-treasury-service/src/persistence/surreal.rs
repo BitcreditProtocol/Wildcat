@@ -1183,33 +1183,6 @@ impl DBForeignOffline {
 
 #[async_trait]
 impl foreign::OfflineRepository for DBForeignOffline {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        for (hash, fp) in hash.into_iter().zip(fps) {
-            let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
-            let entry = ForeignFingerprintDBEntry {
-                id: rid.clone(),
-                amount: fp.amount,
-                keyset_id: fp.keyset_id.into(),
-                y: cashu::PublicKey::from(fp.y),
-                c: cashu::PublicKey::from(fp.c),
-                dleq: fp.dleq,
-                mint_id: mint_id.to_string(),
-            };
-            let _: Option<ForeignFingerprintDBEntry> = self
-                .db
-                .upsert(rid)
-                .content(entry)
-                .await
-                .map_err(|e| Error::DB(anyhow!(e)))?;
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -1344,10 +1317,25 @@ impl foreign::OfflineRepository for DBForeignOffline {
 
     async fn reserve_exchange(
         &self,
-        ys: &[cashu::PublicKey],
         exchange: foreign::OfflineExchange,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool> {
-        let entries: Vec<OfflineExchangeDBEntry> = Self::exchange_rids(ys)
+        let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
+        let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
+            .into_iter()
+            .zip(fps)
+            .map(|(hash, fp)| ForeignFingerprintDBEntry {
+                id: RecordId::from_table_key(Self::FPS_TABLE, hash.to_string()),
+                amount: fp.amount,
+                keyset_id: fp.keyset_id.into(),
+                y: cashu::PublicKey::from(fp.y),
+                c: cashu::PublicKey::from(fp.c),
+                dleq: fp.dleq,
+                mint_id: exchange.alpha_id.to_string(),
+            })
+            .collect();
+        let entries: Vec<OfflineExchangeDBEntry> = Self::exchange_rids(&ys)
             .into_iter()
             .map(|id| OfflineExchangeDBEntry {
                 id,
@@ -1358,13 +1346,21 @@ impl foreign::OfflineRepository for DBForeignOffline {
                 proofs: exchange.proofs.clone(),
             })
             .collect();
-        let inserted: std::result::Result<Vec<OfflineExchangeDBEntry>, _> =
-            self.db.insert(Self::EXCHANGES_TABLE).content(entries).await;
-        match inserted {
-            Ok(_) => Ok(true),
-            Err(_) if self.search_exchange(ys).await?.is_some() => Ok(false),
-            Err(e) => Err(Error::DB(anyhow!(e))),
+        let errors = self
+            .db
+            .query("BEGIN; INSERT $entries RETURN NONE; INSERT $fps RETURN NONE; COMMIT;")
+            .bind(("entries", entries))
+            .bind(("fps", fp_entries))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take_errors();
+        if errors.is_empty() {
+            return Ok(true);
         }
+        if self.search_exchange(&ys).await?.is_some() {
+            return Ok(false);
+        }
+        Err(Error::DB(anyhow!("reserve exchange: {errors:?}")))
     }
 
     async fn search_exchange(
@@ -1592,7 +1588,17 @@ mod tests {
             Sha256Hash::from_slice(&[0u8; 32]).unwrap(),
             Sha256Hash::from_slice(&[1u8; 32]).unwrap(),
         ];
-        db.store_fps(alpha_id, fps, hash.clone()).await.unwrap();
+        let exchange = foreign::OfflineExchange {
+            exchange_digest: [9u8; 32],
+            alpha_id,
+            evidence_digest: [2u8; 32],
+            expires_at: time::OffsetDateTime::now_utc(),
+            proofs: vec![],
+        };
+        assert!(db
+            .reserve_exchange(exchange, fps, hash.clone())
+            .await
+            .unwrap());
         let result = db.search_fp(&hash[0]).await.unwrap();
         assert!(result.is_some());
         let (mint, fp) = result.unwrap();

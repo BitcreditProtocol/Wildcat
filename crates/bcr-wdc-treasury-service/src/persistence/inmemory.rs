@@ -154,19 +154,6 @@ pub struct OfflineRepository {
 
 #[async_trait]
 impl foreign::OfflineRepository for OfflineRepository {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        let mut locked = self.fingerprints.lock().unwrap();
-        for (h, fp) in hash.into_iter().zip(fps) {
-            locked.insert(h, (mint_id, fp));
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -222,14 +209,20 @@ impl foreign::OfflineRepository for OfflineRepository {
 
     async fn reserve_exchange(
         &self,
-        ys: &[cashu::PublicKey],
         exchange: foreign::OfflineExchange,
+        fps: Vec<ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool> {
         let mut locked = self.exchanges.lock().unwrap();
+        let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
         if ys.iter().any(|y| locked.contains_key(y)) {
             return Ok(false);
         }
-        locked.extend(ys.iter().map(|y| (*y, exchange.clone())));
+        locked.extend(ys.into_iter().map(|y| (y, exchange.clone())));
+        let mut fingerprints = self.fingerprints.lock().unwrap();
+        for (h, fp) in hashes.into_iter().zip(fps) {
+            fingerprints.insert(h, (exchange.alpha_id, fp));
+        }
         Ok(true)
     }
 

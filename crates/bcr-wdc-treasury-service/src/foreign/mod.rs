@@ -70,12 +70,6 @@ pub trait OnlineRepository: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait OfflineRepository: Send + Sync {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()>;
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -96,8 +90,9 @@ pub trait OfflineRepository: Send + Sync {
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool>;
     async fn reserve_exchange(
         &self,
-        ys: &[cashu::PublicKey],
         exchange: OfflineExchange,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
     ) -> Result<bool>;
     async fn search_exchange(&self, ys: &[cashu::PublicKey]) -> Result<Option<OfflineExchange>>;
 }

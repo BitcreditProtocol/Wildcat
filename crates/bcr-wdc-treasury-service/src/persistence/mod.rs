@@ -12,7 +12,7 @@ pub mod surreal;
 mod tests {
     use super::*;
     use crate::{ebill, error::Error, foreign, onchain, vault};
-    use bcr_common::{cashu, core, core_tests};
+    use bcr_common::{cashu, core, core_tests, wire::keys as wire_keys};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use std::str::FromStr;
     use uuid::Uuid;
@@ -285,12 +285,19 @@ mod tests {
         foreign_offline_reserve_exchange(inmemory::OfflineRepository::default()).await;
         foreign_offline_reserve_exchange(init_surreal_foreign_offline_db().await).await;
     }
-    // An input is held by at most one exchange, and a refused reservation holds nothing.
     async fn foreign_offline_reserve_exchange(db: impl foreign::OfflineRepository) {
-        let ys: Vec<cashu::PublicKey> = generate_test_proofs(3)
-            .iter()
-            .map(|p| p.y().unwrap())
-            .collect();
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let fps = |idx: &[usize]| -> Vec<_> {
+            idx.iter()
+                .map(|i| wire_keys::ProofFingerprint::try_from(proofs[*i].clone()).unwrap())
+                .collect()
+        };
+        let hashes = |idx: &[usize]| -> Vec<_> {
+            idx.iter()
+                .map(|i| bitcoin::hashes::sha256::Hash::const_hash(proofs[*i].secret.as_bytes()))
+                .collect()
+        };
         let exchange = |digest: [u8; 32]| foreign::OfflineExchange {
             exchange_digest: digest,
             alpha_id: core::generate_random_keypair().public_key(),
@@ -300,15 +307,27 @@ mod tests {
         };
         let (first, second) = (exchange([1u8; 32]), exchange([3u8; 32]));
         assert_eq!(db.search_exchange(&ys).await.unwrap(), None);
-        assert!(db.reserve_exchange(&ys[..1], first.clone()).await.unwrap());
+        assert!(db
+            .reserve_exchange(first.clone(), fps(&[0]), hashes(&[0]))
+            .await
+            .unwrap());
         assert!(!db
-            .reserve_exchange(&[ys[1], ys[0]], second.clone())
+            .reserve_exchange(second.clone(), fps(&[1, 0]), hashes(&[1, 0]))
             .await
             .unwrap());
         assert_eq!(db.search_exchange(&ys[1..2]).await.unwrap(), None);
-        assert!(db.reserve_exchange(&ys[1..], second.clone()).await.unwrap());
+        assert!(db.search_fp(&hashes(&[1])[0]).await.unwrap().is_none());
+        assert!(db
+            .reserve_exchange(second.clone(), fps(&[1, 2]), hashes(&[1, 2]))
+            .await
+            .unwrap());
         assert_eq!(db.search_exchange(&ys[..1]).await.unwrap(), Some(first));
-        assert_eq!(db.search_exchange(&ys[2..]).await.unwrap(), Some(second));
+        assert_eq!(
+            db.search_exchange(&ys[2..]).await.unwrap(),
+            Some(second.clone())
+        );
+        let (alpha_id, _) = db.search_fp(&hashes(&[2])[0]).await.unwrap().unwrap();
+        assert_eq!(alpha_id, second.alpha_id);
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository
