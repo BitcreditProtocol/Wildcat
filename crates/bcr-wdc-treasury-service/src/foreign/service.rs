@@ -334,7 +334,7 @@ fn verify_held_exchange(
     request: &OfflineExchangeRequest,
     now: TStamp,
 ) -> Result<OfflineExchange> {
-    if held.expires_at <= now {
+    if held.expires_at < now {
         return Err(Error::InvalidInput(String::from("held exchange expired")));
     }
     let digest = exchange_digest(
@@ -898,6 +898,7 @@ mod tests {
             offline_exchange_lock_secs: 7 * 24 * 3600,
         };
         let now = time::OffsetDateTime::now_utc();
+        let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
         let exchange = |r: OfflineExchangeRequest, now: TStamp| {
             srvc.offline_exchange(
                 r.fingerprints,
@@ -915,10 +916,10 @@ mod tests {
             .remove_fps(&[cashu::PublicKey::from(inputs[0].y)])
             .await
             .unwrap();
-        let second = exchange(request.clone(), now).await.unwrap();
+        let second = exchange(request.clone(), expires_at).await.unwrap();
         assert_eq!(first, second);
         assert!(offlinerepo.search_fp(&hashes[0]).await.unwrap().is_none());
-        let expired = exchange(request.clone(), expiration + time::Duration::days(1)).await;
+        let expired = exchange(request.clone(), expires_at + time::Duration::seconds(1)).await;
         assert!(matches!(expired, Err(Error::InvalidInput(_))));
         let other_kp = core::generate_random_keypair();
         let other = OfflineExchangeRequest {

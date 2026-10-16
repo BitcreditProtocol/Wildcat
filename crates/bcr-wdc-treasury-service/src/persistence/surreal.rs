@@ -1348,7 +1348,14 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .collect();
         let errors = self
             .db
-            .query("BEGIN; INSERT $entries RETURN NONE; INSERT $fps RETURN NONE; COMMIT;")
+            .query(
+                "
+                BEGIN;
+                    INSERT $entries RETURN NONE;
+                    INSERT $fps RETURN NONE;
+                COMMIT;
+                ",
+            )
             .bind(("entries", entries))
             .bind(("fps", fp_entries))
             .await
