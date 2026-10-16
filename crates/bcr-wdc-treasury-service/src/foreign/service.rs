@@ -939,6 +939,89 @@ mod tests {
         assert!(matches!(forged, Err(Error::InvalidInput(_))));
     }
 
+    #[tokio::test]
+    async fn offline_exchange_retry_issues_no_second_proofs() {
+        let alpha_id = core::generate_random_keypair().public_key();
+        let myself_pk = core::generate_random_keypair().public_key();
+        let wallet_kp = core::generate_random_keypair();
+        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
+        let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        foreign_info.final_expiry = Some(expiration.unix_timestamp() as u64);
+        let (original, _) = generate_htlc_proof_for_online_exchange(
+            &foreign_keyset,
+            cashu::Amount::from(8),
+            expiration,
+            wallet_pk,
+            cashu::PublicKey::from(myself_pk),
+        );
+        let inputs = vec![wire_keys::ProofFingerprint::try_from(original.clone()).unwrap()];
+        let hashes = vec![Sha256Hash::hash(original.secret.as_bytes())];
+        let digest = bcr_common::wire::exchange::exchange_digest(
+            &alpha_id, &[1u8; 32], &inputs, &hashes, &wallet_pk,
+        );
+        let signature = secp256k1::global::SECP256K1.sign_schnorr(
+            &bcr_common::wire::exchange::exchange_message(&digest),
+            &wallet_kp,
+        );
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_can_accept_offline_exchange()
+            .returning(move |_| {
+                Ok((
+                    reqwest::Url::parse("https://alpha.example").unwrap(),
+                    alpha_id,
+                ))
+            });
+        clowder
+            .expect_get_myself_pk()
+            .returning(move || Ok(myself_pk));
+        clowder
+            .expect_record_offline_exchange()
+            .returning(move |_| {
+                Ok(bcr_common::wire::exchange::RecordOfflineExchangeResponse {
+                    evidence_digest: [1u8; 32],
+                    exchange_digest: digest,
+                })
+            });
+        let foreign_info = ecash::KeySetInfo::from(foreign_info);
+        clowder
+            .expect_get_keyset_info()
+            .returning(move |_, _| Ok(foreign_info.clone()));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let (_, myself_keyset) = core_tests::generate_random_ecash_keyset();
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_get_keyset_with_expiration()
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        keys.expect_sign().returning(move |blinds| {
+            Ok(blinds
+                .iter()
+                .map(|b| core::signature::sign_ecash(&myself_keyset, b).unwrap())
+                .collect())
+        });
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
+        onlinerepo.expect_store_issued().returning(|_, _, _| Ok(()));
+        let srvc = Service {
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(crate::persistence::inmemory::OfflineRepository::default()),
+            keys: Arc::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+            offline_exchange_lock_secs: 7 * 24 * 3600,
+        };
+        let now = time::OffsetDateTime::now_utc();
+        let exchange =
+            || srvc.offline_exchange(inputs.clone(), hashes.clone(), wallet_pk, signature, now);
+
+        let first = exchange().await.unwrap();
+        let retry = exchange().await.unwrap();
+        assert_eq!(first, retry);
+    }
+
     fn redeem_request(amounts: &[u64]) -> bcr_common::wire::exchange::RedeemOfflineExchangeRequest {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts: Vec<cashu::Amount> = amounts.iter().map(|a| cashu::Amount::from(*a)).collect();
