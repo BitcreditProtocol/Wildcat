@@ -12,7 +12,7 @@ pub mod surreal;
 mod tests {
     use super::*;
     use crate::{ebill, error::Error, foreign, onchain, vault};
-    use bcr_common::{cashu, core, core_tests};
+    use bcr_common::{cashu, core, core_tests, wire::keys as wire_keys};
     use bcr_wdc_utils::signatures::test_utils as signature_tests;
     use std::str::FromStr;
     use uuid::Uuid;
@@ -206,6 +206,33 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_foreign_online_store_issued_idempotent() {
+        let db = init_inmemory_foreign_online_db();
+        foreign_online_store_issued_idempotent(db).await;
+        let db = init_surreal_foreign_online_db().await;
+        foreign_online_store_issued_idempotent(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_online_store_issued_idempotent_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBForeignOnline::from_pool(pool);
+        foreign_online_store_issued_idempotent(db).await;
+    }
+    async fn foreign_online_store_issued_idempotent(db: impl foreign::OnlineRepository) {
+        let hash = bitcoin::hashes::sha256::Hash::const_hash(b"issued-replay");
+        let now = time::OffsetDateTime::now_utc();
+        let proofs = generate_test_proofs(2);
+        for _ in 0..2 {
+            db.store_issued(hash, now, proofs.clone()).await.unwrap();
+        }
+        let expired = db
+            .list_expired_issued(now + time::Duration::hours(1))
+            .await
+            .unwrap();
+        assert_eq!(expired.len(), 2);
+    }
+
     //////////////////////////////////////////////////////////////////// foreign::OfflineRepository
     async fn init_surreal_foreign_offline_db() -> impl foreign::OfflineRepository {
         let cfg = bcr_wdc_utils::surreal::DBConnConfig {
@@ -251,6 +278,56 @@ mod tests {
         assert_eq!(balances.len(), 2);
         assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
         assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_reserve_exchange() {
+        foreign_offline_reserve_exchange(inmemory::OfflineRepository::default()).await;
+        foreign_offline_reserve_exchange(init_surreal_foreign_offline_db().await).await;
+    }
+    async fn foreign_offline_reserve_exchange(db: impl foreign::OfflineRepository) {
+        let proofs = generate_test_proofs(3);
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let fps = |idx: &[usize]| -> Vec<_> {
+            idx.iter()
+                .map(|i| wire_keys::ProofFingerprint::try_from(proofs[*i].clone()).unwrap())
+                .collect()
+        };
+        let hashes = |idx: &[usize]| -> Vec<_> {
+            idx.iter()
+                .map(|i| bitcoin::hashes::sha256::Hash::const_hash(proofs[*i].secret.as_bytes()))
+                .collect()
+        };
+        let exchange = |digest: [u8; 32]| foreign::OfflineExchange {
+            exchange_digest: digest,
+            alpha_id: core::generate_random_keypair().public_key(),
+            evidence_digest: [2u8; 32],
+            expires_at: time::OffsetDateTime::from_unix_timestamp(1_900_000_000).unwrap(),
+            proofs: generate_test_proofs(2),
+        };
+        let (first, second) = (exchange([1u8; 32]), exchange([3u8; 32]));
+        assert_eq!(db.search_exchange(&ys).await.unwrap(), None);
+        assert!(db
+            .reserve_exchange(first.clone(), fps(&[0]), hashes(&[0]))
+            .await
+            .unwrap());
+        assert!(!db
+            .reserve_exchange(second.clone(), fps(&[1, 0]), hashes(&[1, 0]))
+            .await
+            .unwrap());
+        assert_eq!(db.search_exchange(&ys[1..2]).await.unwrap(), None);
+        assert!(db.search_fp(&hashes(&[1])[0]).await.unwrap().is_none());
+        assert!(db
+            .reserve_exchange(second.clone(), fps(&[1, 2]), hashes(&[1, 2]))
+            .await
+            .unwrap());
+        assert_eq!(db.search_exchange(&ys[..1]).await.unwrap(), Some(first));
+        assert_eq!(
+            db.search_exchange(&ys[2..]).await.unwrap(),
+            Some(second.clone())
+        );
+        let (alpha_id, _) = db.search_fp(&hashes(&[2])[0]).await.unwrap().unwrap();
+        assert_eq!(alpha_id, second.alpha_id);
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository

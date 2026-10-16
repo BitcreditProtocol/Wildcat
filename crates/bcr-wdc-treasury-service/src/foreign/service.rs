@@ -3,11 +3,15 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
+    client::admin::treasury::SUError,
     core::{
         self,
-        htlc::{exchange_htlc, hop_locktime, offline_hash_lock, online_hash_lock},
+        htlc::{exchange_htlc, hop_locktime, htlc_lock, offline_hash_lock, online_hash_lock},
     },
-    wire::keys as wire_keys,
+    wire::{
+        exchange::{exchange_digest, exchange_message, OfflineExchangeRequest},
+        keys as wire_keys,
+    },
 };
 use bitcoin::{hashes::sha256::Hash as Sha256Hash, secp256k1};
 // ----- local imports
@@ -15,8 +19,8 @@ use crate::{
     error::{Error, Result},
     foreign::{
         fingerprints_vec_to_map, proof, signed_swap_with_foreign, to_mint_proofs_map,
-        ClowderClient, KeysClient, MintBalance, MintClientFactory, OfflineRepository,
-        OnlineRepository,
+        ClowderClient, KeysClient, MintBalance, MintClientFactory, OfflineExchange,
+        OfflineRepository, OnlineRepository,
     },
     TStamp,
 };
@@ -42,10 +46,58 @@ impl Service {
         wallet_signature: secp256k1::schnorr::Signature,
         now: TStamp,
     ) -> Result<Vec<cashu::Proof>> {
+        let request = OfflineExchangeRequest {
+            fingerprints: inputs.clone(),
+            hashes: hashes.clone(),
+            wallet_pk: wpk,
+            wallet_signature,
+        };
         let (_, foreign_mint_id) = self
             .clowder
             .can_accept_offline_exchange(inputs.clone())
             .await?;
+        let ys: Vec<cashu::PublicKey> = inputs
+            .iter()
+            .map(|fp| cashu::PublicKey::from(fp.y))
+            .collect();
+        let exchange = match self.offline_repo.search_exchange(&ys).await? {
+            Some(held) => verify_held_exchange(held, &request, now)?,
+            None => {
+                self.issue_offline_exchange(&request, &ys, foreign_mint_id, now)
+                    .await?
+            }
+        };
+        self.clowder
+            .signal_offline_exchange_event(
+                inputs.clone(),
+                hashes.clone(),
+                wpk,
+                exchange.proofs.clone(),
+                Some(exchange.exchange_digest),
+                Some(wallet_signature),
+            )
+            .await?;
+        let mut issued: HashMap<Sha256Hash, Vec<cashu::Proof>> = HashMap::new();
+        for proof in &exchange.proofs {
+            let (hash, _) = htlc_lock(proof)?;
+            issued.entry(hash).or_default().push(proof.clone());
+        }
+        for (hash, proofs) in issued {
+            self.online_repo
+                .store_issued(hash, exchange.expires_at, proofs)
+                .await?;
+        }
+        Ok(exchange.proofs)
+    }
+
+    async fn issue_offline_exchange(
+        &self,
+        request: &OfflineExchangeRequest,
+        ys: &[cashu::PublicKey],
+        foreign_mint_id: secp256k1::PublicKey,
+        now: TStamp,
+    ) -> Result<OfflineExchange> {
+        let (inputs, hashes, wpk) = (&request.fingerprints, &request.hashes, request.wallet_pk);
         // Expires to its issuer; a wallet that never unlocks redeems at its own alpha.
         let refund = cashu::PublicKey::from(self.clowder.get_myself_pk().await?);
         let expires_at = now + time::Duration::seconds(self.offline_exchange_lock_secs as i64);
@@ -53,16 +105,9 @@ impl Service {
         // No offline eCash is issued until the node has verified the wallet's
         // signature, recorded the dual-signed exchange and broadcast the
         // evidence to the alpha's Betas.
-        let request = bcr_common::wire::exchange::OfflineExchangeRequest {
-            fingerprints: inputs.clone(),
-            hashes: hashes.clone(),
-            wallet_pk: wpk,
-            wallet_signature,
-        };
-        let recorded = self.clowder.record_offline_exchange(&request).await?;
+        let recorded = self.clowder.record_offline_exchange(request).await?;
         let foreign_fps = fingerprints_vec_to_map(inputs.clone(), hashes.clone());
         let mut retv: Vec<cashu::Proof> = Vec::new();
-        let mut issued: HashMap<Sha256Hash, Vec<cashu::Proof>> = HashMap::new();
         for (kid, fps_hashes) in foreign_fps {
             let k_info = self.clowder.get_keyset_info(&foreign_mint_id, &kid).await?;
             let Some(foreign_unix_expiration) = k_info.final_expiry else {
@@ -75,7 +120,6 @@ impl Service {
             let foreign_date = foreign_expiration.date();
             let keyset = self.keys.get_keyset_with_expiration(foreign_date).await?;
             let mut secrets = Vec::new();
-            let mut secret_hashes = Vec::new();
             for (fp, hash) in fps_hashes {
                 let amount = cashu::Amount::from(fp.amount);
                 let condition = exchange_htlc(hash, locktime, wpk, refund)?;
@@ -99,7 +143,6 @@ impl Service {
                         r,
                         amount: part,
                     });
-                    secret_hashes.push(hash);
                 }
             }
             let premints = cashu::PreMintSecrets {
@@ -107,35 +150,28 @@ impl Service {
                 keyset_id: keyset.id.into(),
             };
             let signatures = self.keys.sign(&premints.blinded_messages()).await?;
-            for ((sig, pre), hash) in signatures
-                .into_iter()
-                .zip(premints.iter())
-                .zip(secret_hashes)
-            {
+            for (sig, pre) in signatures.into_iter().zip(premints.iter()) {
                 let proof = core::signature::unblind_ecash_signature(&keyset, pre.clone(), sig)?;
-                issued.entry(hash).or_default().push(proof.clone());
                 retv.push(proof);
             }
         }
-        self.clowder
-            .signal_offline_exchange_event(
-                inputs.clone(),
-                hashes.clone(),
-                wpk,
-                retv.clone(),
-                Some(recorded.exchange_digest),
-                Some(wallet_signature),
-            )
-            .await?;
-        self.offline_repo
-            .store_fps(foreign_mint_id, inputs, hashes)
-            .await?;
-        for (hash, proofs) in issued {
-            self.online_repo
-                .store_issued(hash, expires_at, proofs)
-                .await?;
+        let exchange = OfflineExchange {
+            exchange_digest: recorded.exchange_digest,
+            alpha_id: foreign_mint_id,
+            evidence_digest: recorded.evidence_digest,
+            expires_at,
+            proofs: retv,
+        };
+        if self
+            .offline_repo
+            .reserve_exchange(exchange.clone(), inputs.clone(), hashes.clone())
+            .await?
+        {
+            return Ok(exchange);
         }
-        Ok(retv)
+        let held = self.offline_repo.search_exchange(ys).await?;
+        let held = held.ok_or(Error::ServiceUnavailable(SUError::Unknown))?;
+        verify_held_exchange(held, request, now)
     }
 
     pub async fn online_exchange(
@@ -293,6 +329,36 @@ impl Service {
     }
 }
 
+fn verify_held_exchange(
+    held: OfflineExchange,
+    request: &OfflineExchangeRequest,
+    now: TStamp,
+) -> Result<OfflineExchange> {
+    if held.expires_at < now {
+        return Err(Error::InvalidInput(String::from("held exchange expired")));
+    }
+    let digest = exchange_digest(
+        &held.alpha_id,
+        &held.evidence_digest,
+        &request.fingerprints,
+        &request.hashes,
+        &request.wallet_pk,
+    );
+    if digest != held.exchange_digest {
+        return Err(Error::InvalidInput(String::from(
+            "inputs held by another exchange",
+        )));
+    }
+    secp256k1::global::SECP256K1
+        .verify_schnorr(
+            &request.wallet_signature,
+            &exchange_message(&digest),
+            &request.wallet_pk.x_only_public_key(),
+        )
+        .map_err(|_| Error::InvalidInput(String::from("invalid wallet signature")))?;
+    Ok(held)
+}
+
 async fn try_online_htlc(
     preimage: &str,
     repo: &dyn OnlineRepository,
@@ -378,6 +444,7 @@ mod tests {
         core, core_tests, ecash,
         wire::{
             attestation::{self as wire_attestation, IssuanceAttestation},
+            clowder::ClowderRejection,
             swap as wire_swap,
         },
     };
@@ -644,6 +711,21 @@ mod tests {
                     exchange_digest: [2u8; 32],
                 })
             });
+        offlinerepo
+            .expect_search_exchange()
+            .times(1)
+            .returning(|_| Ok(None));
+        offlinerepo
+            .expect_reserve_exchange()
+            .with(
+                function(move |e: &OfflineExchange| {
+                    e.exchange_digest == [2u8; 32] && e.alpha_id == foreign_pk
+                }),
+                eq(inputs.clone()),
+                eq(hashes.clone()),
+            )
+            .times(1)
+            .returning(|_, _, _| Ok(true));
         clowder
             .expect_signal_offline_exchange_event()
             .times(1)
@@ -656,11 +738,6 @@ mod tests {
                 always(),
             )
             .returning(|_, _, _, _, _, _| Ok(()));
-        offlinerepo
-            .expect_store_fps()
-            .with(eq(foreign_pk), eq(inputs.clone()), eq(hashes.clone()))
-            .times(1)
-            .returning(|_, _, _| Ok(()));
         let myself_pk = myself_kp.public_key();
         clowder
             .expect_get_myself_pk()
@@ -711,6 +788,238 @@ mod tests {
             );
             assert!(core::signature::is_offline_exchange_htlc(proof));
         }
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_retry_returns_held_proofs() {
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
+        let mut keys = crate::foreign::MockKeysClient::new();
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        let alpha_id = core::generate_random_keypair().public_key();
+        let myself_pk = core::generate_random_keypair().public_key();
+        let wallet_kp = core::generate_random_keypair();
+        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
+        let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        foreign_info.final_expiry = Some(expiration.unix_timestamp() as u64);
+        let (original, _) = generate_htlc_proof_for_online_exchange(
+            &foreign_keyset,
+            cashu::Amount::from(8),
+            expiration,
+            wallet_pk,
+            cashu::PublicKey::from(myself_pk),
+        );
+        let inputs = vec![wire_keys::ProofFingerprint::try_from(original.clone()).unwrap()];
+        let hashes = vec![Sha256Hash::hash(original.secret.as_bytes())];
+        let evidence_digest = [1u8; 32];
+        let digest = exchange_digest(&alpha_id, &evidence_digest, &inputs, &hashes, &wallet_pk);
+        let request = OfflineExchangeRequest {
+            fingerprints: inputs.clone(),
+            hashes: hashes.clone(),
+            wallet_pk,
+            wallet_signature: secp256k1::global::SECP256K1
+                .sign_schnorr(&exchange_message(&digest), &wallet_kp),
+        };
+        clowder
+            .expect_can_accept_offline_exchange()
+            .times(6)
+            .returning(move |_| {
+                Ok((
+                    reqwest::Url::parse("https://alpha.example").unwrap(),
+                    alpha_id,
+                ))
+            });
+        clowder
+            .expect_get_myself_pk()
+            .times(1)
+            .returning(move || Ok(myself_pk));
+        clowder
+            .expect_record_offline_exchange()
+            .times(1)
+            .returning(move |_| {
+                Ok(bcr_common::wire::exchange::RecordOfflineExchangeResponse {
+                    evidence_digest,
+                    exchange_digest: digest,
+                })
+            });
+        let foreign_info = ecash::KeySetInfo::from(foreign_info);
+        clowder
+            .expect_get_keyset_info()
+            .times(1)
+            .returning(move |_, _| Ok(foreign_info.clone()));
+        let (_, myself_keyset) = core_tests::generate_random_ecash_keyset();
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        keys.expect_get_keyset_with_expiration()
+            .times(1)
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        keys.expect_sign().times(1).returning(move |blinds| {
+            Ok(blinds
+                .iter()
+                .map(|b| core::signature::sign_ecash(&myself_keyset, b).unwrap())
+                .collect())
+        });
+        let mut seq = mockall::Sequence::new();
+        clowder
+            .expect_signal_offline_exchange_event()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_, _, _, _, _, _| {
+                Err(Error::ClowderNatsClient(
+                    bcr_common::client::clowder::ClowderClientError::Rejected(
+                        ClowderRejection::LedgerBusy,
+                    ),
+                ))
+            });
+        clowder
+            .expect_signal_offline_exchange_event()
+            .with(
+                always(),
+                always(),
+                always(),
+                always(),
+                eq(Some(digest)),
+                always(),
+            )
+            .times(2)
+            .in_sequence(&mut seq)
+            .returning(|_, _, _, _, _, _| Ok(()));
+        onlinerepo
+            .expect_store_issued()
+            .times(2)
+            .returning(|_, _, _| Ok(()));
+        let offlinerepo = Arc::new(crate::persistence::inmemory::OfflineRepository::default());
+        let srvc = Service {
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: offlinerepo.clone(),
+            keys: Arc::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+            offline_exchange_lock_secs: 7 * 24 * 3600,
+        };
+        let now = time::OffsetDateTime::now_utc();
+        let expires_at = now + time::Duration::seconds(7 * 24 * 3600);
+        let exchange = |r: OfflineExchangeRequest, now: TStamp| {
+            srvc.offline_exchange(
+                r.fingerprints,
+                r.hashes,
+                r.wallet_pk,
+                r.wallet_signature,
+                now,
+            )
+        };
+
+        assert!(exchange(request.clone(), now).await.is_err());
+        let first = exchange(request.clone(), now).await.unwrap();
+        assert_eq!(first.len(), 1);
+        offlinerepo
+            .remove_fps(&[cashu::PublicKey::from(inputs[0].y)])
+            .await
+            .unwrap();
+        let second = exchange(request.clone(), expires_at).await.unwrap();
+        assert_eq!(first, second);
+        assert!(offlinerepo.search_fp(&hashes[0]).await.unwrap().is_none());
+        let expired = exchange(request.clone(), expires_at + time::Duration::seconds(1)).await;
+        assert!(matches!(expired, Err(Error::InvalidInput(_))));
+        let other_kp = core::generate_random_keypair();
+        let other = OfflineExchangeRequest {
+            wallet_pk: cashu::PublicKey::from(other_kp.public_key()),
+            wallet_signature: secp256k1::global::SECP256K1
+                .sign_schnorr(&exchange_message(&digest), &other_kp),
+            ..request.clone()
+        };
+        let other = exchange(other, now).await;
+        assert!(matches!(other, Err(Error::InvalidInput(_))));
+        let forged = OfflineExchangeRequest {
+            wallet_signature: secp256k1::global::SECP256K1
+                .sign_schnorr(&exchange_message(&[3u8; 32]), &wallet_kp),
+            ..request
+        };
+        let forged = exchange(forged, now).await;
+        assert!(matches!(forged, Err(Error::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn offline_exchange_retry_issues_no_second_proofs() {
+        let alpha_id = core::generate_random_keypair().public_key();
+        let myself_pk = core::generate_random_keypair().public_key();
+        let wallet_kp = core::generate_random_keypair();
+        let wallet_pk = cashu::PublicKey::from(wallet_kp.public_key());
+        let (mut foreign_info, foreign_keyset) = core_tests::generate_random_ecash_keyset();
+        let expiration = time::OffsetDateTime::now_utc() + time::Duration::days(7);
+        foreign_info.final_expiry = Some(expiration.unix_timestamp() as u64);
+        let (original, _) = generate_htlc_proof_for_online_exchange(
+            &foreign_keyset,
+            cashu::Amount::from(8),
+            expiration,
+            wallet_pk,
+            cashu::PublicKey::from(myself_pk),
+        );
+        let inputs = vec![wire_keys::ProofFingerprint::try_from(original.clone()).unwrap()];
+        let hashes = vec![Sha256Hash::hash(original.secret.as_bytes())];
+        let digest = bcr_common::wire::exchange::exchange_digest(
+            &alpha_id, &[1u8; 32], &inputs, &hashes, &wallet_pk,
+        );
+        let signature = secp256k1::global::SECP256K1.sign_schnorr(
+            &bcr_common::wire::exchange::exchange_message(&digest),
+            &wallet_kp,
+        );
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        clowder
+            .expect_can_accept_offline_exchange()
+            .returning(move |_| {
+                Ok((
+                    reqwest::Url::parse("https://alpha.example").unwrap(),
+                    alpha_id,
+                ))
+            });
+        clowder
+            .expect_get_myself_pk()
+            .returning(move || Ok(myself_pk));
+        clowder
+            .expect_record_offline_exchange()
+            .returning(move |_| {
+                Ok(bcr_common::wire::exchange::RecordOfflineExchangeResponse {
+                    evidence_digest: [1u8; 32],
+                    exchange_digest: digest,
+                })
+            });
+        let foreign_info = ecash::KeySetInfo::from(foreign_info);
+        clowder
+            .expect_get_keyset_info()
+            .returning(move |_, _| Ok(foreign_info.clone()));
+        clowder
+            .expect_signal_offline_exchange_event()
+            .returning(|_, _, _, _, _, _| Ok(()));
+        let (_, myself_keyset) = core_tests::generate_random_ecash_keyset();
+        let cloned_keyset = bcr_wdc_utils::keys::to_keyset(&myself_keyset, None);
+        let mut keys = crate::foreign::MockKeysClient::new();
+        keys.expect_get_keyset_with_expiration()
+            .returning(move |_| Ok(cloned_keyset.clone()));
+        keys.expect_sign().returning(move |blinds| {
+            Ok(blinds
+                .iter()
+                .map(|b| core::signature::sign_ecash(&myself_keyset, b).unwrap())
+                .collect())
+        });
+        let mut onlinerepo = crate::foreign::MockOnlineRepository::new();
+        onlinerepo.expect_store_issued().returning(|_, _, _| Ok(()));
+        let srvc = Service {
+            online_repo: Arc::new(onlinerepo),
+            offline_repo: Arc::new(crate::persistence::inmemory::OfflineRepository::default()),
+            keys: Arc::new(keys),
+            clowder: Arc::new(clowder),
+            mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
+            exchange_lock_margin_secs: 15 * 60,
+            offline_exchange_lock_secs: 7 * 24 * 3600,
+        };
+        let now = time::OffsetDateTime::now_utc();
+        let exchange =
+            || srvc.offline_exchange(inputs.clone(), hashes.clone(), wallet_pk, signature, now);
+
+        let first = exchange().await.unwrap();
+        let retry = exchange().await.unwrap();
+        assert_eq!(first, retry);
     }
 
     fn redeem_request(amounts: &[u64]) -> bcr_common::wire::exchange::RedeemOfflineExchangeRequest {

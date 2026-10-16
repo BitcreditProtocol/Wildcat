@@ -86,6 +86,7 @@ impl foreign::OnlineRepository for OnlineRepository {
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
         let mut locked = self.issued.lock().unwrap();
+        locked.retain(|(_, _, p)| !proofs.contains(p));
         locked.extend(
             proofs
                 .into_iter()
@@ -148,23 +149,11 @@ pub struct OfflineRepository {
     fingerprints: Arc<Mutex<HashMap<Sha256Hash, (secp256k1::PublicKey, ProofFingerprint)>>>,
     proofs: Arc<Mutex<HashMap<secp256k1::PublicKey, Vec<cashu::Proof>>>>,
     redemptions: Arc<Mutex<HashSet<[u8; 32]>>>,
+    exchanges: Arc<Mutex<HashMap<cashu::PublicKey, foreign::OfflineExchange>>>,
 }
 
 #[async_trait]
 impl foreign::OfflineRepository for OfflineRepository {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        let mut locked = self.fingerprints.lock().unwrap();
-        for (h, fp) in hash.into_iter().zip(fps) {
-            locked.insert(h, (mint_id, fp));
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -216,6 +205,33 @@ impl foreign::OfflineRepository for OfflineRepository {
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
         let mut locked = self.redemptions.lock().unwrap();
         Ok(locked.insert(digest))
+    }
+
+    async fn reserve_exchange(
+        &self,
+        exchange: foreign::OfflineExchange,
+        fps: Vec<ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+    ) -> Result<bool> {
+        let mut locked = self.exchanges.lock().unwrap();
+        let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
+        if ys.iter().any(|y| locked.contains_key(y)) {
+            return Ok(false);
+        }
+        locked.extend(ys.into_iter().map(|y| (y, exchange.clone())));
+        let mut fingerprints = self.fingerprints.lock().unwrap();
+        for (h, fp) in hashes.into_iter().zip(fps) {
+            fingerprints.insert(h, (exchange.alpha_id, fp));
+        }
+        Ok(true)
+    }
+
+    async fn search_exchange(
+        &self,
+        ys: &[cashu::PublicKey],
+    ) -> Result<Option<foreign::OfflineExchange>> {
+        let locked = self.exchanges.lock().unwrap();
+        Ok(ys.iter().find_map(|y| locked.get(y)).cloned())
     }
 }
 

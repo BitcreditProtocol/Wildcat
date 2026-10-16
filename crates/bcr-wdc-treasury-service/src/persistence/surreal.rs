@@ -1071,11 +1071,12 @@ impl foreign::OnlineRepository for DBForeignOnline {
                 locktime: locktime.unix_timestamp(),
             });
         }
-        let _: Vec<ForeignIssuedProofDBEntry> = self
-            .db
-            .insert(Self::ISSUED_TABLE)
-            .content(entries)
+        self.db
+            .query("INSERT IGNORE $entries")
+            .bind(("entries", entries))
             .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .check()
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
     }
@@ -1132,6 +1133,28 @@ struct ForeignFingerprintDBEntry {
     mint_id: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OfflineExchangeDBEntry {
+    id: RecordId,
+    exchange_digest: [u8; 32],
+    alpha_id: String,
+    evidence_digest: [u8; 32],
+    expires_at: i64,
+    proofs: Vec<cashu::Proof>,
+}
+
+impl From<OfflineExchangeDBEntry> for foreign::OfflineExchange {
+    fn from(e: OfflineExchangeDBEntry) -> Self {
+        Self {
+            exchange_digest: e.exchange_digest,
+            alpha_id: secp256k1::PublicKey::from_str(&e.alpha_id).expect("alpha_id <--> String"),
+            evidence_digest: e.evidence_digest,
+            expires_at: TStamp::from_unix_timestamp(e.expires_at).expect("expires_at <--> i64"),
+            proofs: e.proofs,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DBForeignOffline {
     db: Surreal<Any>,
@@ -1141,6 +1164,13 @@ impl DBForeignOffline {
     const FPS_TABLE: &'static str = "offline-fps";
     const PROOFS_TABLE: &'static str = "offline-proofs";
     const REDEMPTIONS_TABLE: &'static str = "offline-redemptions";
+    const EXCHANGES_TABLE: &'static str = "offline-exchanges";
+
+    fn exchange_rids(ys: &[cashu::PublicKey]) -> Vec<RecordId> {
+        ys.iter()
+            .map(|y| RecordId::from_table_key(Self::EXCHANGES_TABLE, y.to_string()))
+            .collect()
+    }
 
     pub async fn new(config: surreal::DBConnConfig) -> SurrealResult<Self> {
         let db_connection = Surreal::<Any>::init();
@@ -1153,33 +1183,6 @@ impl DBForeignOffline {
 
 #[async_trait]
 impl foreign::OfflineRepository for DBForeignOffline {
-    async fn store_fps(
-        &self,
-        mint_id: secp256k1::PublicKey,
-        fps: Vec<wire_keys::ProofFingerprint>,
-        hash: Vec<Sha256Hash>,
-    ) -> Result<()> {
-        for (hash, fp) in hash.into_iter().zip(fps) {
-            let rid = RecordId::from_table_key(Self::FPS_TABLE, hash.to_string());
-            let entry = ForeignFingerprintDBEntry {
-                id: rid.clone(),
-                amount: fp.amount,
-                keyset_id: fp.keyset_id.into(),
-                y: cashu::PublicKey::from(fp.y),
-                c: cashu::PublicKey::from(fp.c),
-                dleq: fp.dleq,
-                mint_id: mint_id.to_string(),
-            };
-            let _: Option<ForeignFingerprintDBEntry> = self
-                .db
-                .insert(rid)
-                .content(entry)
-                .await
-                .map_err(|e| Error::DB(anyhow!(e)))?;
-        }
-        Ok(())
-    }
-
     async fn search_fp(
         &self,
         hash: &Sha256Hash,
@@ -1310,6 +1313,76 @@ impl foreign::OfflineRepository for DBForeignOffline {
             .take(0)
             .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(before.is_none())
+    }
+
+    async fn reserve_exchange(
+        &self,
+        exchange: foreign::OfflineExchange,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<Sha256Hash>,
+    ) -> Result<bool> {
+        let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
+        let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
+            .into_iter()
+            .zip(fps)
+            .map(|(hash, fp)| ForeignFingerprintDBEntry {
+                id: RecordId::from_table_key(Self::FPS_TABLE, hash.to_string()),
+                amount: fp.amount,
+                keyset_id: fp.keyset_id.into(),
+                y: cashu::PublicKey::from(fp.y),
+                c: cashu::PublicKey::from(fp.c),
+                dleq: fp.dleq,
+                mint_id: exchange.alpha_id.to_string(),
+            })
+            .collect();
+        let entries: Vec<OfflineExchangeDBEntry> = Self::exchange_rids(&ys)
+            .into_iter()
+            .map(|id| OfflineExchangeDBEntry {
+                id,
+                exchange_digest: exchange.exchange_digest,
+                alpha_id: exchange.alpha_id.to_string(),
+                evidence_digest: exchange.evidence_digest,
+                expires_at: exchange.expires_at.unix_timestamp(),
+                proofs: exchange.proofs.clone(),
+            })
+            .collect();
+        let errors = self
+            .db
+            .query(
+                "
+                BEGIN;
+                    INSERT $entries RETURN NONE;
+                    INSERT $fps RETURN NONE;
+                COMMIT;
+                ",
+            )
+            .bind(("entries", entries))
+            .bind(("fps", fp_entries))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take_errors();
+        if errors.is_empty() {
+            return Ok(true);
+        }
+        if self.search_exchange(&ys).await?.is_some() {
+            return Ok(false);
+        }
+        Err(Error::DB(anyhow!("reserve exchange: {errors:?}")))
+    }
+
+    async fn search_exchange(
+        &self,
+        ys: &[cashu::PublicKey],
+    ) -> Result<Option<foreign::OfflineExchange>> {
+        let held: Option<OfflineExchangeDBEntry> = self
+            .db
+            .query("SELECT * FROM $rids LIMIT 1")
+            .bind(("rids", Self::exchange_rids(ys)))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(held.map(Into::into))
     }
 }
 
@@ -1522,7 +1595,17 @@ mod tests {
             Sha256Hash::from_slice(&[0u8; 32]).unwrap(),
             Sha256Hash::from_slice(&[1u8; 32]).unwrap(),
         ];
-        db.store_fps(alpha_id, fps, hash.clone()).await.unwrap();
+        let exchange = foreign::OfflineExchange {
+            exchange_digest: [9u8; 32],
+            alpha_id,
+            evidence_digest: [2u8; 32],
+            expires_at: time::OffsetDateTime::now_utc(),
+            proofs: vec![],
+        };
+        assert!(db
+            .reserve_exchange(exchange, fps, hash.clone())
+            .await
+            .unwrap());
         let result = db.search_fp(&hash[0]).await.unwrap();
         assert!(result.is_some());
         let (mint, fp) = result.unwrap();
