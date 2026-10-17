@@ -1,6 +1,7 @@
 // ----- standard library imports
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    ops::Deref,
     str::FromStr,
 };
 // ----- extra library imports
@@ -8,7 +9,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::{
     cashu::{self, nut01::MintKeyPair},
-    client::admin::core::RNFError,
+    client::admin::core::{BRError, RNFError},
+    core::BillId,
     ecash,
 };
 use bcr_wdc_utils::{keys as keys_utils, postgres};
@@ -18,8 +20,10 @@ use bitcoin::{
 };
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+use uuid::Uuid;
 // ----- local imports
 use crate::{
+    ebill,
     error::{Error, Result},
     persistence, vault, TStamp,
 };
@@ -1010,6 +1014,182 @@ impl vault::Repository for DBVault {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Ebill versioned blob
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum EbillMintOperationBlob {
+    V1(EbillMintOpBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct EbillMintOpBlobV1 {
+    target: bitcoin::Amount,
+    pub_key: secp256k1::PublicKey,
+}
+
+// ///////////////////////////////////////////////////////////////////////// DBEbill
+
+#[derive(Debug, Clone)]
+pub struct DBEbill {
+    pool: PgPool,
+}
+
+impl DBEbill {
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl ebill::Repository for DBEbill {
+    async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
+        let uid = mint_op.uid;
+        let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
+            target: bitcoin::Amount::from_sat(mint_op.target.to_u64()),
+            pub_key: *mint_op.pub_key.deref(),
+        });
+        let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO treasury_ebill_mint_ops (uid, kid, minted, bill_id, blob)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (uid) DO NOTHING
+            RETURNING uid
+            "#,
+            uid,
+            mint_op.kid.to_string(),
+            mint_op.minted.to_u64() as i64,
+            mint_op.bill_id.to_string(),
+            blob_value
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| match e.as_database_error() {
+            Some(db) if db.is_unique_violation() => Error::Conflict(format!("mintop {uid}")),
+            _ => Error::DB(anyhow!(e)),
+        })?;
+        if result.is_none() {
+            return Err(Error::Conflict(format!("mintop {uid}")));
+        }
+        Ok(())
+    }
+
+    async fn mint_load(&self, uid: Uuid) -> Result<ebill::MintOperation> {
+        let result = sqlx::query!(
+            r#"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
+            FROM treasury_ebill_mint_ops
+            WHERE uid = $1
+            "#,
+            uid
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Err(Error::ResourceNotFound(RNFError::Generic(uid.to_string())));
+        };
+        let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
+        let EbillMintOperationBlob::V1(v1) = row.blob.0;
+        Ok(ebill::MintOperation {
+            uid: row.uid,
+            kid,
+            minted: cashu::Amount::from(row.minted as u64),
+            bill_id,
+            target: cashu::Amount::from(v1.target.to_sat()),
+            pub_key: cashu::PublicKey::from(v1.pub_key),
+        })
+    }
+
+    async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<ebill::MintOperation>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
+            FROM treasury_ebill_mint_ops
+            WHERE bill_id = $1
+            "#,
+            bill_id.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let Some(row) = result else {
+            return Ok(None);
+        };
+        let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
+        let EbillMintOperationBlob::V1(v1) = row.blob.0;
+        Ok(Some(ebill::MintOperation {
+            uid: row.uid,
+            kid,
+            minted: cashu::Amount::from(row.minted as u64),
+            bill_id,
+            target: cashu::Amount::from(v1.target.to_sat()),
+            pub_key: cashu::PublicKey::from(v1.pub_key),
+        }))
+    }
+
+    async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
+        let results = sqlx::query!(
+            r#"
+            SELECT uid, kid, minted, bill_id, blob as "blob: Json<EbillMintOperationBlob>"
+            FROM treasury_ebill_mint_ops
+            WHERE kid = $1
+            "#,
+            kid.to_string()
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut ops = Vec::with_capacity(results.len());
+        for row in results {
+            let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
+            let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
+            let EbillMintOperationBlob::V1(v1) = row.blob.0;
+            ops.push(ebill::MintOperation {
+                uid: row.uid,
+                kid,
+                minted: cashu::Amount::from(row.minted as u64),
+                bill_id,
+                target: cashu::Amount::from(v1.target.to_sat()),
+                pub_key: cashu::PublicKey::from(v1.pub_key),
+            });
+        }
+        Ok(ops)
+    }
+
+    async fn mint_update_field(
+        &self,
+        uid: Uuid,
+        old_minted: cashu::Amount,
+        new_minted: cashu::Amount,
+    ) -> Result<()> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE treasury_ebill_mint_ops
+            SET minted = $3
+            WHERE uid = $1 AND minted = $2
+            RETURNING uid
+            "#,
+            uid,
+            old_minted.to_u64() as i64,
+            new_minted.to_u64() as i64,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.is_none() {
+            return Err(Error::InvalidInput(BRError::Generic(format!(
+                "mintop {uid} and {old} amount not found",
+                old = old_minted
+            ))));
+        }
         Ok(())
     }
 }

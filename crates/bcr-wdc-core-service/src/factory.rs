@@ -20,8 +20,6 @@ pub struct Factory {
 }
 
 impl Factory {
-    pub const MAX_ORDER: u8 = 32;
-
     pub fn new(seed: &[u8], derivation: btc32::DerivationPath) -> Self {
         let master =
             btc32::Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("bitcoin FAIL");
@@ -74,7 +72,9 @@ impl Factory {
             .master
             .derive_priv(secp, &path)
             .expect("bitcoin::derive_priv unexpected error");
-        let denominations: Vec<u64> = (0..Self::MAX_ORDER).map(|i| 2_u64.pow(i as u32)).collect();
+        let denominations: Vec<u64> = (0..keys_utils::MAX_ORDER)
+            .map(|i| 2_u64.pow(i as u32))
+            .collect();
         let keyset = cashu::MintKeySet::generate(
             secp,
             xpriv,

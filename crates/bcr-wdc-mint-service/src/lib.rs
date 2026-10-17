@@ -11,17 +11,19 @@ use bcr_common::cashu;
 use bcr_common::client::{
     self,
     admin::{core as core_ep, treasury as treasury_ep},
+    ebill::Client as EbillClient,
 };
 use bcr_wdc_utils::nut19;
 // ----- local modules
 mod admin;
 pub mod config;
 pub mod core;
+pub mod ebill;
 pub mod error;
 pub mod persistence;
 pub mod vault;
 mod web;
-// remaining treasury modules land here: onchain, ebill, foreign
+// remaining treasury modules land here: onchain, foreign
 // local imports
 use crate::{
     core::{clients, factory, service},
@@ -36,6 +38,8 @@ use bcr_common::TStamp;
 pub struct AppController {
     pub service: Arc<service::Service>,
     pub vault: Arc<vault::Service>,
+    pub ebill: Arc<ebill::Service>,
+    pub ebill_cl: Arc<EbillClient>,
     pub cache: Arc<dyn nut19::Cache>,
 }
 
@@ -51,17 +55,16 @@ impl AppController {
             minimum_keyset_fees_ppk,
             cache_expiry_sec,
             settle_window_sec,
+            ebill: ebill_cfg,
+            ebill_url,
         } = cfg;
-        // one PostgreSQL pool shared by every repository: with `max_connections > 0` it is
-        // sized by the config, otherwise sqlx's default applies
-        let pool = if repository.max_connections > 0 {
-            persistence::sqlx::connect(&repository).await
-        } else {
-            sqlx::PgPool::connect(&repository.connection)
-                .await
-                .map_err(|e| error::Error::DB(anyhow::anyhow!(e)))
-        }
-        .expect("Failed to connect to PostgreSQL");
+        assert!(
+            repository.max_connections > 0,
+            "Repository must allow at least one connection"
+        );
+        let pool = persistence::sqlx::connect(&repository)
+            .await
+            .expect("Failed to connect to PostgreSQL");
         let repository: Arc<dyn Repository> =
             Arc::new(persistence::sqlx::Repository::from_pool(pool.clone()));
         let keygen = factory::KeysFactory::new(seed, starting_derivation_path);
@@ -84,6 +87,10 @@ impl AppController {
         let my_url = cashu::MintUrl::from_str(mint_url.mint_url.as_str())
             .expect("cashu::MintUrl == reqwest::Url");
         let mint_id = bcr_common::core::NodeId::new(alpha_id, info.network);
+        let ebill_clowder = ebill::ClwdrCl {
+            rest: Arc::new(clowder_rest.clone()),
+            nats: clowder_cl.clone(),
+        };
         let clowder = clients::ClowderCl {
             nats: clowder_cl,
             rest: clowder_rest,
@@ -101,15 +108,28 @@ impl AppController {
             settle_window_deadline: settle_window_tout,
         };
         let vault = vault::Service {
-            repo: Box::new(persistence::sqlx::DBVault::from_pool(pool)),
+            repo: Box::new(persistence::sqlx::DBVault::from_pool(pool.clone())),
             my_url,
             mint_id,
         };
+        let config::Ebill { multiplier } = ebill_cfg;
+        assert!(
+            multiplier > cashu::Amount::ZERO,
+            "Multiplier must be greater than zero"
+        );
+        let ebill = ebill::Service {
+            repo: Box::new(persistence::sqlx::DBEbill::from_pool(pool)),
+            clowdercl: Box::new(ebill_clowder),
+            multiplier,
+        };
+        let ebill_cl = EbillClient::new(ebill_url);
         let cache_expiry = time::Duration::seconds(cache_expiry_sec as i64);
         let cache = Arc::new(nut19::InMemoryMap::new(cache_expiry));
         Self {
             service: Arc::new(service),
             vault: Arc::new(vault),
+            ebill: Arc::new(ebill),
+            ebill_cl: Arc::new(ebill_cl),
             cache,
         }
     }
@@ -120,6 +140,8 @@ where
     Cntrlr: Send + Sync + Clone + 'static,
     Arc<service::Service>: FromRef<Cntrlr>,
     Arc<vault::Service>: FromRef<Cntrlr>,
+    Arc<ebill::Service>: FromRef<Cntrlr>,
+    Arc<EbillClient>: FromRef<Cntrlr>,
     Arc<dyn nut19::Cache>: FromRef<Cntrlr>,
 {
     let web = Router::new()
@@ -135,7 +157,8 @@ where
             core_ep::web_ep::SIGNED_SWAP_COMMIT_V1,
             post(web::signed_commit_to_swap),
         )
-        .route(core_ep::web_ep::CHECK_STATE_V1, post(web::check_state));
+        .route(core_ep::web_ep::CHECK_STATE_V1, post(web::check_state))
+        .route(treasury_ep::web_ep::EBILLMINT_V1, post(web::mint_ebill));
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route(core_ep::admin_ep::NEW_KEYSET, post(admin::new_keyset))
@@ -155,6 +178,22 @@ where
         .route(
             treasury_ep::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
+        )
+        .route(
+            treasury_ep::admin_ep::REQUEST_TO_PAY_EBILL,
+            post(admin::request_to_pay_ebill),
+        )
+        .route(
+            treasury_ep::admin_ep::NEW_EBILL_MINTOP,
+            post(admin::new_ebill_mintop),
+        )
+        .route(
+            treasury_ep::admin_ep::LIST_EBILL_MINTOPS,
+            get(admin::list_ebill_mintops),
+        )
+        .route(
+            treasury_ep::admin_ep::EBILL_MINTOP_STATUS,
+            get(admin::ebill_mintop_status),
         );
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
@@ -192,9 +231,18 @@ pub mod test_utils {
                 bitcoin::Network::Regtest,
             ),
         };
+        let ebill = ebill::Service {
+            repo: Box::new(persistence::inmemory::EbillMintOpMap::default()),
+            clowdercl: Box::new(ebill::DummyClowderClient),
+            multiplier: cashu::Amount::ONE,
+        };
+        let ebill_cl =
+            EbillClient::new(client::Url::parse("http://localhost:3339").expect("ebill url"));
         AppController {
             service: Arc::new(service),
             vault: Arc::new(vault),
+            ebill: Arc::new(ebill),
+            ebill_cl: Arc::new(ebill_cl),
             cache: Arc::new(nut19::Dummy),
         }
     }
