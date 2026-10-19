@@ -15,7 +15,11 @@ feature-depth = 1
 # More documentation for the advisories section can be found here:
 # https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
 [advisories]
-ignore = []
+ignore = [
+    {id = "RUSTSEC-2026-0367", reason = "zip due to utoipa-swagger"},
+    {id = "RUSTSEC-2026-0368", reason = "zip due to utoipa-swagger"},
+    {id = "RUSTSEC-2026-0369", reason = "zip due to utoipa-swagger"}
+]
 unmaintained = "workspace"
 
 # This section is considered when running `cargo deny check licenses`
