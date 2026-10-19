@@ -130,6 +130,7 @@ pub mod endpoints {
     pub const GET_CLOWDER_EIOU_DEPOSIT: &str = "/v1/admin/clowder/eiou_deposit/{rid}";
     pub const POST_CLOWDER_EIOU_DEPOSIT: &str = "/v1/admin/clowder/eiou_deposit";
     pub const GET_CLOWDER_ONCHAIN_HISTORY: &str = "/v1/admin/clowder/history/onchain";
+    pub const GET_CLOWDER_EIOU_HISTORY: &str = "/v1/admin/clowder/history/eiou";
     pub const GET_CLOWDER_KEYSETS_BALANCE: &str = "/v1/admin/clowder/history/keysets";
     // Treasury-Client
     pub const MINT_OP_STATUS: &str = "/v1/admin/treasury/ebill/mint_op_status/{qid}";
@@ -240,6 +241,10 @@ pub fn routes(ctrl: AppController) -> Router {
             get(admin::get_onchain_history),
         )
         .route(
+            endpoints::GET_CLOWDER_EIOU_HISTORY,
+            get(admin::get_eiou_history),
+        )
+        .route(
             endpoints::GET_CLOWDER_KEYSETS_BALANCE,
             get(admin::get_keysets_balance),
         )
@@ -301,6 +306,7 @@ pub fn routes(ctrl: AppController) -> Router {
         wire_clowder::EiouDepositResponse,
         wire_clowder::EiouDepositStatus,
         wire_clowder::OnchainOperationsResponse,
+        wire_clowder::EiouOperationsResponse,
         wire_clowder::KeysetsBalanceResponse,
         // treasury service
         wire_treasury::RequestToPayFromEBillRequest,
@@ -353,6 +359,7 @@ pub fn routes(ctrl: AppController) -> Router {
         admin::get_eiou_deposit_status,
         admin::post_eiou_deposit,
         admin::get_onchain_history,
+        admin::get_eiou_history,
         admin::get_keysets_balance,
         // treasury service
         admin::post_ebill_reqtopay,
