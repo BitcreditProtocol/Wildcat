@@ -26,7 +26,7 @@ bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
 bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
-bip39 = {version = "2"}
+bip39 = {version = "3"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
