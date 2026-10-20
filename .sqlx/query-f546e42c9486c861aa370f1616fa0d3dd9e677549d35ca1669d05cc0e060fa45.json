@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_foreign_offline_proofs (y, mint_id, blob)\n            SELECT * FROM UNNEST($1::text[], $2::text[], $3::jsonb[])\n            ON CONFLICT (y) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f546e42c9486c861aa370f1616fa0d3dd9e677549d35ca1669d05cc0e060fa45"
+}

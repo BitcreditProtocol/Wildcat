@@ -3,7 +3,7 @@ use std::{ops::Deref, str::FromStr};
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
-use bcr_common::{cashu, core::BillId, ecash};
+use bcr_common::{cashu, core::BillId, ecash, wire::keys as wire_keys};
 use sqlx::types::Json;
 use sqlx::PgPool;
 use sqlx::Row;
@@ -477,6 +477,474 @@ impl foreign::OnlineRepository for DBForeignOnline {
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
         Ok(())
+    }
+}
+
+// ///////////////////////////////////////////////////////////////////////// Versioned foreign offline blobs
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ForeignOfflineProofBlob {
+    V1(ecash::Proof),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum ForeignFingerprintBlob {
+    V1(ForeignFingerprintBlobV1),
+}
+
+/// A proof fingerprint without its `y`, which is a column of its own.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ForeignFingerprintBlobV1 {
+    keyset_id: ecash::Id,
+    amount: u64,
+    c: secp256k1::PublicKey,
+    dleq: Option<ProofDleqBlobV1>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ProofDleqBlobV1 {
+    e: secp256k1::SecretKey,
+    s: secp256k1::SecretKey,
+    r: secp256k1::SecretKey,
+}
+
+impl From<cashu::ProofDleq> for ProofDleqBlobV1 {
+    fn from(dleq: cashu::ProofDleq) -> Self {
+        Self {
+            e: *dleq.e,
+            s: *dleq.s,
+            r: *dleq.r,
+        }
+    }
+}
+
+impl From<ProofDleqBlobV1> for cashu::ProofDleq {
+    fn from(blob: ProofDleqBlobV1) -> Self {
+        cashu::ProofDleq::new(blob.e.into(), blob.s.into(), blob.r.into())
+    }
+}
+
+impl From<wire_keys::ProofFingerprint> for ForeignFingerprintBlob {
+    fn from(fp: wire_keys::ProofFingerprint) -> Self {
+        Self::V1(ForeignFingerprintBlobV1 {
+            keyset_id: fp.keyset_id,
+            amount: fp.amount,
+            c: fp.c,
+            dleq: fp.dleq.map(ProofDleqBlobV1::from),
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum OfflineExchangeBlob {
+    V1(OfflineExchangeBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct OfflineExchangeBlobV1 {
+    evidence_digest: [u8; 32],
+    proofs: Vec<ecash::Proof>,
+}
+
+/////////////////////////////////////////////////////////////////////////// DBForeignOffline
+
+#[derive(sqlx::FromRow, Debug, Clone)]
+struct ForeignFingerprintRow {
+    y: String,
+    mint_id: String,
+    blob: Json<ForeignFingerprintBlob>,
+}
+
+impl TryFrom<ForeignFingerprintRow> for (secp256k1::PublicKey, wire_keys::ProofFingerprint) {
+    type Error = Error;
+    fn try_from(row: ForeignFingerprintRow) -> Result<Self> {
+        let mint_id =
+            secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
+        let y = secp256k1::PublicKey::from_str(&row.y).map_err(|e| Error::DB(anyhow!(e)))?;
+        let ForeignFingerprintBlob::V1(blob) = row.blob.0;
+        let fp = wire_keys::ProofFingerprint {
+            keyset_id: blob.keyset_id,
+            amount: blob.amount,
+            y,
+            c: blob.c,
+            dleq: blob.dleq.map(cashu::ProofDleq::from),
+        };
+        Ok((mint_id, fp))
+    }
+}
+
+#[derive(sqlx::FromRow, Debug, Clone)]
+struct OfflineExchangeRow {
+    exchange_digest: Vec<u8>,
+    alpha_id: String,
+    expires_at: i64,
+    blob: Json<OfflineExchangeBlob>,
+}
+
+impl TryFrom<OfflineExchangeRow> for foreign::OfflineExchange {
+    type Error = Error;
+    fn try_from(row: OfflineExchangeRow) -> Result<Self> {
+        let exchange_digest: [u8; 32] = row
+            .exchange_digest
+            .try_into()
+            .map_err(|_| Error::DB(anyhow!("exchange_digest is not 32 bytes")))?;
+        let alpha_id =
+            secp256k1::PublicKey::from_str(&row.alpha_id).map_err(|e| Error::DB(anyhow!(e)))?;
+        let expires_at =
+            TStamp::from_unix_timestamp(row.expires_at).map_err(|e| Error::DB(anyhow!(e)))?;
+        let OfflineExchangeBlob::V1(blob) = row.blob.0;
+        Ok(Self {
+            exchange_digest,
+            alpha_id,
+            evidence_digest: blob.evidence_digest,
+            expires_at,
+            proofs: blob.proofs.into_iter().map(cashu::Proof::from).collect(),
+        })
+    }
+}
+
+type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
+
+/// Inserts the exchange and the ys it holds.
+/// `false` if the digest or any of the ys is already held: the caller rolls back.
+async fn insert_offline_exchange(
+    tx: &mut PgTransaction<'_>,
+    exchange: &foreign::OfflineExchange,
+    ys: &[cashu::PublicKey],
+) -> Result<bool> {
+    let blob = OfflineExchangeBlob::V1(OfflineExchangeBlobV1 {
+        evidence_digest: exchange.evidence_digest,
+        proofs: exchange
+            .proofs
+            .iter()
+            .cloned()
+            .map(ecash::Proof::from)
+            .collect(),
+    });
+    let blob = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO treasury_foreign_offline_exchanges (exchange_digest, alpha_id, expires_at, blob)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (exchange_digest) DO NOTHING
+        "#,
+        &exchange.exchange_digest[..],
+        exchange.alpha_id.to_string(),
+        exchange.expires_at.unix_timestamp(),
+        blob,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| Error::DB(anyhow!(e)))?;
+    if result.rows_affected() != 1 {
+        return Ok(false);
+    }
+    let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO treasury_foreign_offline_exchange_ys (y, exchange_digest)
+        SELECT y, $2 FROM UNNEST($1::text[]) AS y
+        ON CONFLICT (y) DO NOTHING
+        "#,
+        &y_strs,
+        &exchange.exchange_digest[..],
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok(result.rows_affected() == y_strs.len() as u64)
+}
+
+/// Inserts the fingerprints, keyed by hash.
+/// `false` if any hash is already stored: the caller rolls back.
+async fn insert_offline_fps(
+    tx: &mut PgTransaction<'_>,
+    mint_id: secp256k1::PublicKey,
+    fps: Vec<wire_keys::ProofFingerprint>,
+    hashes: Vec<foreign::Sha256Hash>,
+) -> Result<bool> {
+    let hash_strs: Vec<String> = hashes.iter().map(|h| h.to_string()).collect();
+    let mut y_strs = Vec::with_capacity(fps.len());
+    let mut blobs = Vec::with_capacity(fps.len());
+    for fp in fps {
+        y_strs.push(cashu::PublicKey::from(fp.y).to_string());
+        let blob = ForeignFingerprintBlob::from(fp);
+        blobs.push(serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?);
+    }
+    let mint_ids = vec![mint_id.to_string(); y_strs.len()];
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO treasury_foreign_offline_fps (hash, y, mint_id, blob)
+        SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::jsonb[])
+        ON CONFLICT (hash) DO NOTHING
+        "#,
+        &hash_strs,
+        &y_strs,
+        &mint_ids,
+        &blobs,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| Error::DB(anyhow!(e)))?;
+    Ok(result.rows_affected() == hash_strs.len() as u64)
+}
+
+#[derive(Debug, Clone)]
+pub struct DBForeignOffline {
+    pool: PgPool,
+}
+
+impl DBForeignOffline {
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    /// Migration only: an exchange with the ys it holds, without the fingerprints
+    /// `reserve_exchange` stores alongside, since those are removed once redeemed.
+    pub async fn insert_exchange(
+        &self,
+        exchange: foreign::OfflineExchange,
+        ys: Vec<cashu::PublicKey>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        if !insert_offline_exchange(&mut tx, &exchange, &ys).await? {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Err(Error::DB(anyhow!("exchange or its ys already stored")));
+        }
+        tx.commit().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    /// Migration only: a fingerprint not yet redeemed.
+    pub async fn insert_fp(
+        &self,
+        hash: foreign::Sha256Hash,
+        mint_id: secp256k1::PublicKey,
+        fp: wire_keys::ProofFingerprint,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        if !insert_offline_fps(&mut tx, mint_id, vec![fp], vec![hash]).await? {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Err(Error::DB(anyhow!("fingerprint already stored")));
+        }
+        tx.commit().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl foreign::OfflineRepository for DBForeignOffline {
+    async fn search_fp(
+        &self,
+        hash: &foreign::Sha256Hash,
+    ) -> Result<Option<(secp256k1::PublicKey, wire_keys::ProofFingerprint)>> {
+        let row = sqlx::query_as!(
+            ForeignFingerprintRow,
+            r#"
+            SELECT y, mint_id, blob as "blob: Json<ForeignFingerprintBlob>"
+            FROM treasury_foreign_offline_fps
+            WHERE hash = $1
+            "#,
+            hash.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        row.map(TryFrom::try_from).transpose()
+    }
+
+    async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM treasury_foreign_offline_fps WHERE y = ANY($1::text[])
+            "#,
+            &y_strs
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn store_proofs(
+        &self,
+        mint_id: secp256k1::PublicKey,
+        proofs: Vec<cashu::Proof>,
+    ) -> Result<()> {
+        if proofs.is_empty() {
+            return Ok(());
+        }
+        let mut ys = Vec::with_capacity(proofs.len());
+        let mut blobs = Vec::with_capacity(proofs.len());
+        for p in proofs {
+            let y = p.y().map_err(|e| Error::DB(anyhow!(e)))?;
+            ys.push(y.to_string());
+            let blob = ForeignOfflineProofBlob::V1(p.into());
+            blobs.push(serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?);
+        }
+        let mint_ids = vec![mint_id.to_string(); ys.len()];
+        let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO treasury_foreign_offline_proofs (y, mint_id, blob)
+            SELECT * FROM UNNEST($1::text[], $2::text[], $3::jsonb[])
+            ON CONFLICT (y) DO NOTHING
+            "#,
+            &ys,
+            &mint_ids,
+            &blobs,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        if result.rows_affected() != ys.len() as u64 {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Err(Error::InvalidInput(String::from("proofs already stored")));
+        }
+        tx.commit().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT blob as "blob: Json<ForeignOfflineProofBlob>"
+            FROM treasury_foreign_offline_proofs
+            WHERE mint_id = $1
+            "#,
+            mint_id.to_string()
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let proofs = rows
+            .into_iter()
+            .map(|row| {
+                let ForeignOfflineProofBlob::V1(proof) = row.blob.0;
+                cashu::Proof::from(proof)
+            })
+            .collect();
+        Ok(proofs)
+    }
+
+    async fn unsettled_balance(
+        &self,
+    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT mint_id, blob as "blob: Json<ForeignOfflineProofBlob>"
+            FROM treasury_foreign_offline_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut balances: std::collections::HashMap<secp256k1::PublicKey, cashu::Amount> =
+            std::collections::HashMap::new();
+        for row in rows {
+            let mint_id =
+                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
+            let ForeignOfflineProofBlob::V1(proof) = row.blob.0;
+            let total = balances.entry(mint_id).or_insert(cashu::Amount::ZERO);
+            *total = total
+                .checked_add(proof.amount)
+                .ok_or_else(|| Error::DB(anyhow!("unsettled balance overflow")))?;
+        }
+        Ok(balances)
+    }
+
+    async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        sqlx::query!(
+            r#"
+            DELETE FROM treasury_foreign_offline_proofs WHERE y = ANY($1::text[])
+            "#,
+            &y_strs
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(())
+    }
+
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT DISTINCT mint_id FROM treasury_foreign_offline_proofs
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        rows.into_iter()
+            .map(|row| {
+                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))
+            })
+            .collect()
+    }
+
+    async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
+        let result = sqlx::query!(
+            r#"
+            INSERT INTO treasury_foreign_offline_redemptions (digest)
+            VALUES ($1)
+            ON CONFLICT (digest) DO NOTHING
+            "#,
+            &digest[..],
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn reserve_exchange(
+        &self,
+        exchange: foreign::OfflineExchange,
+        fps: Vec<wire_keys::ProofFingerprint>,
+        hashes: Vec<foreign::Sha256Hash>,
+    ) -> Result<bool> {
+        let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
+        let mut tx = self.pool.begin().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        if !insert_offline_exchange(&mut tx, &exchange, &ys).await? {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Ok(false);
+        }
+        if !insert_offline_fps(&mut tx, exchange.alpha_id, fps, hashes).await? {
+            tx.rollback().await.map_err(|e| Error::DB(anyhow!(e)))?;
+            return Err(Error::DB(anyhow!(
+                "reserve exchange: fingerprint already stored"
+            )));
+        }
+        tx.commit().await.map_err(|e| Error::DB(anyhow!(e)))?;
+        Ok(true)
+    }
+
+    async fn search_exchange(
+        &self,
+        ys: &[cashu::PublicKey],
+    ) -> Result<Option<foreign::OfflineExchange>> {
+        let y_strs: Vec<String> = ys.iter().map(|y| y.to_string()).collect();
+        let row = sqlx::query_as!(
+            OfflineExchangeRow,
+            r#"
+            SELECT e.exchange_digest, e.alpha_id, e.expires_at,
+                   e.blob as "blob: Json<OfflineExchangeBlob>"
+            FROM treasury_foreign_offline_exchange_ys x
+            JOIN treasury_foreign_offline_exchanges e ON e.exchange_digest = x.exchange_digest
+            WHERE x.y = ANY($1::text[])
+            LIMIT 1
+            "#,
+            &y_strs
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::DB(anyhow!(e)))?;
+        row.map(TryFrom::try_from).transpose()
     }
 }
 

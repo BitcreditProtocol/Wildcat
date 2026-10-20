@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM treasury_foreign_offline_fps WHERE y = ANY($1::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4c03cc6765cfbd99b24499d4eb73e0f4c1135f85e03e7f744d0f7bb2e9f9706e"
+}
