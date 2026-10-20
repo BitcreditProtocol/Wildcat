@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO treasury_foreign_offline_exchange_ys (y, exchange_digest)\n        SELECT y, $2 FROM UNNEST($1::text[]) AS y\n        ON CONFLICT (y) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "115347d3676d0b48493abc011ac970d4942d0af67e94a9d789219adb0a28878a"
+}

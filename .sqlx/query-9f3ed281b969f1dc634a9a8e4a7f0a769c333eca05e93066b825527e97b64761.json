@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO treasury_foreign_offline_redemptions (digest)\n            VALUES ($1)\n            ON CONFLICT (digest) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f3ed281b969f1dc634a9a8e4a7f0a769c333eca05e93066b825527e97b64761"
+}

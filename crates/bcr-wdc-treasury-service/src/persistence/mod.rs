@@ -248,6 +248,11 @@ mod tests {
         foreign_offline_claim_redemption(inmemory::OfflineRepository::default()).await;
         foreign_offline_claim_redemption(init_surreal_foreign_offline_db().await).await;
     }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_claim_redemption_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_claim_redemption(sqlx::DBForeignOffline::from_pool(pool)).await;
+    }
     // The second claim on a digest never gets through.
     async fn foreign_offline_claim_redemption(db: impl foreign::OfflineRepository) {
         assert!(db.claim_redemption([7u8; 32]).await.unwrap());
@@ -259,6 +264,11 @@ mod tests {
     async fn test_foreign_offline_unsettled_balance() {
         foreign_offline_unsettled_balance(inmemory::OfflineRepository::default()).await;
         foreign_offline_unsettled_balance(init_surreal_foreign_offline_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_unsettled_balance_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_unsettled_balance(sqlx::DBForeignOffline::from_pool(pool)).await;
     }
     async fn foreign_offline_unsettled_balance(db: impl foreign::OfflineRepository) {
         assert!(db.unsettled_balance().await.unwrap().is_empty());
@@ -284,6 +294,11 @@ mod tests {
     async fn test_foreign_offline_reserve_exchange() {
         foreign_offline_reserve_exchange(inmemory::OfflineRepository::default()).await;
         foreign_offline_reserve_exchange(init_surreal_foreign_offline_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_reserve_exchange_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_reserve_exchange(sqlx::DBForeignOffline::from_pool(pool)).await;
     }
     async fn foreign_offline_reserve_exchange(db: impl foreign::OfflineRepository) {
         let proofs = generate_test_proofs(3);
@@ -328,6 +343,217 @@ mod tests {
         );
         let (alpha_id, _) = db.search_fp(&hashes(&[2])[0]).await.unwrap().unwrap();
         assert_eq!(alpha_id, second.alpha_id);
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_store_load_remove_proofs() {
+        foreign_offline_store_load_remove_proofs(inmemory::OfflineRepository::default()).await;
+        foreign_offline_store_load_remove_proofs(init_surreal_foreign_offline_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_store_load_remove_proofs_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_store_load_remove_proofs(sqlx::DBForeignOffline::from_pool(pool)).await;
+    }
+    async fn foreign_offline_store_load_remove_proofs(db: impl foreign::OfflineRepository) {
+        assert!(db.list_foreign_pks().await.unwrap().is_empty());
+        let first = core::generate_random_keypair().public_key();
+        let second = core::generate_random_keypair().public_key();
+        let first_proofs = generate_test_proofs(3);
+        let second_proofs = generate_test_proofs(1);
+        db.store_proofs(first, first_proofs.clone()).await.unwrap();
+        db.store_proofs(second, second_proofs.clone())
+            .await
+            .unwrap();
+
+        let mut pks = db.list_foreign_pks().await.unwrap();
+        pks.sort();
+        let mut expected = vec![first, second];
+        expected.sort();
+        assert_eq!(pks, expected);
+        let loaded = db.load_proofs(first).await.unwrap();
+        assert_eq!(loaded.len(), first_proofs.len());
+        for proof in &first_proofs {
+            assert!(loaded.contains(proof));
+        }
+
+        let removed: Vec<cashu::PublicKey> =
+            first_proofs[..2].iter().map(|p| p.y().unwrap()).collect();
+        db.remove_proofs(&removed).await.unwrap();
+        assert_eq!(db.load_proofs(first).await.unwrap(), first_proofs[2..]);
+        assert_eq!(db.load_proofs(second).await.unwrap(), second_proofs);
+        let balances = db.unsettled_balance().await.unwrap();
+        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(8u64)));
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_store_proofs_twice() {
+        // the in-memory repository does not check for duplicates
+        foreign_offline_store_proofs_twice(init_surreal_foreign_offline_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_store_proofs_twice_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_store_proofs_twice(sqlx::DBForeignOffline::from_pool(pool)).await;
+    }
+    // A proof already stored makes the whole batch fail.
+    async fn foreign_offline_store_proofs_twice(db: impl foreign::OfflineRepository) {
+        let mint_id = core::generate_random_keypair().public_key();
+        let proofs = generate_test_proofs(2);
+        db.store_proofs(mint_id, proofs[..1].to_vec())
+            .await
+            .unwrap();
+        assert!(db.store_proofs(mint_id, proofs.clone()).await.is_err());
+        assert_eq!(db.load_proofs(mint_id).await.unwrap(), proofs[..1]);
+    }
+
+    #[tokio::test]
+    async fn test_foreign_offline_remove_fps() {
+        foreign_offline_remove_fps(inmemory::OfflineRepository::default()).await;
+        foreign_offline_remove_fps(init_surreal_foreign_offline_db().await).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_remove_fps_sqlx(pool: ::sqlx::PgPool) {
+        foreign_offline_remove_fps(sqlx::DBForeignOffline::from_pool(pool)).await;
+    }
+    // Redeemed fingerprints go, the exchange that reserved them stays.
+    async fn foreign_offline_remove_fps(db: impl foreign::OfflineRepository) {
+        let (exchange, fps, hashes) = generate_offline_exchange(2);
+        assert!(db
+            .reserve_exchange(exchange.clone(), fps.clone(), hashes.clone())
+            .await
+            .unwrap());
+        assert_eq!(
+            db.search_fp(&hashes[0]).await.unwrap(),
+            Some((exchange.alpha_id, fps[0].clone()))
+        );
+        db.remove_fps(&[cashu::PublicKey::from(fps[0].y)])
+            .await
+            .unwrap();
+        assert_eq!(db.search_fp(&hashes[0]).await.unwrap(), None);
+        assert_eq!(
+            db.search_fp(&hashes[1]).await.unwrap(),
+            Some((exchange.alpha_id, fps[1].clone()))
+        );
+        let ys = [cashu::PublicKey::from(fps[0].y)];
+        assert_eq!(db.search_exchange(&ys).await.unwrap(), Some(exchange));
+    }
+
+    /// An exchange over `n` fresh inputs; the first fingerprint carries a DLEQ proof.
+    fn generate_offline_exchange(
+        n: usize,
+    ) -> (
+        foreign::OfflineExchange,
+        Vec<wire_keys::ProofFingerprint>,
+        Vec<bitcoin::hashes::sha256::Hash>,
+    ) {
+        let inputs = generate_test_proofs(n);
+        let mut fps: Vec<wire_keys::ProofFingerprint> = inputs
+            .iter()
+            .map(|p| wire_keys::ProofFingerprint::try_from(p.clone()).unwrap())
+            .collect();
+        fps[0].dleq = Some(cashu::ProofDleq::new(
+            cashu::SecretKey::generate(),
+            cashu::SecretKey::generate(),
+            cashu::SecretKey::generate(),
+        ));
+        let hashes = inputs
+            .iter()
+            .map(|p| bitcoin::hashes::sha256::Hash::const_hash(p.secret.as_bytes()))
+            .collect();
+        let exchange = foreign::OfflineExchange {
+            exchange_digest: rand::random(),
+            alpha_id: core::generate_random_keypair().public_key(),
+            evidence_digest: rand::random(),
+            expires_at: time::OffsetDateTime::from_unix_timestamp(1_900_000_000).unwrap(),
+            proofs: generate_test_proofs(2),
+        };
+        (exchange, fps, hashes)
+    }
+
+    // Same dump -> store sequence as the foreign offline step of `bin/migrate.rs`.
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_foreign_offline_migration_roundtrip(pool: ::sqlx::PgPool) {
+        use foreign::OfflineRepository as _;
+        let cfg = bcr_wdc_utils::surreal::DBConnConfig {
+            connection: "mem://".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        };
+        let source = surreal::DBForeignOffline::new(cfg).await.unwrap();
+        let mint_id = core::generate_random_keypair().public_key();
+        let proofs = generate_test_proofs(3);
+        source.store_proofs(mint_id, proofs.clone()).await.unwrap();
+        assert!(source.claim_redemption([5u8; 32]).await.unwrap());
+        let (first, first_fps, first_hashes) = generate_offline_exchange(2);
+        let (second, second_fps, second_hashes) = generate_offline_exchange(1);
+        assert!(source
+            .reserve_exchange(first.clone(), first_fps.clone(), first_hashes.clone())
+            .await
+            .unwrap());
+        assert!(source
+            .reserve_exchange(second.clone(), second_fps.clone(), second_hashes.clone())
+            .await
+            .unwrap());
+        // redeemed: the exchange stays, the fingerprint goes
+        source
+            .remove_fps(&[cashu::PublicKey::from(first_fps[1].y)])
+            .await
+            .unwrap();
+
+        let dest = sqlx::DBForeignOffline::from_pool(pool);
+        for (mint_id, proof) in source.dump_proofs().await.unwrap() {
+            dest.store_proofs(mint_id, vec![proof]).await.unwrap();
+        }
+        for digest in source.dump_redemptions().await.unwrap() {
+            assert!(dest.claim_redemption(digest).await.unwrap());
+        }
+        let exchanges = source.dump_exchanges().await.unwrap();
+        assert_eq!(exchanges.len(), 2);
+        for (exchange, ys) in exchanges {
+            dest.insert_exchange(exchange, ys).await.unwrap();
+        }
+        let fps = source.dump_fps().await.unwrap();
+        assert_eq!(fps.len(), 2);
+        for (hash, mint_id, fp) in fps {
+            dest.insert_fp(hash, mint_id, fp).await.unwrap();
+        }
+
+        let loaded = dest.load_proofs(mint_id).await.unwrap();
+        assert_eq!(loaded.len(), proofs.len());
+        for proof in &proofs {
+            assert!(loaded.contains(proof));
+        }
+        assert!(!dest.claim_redemption([5u8; 32]).await.unwrap());
+        for fp in &first_fps {
+            let ys = [cashu::PublicKey::from(fp.y)];
+            assert_eq!(
+                dest.search_exchange(&ys).await.unwrap(),
+                Some(first.clone())
+            );
+        }
+        let ys = [cashu::PublicKey::from(second_fps[0].y)];
+        assert_eq!(
+            dest.search_exchange(&ys).await.unwrap(),
+            Some(second.clone())
+        );
+        assert_eq!(
+            dest.search_fp(&first_hashes[0]).await.unwrap(),
+            Some((first.alpha_id, first_fps[0].clone()))
+        );
+        assert_eq!(dest.search_fp(&first_hashes[1]).await.unwrap(), None);
+        assert_eq!(
+            dest.search_fp(&second_hashes[0]).await.unwrap(),
+            Some((second.alpha_id, second_fps[0].clone()))
+        );
+        // a migrated reservation still locks its ys
+        let (third, _, _) = generate_offline_exchange(1);
+        assert!(!dest
+            .reserve_exchange(third, first_fps[..1].to_vec(), first_hashes[..1].to_vec())
+            .await
+            .unwrap());
     }
 
     //////////////////////////////////////////////////////////////////// ebill::Repository

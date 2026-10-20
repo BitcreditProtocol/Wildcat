@@ -1165,6 +1165,7 @@ impl DBForeignOffline {
     const PROOFS_TABLE: &'static str = "offline-proofs";
     const REDEMPTIONS_TABLE: &'static str = "offline-redemptions";
     const EXCHANGES_TABLE: &'static str = "offline-exchanges";
+    const MIGRATION_KEY: &'static str = "foreign_offline";
 
     fn exchange_rids(ys: &[cashu::PublicKey]) -> Vec<RecordId> {
         ys.iter()
@@ -1178,6 +1179,152 @@ impl DBForeignOffline {
         db_connection.use_ns(config.namespace).await?;
         db_connection.use_db(config.database).await?;
         Ok(Self { db: db_connection })
+    }
+
+    /// All fingerprints not yet redeemed, with their hash and the mint they come from.
+    pub async fn dump_fps(
+        &self,
+    ) -> Result<
+        Vec<(
+            Sha256Hash,
+            secp256k1::PublicKey,
+            wire_keys::ProofFingerprint,
+        )>,
+    > {
+        #[derive(Debug, serde::Deserialize)]
+        struct DumpedFingerprint {
+            key: String,
+            amount: u64,
+            keyset_id: cashu::Id,
+            y: cashu::PublicKey,
+            c: cashu::PublicKey,
+            dleq: Option<cashu::ProofDleq>,
+            mint_id: String,
+        }
+        let entries: Vec<DumpedFingerprint> = self
+            .db
+            .query(
+                "SELECT record::id(id) AS key, amount, keyset_id, y, c, dleq, mint_id
+                FROM type::table($table)",
+            )
+            .bind(("table", Self::FPS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        entries
+            .into_iter()
+            .map(|entry| {
+                let hash = Sha256Hash::from_str(&entry.key).map_err(|e| Error::DB(anyhow!(e)))?;
+                let mint_id = secp256k1::PublicKey::from_str(&entry.mint_id)
+                    .map_err(|e| Error::DB(anyhow!(e)))?;
+                let fp = wire_keys::ProofFingerprint {
+                    amount: entry.amount,
+                    keyset_id: entry.keyset_id.into(),
+                    y: *entry.y.deref(),
+                    c: *entry.c.deref(),
+                    dleq: entry.dleq,
+                };
+                Ok((hash, mint_id, fp))
+            })
+            .collect()
+    }
+
+    /// All unsettled foreign proofs, with the mint they come from.
+    pub async fn dump_proofs(&self) -> Result<Vec<(secp256k1::PublicKey, cashu::Proof)>> {
+        let entries: Vec<ForeignProofDBEntry> = self
+            .db
+            .query("SELECT * FROM type::table($table)")
+            .bind(("table", Self::PROOFS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        entries
+            .into_iter()
+            .map(|entry| {
+                let mint_id = secp256k1::PublicKey::from_str(&entry.mint_id)
+                    .map_err(|e| Error::DB(anyhow!(e)))?;
+                Ok((mint_id, entry.proof))
+            })
+            .collect()
+    }
+
+    /// All claimed redemption digests.
+    pub async fn dump_redemptions(&self) -> Result<Vec<[u8; 32]>> {
+        let keys: Vec<String> = self
+            .db
+            .query("SELECT VALUE record::id(id) FROM type::table($table)")
+            .bind(("table", Self::REDEMPTIONS_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        keys.into_iter()
+            .map(|key| {
+                let hash = Sha256Hash::from_str(&key).map_err(|e| Error::DB(anyhow!(e)))?;
+                Ok(hash.to_byte_array())
+            })
+            .collect()
+    }
+
+    /// All reserved exchanges, each with the ys it holds.
+    /// SurrealDB keeps one copy of the exchange per y: they are grouped by digest.
+    pub async fn dump_exchanges(
+        &self,
+    ) -> Result<Vec<(foreign::OfflineExchange, Vec<cashu::PublicKey>)>> {
+        #[derive(Debug, serde::Deserialize)]
+        struct DumpedExchange {
+            key: String,
+            exchange_digest: [u8; 32],
+            alpha_id: String,
+            evidence_digest: [u8; 32],
+            expires_at: i64,
+            proofs: Vec<cashu::Proof>,
+        }
+        let entries: Vec<DumpedExchange> = self
+            .db
+            .query(
+                "SELECT record::id(id) AS key, exchange_digest, alpha_id, evidence_digest,
+                    expires_at, proofs
+                FROM type::table($table)",
+            )
+            .bind(("table", Self::EXCHANGES_TABLE))
+            .await
+            .map_err(|e| Error::DB(anyhow!(e)))?
+            .take(0)
+            .map_err(|e| Error::DB(anyhow!(e)))?;
+        let mut exchanges: Vec<(foreign::OfflineExchange, Vec<cashu::PublicKey>)> = Vec::new();
+        let mut by_digest: std::collections::HashMap<[u8; 32], usize> =
+            std::collections::HashMap::new();
+        for entry in entries {
+            let y = cashu::PublicKey::from_str(&entry.key).map_err(|e| Error::DB(anyhow!(e)))?;
+            if let Some(idx) = by_digest.get(&entry.exchange_digest) {
+                exchanges[*idx].1.push(y);
+                continue;
+            }
+            by_digest.insert(entry.exchange_digest, exchanges.len());
+            let alpha_id = secp256k1::PublicKey::from_str(&entry.alpha_id)
+                .map_err(|e| Error::DB(anyhow!(e)))?;
+            let expires_at =
+                TStamp::from_unix_timestamp(entry.expires_at).map_err(|e| Error::DB(anyhow!(e)))?;
+            let exchange = foreign::OfflineExchange {
+                exchange_digest: entry.exchange_digest,
+                alpha_id,
+                evidence_digest: entry.evidence_digest,
+                expires_at,
+                proofs: entry.proofs,
+            };
+            exchanges.push((exchange, vec![y]));
+        }
+        Ok(exchanges)
+    }
+
+    pub async fn is_migrated(&self) -> Result<bool> {
+        is_marked_migrated(&self.db, Self::MIGRATION_KEY).await
+    }
+    pub async fn mark_migrated(&self) -> Result<()> {
+        mark_migrated(&self.db, Self::MIGRATION_KEY).await
     }
 }
 
@@ -1208,6 +1355,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
 
     async fn remove_fps(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let _: Vec<ForeignFingerprintDBEntry> = self
             .db
             .query("DELETE FROM type::table($table) WHERE array::any($ys, y)")
@@ -1224,6 +1372,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         mint_id: secp256k1::PublicKey,
         proofs: Vec<cashu::Proof>,
     ) -> Result<()> {
+        ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let mut entries: Vec<ForeignProofDBEntry> = Vec::with_capacity(proofs.len());
         for proof in proofs.into_iter() {
             let rid = RecordId::from_table_key(Self::PROOFS_TABLE, proof.y()?.to_string());
@@ -1267,11 +1416,16 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
 
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
+        ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
+        // records are keyed by y: a stored cashu::Proof has no y field to filter on
+        let rids: Vec<RecordId> = ys
+            .iter()
+            .map(|y| RecordId::from_table_key(Self::PROOFS_TABLE, y.to_string()))
+            .collect();
         let _: Vec<ForeignProofDBEntry> = self
             .db
-            .query("DELETE FROM type::table($table) WHERE array::any($ys, proof.y)")
-            .bind(("table", Self::PROOFS_TABLE))
-            .bind(("ys", ys.to_vec()))
+            .query("DELETE $rids")
+            .bind(("rids", rids))
             .await
             .map_err(|e| Error::DB(anyhow!(e)))?
             .take(0)
@@ -1301,6 +1455,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
     }
 
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {
+        ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let key = Sha256Hash::from_byte_array(digest).to_string();
         let rid = RecordId::from_table_key(Self::REDEMPTIONS_TABLE, key);
         // The upsert is the claim: no prior state means this call took it, unraced.
@@ -1321,6 +1476,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         fps: Vec<wire_keys::ProofFingerprint>,
         hashes: Vec<Sha256Hash>,
     ) -> Result<bool> {
+        ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let ys: Vec<cashu::PublicKey> = fps.iter().map(|fp| fp.y.into()).collect();
         let fp_entries: Vec<ForeignFingerprintDBEntry> = hashes
             .into_iter()
@@ -1805,6 +1961,41 @@ mod tests {
         assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
         // reads still work
         assert_eq!(db.list(mint_id).await.unwrap(), proofs);
+    }
+
+    #[tokio::test]
+    async fn foreign_offline_writes_refused_once_migrated() {
+        let db = init_foreignoffline_mem_db().await;
+        let amounts = vec![cashu::Amount::from(8u64)];
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let mint_id = core::generate_random_keypair().public_key();
+        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        db.store_proofs(mint_id, proofs.clone()).await.unwrap();
+        db.mark_migrated().await.unwrap();
+        assert!(db.is_migrated().await.unwrap());
+        let more = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let fp = wire_keys::ProofFingerprint::try_from(more[0].clone()).unwrap();
+        let hash = Sha256Hash::hash(more[0].secret.as_bytes());
+        let ys: Vec<cashu::PublicKey> = proofs.iter().map(|p| p.y().unwrap()).collect();
+        let res = db.store_proofs(mint_id, more.clone()).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        let res = db.remove_proofs(&ys).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        let res = db.remove_fps(&ys).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        let res = db.claim_redemption([1u8; 32]).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        let exchange = foreign::OfflineExchange {
+            exchange_digest: [9u8; 32],
+            alpha_id: mint_id,
+            evidence_digest: [2u8; 32],
+            expires_at: time::OffsetDateTime::now_utc(),
+            proofs: vec![],
+        };
+        let res = db.reserve_exchange(exchange, vec![fp], vec![hash]).await;
+        assert!(matches!(res, Err(Error::ServiceUnavailable(_))));
+        // reads still work
+        assert_eq!(db.load_proofs(mint_id).await.unwrap(), proofs);
     }
 
     #[tokio::test]

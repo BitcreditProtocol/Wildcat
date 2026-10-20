@@ -2,9 +2,10 @@
 use std::collections::HashMap;
 // ----- extra library imports
 use bcr_wdc_treasury_service::{
-    ebill::Repository as _, foreign::OnlineRepository as _, onchain::Repository as _, persistence,
-    vault::Repository as _,
+    ebill::Repository as _, foreign::OfflineRepository as _, foreign::OnlineRepository as _,
+    onchain::Repository as _, persistence, vault::Repository as _,
 };
+use bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 
 // ----- local imports
 
@@ -40,6 +41,10 @@ async fn main() {
         persistence::surreal::DBForeignOnline::new(cfg.appcfg.foreign.online_repo)
             .await
             .expect("Failed to connect to foreign online SurrealDB");
+    let surreal_offline =
+        persistence::surreal::DBForeignOffline::new(cfg.appcfg.foreign.offline_repo)
+            .await
+            .expect("Failed to connect to foreign offline SurrealDB");
     if dry_run {
         println!("DRY RUN: Would migrate");
         let ebill_ops = surreal_ebill
@@ -85,6 +90,37 @@ async fn main() {
             .await
             .expect("Failed to list foreign issued proofs from SurrealDB");
         println!("   {} foreign issued proofs in SurrealDB", issued.len());
+        let offline_proofs = surreal_offline
+            .dump_proofs()
+            .await
+            .expect("Failed to list foreign offline proofs from SurrealDB");
+        println!(
+            "   {} foreign offline proofs in SurrealDB",
+            offline_proofs.len()
+        );
+        let redemptions = surreal_offline
+            .dump_redemptions()
+            .await
+            .expect("Failed to list foreign offline redemptions from SurrealDB");
+        println!(
+            "   {} foreign offline redemptions in SurrealDB",
+            redemptions.len()
+        );
+        let exchanges = surreal_offline
+            .dump_exchanges()
+            .await
+            .expect("Failed to list foreign offline exchanges from SurrealDB");
+        let exchange_ys: usize = exchanges.iter().map(|(_, ys)| ys.len()).sum();
+        println!(
+            "   {} foreign offline exchanges ({} ys) in SurrealDB",
+            exchanges.len(),
+            exchange_ys
+        );
+        let fps = surreal_offline
+            .dump_fps()
+            .await
+            .expect("Failed to list foreign offline fingerprints from SurrealDB");
+        println!("   {} foreign offline fingerprints in SurrealDB", fps.len());
         return;
     }
     // Connect to PostgreSQL (destination)
@@ -262,5 +298,83 @@ async fn main() {
             .mark_migrated()
             .await
             .expect("Failed to mark foreign online as migrated in SurrealDB");
+    }
+    // foreign offline
+    let migrated = surreal_offline
+        .is_migrated()
+        .await
+        .expect("Failed to read foreign offline migration marker from SurrealDB");
+    if migrated {
+        println!("foreign offline already migrated, skipping");
+    } else {
+        let sqlx_offline = persistence::sqlx::DBForeignOffline::from_pool(pool.clone());
+        // foreign offline - proofs
+        let proofs = surreal_offline
+            .dump_proofs()
+            .await
+            .expect("Failed to list foreign offline proofs from SurrealDB");
+        println!("Found {} foreign offline proofs in SurrealDB", proofs.len());
+        let mut by_mint: HashMap<_, Vec<_>> = HashMap::new();
+        for (mint_id, proof) in proofs {
+            by_mint.entry(mint_id).or_default().push(proof);
+        }
+        for (mint_id, proofs) in by_mint {
+            if let Err(e) = sqlx_offline.store_proofs(mint_id, proofs).await {
+                eprintln!("Failed to migrate foreign offline proofs of mint {mint_id}: {e}");
+                std::process::exit(1);
+            }
+        }
+        // foreign offline - redemptions
+        let redemptions = surreal_offline
+            .dump_redemptions()
+            .await
+            .expect("Failed to list foreign offline redemptions from SurrealDB");
+        println!(
+            "Found {} foreign offline redemptions in SurrealDB",
+            redemptions.len()
+        );
+        for digest in redemptions {
+            let claimed = sqlx_offline.claim_redemption(digest).await;
+            if !matches!(claimed, Ok(true)) {
+                let digest = Sha256Hash::from_byte_array(digest);
+                eprintln!("Failed to migrate foreign offline redemption {digest}: {claimed:?}");
+                std::process::exit(1);
+            }
+        }
+        // foreign offline - exchanges
+        let exchanges = surreal_offline
+            .dump_exchanges()
+            .await
+            .expect("Failed to list foreign offline exchanges from SurrealDB");
+        println!(
+            "Found {} foreign offline exchanges in SurrealDB",
+            exchanges.len()
+        );
+        for (exchange, ys) in exchanges {
+            let digest = Sha256Hash::from_byte_array(exchange.exchange_digest);
+            if let Err(e) = sqlx_offline.insert_exchange(exchange, ys).await {
+                eprintln!("Failed to migrate foreign offline exchange {digest}: {e}");
+                std::process::exit(1);
+            }
+        }
+        // foreign offline - fingerprints
+        let fps = surreal_offline
+            .dump_fps()
+            .await
+            .expect("Failed to list foreign offline fingerprints from SurrealDB");
+        println!(
+            "Found {} foreign offline fingerprints in SurrealDB",
+            fps.len()
+        );
+        for (hash, mint_id, fp) in fps {
+            if let Err(e) = sqlx_offline.insert_fp(hash, mint_id, fp).await {
+                eprintln!("Failed to migrate foreign offline fingerprint {hash}: {e}");
+                std::process::exit(1);
+            }
+        }
+        surreal_offline
+            .mark_migrated()
+            .await
+            .expect("Failed to mark foreign offline as migrated in SurrealDB");
     }
 }
