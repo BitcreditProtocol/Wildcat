@@ -18,7 +18,8 @@ feature-depth = 1
 ignore = [
     {id = "RUSTSEC-2026-0367", reason = "zip due to utoipa-swagger"},
     {id = "RUSTSEC-2026-0368", reason = "zip due to utoipa-swagger"},
-    {id = "RUSTSEC-2026-0369", reason = "zip due to utoipa-swagger"}
+    {id = "RUSTSEC-2026-0369", reason = "zip due to utoipa-swagger"},
+    {id = "RUSTSEC-2026-0382", reason = "rusls-webpki@0.103.15 due to nats"},
 ]
 unmaintained = "workspace"
 
