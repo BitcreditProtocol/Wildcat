@@ -35,6 +35,7 @@ mod web;
 use bcr_common::TStamp;
 
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
+pub const NOTIFICATION_TIMEOUT: time::SignedDuration = time::SignedDuration::seconds(3);
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -79,7 +80,8 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     let core = CoreClient::new(core_url);
     let treasury_cl = TreasuryClient::new(treasury_url);
     let ebill = EBillClient::new(ebill_url);
-    let notification = NotificationClient::new(notification_url);
+    let notifcation_tout = NOTIFICATION_TIMEOUT.try_into().expect("timeout conversion");
+    let notification = NotificationClient::new(notification_url, notifcation_tout);
     let wdc_cl = client::WildcatCl {
         core,
         treasury: treasury_cl,
