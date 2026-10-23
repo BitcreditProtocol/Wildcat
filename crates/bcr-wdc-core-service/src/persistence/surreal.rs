@@ -33,6 +33,7 @@ const KEYS_TABLE: &str = "keys";
 const SIGNATURES_TABLE: &str = "signatures";
 const PROOFS_TABLE: &str = "proofs";
 const COMMITMENTS_TABLE: &str = "commitments";
+const SWAPS_TABLE: &str = "swaps";
 const RESERVED_YS_TABLE: &str = "reserved_ys";
 const MIGRATIONS_TABLE: &str = "migrations";
 
@@ -187,11 +188,12 @@ impl persistence::Repository for Repository {
             .select(commitment_rid.clone())
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
-        if existing_commitment.is_none() {
+        let Some(mut swap_entry) = existing_commitment else {
             return Err(Error::ResourceNotFound(RNFError::Generic(
                 commitment.to_string(),
             )));
-        }
+        };
+        swap_entry.id = RecordId::from_table_key(SWAPS_TABLE, commitment.to_string());
         let mut proof_entries = Vec::with_capacity(proofs.len());
         let mut proof_ys = HashSet::with_capacity(proofs.len());
         for proof in proofs {
@@ -218,12 +220,14 @@ impl persistence::Repository for Repository {
                 BEGIN;
                     IF !array::is_empty($proofs) { INSERT $proofs };
                     IF !array::is_empty($signatures) { INSERT $signatures };
+                    INSERT IGNORE $swap;
                     DELETE $commitment;
                 COMMIT;
                 ",
             )
             .bind(("proofs", proof_entries))
             .bind(("signatures", signature_entries))
+            .bind(("swap", swap_entry))
             .bind(("commitment", commitment_rid))
             .await;
         if let Err(SurrealError::Db(SurrealDBError::RecordExists { .. })) = res {
@@ -240,6 +244,25 @@ impl persistence::Repository for Repository {
             return Err(Error::ProofRepository(anyhow!(e)));
         }
         Ok(())
+    }
+
+    async fn swap_load(
+        &self,
+        commitment: &schnorr::Signature,
+    ) -> Result<Option<persistence::StoredCommitment>> {
+        let rid = RecordId::from_table_key(SWAPS_TABLE, commitment.to_string());
+        let entry: Option<CommitmentDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(entry.map(|entry| persistence::StoredCommitment {
+            inputs: entry.inputs,
+            outputs: entry.outputs,
+            expiration: entry.expiration,
+            fp_digest: entry.fp_digest,
+            signed: entry.signed.into(),
+        }))
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
