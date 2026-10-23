@@ -28,27 +28,20 @@ pub trait Repository: Send + Sync {
         &self,
         expire: u64,
     ) -> Result<Vec<ecash::MintKeySetInfo>>;
-    async fn signature_store(
-        &self,
-        y: cashu::PublicKey,
-        signature: cashu::BlindSignature,
-    ) -> Result<()>;
+    /// WARNING: this method should do strict insert, all or nothing.
+    async fn signatures_store(&self, signatures: Vec<StoredSignature>) -> Result<()>;
     async fn signature_load(
         &self,
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>>;
     /// Atomically completes the local state transition for an acknowledged swap.
-    ///
-    /// On failure, no proofs or signatures are inserted and the commitment is retained.
     async fn swap_finalize(
         &self,
         proofs: Vec<cashu::Proof>,
         signatures: Vec<StoredSignature>,
         commitment: schnorr::Signature,
     ) -> Result<()>;
-    /// WARNING: this method should do strict insert.
-    /// i.e. it should fail if any of the proofs is already present in the DB
-    /// in case of failure, the DB should be in the same state as before the call
+    /// WARNING: this method should do strict insert. all or nothing
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
     async fn proofs_contains(&self, y: cashu::PublicKey) -> Result<Option<cashu::ProofState>>;
@@ -98,13 +91,14 @@ pub struct StoredCommitment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{error::Error, vault};
+    use crate::{ebill, error::Error, vault};
     use bcr_common::{cashu::ProofsMethods, core, core_tests};
     use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
     use bitcoin::{
         key::rand,
         secp256k1::{self as secp, schnorr},
     };
+    use uuid::Uuid;
 
     fn random_cdk_pks(sz: usize) -> Vec<cashu::PublicKey> {
         std::iter::repeat_with(|| {
@@ -329,7 +323,9 @@ mod tests {
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
-        db.signature_store(y, signature).await.unwrap();
+        db.signatures_store(vec![StoredSignature { y, signature }])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -348,9 +344,44 @@ mod tests {
         let amounts = [cashu::Amount::from(8u64)];
         let y = keys_test::publics()[0];
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
-        db.signature_store(y, signature.clone()).await.unwrap();
-        let res = db.signature_store(y, signature).await;
+        let stored = StoredSignature { y, signature };
+        db.signatures_store(vec![stored.clone()]).await.unwrap();
+        let res = db.signatures_store(vec![stored]).await;
         assert!(matches!(res, Err(Error::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn test_signsrepo_store_is_atomic() {
+        let db = init_memmap_db();
+        signsrepo_store_is_atomic(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_signsrepo_store_is_atomic_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool);
+        signsrepo_store_is_atomic(db).await;
+    }
+    async fn signsrepo_store_is_atomic(db: impl Repository) {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let amounts = [cashu::Amount::from(8u64), cashu::Amount::from(16u64)];
+        let blinds: Vec<_> = signatures_test::generate_blinds(keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|(blind, _, _)| blind)
+            .collect();
+        let signatures = signatures_test::generate_signatures(keyset.id.into(), &amounts);
+        let fresh = StoredSignature {
+            y: blinds[0].blinded_secret,
+            signature: signatures[0].clone(),
+        };
+        let existing = StoredSignature {
+            y: blinds[1].blinded_secret,
+            signature: signatures[1].clone(),
+        };
+        db.signatures_store(vec![existing.clone()]).await.unwrap();
+        let res = db.signatures_store(vec![fresh, existing]).await;
+        assert!(matches!(res, Err(Error::Conflict(_))));
+        let loaded = db.signature_load(&blinds[0]).await.unwrap();
+        assert!(loaded.is_none());
     }
 
     /////////////////////////////////////////////////////////////////// ProofRepository
@@ -1201,12 +1232,9 @@ mod tests {
         let (proofs, blinds, stored_signatures, commitment) =
             swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
         store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
-        db.signature_store(
-            stored_signatures[0].y,
-            stored_signatures[0].signature.clone(),
-        )
-        .await
-        .unwrap();
+        db.signatures_store(vec![stored_signatures[0].clone()])
+            .await
+            .unwrap();
         let result = db
             .swap_finalize(proofs.clone(), stored_signatures, commitment)
             .await;
@@ -1317,5 +1345,232 @@ mod tests {
         let remaining_ys = db.list_ys().await.unwrap();
         assert_eq!(remaining_ys.len(), 1);
         assert!(remaining_ys.contains(&ys[2]));
+    }
+
+    //////////////////////////////////////////////////////////////////// ebill::Repository
+    fn init_inmemory_ebill_db() -> impl ebill::Repository {
+        inmemory::EbillMintOpMap::default()
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_store() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_store(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_store(db).await;
+    }
+    async fn ebill_mint_store(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_store_twice() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_store_twice(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_twice_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_store_twice(db).await;
+    }
+    async fn ebill_mint_store_twice(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op.clone()).await.unwrap();
+        let res = db.mint_store(op).await;
+        assert!(matches!(res, Err(Error::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_store_bill_conflict() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_store_bill_conflict(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_store_bill_conflict_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_store_bill_conflict(db).await;
+    }
+    async fn ebill_mint_store_bill_conflict(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::from(64),
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op.clone()).await.unwrap();
+        let other = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            ..op
+        };
+        let res = db.mint_store(other).await;
+        assert!(matches!(res, Err(Error::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_lookup_by_bill() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_lookup_by_bill(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_lookup_by_bill_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_lookup_by_bill(db).await;
+    }
+    async fn ebill_mint_lookup_by_bill(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::from(64),
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        let absent = db.mint_lookup_by_bill(op.bill_id.clone()).await.unwrap();
+        assert!(absent.is_none());
+        db.mint_store(op.clone()).await.unwrap();
+        let found = db.mint_lookup_by_bill(op.bill_id.clone()).await.unwrap();
+        assert_eq!(found, Some(op));
+        let other = db
+            .mint_lookup_by_bill(bcr_common::core_tests::random_bill_id())
+            .await
+            .unwrap();
+        assert!(other.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_load() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_load(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_load_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_load(db).await;
+    }
+    async fn ebill_mint_load(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op.clone()).await.unwrap();
+        let res = db.mint_load(op.uid).await.unwrap();
+        assert_eq!(res.kid, kid.into());
+        assert_eq!(res.pub_key, kp.public_key().into());
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_update_field() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_update_field(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_update_field_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_update_field(db).await;
+    }
+    async fn ebill_mint_update_field(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op.clone()).await.unwrap();
+        db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
+            .await
+            .unwrap();
+        let res = db.mint_load(op.uid).await.unwrap();
+        assert_eq!(res.kid, kid.into());
+        assert_eq!(res.minted, cashu::Amount::from(100u64));
+    }
+
+    #[tokio::test]
+    async fn test_ebill_mint_list() {
+        let db = init_inmemory_ebill_db();
+        ebill_mint_list(db).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_ebill_mint_list_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::DBEbill::from_pool(pool);
+        ebill_mint_list(db).await;
+    }
+    async fn ebill_mint_list(db: impl ebill::Repository) {
+        let keys = core_tests::generate_random_ecash_keyset();
+        let kid = keys.0.id;
+        let kp = core::generate_random_keypair();
+        let op1 = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op1.clone()).await.unwrap();
+        let op2 = ebill::MintOperation {
+            uid: Uuid::new_v4(),
+            kid: kid.into(),
+            pub_key: kp.public_key().into(),
+            target: cashu::Amount::ZERO,
+            minted: cashu::Amount::ZERO,
+            bill_id: bcr_common::core_tests::random_bill_id(),
+        };
+        db.mint_store(op2.clone()).await.unwrap();
+        let res = db.mint_list(kid.into()).await.unwrap();
+        assert_eq!(res.len(), 2);
+        let rids: Vec<_> = res.iter().map(|op| op.uid).collect();
+        assert!(rids.contains(&op1.uid));
+        assert!(rids.contains(&op2.uid));
     }
 }

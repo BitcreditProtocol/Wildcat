@@ -7,6 +7,11 @@ use bitcoin::bip32 as btc32;
 
 // ----- end imports
 
+pub fn default_denominations() -> Vec<u64> {
+    const MAX_ORDER: u8 = 32;
+    (0..=MAX_ORDER).map(|i| 2u64.pow(i as u32)).collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MintKeysEntry {
     pub id: cashu::Id,
