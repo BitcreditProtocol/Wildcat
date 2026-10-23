@@ -145,6 +145,22 @@ impl Service {
         Ok(signatures)
     }
 
+    async fn held_signature(
+        &self,
+        blind: &cashu::BlindedMessage,
+    ) -> Result<Option<cashu::BlindSignature>> {
+        let Some(signature) = self.repository.signature_load(blind).await? else {
+            return Ok(None);
+        };
+        if signature.amount != blind.amount || signature.keyset_id != blind.keyset_id {
+            return Err(Error::Conflict(format!(
+                "signature already exists: {}",
+                blind.blinded_secret
+            )));
+        }
+        Ok(Some(signature))
+    }
+
     async fn generate_signatures(
         &self,
         blinds: &[cashu::BlindedMessage],
@@ -330,35 +346,23 @@ impl Service {
     ) -> Result<Vec<cashu::BlindSignature>> {
         signatures_utils::basic_proofs_checks(&inputs)?;
         signatures_utils::basic_blinds_checks(&outputs)?;
-        let StoredCommitment {
-            outputs: committed_outputs,
-            expiration,
-            fp_digest: committed_fp_digest,
-            signed,
-            ..
-        } = self.repository.commitment_load(&commitment).await?;
-        if now < self.settle_window_deadline && !matches!(signed, SignatureOwner::Beta) {
+        let committed = match self.repository.commitment_load(&commitment).await {
+            Ok(committed) => committed,
+            Err(Error::ResourceNotFound(_)) => {
+                return self.replay_swap(&inputs, &outputs, commitment, now).await;
+            }
+            Err(error) => return Err(error),
+        };
+        if now < self.settle_window_deadline && !matches!(committed.signed, SignatureOwner::Beta) {
             return Err(Error::ServiceUnavailable);
         }
-        if expiration < now {
+        if committed.expiration < now {
             return Err(Error::InvalidInput(BRError::Generic(String::from(
                 "commitment has expired",
             ))));
         }
-        let input_fps = wire_attestation::project_to_fingerprints(&inputs)?;
-        if wire_attestation::fp_digest(&input_fps) != committed_fp_digest {
-            return Err(Error::Attestation(
-                wire_attestation::AttestationError::DigestMismatch,
-            ));
-        }
-        let output_bs: Vec<cashu::PublicKey> =
-            outputs.iter().map(|blind| blind.blinded_secret).collect();
-        if !cross_check_commits_swaps(&committed_outputs, &output_bs) {
-            return Err(Error::InvalidInput(BRError::Generic(format!(
-                "output/committed_outputs mismatch {:?}/{:?}",
-                output_bs, committed_outputs,
-            ))));
-        }
+        let signed = committed.signed;
+        check_swap_matches_commitment(&committed, &inputs, &outputs)?;
         let (kinfos, _) = tokio::try_join!(
             self.list_info(ListFilters::default()),
             self.verify_proofs(&inputs)
@@ -396,6 +400,33 @@ impl Service {
             .swap_finalize(inputs, stored_signatures, commitment)
             .await?;
         self.treasury.store_proofs(fees.proofs).await?;
+        Ok(signatures)
+    }
+
+    async fn replay_swap(
+        &self,
+        inputs: &[cashu::Proof],
+        outputs: &[cashu::BlindedMessage],
+        commitment: schnorr::Signature,
+        now: TStamp,
+    ) -> Result<Vec<cashu::BlindSignature>> {
+        let Some(executed) = self.repository.swap_load(&commitment).await? else {
+            return Err(Error::ResourceNotFound(RNFError::Generic(
+                commitment.to_string(),
+            )));
+        };
+        if now < self.settle_window_deadline && !matches!(executed.signed, SignatureOwner::Beta) {
+            return Err(Error::ServiceUnavailable);
+        }
+        check_swap_matches_commitment(&executed, inputs, outputs)?;
+        self.verify_proofs(inputs).await?;
+        let mut signatures = Vec::with_capacity(outputs.len());
+        for blind in outputs {
+            let signature = self.held_signature(blind).await?.ok_or_else(|| {
+                Error::ResourceNotFound(RNFError::Generic(blind.blinded_secret.to_string()))
+            })?;
+            signatures.push(signature);
+        }
         Ok(signatures)
     }
 
@@ -492,6 +523,28 @@ struct GeneratedFees {
     signatures: Vec<cashu::BlindSignature>,
     proofs: Vec<cashu::Proof>,
     stored_signatures: Vec<StoredSignature>,
+}
+
+fn check_swap_matches_commitment(
+    committed: &StoredCommitment,
+    inputs: &[cashu::Proof],
+    outputs: &[cashu::BlindedMessage],
+) -> Result<()> {
+    let input_fps = wire_attestation::project_to_fingerprints(inputs)?;
+    if wire_attestation::fp_digest(&input_fps) != committed.fp_digest {
+        return Err(Error::Attestation(
+            wire_attestation::AttestationError::DigestMismatch,
+        ));
+    }
+    let output_bs: Vec<cashu::PublicKey> =
+        outputs.iter().map(|blind| blind.blinded_secret).collect();
+    if !cross_check_commits_swaps(&committed.outputs, &output_bs) {
+        return Err(Error::InvalidInput(BRError::Generic(format!(
+            "output/committed_outputs mismatch {:?}/{:?}",
+            output_bs, committed.outputs,
+        ))));
+    }
+    Ok(())
 }
 
 fn cross_check_commits_swaps<T: PartialEq>(committed: &[T], swap: &[T]) -> bool {
@@ -641,6 +694,87 @@ mod tests {
 
         assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
         assert!(repository.commitment_load(&commitment).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn swap_replay_returns_same_signatures() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_signal_swap_event()
+            .times(1)
+            .returning(|_, _, _, _, _| Ok(()));
+        let mut treasury = MockTreasuryService::new();
+        treasury
+            .expect_store_proofs()
+            .times(1)
+            .returning(|_| Ok(()));
+        let service = service(repository.clone(), clowder, treasury);
+        let signatures = service
+            .swap(proofs.clone(), outputs.clone(), commitment, now)
+            .await
+            .unwrap();
+
+        let later = now + time::Duration::hours(2);
+        let replayed = service
+            .swap(proofs, outputs, commitment, later)
+            .await
+            .unwrap();
+
+        assert_eq!(replayed, signatures);
+    }
+
+    #[tokio::test]
+    async fn swap_replay_with_other_outputs_is_refused() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (keyset, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let mut clowder = MockClowderClient::new();
+        clowder
+            .expect_signal_swap_event()
+            .times(1)
+            .returning(|_, _, _, _, _| Ok(()));
+        let mut treasury = MockTreasuryService::new();
+        treasury
+            .expect_store_proofs()
+            .times(1)
+            .returning(|_| Ok(()));
+        let service = service(repository.clone(), clowder, treasury);
+        service
+            .swap(proofs.clone(), outputs, commitment, now)
+            .await
+            .unwrap();
+        let other_outputs =
+            signatures_test::generate_blinds(keyset.id.into(), &[cashu::Amount::from(8u64)])
+                .into_iter()
+                .map(|generated| generated.0)
+                .collect::<Vec<_>>();
+
+        let result = service
+            .swap(proofs, other_outputs.clone(), commitment, now)
+            .await;
+
+        assert!(matches!(result, Err(Error::InvalidInput(_))));
+        assert_eq!(
+            repository.signature_load(&other_outputs[0]).await.unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_refuses_blinds_it_already_signed() {
+        let repository = Arc::new(inmemory::Repository::default());
+        let (_, _, outputs, _, _) = prepare_swap(&repository).await;
+        let service = service(
+            repository,
+            MockClowderClient::new(),
+            MockTreasuryService::new(),
+        );
+        service.sign_blinds(&outputs).await.unwrap();
+
+        let replayed = service.sign_blinds(&outputs).await;
+
+        assert!(matches!(replayed, Err(Error::Conflict(_))));
     }
 
     // Expired exchange eCash is burned as issued: no witness, so only the mint signature is checked.

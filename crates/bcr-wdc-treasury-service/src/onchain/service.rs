@@ -1,5 +1,9 @@
 // ----- standard library imports
-use std::{collections::HashSet, str::FromStr, sync::Arc};
+use std::{
+    collections::HashSet,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
@@ -30,6 +34,29 @@ pub struct Service {
     pub melt_fee_ppk: u64,
     pub min_feerate_sat_per_vb: f64,
     pub alpha_id: PublicKey,
+    pub melts_in_flight: Mutex<HashSet<Uuid>>,
+}
+
+struct MeltClaim<'a> {
+    in_flight: &'a Mutex<HashSet<Uuid>>,
+    qid: Uuid,
+}
+
+impl<'a> MeltClaim<'a> {
+    fn acquire(in_flight: &'a Mutex<HashSet<Uuid>>, qid: Uuid) -> Result<Self> {
+        let mut held = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        if !held.insert(qid) {
+            return Err(Error::ServiceUnavailable(SUError::Unknown));
+        }
+        Ok(Self { in_flight, qid })
+    }
+}
+
+impl Drop for MeltClaim<'_> {
+    fn drop(&mut self) {
+        let mut held = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        held.remove(&self.qid);
+    }
 }
 
 impl Service {
@@ -304,8 +331,25 @@ impl Service {
     ) -> Result<wire_melt::MeltOnchainResponse> {
         let wire_melt::MeltOnchainRequest { inputs, .. } = request;
         let c_inputs: Vec<cashu::Proof> = inputs.into_iter().map(From::from).collect();
-        // verify proofs
         bcr_wdc_utils::signatures::basic_proofs_checks(&c_inputs)?;
+        let qid = request.quote;
+        let _claim = MeltClaim::acquire(&self.melts_in_flight, qid)?;
+        let loaded = self.repo.load_meltop(qid).await;
+        let input_fps = wire_attestation::project_to_fingerprints(&c_inputs)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let input_digest = wire_attestation::fp_digest(&input_fps);
+        let committed = loaded.as_ref().is_ok_and(|op| op.fp_digest == input_digest);
+        if let Ok(op) = &loaded {
+            if let onchain::MeltStatus::Paid { tx } = op.status {
+                if !committed {
+                    return Err(Error::InvalidInput(String::from(
+                        "melt proofs != committed fingerprints",
+                    )));
+                }
+                return Ok(wire_melt::MeltOnchainResponse { txid: tx });
+            }
+        }
+        // verify proofs
         self.wdc.verify_proofs(&c_inputs).await?;
         // verify not spent
         let p_ys = c_inputs.ys()?;
@@ -313,18 +357,19 @@ impl Service {
         let any_spent = states
             .iter()
             .any(|s| matches!(s.state, cashu::State::Spent));
+        if any_spent && committed {
+            return Err(Error::ServiceUnavailable(SUError::MeltOpSuspended(
+                format!("melt {qid} spent its inputs but has no recorded txid yet"),
+            )));
+        }
         if any_spent {
             return Err(Error::InvalidInput(String::from("proofs already spent")));
         }
-        // load melt operation
-        let qid = request.quote;
-        let op = self.repo.load_meltop(qid).await?;
+        let op = loaded?;
         if now > op.expiry {
             return Err(Error::InvalidInput(String::from("Melt quote has expired")));
         }
-        let input_fps = wire_attestation::project_to_fingerprints(&c_inputs)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        if wire_attestation::fp_digest(&input_fps) != op.fp_digest {
+        if !committed {
             return Err(Error::InvalidInput(String::from(
                 "melt proofs != committed fingerprints",
             )));
@@ -516,6 +561,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let blinds: Vec<_> =
             signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
@@ -547,6 +593,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let blinds: Vec<_> =
@@ -636,6 +683,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512), Amount::from(512)];
@@ -717,6 +765,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512), Amount::from(512)];
@@ -817,6 +866,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
@@ -879,6 +929,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
@@ -915,6 +966,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let address = bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap();
         let amounts = vec![Amount::from(512)];
@@ -960,6 +1012,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let blinds1: Vec<_> =
             signatures_test::generate_blinds(keyset1.id.into(), &[Amount::from(8_u64)])
@@ -1071,6 +1124,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         };
         let request = wire_melt::MeltOnchainRequest {
             quote: qid,
@@ -1122,6 +1176,7 @@ mod tests {
             melt_fee_ppk: 10,
             min_feerate_sat_per_vb: 1.0,
             alpha_id: core::generate_random_keypair().public_key(),
+            melts_in_flight: Default::default(),
         }
     }
 
@@ -1318,5 +1373,189 @@ mod tests {
         assert_eq!(response.feerates, dummy_estimate(216, 1.5).feerates);
         assert_eq!(response.melt_fee, bitcoin::Amount::from_sat(2));
         assert_eq!(response.melt_fee_ppk, 10);
+    }
+
+    fn replay_fixture(
+        status: onchain::MeltStatus,
+    ) -> (Uuid, Vec<ecash::Proof>, onchain::MeltOperation) {
+        let (_, keyset) = core_tests::generate_random_ecash_keyset();
+        let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &[Amount::from(8_u64)]);
+        let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
+        let qid = Uuid::new_v4();
+        let op = onchain::MeltOperation {
+            qid,
+            available: cashu::Amount::from(8),
+            address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
+            target: bitcoin::Amount::from_sat(8),
+            expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
+            fees: cashu::Amount::ZERO,
+            wallet_key: core::generate_random_keypair().public_key().into(),
+            input_ys: proofs.ys().unwrap(),
+            fp_digest: wire_attestation::fp_digest(
+                &wire_attestation::project_to_fingerprints(&c_proofs).unwrap(),
+            ),
+            commitment: bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap(),
+            status,
+        };
+        (qid, proofs, op)
+    }
+
+    #[tokio::test]
+    async fn melt_replay_returns_stored_txid() {
+        let txid = bitcoin::Txid::from_slice(&[7; 32]).unwrap();
+        let (qid, proofs, op) = replay_fixture(onchain::MeltStatus::Paid { tx: txid });
+        let mut repo = MockRepository::new();
+        repo.expect_load_meltop()
+            .times(1)
+            .returning(move |_| Ok(op.clone()));
+        let mut clowder = MockClowderClient::new();
+        clowder.expect_melt_onchain().never();
+        let service = melt_service(MockWildcatClient::new(), repo, clowder);
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        let resp = service
+            .melt_onchain(
+                request,
+                time::OffsetDateTime::now_utc(),
+                &MockVaultService::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.txid, txid);
+    }
+
+    #[tokio::test]
+    async fn melt_replay_never_pays_twice() {
+        let (qid, proofs, pending) = replay_fixture(onchain::MeltStatus::Pending);
+        let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
+        let txid = bitcoin::Txid::from_slice(&[9; 32]).unwrap();
+        let paid = onchain::MeltOperation {
+            status: onchain::MeltStatus::Paid { tx: txid },
+            ..pending.clone()
+        };
+        let stored = Arc::new(Mutex::new(pending));
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        let mut vault = MockVaultService::new();
+        let loads = stored.clone();
+        repo.expect_load_meltop()
+            .returning(move |_| Ok(loads.lock().unwrap().clone()));
+        let updates = stored.clone();
+        repo.expect_update_meltop_status()
+            .times(1)
+            .returning(move |_, _| {
+                *updates.lock().unwrap() = paid.clone();
+                Ok(())
+            });
+        wdc.expect_verify_proofs().returning(|_| Ok(()));
+        wdc.expect_check_spendable().returning(|ys| {
+            Ok(ys
+                .into_iter()
+                .map(|y| cashu::ProofState {
+                    y,
+                    state: cashu::State::Unspent,
+                    witness: None,
+                })
+                .collect())
+        });
+        wdc.expect_keyset_info()
+            .returning(move |_| Ok(kinfo.clone().into()));
+        let cloned_keyset = keyset.clone();
+        wdc.expect_keyset()
+            .returning(move |_| Ok(bcr_wdc_utils::keys::to_keyset(&cloned_keyset.clone(), None)));
+        let cloned_keyset = keyset.clone();
+        wdc.expect_sign().returning(move |blinds| {
+            let amounts: Vec<_> = blinds.iter().map(|b| b.amount).collect();
+            Ok(signatures_test::generate_signatures(
+                cloned_keyset.id.into(),
+                &amounts,
+            ))
+        });
+        wdc.expect_burn().returning(|_| Ok(()));
+        vault.expect_store_proofs().returning(|_| Ok(()));
+        clowder
+            .expect_verify_onchain_address()
+            .returning(|addr| Ok(addr.assume_checked()));
+        clowder
+            .expect_melt_onchain()
+            .times(1)
+            .returning(move |_| Ok(txid));
+        let service = melt_service(wdc, repo, clowder);
+        for _ in 0..2 {
+            let request = wire_melt::MeltOnchainRequest {
+                quote: qid,
+                inputs: proofs.clone(),
+            };
+            let resp = service
+                .melt_onchain(request, time::OffsetDateTime::now_utc(), &vault)
+                .await
+                .unwrap();
+            assert_eq!(resp.txid, txid);
+        }
+    }
+
+    #[tokio::test]
+    async fn melt_replay_while_pending_is_transient() {
+        let (qid, proofs, _) = replay_fixture(onchain::MeltStatus::Pending);
+        let service = melt_service(
+            MockWildcatClient::new(),
+            MockRepository::new(),
+            MockClowderClient::new(),
+        );
+        let _in_flight = MeltClaim::acquire(&service.melts_in_flight, qid).unwrap();
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        let err = service
+            .melt_onchain(
+                request,
+                time::OffsetDateTime::now_utc(),
+                &MockVaultService::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::ServiceUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn melt_replay_after_inputs_spent_without_txid_is_transient() {
+        let (qid, proofs, op) = replay_fixture(onchain::MeltStatus::Pending);
+        let mut wdc = MockWildcatClient::new();
+        let mut repo = MockRepository::new();
+        let mut clowder = MockClowderClient::new();
+        repo.expect_load_meltop().returning(move |_| Ok(op.clone()));
+        repo.expect_update_meltop_status().never();
+        wdc.expect_verify_proofs().returning(|_| Ok(()));
+        wdc.expect_check_spendable().returning(|ys| {
+            Ok(ys
+                .into_iter()
+                .map(|y| cashu::ProofState {
+                    y,
+                    state: cashu::State::Spent,
+                    witness: None,
+                })
+                .collect())
+        });
+        wdc.expect_sign().never();
+        wdc.expect_burn().never();
+        clowder.expect_melt_onchain().never();
+        let service = melt_service(wdc, repo, clowder);
+        let request = wire_melt::MeltOnchainRequest {
+            quote: qid,
+            inputs: proofs,
+        };
+        let err = service
+            .melt_onchain(
+                request,
+                time::OffsetDateTime::now_utc(),
+                &MockVaultService::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::ServiceUnavailable(_)));
     }
 }
