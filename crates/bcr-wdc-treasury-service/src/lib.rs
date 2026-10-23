@@ -141,6 +141,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         melt_fee_ppk,
         min_feerate_sat_per_vb,
         alpha_id: my_pk,
+        melts_in_flight: Default::default(),
     };
 
     // eBill

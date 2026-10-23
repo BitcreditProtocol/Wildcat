@@ -153,6 +153,15 @@ struct CommitmentBlobV1 {
     signed: persistence::SignatureOwner,
 }
 
+#[derive(serde::Deserialize)]
+struct SwapBlob {
+    commitment: CommitmentBlob,
+    #[serde(with = "time::serde::rfc3339")]
+    expiration: TStamp,
+    inputs: Vec<String>,
+    outputs: Vec<String>,
+}
+
 #[derive(sqlx::FromRow)]
 struct CommitmentRow {
     signature: String,
@@ -499,6 +508,24 @@ impl persistence::Repository for Repository {
             .begin()
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        sqlx::query(
+            r#"
+            INSERT INTO core_swaps (signature, blob)
+            SELECT c.signature, jsonb_build_object(
+                'commitment', c.blob,
+                'expiration', c.expiration,
+                'inputs', COALESCE((SELECT jsonb_agg(p.y) FROM core_proofs p WHERE p.signature = c.signature), '[]'::jsonb),
+                'outputs', COALESCE((SELECT jsonb_agg(o.y) FROM core_commitment_outputs o WHERE o.signature = c.signature), '[]'::jsonb)
+            )
+            FROM core_commitments c
+            WHERE c.signature = $1
+            ON CONFLICT (signature) DO NOTHING
+            "#,
+        )
+        .bind(commitment.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         if !proof_ys.is_empty() {
             let result = sqlx::query!(
                 r#"
@@ -563,6 +590,30 @@ impl persistence::Repository for Repository {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         Ok(())
+    }
+
+    async fn swap_load(
+        &self,
+        commitment: &schnorr::Signature,
+    ) -> Result<Option<persistence::StoredCommitment>> {
+        let blob = sqlx::query_scalar::<_, Json<SwapBlob>>(
+            "SELECT blob FROM core_swaps WHERE signature = $1",
+        )
+        .bind(commitment.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        blob.map(|Json(blob)| {
+            let CommitmentBlob::V1(commitment) = blob.commitment;
+            Ok(persistence::StoredCommitment {
+                inputs: parse_commitment_public_keys(blob.inputs)?,
+                outputs: parse_commitment_public_keys(blob.outputs)?,
+                expiration: blob.expiration,
+                fp_digest: commitment.fp_digest,
+                signed: commitment.signed,
+            })
+        })
+        .transpose()
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
