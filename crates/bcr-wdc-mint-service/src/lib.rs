@@ -139,19 +139,7 @@ where
     // separate admin as it will likely have different auth requirements
     let admin = Router::new()
         .route(core_ep::admin_ep::NEW_KEYSET, post(admin::new_keyset))
-        .route(core_ep::admin_ep::SIGN, post(admin::sign_blind))
-        .route(core_ep::admin_ep::VERIFY_PROOF, post(admin::verify_proof))
-        .route(
-            core_ep::admin_ep::VERIFY_FINGERPRINT,
-            post(admin::verify_fingerprint),
-        )
-        .route(core_ep::admin_ep::BURN, post(admin::burn_tokens))
         .route(core_ep::admin_ep::RECOVER, post(admin::recover_tokens))
-        .route(core_ep::admin_ep::RESERVE, post(admin::reserve_ys))
-        .route(
-            treasury_ep::admin_ep::FEES_STORE_PROOFS,
-            post(admin::store_fees_proofs),
-        )
         .route(
             treasury_ep::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
