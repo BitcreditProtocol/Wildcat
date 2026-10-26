@@ -23,17 +23,17 @@ pub fn select_db_backend(
             tracing::warn!("################################################################");
             tracing::warn!("#  WARNING: {component} is marked as migrated to PostgreSQL");
             tracing::warn!("#  but PostgreSQL is NOT configured (max_connections == 0):");
-            tracing::warn!("#  running on SurrealDB, writes to migrated tables will fail.");
+            tracing::warn!("#  running on Postgres with default settings.");
             tracing::warn!("#  Set repository_new.max_connections > 0.");
             tracing::warn!("################################################################");
             DBBackend::DefaultPostgres
         }
         (false, true) => {
             tracing::warn!("################################################################");
-            tracing::warn!("#  WARNING: {component} is marked as migrated to PostgreSQL");
-            tracing::warn!("#  but PostgreSQL is NOT configured (max_connections == 0):");
-            tracing::warn!("#  running on SurrealDB, writes to migrated tables will fail.");
-            tracing::warn!("#  Set repository_new.max_connections > 0.");
+            tracing::warn!("#  WARNING: {component} is not marked as migrated to PostgreSQL");
+            tracing::warn!("#  but PostgreSQL is configured (max_connections > 0):");
+            tracing::warn!("#  running on SurrealDB");
+            tracing::warn!("#  Please run the migration script.");
             tracing::warn!("################################################################");
             DBBackend::Surreal
         }
