@@ -51,6 +51,6 @@ tracing = {version = "0.1"}
 tracing-log = {version = "0.2"}
 tracing-subscriber = {version = "0.3"}
 url = {version = "2.5.4"}
-utoipa = {version = "5"}
+utoipa = {version = "6"}
 utoipa-swagger-ui = {version = "9"}
 uuid = {version = "1"}
