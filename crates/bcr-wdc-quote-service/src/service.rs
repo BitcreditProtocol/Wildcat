@@ -40,6 +40,8 @@ pub enum SortOrder {
     BillMaturityDateDesc,
     SubmittedDesc,
     SubmittedAsc,
+    AmountDesc,
+    AmountAsc,
 }
 
 pub enum MintingStatus {

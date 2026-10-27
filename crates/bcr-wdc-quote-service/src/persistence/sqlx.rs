@@ -292,6 +292,12 @@ impl persistence::Repository for DBQuotes {
                 service::SortOrder::SubmittedDesc => {
                     qb.push(" ORDER BY submitted DESC");
                 }
+                service::SortOrder::AmountAsc => {
+                    qb.push(" ORDER BY bill_sum ASC");
+                }
+                service::SortOrder::AmountDesc => {
+                    qb.push(" ORDER BY bill_sum DESC");
+                }
             }
         }
         let rows = qb

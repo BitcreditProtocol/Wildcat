@@ -174,6 +174,8 @@ impl DBQuotes {
                 SortOrder::BillMaturityDateDesc => " ORDER BY maturity_date DESC",
                 SortOrder::SubmittedAsc => " ORDER BY submitted ASC",
                 SortOrder::SubmittedDesc => " ORDER BY submitted DESC",
+                SortOrder::AmountAsc => " ORDER BY sum ASC",
+                SortOrder::AmountDesc => " ORDER BY sum DESC",
             };
         }
         let query = self

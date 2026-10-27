@@ -189,6 +189,8 @@ impl Repository for QuotesIDMap {
                 }
                 SortOrder::SubmittedAsc => q1.submitted.cmp(&q2.submitted),
                 SortOrder::SubmittedDesc => q2.submitted.cmp(&q1.submitted),
+                SortOrder::AmountAsc => q1.bill.sum.cmp(&q2.bill.sum),
+                SortOrder::AmountDesc => q2.bill.sum.cmp(&q1.bill.sum),
             });
         }
         let b = a
