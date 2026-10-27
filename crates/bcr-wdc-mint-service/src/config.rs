@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::client;
-use bcr_wdc_utils::{postgres, surreal};
+use bcr_wdc_utils::postgres;
 use bitcoin::bip32 as btc32;
 // ----- local imports
 
@@ -9,8 +9,7 @@ use bitcoin::bip32 as btc32;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct App {
-    pub repository: surreal::DBConnConfig,
-    pub repository_new: postgres::DBConnConfig,
+    pub repository: postgres::DBConnConfig,
     pub clowder_url: client::Url,
     #[serde(default)]
     pub clowder_nkey_seed: Option<String>,
@@ -20,11 +19,4 @@ pub struct App {
     pub minimum_keyset_fees_ppk: u64,
     pub cache_expiry_sec: u64,
     pub settle_window_sec: u64,
-    pub vault: Vault,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct Vault {
-    pub db: surreal::DBConnConfig,
-    pub new: postgres::DBConnConfig,
 }

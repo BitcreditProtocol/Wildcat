@@ -21,12 +21,12 @@ anyhow = {version = "1"}
 async-trait = {version = "0.1"}
 axum = {version = "0.8"}
 axum-test = {version = "17"}
-bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "990a134"}
+bcr-common = {git = "https://github.com/BitcreditProtocol/bcr-common.git", rev = "4b0e114"}
 bcr-wdc-core-service = {path = "./crates/bcr-wdc-core-service"}
 bcr-wdc-mint-service = {path = "./crates/bcr-wdc-mint-service"}
 bcr-wdc-treasury-service = {path = "./crates/bcr-wdc-treasury-service"}
 bcr-wdc-utils = {path = "./crates/bcr-wdc-utils"}
-bip39 = {version = "2"}
+bip39 = {version = "3"}
 bitcoin = {version = "0.32"}
 borsh = {version = "1.5"}
 built = {version = "0.8"}
@@ -42,7 +42,7 @@ serde = {version = "1"}
 serde_json = {version = "1"}
 sqlx = {version = "0.8"}
 strum = {version = "0.28"}
-surrealdb = {version = "2.2"}
+surrealdb = {version = "2.7"}
 thiserror = {version = "2"}
 time = {version = "0.3", features = ["serde", "formatting", "parsing", "macros"]}
 tokio = {version = "1"}

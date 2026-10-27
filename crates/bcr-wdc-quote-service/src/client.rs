@@ -1,17 +1,18 @@
 // ----- standard library imports
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 // ----- extra library imports
 use async_trait::async_trait;
 use bcr_common::{
     cashu,
     client::{
+        admin::notification::Client as NotificationClient,
         core::Client as CoreClient,
         ebill::Client as EBillClient,
         treasury::{Client as TreasuryClient, Error as TreasuryError},
     },
     core::BillId,
     ecash,
-    wire::{bill as wire_bill, quotes as wire_quotes},
+    wire::{bill as wire_bill, notification as wire_notification, quotes as wire_quotes},
 };
 use uuid::Uuid;
 // ----- local modules
@@ -28,6 +29,7 @@ pub struct WildcatCl {
     pub core: CoreClient,
     pub treasury: TreasuryClient,
     pub ebill: EBillClient,
+    pub notification: NotificationClient,
 }
 
 #[async_trait]
@@ -120,6 +122,24 @@ impl WdcClient for WildcatCl {
     async fn collect_fees(&self, c_proofs: Vec<cashu::Proof>) -> Result<()> {
         let proofs: Vec<_> = c_proofs.into_iter().map(ecash::Proof::from).collect();
         self.treasury.fees_store_proofs(proofs).await?;
+        Ok(())
+    }
+
+    async fn notify_new_ebill_quote(
+        &self,
+        qid: Uuid,
+        sum: bitcoin::Amount,
+        drawee: String,
+        maturity_date: time::Date,
+    ) -> Result<()> {
+        let fields = HashMap::from([
+            (String::from("quote_id"), qid.to_string()),
+            (String::from("amount"), sum.to_sat().to_string()),
+            (String::from("drawee"), drawee),
+            (String::from("maturity_date"), maturity_date.to_string()),
+        ]);
+        let request = wire_notification::NotificationRequest::NewEbillQuote { fields };
+        self.notification.notify(request).await?;
         Ok(())
     }
 }

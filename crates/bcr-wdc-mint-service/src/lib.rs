@@ -43,7 +43,6 @@ impl AppController {
     pub async fn new(seed: &[u8], cfg: config::App) -> Self {
         let config::App {
             repository,
-            repository_new,
             clowder_url,
             clowder_nkey_seed,
             clowder_rest_url,
@@ -52,21 +51,19 @@ impl AppController {
             minimum_keyset_fees_ppk,
             cache_expiry_sec,
             settle_window_sec,
-            vault: vault_cfg,
         } = cfg;
-        let repository = if repository_new.max_connections > 0 {
-            let db = persistence::sqlx::Repository::new(repository_new)
-                .await
-                .expect("failed to create sqlx repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
+        // one PostgreSQL pool shared by every repository: with `max_connections > 0` it is
+        // sized by the config, otherwise sqlx's default applies
+        let pool = if repository.max_connections > 0 {
+            persistence::sqlx::connect(&repository).await
         } else {
-            let db = persistence::surreal::Repository::new(repository)
+            sqlx::PgPool::connect(&repository.connection)
                 .await
-                .expect("Failed to create repository");
-            let repository: Arc<dyn Repository> = Arc::new(db);
-            repository
-        };
+                .map_err(|e| error::Error::DB(anyhow::anyhow!(e)))
+        }
+        .expect("Failed to connect to PostgreSQL");
+        let repository: Arc<dyn Repository> =
+            Arc::new(persistence::sqlx::Repository::from_pool(pool.clone()));
         let keygen = factory::KeysFactory::new(seed, starting_derivation_path);
         let clowder_cl =
             client::clowder::ClowderNatsClient::new(clowder_url, clowder_nkey_seed.as_deref())
@@ -103,12 +100,8 @@ impl AppController {
             alpha_id,
             settle_window_deadline: settle_window_tout,
         };
-        let config::Vault { db: vault_db, .. } = vault_cfg;
-        let vault_repo = persistence::surreal::DBVault::new(vault_db)
-            .await
-            .expect("Failed to create vault repository");
         let vault = vault::Service {
-            repo: Box::new(vault_repo),
+            repo: Box::new(persistence::sqlx::DBVault::from_pool(pool)),
             my_url,
             mint_id,
         };
@@ -163,7 +156,6 @@ where
             treasury_ep::admin_ep::FEES_TOKEN,
             get(admin::generate_fees_token),
         );
-
     Router::new().merge(web).merge(admin).with_state(ctrl)
 }
 

@@ -69,7 +69,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Install cargo tools
-        run: cargo install grcov sqlx-cli
+        run: cargo install --locked grcov sqlx-cli
 
       - name: reset pre-existing db
         run: |

@@ -223,10 +223,30 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
             Arc::new(persistence::sqlx::DBForeignOnline::from_pool(pool))
         }
     };
-    let foreign_offline_repo = persistence::surreal::DBForeignOffline::new(offline_repo)
+    let surreal_offline = persistence::surreal::DBForeignOffline::new(offline_repo)
         .await
         .expect("Failed to create foreign offline repository");
-    let offlinerepo = Arc::new(foreign_offline_repo);
+    let migrated = surreal_offline
+        .is_migrated()
+        .await
+        .expect("Failed to read foreign offline migration marker");
+    let offlinerepo: Arc<dyn foreign::OfflineRepository> = match db_utils::select_db_backend(
+        "treasury foreign offline",
+        migrated,
+        repository_new.clone(),
+    ) {
+        db_utils::DBBackend::Surreal => Arc::new(surreal_offline),
+        db_utils::DBBackend::Postgres => {
+            let pool = pg_pool.clone().expect("PostgreSQL pool");
+            Arc::new(persistence::sqlx::DBForeignOffline::from_pool(pool))
+        }
+        db_utils::DBBackend::DefaultPostgres => {
+            let pool = sqlx::PgPool::connect(&repository_new.connection)
+                .await
+                .expect("Failed to connect to PostgreSQL");
+            Arc::new(persistence::sqlx::DBForeignOffline::from_pool(pool))
+        }
+    };
     let clowder = Arc::new(foreign::clients::ClowderCl {
         rest: clowder_client.clone(),
         stream: clowder_nats_client.clone(),

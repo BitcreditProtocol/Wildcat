@@ -894,6 +894,23 @@ pub async fn get_onchain_history(
 
 #[utoipa::path(
     get,
+    path = endpoints::GET_CLOWDER_EIOU_HISTORY,
+    params(
+    ),
+    responses (
+        (status = 200, description = "Successful response", body = wire_clowder::EiouOperationsResponse, content_type = "application/json"),
+    )
+)]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+pub async fn get_eiou_history(
+    State(ctrl): State<AppController>,
+) -> Result<Json<wire_clowder::EiouOperationsResponse>> {
+    let response = ctrl.clwdr_cl.get_eiou_operations_history().await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
     path = endpoints::FOREIGN_BALANCE,
     params(
     ),

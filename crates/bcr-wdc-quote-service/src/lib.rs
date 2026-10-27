@@ -9,8 +9,12 @@ use axum::{
 use bcr_common::{
     cashu,
     client::{
-        admin::clowder::Client as ClowderClient, core::Client as CoreClient,
-        ebill::Client as EBillClient, quote, treasury::Client as TreasuryClient, Url as ClientUrl,
+        admin::{clowder::Client as ClowderClient, notification::Client as NotificationClient},
+        core::Client as CoreClient,
+        ebill::Client as EBillClient,
+        quote,
+        treasury::Client as TreasuryClient,
+        Url as ClientUrl,
     },
     wire::clowder as wire_clowder,
 };
@@ -31,6 +35,7 @@ mod web;
 use bcr_common::TStamp;
 
 pub const MINIMUM_MONITOR_INTERVAL_SECONDS: u64 = 5;
+pub const NOTIFICATION_TIMEOUT: time::SignedDuration = time::SignedDuration::seconds(3);
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
@@ -39,6 +44,7 @@ pub struct AppConfig {
     treasury_url: ClientUrl,
     ebill_url: ClientUrl,
     clowder_url: reqwest::Url,
+    notification_url: ClientUrl,
     monitor_interval_seconds: u64,
 }
 
@@ -54,6 +60,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         treasury_url,
         ebill_url,
         clowder_url,
+        notification_url,
         monitor_interval_seconds,
     } = cfg;
     let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
@@ -73,10 +80,13 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     let core = CoreClient::new(core_url);
     let treasury_cl = TreasuryClient::new(treasury_url);
     let ebill = EBillClient::new(ebill_url);
+    let notifcation_tout = NOTIFICATION_TIMEOUT.try_into().expect("timeout conversion");
+    let notification = NotificationClient::new(notification_url, notifcation_tout);
     let wdc_cl = client::WildcatCl {
         core,
         treasury: treasury_cl,
         ebill,
+        notification,
     };
     let cashu_mint_url =
         cashu::MintUrl::from_str(mint_url.as_ref()).expect("cashu::MintUrl == reqwest::Url");

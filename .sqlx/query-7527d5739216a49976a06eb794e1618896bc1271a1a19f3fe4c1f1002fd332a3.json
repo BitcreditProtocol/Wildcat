@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT e.exchange_digest, e.alpha_id, e.expires_at,\n                   e.blob as \"blob: Json<OfflineExchangeBlob>\"\n            FROM treasury_foreign_offline_exchange_ys x\n            JOIN treasury_foreign_offline_exchanges e ON e.exchange_digest = x.exchange_digest\n            WHERE x.y = ANY($1::text[])\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exchange_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "alpha_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "blob: Json<OfflineExchangeBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7527d5739216a49976a06eb794e1618896bc1271a1a19f3fe4c1f1002fd332a3"
+}
