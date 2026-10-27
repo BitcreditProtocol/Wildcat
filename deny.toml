@@ -20,6 +20,7 @@ ignore = [
     {id = "RUSTSEC-2026-0368", reason = "zip due to utoipa-swagger"},
     {id = "RUSTSEC-2026-0369", reason = "zip due to utoipa-swagger"},
     {id = "RUSTSEC-2026-0382", reason = "rusls-webpki@0.103.15 due to nats"},
+    {id = "RUSTSEC-2026-0387", reason = "crypto-bigint@0.5.5"},
 ]
 unmaintained = "workspace"
 
