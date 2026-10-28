@@ -104,6 +104,7 @@ impl axum::response::IntoResponse for Error {
                         (StatusCode::BAD_REQUEST, j)
                     }
                     Rej::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+                    r if r.is_transient() => (StatusCode::SERVICE_UNAVAILABLE, String::new()),
                     _ => {
                         let j = serde_json::to_string(&BRError::Generic(msg)).unwrap_or_default();
                         (StatusCode::BAD_REQUEST, j)
