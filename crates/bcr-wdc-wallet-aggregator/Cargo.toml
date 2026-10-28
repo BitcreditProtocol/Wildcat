@@ -27,3 +27,8 @@ bcr-wdc-utils = {workspace = true, features = ["test-utils"]}
 bcr-common = {workspace = true, features = ["test-utils"]}
 mockall.workspace = true
 surrealdb = {workspace = true, features = ["kv-mem"]}
+
+axum-test.workspace = true
+mockito = "1.7"
+bitcoin.workspace = true
+serde_json.workspace = true

@@ -81,3 +81,25 @@ async fn test_for_htlc(proofs: &[cashu::Proof], tcl: &TreasuryClient) -> Result<
     }
     Ok(total)
 }
+
+/// Narrow forwarding route: admin identity/seed routes remain private.
+pub async fn get_mint_identity(
+    State(ctrl): State<AppController>,
+    axum::extract::Query(query): axum::extract::Query<
+        bcr_common::wire::mint_identity::MintIdentityQuery,
+    >,
+) -> std::result::Result<impl axum::response::IntoResponse, axum::http::StatusCode> {
+    use bcr_common::wire::mint_identity::valid_challenge;
+    if !valid_challenge(&query.challenge) {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    }
+    let proof = ctrl
+        .ebill_client
+        .get_mint_identity(&query.challenge)
+        .await
+        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(proof),
+    ))
+}
