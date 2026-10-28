@@ -947,6 +947,7 @@ mod tests {
         let blinds = signature_tests::generate_blinds(kid.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
+            .map(cashu::BlindedMessage::from)
             .collect();
         let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
@@ -992,6 +993,7 @@ mod tests {
         let blinds = signature_tests::generate_blinds(kid.into(), &amounts)
             .into_iter()
             .map(|(blind, _, _)| blind)
+            .map(cashu::BlindedMessage::from)
             .collect();
         let op = onchain::MintOperation {
             qid: Uuid::new_v4(),
