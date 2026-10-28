@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use crate::{ebill, error::Error, vault};
     use bcr_common::{cashu::ProofsMethods, core, core_tests};
-    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::{
         key::rand,
         secp256k1::{self as secp, schnorr},
@@ -128,7 +128,7 @@ mod tests {
     async fn keysrepo_info(db: impl Repository) {
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = keys_utils::MintKeysEntry {
-            id: kinfo.id.into(),
+            id: kinfo.id,
             unit: kinfo.unit.clone(),
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -160,7 +160,7 @@ mod tests {
         info1.unit = cashu::CurrencyUnit::Sat;
         info1.final_expiry = Some(10);
         let entry1 = keys_utils::MintKeysEntry {
-            id: info1.id.into(),
+            id: info1.id,
             unit: info1.unit,
             active: info1.active,
             valid_from: info1.valid_from,
@@ -176,7 +176,7 @@ mod tests {
         info2.unit = cashu::CurrencyUnit::Usd;
         info2.final_expiry = Some(20);
         let entry2 = keys_utils::MintKeysEntry {
-            id: info2.id.into(),
+            id: info2.id,
             unit: info2.unit,
             active: info2.active,
             valid_from: info2.valid_from,
@@ -192,7 +192,7 @@ mod tests {
         info3.unit = cashu::CurrencyUnit::Usd;
         info3.final_expiry = Some(30);
         let entry3 = keys_utils::MintKeysEntry {
-            id: info3.id.into(),
+            id: info3.id,
             unit: info3.unit,
             active: info3.active,
             valid_from: info3.valid_from,
@@ -238,7 +238,7 @@ mod tests {
     async fn keysrepo_keyset_test(db: impl Repository) {
         let (kinfo, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = keys_utils::MintKeysEntry {
-            id: kinfo.id.into(),
+            id: kinfo.id,
             unit: kinfo.unit,
             active: kinfo.active,
             valid_from: kinfo.valid_from,
@@ -250,7 +250,7 @@ mod tests {
             keys: keyset.keys.clone(),
         };
         db.keys_store(entry.clone()).await.unwrap();
-        let rkeys = db.keys_load(entry.id).await.unwrap().unwrap();
+        let rkeys = db.keys_load(entry.id.into()).await.unwrap().unwrap();
         assert_eq!(rkeys, keyset);
     }
 
@@ -269,7 +269,7 @@ mod tests {
         let (mut info0, keyset0) = core_tests::generate_random_ecash_keyset();
         info0.final_expiry = Some(30);
         let keys0 = keys_utils::MintKeysEntry {
-            id: info0.id.into(),
+            id: info0.id,
             unit: info0.unit,
             active: info0.active,
             valid_from: info0.valid_from,
@@ -284,7 +284,7 @@ mod tests {
         let (mut info1, keyset1) = core_tests::generate_random_ecash_keyset();
         info1.final_expiry = Some(10);
         let keys1 = keys_utils::MintKeysEntry {
-            id: info1.id.into(),
+            id: info1.id,
             unit: info1.unit,
             active: info1.active,
             valid_from: info1.valid_from,
@@ -321,7 +321,7 @@ mod tests {
     async fn signsrepo_store(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
-        let y = keys_test::publics()[0];
+        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         db.signatures_store(vec![StoredSignature { y, signature }])
             .await
@@ -342,7 +342,7 @@ mod tests {
     async fn signsrepo_store_same_signature_twice(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
-        let y = keys_test::publics()[0];
+        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         let stored = StoredSignature { y, signature };
         db.signatures_store(vec![stored.clone()]).await.unwrap();
@@ -380,7 +380,11 @@ mod tests {
         db.signatures_store(vec![existing.clone()]).await.unwrap();
         let res = db.signatures_store(vec![fresh, existing]).await;
         assert!(matches!(res, Err(Error::Conflict(_))));
-        let loaded = db.signature_load(&blinds[0]).await.unwrap();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let loaded = db.signature_load(&c_blinds[0]).await.unwrap();
         assert!(loaded.is_none());
     }
 
@@ -1130,6 +1134,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), amounts)
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let signatures = blinds
             .iter()

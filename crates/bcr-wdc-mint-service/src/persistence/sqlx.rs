@@ -106,7 +106,7 @@ fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
         })
         .collect::<Result<BTreeMap<cashu::Amount, MintKeyPair>>>()?;
     let entry = keys_utils::MintKeysEntry {
-        id: kid.into(),
+        id: kid,
         unit,
         active: row.active,
         valid_from: blob.valid_from,

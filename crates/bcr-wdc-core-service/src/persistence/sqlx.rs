@@ -102,7 +102,7 @@ fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
         })
         .collect::<Result<BTreeMap<cashu::Amount, cashu::nut01::MintKeyPair>>>()?;
     let entry = keys_utils::MintKeysEntry {
-        id: kid.into(),
+        id: kid,
         unit,
         active: row.active,
         valid_from: blob.valid_from,
@@ -1057,7 +1057,7 @@ mod tests {
     fn keyset_row_roundtrip_derives_public_keys() {
         let (info, keyset) = core_tests::generate_random_ecash_keyset();
         let entry = keys_utils::MintKeysEntry {
-            id: info.id.into(),
+            id: info.id,
             unit: info.unit.clone(),
             active: info.active,
             valid_from: info.valid_from,

@@ -8,6 +8,7 @@ use std::{
 use bcr_common::{
     cashu::{self, ProofsMethods},
     client::admin::treasury::SUError,
+    ecash,
     wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
@@ -65,7 +66,13 @@ impl Service {
         request: wire_mint::OnchainMintQuoteRequest,
         now: TStamp,
     ) -> Result<wire_mint::OnchainMintQuoteResponse> {
-        bcr_wdc_utils::signatures::basic_blinds_checks(&request.blinded_messages)
+        let blinds: Vec<ecash::BlindedMessage> = request
+            .blinded_messages
+            .iter()
+            .cloned()
+            .map(From::from)
+            .collect();
+        bcr_wdc_utils::signatures::basic_blinds_checks(&blinds)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let qid = Uuid::new_v4();
         let blinds_camount = request
@@ -330,8 +337,8 @@ impl Service {
         vault: &dyn onchain::VaultService,
     ) -> Result<wire_melt::MeltOnchainResponse> {
         let wire_melt::MeltOnchainRequest { inputs, .. } = request;
+        bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
         let c_inputs: Vec<cashu::Proof> = inputs.into_iter().map(From::from).collect();
-        bcr_wdc_utils::signatures::basic_proofs_checks(&c_inputs)?;
         let qid = request.quote;
         let _claim = MeltClaim::acquire(&self.melts_in_flight, qid)?;
         let loaded = self.repo.load_meltop(qid).await;
@@ -567,6 +574,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
@@ -600,6 +608,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
@@ -697,7 +706,7 @@ mod tests {
             address,
             amount: bitcoin::Amount::from_sat(800),
             network_fee: bitcoin::Amount::from_sat(216),
-            wallet_key: core::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key(),
         };
         let response = service
             .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
@@ -779,7 +788,7 @@ mod tests {
             address,
             amount: bitcoin::Amount::from_sat(800),
             network_fee: bitcoin::Amount::from_sat(216),
-            wallet_key: core::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key(),
         };
         service
             .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
@@ -980,7 +989,7 @@ mod tests {
             address,
             amount: bitcoin::Amount::from_sat(512),
             network_fee: bitcoin::Amount::ZERO,
-            wallet_key: core::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key(),
         };
         let err = service
             .create_onchain_melt_quote(request, time::OffsetDateTime::now_utc())
@@ -1018,11 +1027,13 @@ mod tests {
             signatures_test::generate_blinds(keyset1.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let blinds2: Vec<_> =
             signatures_test::generate_blinds(keyset2.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let mut blinded_messages = Vec::new();
         blinded_messages.extend(blinds1);
@@ -1195,7 +1206,7 @@ mod tests {
             address: bitcoin::Address::from_str("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb").unwrap(),
             amount: bitcoin::Amount::from_sat(amount),
             network_fee: bitcoin::Amount::from_sat(network_fee),
-            wallet_key: core::generate_random_keypair().public_key().into(),
+            wallet_key: core::generate_random_keypair().public_key(),
         }
     }
 

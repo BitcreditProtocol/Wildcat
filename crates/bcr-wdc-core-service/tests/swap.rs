@@ -23,7 +23,7 @@ async fn swap() {
     let client = CoreClient::new(server_url);
     let (info, keyset) = core_tests::generate_random_ecash_keyset();
     let entry = MintKeysEntry {
-        id: info.id.into(),
+        id: info.id,
         unit: info.unit,
         active: info.active,
         valid_from: info.valid_from,
@@ -57,11 +57,10 @@ async fn swap() {
     let expiry =
         (time::OffsetDateTime::now_utc() + time::Duration::minutes(2)).unix_timestamp() as u64;
     let wallet_kp = core::generate_random_keypair();
-    let c_blinds = blinds.iter().cloned().map(From::from).collect::<Vec<_>>();
     let (_, commitment) = client
         .commit_swap(
             proof_fps.clone(),
-            c_blinds.clone(),
+            blinds.clone(),
             expiry,
             wallet_kp.public_key(),
             mint_pk,
@@ -70,10 +69,7 @@ async fn swap() {
         .await
         .unwrap();
     let proofs: Vec<_> = c_proofs.iter().cloned().map(ecash::Proof::from).collect();
-    client
-        .swap(proofs, c_blinds, commitment)
-        .await
-        .expect("swap");
+    client.swap(proofs, blinds, commitment).await.expect("swap");
 }
 
 #[tokio::test]
@@ -84,7 +80,7 @@ async fn swap_p2pk() {
     let (info, mint_keyset) = core_tests::generate_random_ecash_keyset();
     let kid = info.id;
     let entry = MintKeysEntry {
-        id: info.id.into(),
+        id: info.id,
         unit: info.unit,
         active: info.active,
         valid_from: info.valid_from,
@@ -150,6 +146,7 @@ async fn swap_p2pk() {
         signatures_test::generate_blinds(mint_keyset.id.into(), &single_amount)
             .into_iter()
             .map(|bbb| bbb.0)
+            .map(cashu::BlindedMessage::from)
             .collect();
     let correct_fps: Vec<wire_keys::ProofFingerprint> = correct_proofs
         .iter()
