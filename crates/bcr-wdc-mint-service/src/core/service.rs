@@ -262,8 +262,13 @@ impl Service {
             .map(|fp| ProofFingerprint::from(fp.clone()))
             .collect::<Vec<_>>();
         signatures_utils::basic_fingerprints_checks(&core_fps)?;
-        let c_outputs: Vec<_> = request.outputs.iter().cloned().map(From::from).collect();
-        signatures_utils::basic_blinds_checks(&c_outputs)?;
+        let c_outputs: Vec<_> = request
+            .outputs
+            .iter()
+            .cloned()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        signatures_utils::basic_blinds_checks(&request.outputs)?;
         self.clowder
             .authenticate_attestation(&self.alpha_id, &request.inputs)
             .await?;
@@ -325,8 +330,8 @@ impl Service {
     pub async fn swap(
         &self,
         treasury: &dyn TreasuryService,
-        inputs: Vec<cashu::Proof>,
-        outputs: Vec<cashu::BlindedMessage>,
+        inputs: Vec<ecash::Proof>,
+        outputs: Vec<ecash::BlindedMessage>,
         commitment: schnorr::Signature,
         now: TStamp,
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -347,7 +352,8 @@ impl Service {
                 "commitment has expired",
             ))));
         }
-        let input_fps = wire_attestation::project_to_fingerprints(&inputs)?;
+        let c_inputs = inputs.iter().cloned().map(From::from).collect::<Vec<_>>();
+        let input_fps = wire_attestation::project_to_fingerprints(&c_inputs)?;
         if wire_attestation::fp_digest(&input_fps) != committed_fp_digest {
             return Err(Error::Attestation(
                 wire_attestation::AttestationError::DigestMismatch,
@@ -363,7 +369,7 @@ impl Service {
         }
         let (kinfos, _) = tokio::try_join!(
             self.list_info(ListFilters::default()),
-            self.verify_proofs(&inputs)
+            self.verify_proofs(&c_inputs)
         )?;
         let fee_policy = match signed {
             SignatureOwner::Alpha | SignatureOwner::Beta => swap::mint::FeePolicy::Ignore,
@@ -371,23 +377,24 @@ impl Service {
         };
         let kinfo = keys_utils::kinfos_list_to_map(kinfos.clone());
         let kinfos = kinfo.into_iter().collect::<HashMap<_, _>>();
-        swap::mint::verify_swap(&inputs, &outputs, &kinfos, fee_policy)?;
-        let signatures = self.generate_signatures(&outputs).await?;
-        let fee_premints = self.generate_fees_premints(&inputs, &outputs).await?;
+        let c_outputs = outputs.iter().cloned().map(From::from).collect::<Vec<_>>();
+        swap::mint::verify_swap(&c_inputs, &c_outputs, &kinfos, fee_policy)?;
+        let c_signatures = self.generate_signatures(&c_outputs).await?;
+        let fee_premints = self.generate_fees_premints(&c_inputs, &c_outputs).await?;
         let fees = self.sign_fees(fee_premints).await?;
         self.clowder
             .signal_swap_event(
-                inputs.clone(),
-                outputs.clone(),
+                c_inputs.clone(),
+                c_outputs.clone(),
                 fees.signatures.clone(),
                 commitment,
-                signatures.clone(),
+                c_signatures.clone(),
             )
             .await?;
 
         let mut stored_signatures = outputs
             .iter()
-            .zip(signatures.iter())
+            .zip(c_signatures.iter())
             .map(|(blind, signature)| StoredSignature {
                 y: blind.blinded_secret,
                 signature: signature.clone(),
@@ -395,10 +402,10 @@ impl Service {
             .collect::<Vec<_>>();
         stored_signatures.extend(fees.stored_signatures);
         self.repository
-            .swap_finalize(inputs, stored_signatures, commitment)
+            .swap_finalize(c_inputs, stored_signatures, commitment)
             .await?;
         treasury.store_proofs(fees.proofs).await?;
-        Ok(signatures)
+        Ok(c_signatures)
     }
 
     async fn generate_fees_premints(
@@ -547,6 +554,7 @@ mod tests {
         let outputs = signatures_test::generate_blinds(keyset.id.into(), &amounts)
             .into_iter()
             .map(|generated| generated.0)
+            .map(cashu::BlindedMessage::from)
             .collect::<Vec<_>>();
         let commitment = schnorr::Signature::from_slice(&[17u8; 64]).unwrap();
         let now = time::OffsetDateTime::now_utc();
@@ -585,7 +593,7 @@ mod tests {
     #[tokio::test]
     async fn swap_atomically_persists_proofs_signatures_and_commitment_deletion() {
         let repository = Arc::new(inmemory::Repository::default());
-        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
+        let (_, c_proofs, c_outputs, commitment, now) = prepare_swap(&repository).await;
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_signal_swap_event()
@@ -597,20 +605,25 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
         let service = service(repository.clone(), clowder);
-
+        let proofs = c_proofs.iter().cloned().map(From::from).collect::<Vec<_>>();
+        let outputs = c_outputs
+            .iter()
+            .cloned()
+            .map(From::from)
+            .collect::<Vec<_>>();
         let signatures = service
-            .swap(&treasury, proofs.clone(), outputs.clone(), commitment, now)
+            .swap(&treasury, proofs, outputs, commitment, now)
             .await
             .unwrap();
 
-        assert_eq!(signatures.len(), outputs.len());
+        assert_eq!(signatures.len(), c_outputs.len());
         assert!(repository
-            .proofs_contains(proofs[0].y().unwrap())
+            .proofs_contains(c_proofs[0].y().unwrap())
             .await
             .unwrap()
             .is_some());
         assert_eq!(
-            repository.signature_load(&outputs[0]).await.unwrap(),
+            repository.signature_load(&c_outputs[0]).await.unwrap(),
             Some(signatures[0].clone())
         );
         assert!(matches!(
@@ -622,8 +635,8 @@ mod tests {
     #[tokio::test]
     async fn swap_does_not_store_signatures_when_proof_insertion_fails() {
         let repository = Arc::new(inmemory::Repository::default());
-        let (_, proofs, outputs, commitment, now) = prepare_swap(&repository).await;
-        repository.proofs_insert(proofs.clone()).await.unwrap();
+        let (_, c_proofs, c_outputs, commitment, now) = prepare_swap(&repository).await;
+        repository.proofs_insert(c_proofs.clone()).await.unwrap();
         let mut clowder = MockClowderClient::new();
         clowder
             .expect_signal_swap_event()
@@ -632,13 +645,21 @@ mod tests {
         let mut treasury = MockTreasuryService::new();
         treasury.expect_store_proofs().times(0);
         let service = service(repository.clone(), clowder);
-
+        let proofs = c_proofs.iter().cloned().map(From::from).collect::<Vec<_>>();
+        let outputs = c_outputs
+            .iter()
+            .cloned()
+            .map(From::from)
+            .collect::<Vec<_>>();
         let result = service
-            .swap(&treasury, proofs, outputs.clone(), commitment, now)
+            .swap(&treasury, proofs, outputs, commitment, now)
             .await;
         assert!(matches!(result, Err(Error::Conflict(_))));
 
-        assert_eq!(repository.signature_load(&outputs[0]).await.unwrap(), None);
+        assert_eq!(
+            repository.signature_load(&c_outputs[0]).await.unwrap(),
+            None
+        );
         assert!(repository.commitment_load(&commitment).await.is_ok());
     }
 

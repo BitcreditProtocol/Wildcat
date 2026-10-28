@@ -151,6 +151,7 @@ async fn swap_p2pk() {
         signatures_test::generate_blinds(mint_keyset.id.into(), &single_amount)
             .into_iter()
             .map(|bbb| bbb.0)
+            .map(cashu::BlindedMessage::from)
             .collect();
     let correct_fps: Vec<wire_keys::ProofFingerprint> = c_correct_proofs
         .iter()

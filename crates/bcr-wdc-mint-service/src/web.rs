@@ -149,13 +149,8 @@ pub async fn swap_tokens(
         outputs,
         commitment,
     } = request;
-    let c_inputs: cashu::Proofs = inputs.into_iter().map(cashu::Proof::from).collect();
-    let c_outputs: Vec<_> = outputs
-        .into_iter()
-        .map(cashu::BlindedMessage::from)
-        .collect();
     let c_signatures = ctrl
-        .swap(&treasury, c_inputs, c_outputs, commitment, now)
+        .swap(&treasury, inputs, outputs, commitment, now)
         .await?;
     let signatures = c_signatures
         .into_iter()

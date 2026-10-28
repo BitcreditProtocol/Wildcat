@@ -98,7 +98,7 @@ impl KeysFactory {
             final_expiry,
         } = keyset;
         keys_utils::MintKeysEntry {
-            id,
+            id: id.into(),
             unit,
             active: true,
             valid_from: now.unix_timestamp().max(0) as u64,

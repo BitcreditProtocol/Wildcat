@@ -382,7 +382,7 @@ impl std::convert::From<KeysInfoDBEntry> for ecash::MintKeySetInfo {
 impl std::convert::From<keys_utils::MintKeysEntry> for KeysInfoDBEntry {
     fn from(entry: keys_utils::MintKeysEntry) -> Self {
         Self {
-            kid: entry.id,
+            kid: entry.id.into(),
             unit: entry.unit,
             active: entry.active,
             valid_from: entry.valid_from,

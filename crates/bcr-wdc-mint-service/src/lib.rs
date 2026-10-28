@@ -257,7 +257,7 @@ mod tests {
         }
     }
     use bcr_common::{
-        cashu, core, core_tests,
+        cashu, core, core_tests, ecash,
         wire::{keys as wire_keys, swap as wire_swap},
     };
     use bcr_wdc_utils::{signatures::test_utils as signatures_test, MintKeysEntry};
@@ -344,8 +344,8 @@ mod tests {
             .into_iter()
             .map(|bbb| bbb.0)
             .collect();
-        let proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
-        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+        let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = c_proofs
             .iter()
             .cloned()
             .map(wire_keys::ProofFingerprint::try_from)
@@ -369,6 +369,7 @@ mod tests {
         core::signature::schnorr_verify_b64(&content, &commitment, &mint_kp.x_only_public_key().0)
             .unwrap();
 
+        let proofs: Vec<ecash::Proof> = c_proofs.into_iter().map(From::from).collect();
         controller
             .service
             .swap(&treasury(&controller), proofs, blinds, commitment, now)
@@ -438,22 +439,21 @@ mod tests {
             .collect::<Vec<_>>();
 
         let mint_keys = cashu::Keys::from(mint_keyset.keys.clone());
-        let mut proofs = cashu::dhke::construct_proofs(
+        let mut c_proofs = cashu::dhke::construct_proofs(
             signatures.clone(),
             rs.clone(),
             secrets.clone(),
             &mint_keys,
         )
         .unwrap();
-        let blinds: Vec<cashu::BlindedMessage> =
-            signatures_test::generate_blinds(mint_keyset.id.into(), &amounts)
-                .into_iter()
-                .map(|bbb| bbb.0)
-                .collect();
+        let blinds: Vec<_> = signatures_test::generate_blinds(mint_keyset.id.into(), &amounts)
+            .into_iter()
+            .map(|bbb| bbb.0)
+            .collect();
         let wallet_kp = core::generate_random_keypair();
         let now = time::OffsetDateTime::now_utc();
         let expiry = (now + time::Duration::minutes(2)).unix_timestamp() as u64;
-        let proof_fps: Vec<wire_keys::ProofFingerprint> = proofs
+        let proof_fps: Vec<wire_keys::ProofFingerprint> = c_proofs
             .iter()
             .cloned()
             .map(wire_keys::ProofFingerprint::try_from)
@@ -471,29 +471,25 @@ mod tests {
             .await
             .unwrap();
 
+        let proofs: Vec<ecash::Proof> = c_proofs.iter().cloned().map(From::from).collect();
         let res = controller
             .service
             .swap(
                 &treasury(&controller),
-                proofs.clone(),
+                proofs,
                 blinds.clone(),
                 commitment,
                 now,
             )
             .await;
         assert!(res.is_err());
-        for p in proofs.iter_mut() {
+        for p in c_proofs.iter_mut() {
             let _ = p.sign_p2pk(p2pk_secret.clone());
         }
+        let proofs: Vec<ecash::Proof> = c_proofs.into_iter().map(From::from).collect();
         controller
             .service
-            .swap(
-                &treasury(&controller),
-                proofs.clone(),
-                blinds,
-                commitment,
-                now,
-            )
+            .swap(&treasury(&controller), proofs, blinds, commitment, now)
             .await
             .unwrap();
     }

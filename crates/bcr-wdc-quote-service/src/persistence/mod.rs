@@ -341,7 +341,7 @@ mod tests {
     use bcr_common::{
         cashu, core_tests, wire::bill as wire_bill, wire_tests::random_identity_public_data,
     };
-    use bcr_wdc_utils::{keys::test_utils as keys_test, surreal as surreal_config};
+    use bcr_wdc_utils::surreal as surreal_config;
     use uuid::Uuid;
 
     async fn init_surreal_db() -> impl Repository {
@@ -364,7 +364,9 @@ mod tests {
             id: Uuid::new_v4(),
             submitted: TStamp::UNIX_EPOCH,
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
         }
     }
@@ -374,7 +376,9 @@ mod tests {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             ttl: TStamp::UNIX_EPOCH,
             discounted: quote.bill.sum,
-            wallet_pubkey: keys_test::publics()[0],
+            wallet_pubkey: bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
         }
     }
 
@@ -382,7 +386,9 @@ mod tests {
         quotes::Status::Accepted {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             discounted: bitcoin::Amount::default(),
-            wallet_pubkey: keys_test::publics()[0],
+            wallet_pubkey: bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
         }
     }
 
@@ -508,7 +514,9 @@ mod tests {
         quote.status = quotes::Status::FailedEbillValidation {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             discounted: bitcoin::Amount::default(),
-            wallet_pubkey: keys_test::publics()[0],
+            wallet_pubkey: bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
@@ -517,7 +525,9 @@ mod tests {
                 quotes::Status::MintingEnabled {
                     keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
                     discounted: bitcoin::Amount::default(),
-                    wallet_pubkey: keys_test::publics()[0],
+                    wallet_pubkey: bcr_common::core::generate_random_keypair()
+                        .public_key()
+                        .into(),
                     fee: cashu::Amount::from(10),
                 },
             )
@@ -555,7 +565,9 @@ mod tests {
                 quotes::Status::MintingEnabled {
                     keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
                     discounted: quote.bill.sum,
-                    wallet_pubkey: keys_test::publics()[0],
+                    wallet_pubkey: bcr_common::core::generate_random_keypair()
+                        .public_key()
+                        .into(),
                     fee: cashu::Amount::from(10),
                 },
             )
@@ -583,7 +595,9 @@ mod tests {
         let quote = quotes::Quote {
             id: Uuid::new_v4(),
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
             bill: quotes::BillInfo {
                 drawee: random_identity_public_data().1,
@@ -679,7 +693,9 @@ mod tests {
         let quote = quotes::Quote {
             id: qid1,
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
             bill: quotes::BillInfo {
                 maturity_date: time::Date::from_calendar_date(
@@ -697,7 +713,9 @@ mod tests {
         let quote = quotes::Quote {
             id: qid2,
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
             bill: quotes::BillInfo {
                 maturity_date: time::Date::from_calendar_date(
@@ -715,7 +733,9 @@ mod tests {
         let quote = quotes::Quote {
             id: qid3,
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
             bill: quotes::BillInfo {
                 maturity_date: time::Date::from_calendar_date(
@@ -785,7 +805,9 @@ mod tests {
         let quote = quotes::Quote {
             id: Uuid::new_v4(),
             status: quotes::Status::Pending {
-                wallet_pubkey: keys_test::publics()[0],
+                wallet_pubkey: bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
             },
             bill: quotes::BillInfo {
                 maturity_date: time::Date::from_calendar_date(
@@ -836,7 +858,9 @@ mod tests {
 
     fn all_statuses() -> Vec<quotes::Status> {
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
-        let wallet_pubkey = keys_test::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let discounted = bitcoin::Amount::from_sat(42);
         let tstamp = TStamp::from_unix_timestamp(1_600_000_000).unwrap();
         vec![
@@ -920,7 +944,9 @@ mod tests {
     #[test]
     fn stored_status_encoding_is_frozen() {
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
-        let wallet_pubkey = keys_test::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let encoded = serde_json::to_value(quotes::Status::Offered {
             keyset_id: keyset_id.into(),
             ttl: TStamp::UNIX_EPOCH,

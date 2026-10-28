@@ -68,7 +68,7 @@ impl Repository {
 impl persistence::Repository for Repository {
     async fn keys_store(&self, entry: keys_utils::MintKeysEntry) -> Result<()> {
         let mut wlocked = self.keys.write().unwrap();
-        wlocked.insert(entry.id, entry);
+        wlocked.insert(entry.id.into(), entry);
         Ok(())
     }
 

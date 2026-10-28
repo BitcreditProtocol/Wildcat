@@ -1,7 +1,7 @@
 // ----- standard library imports
 use std::collections::HashSet;
 // ----- extra library imports
-use bcr_common::{cashu, core::signature as core_signature};
+use bcr_common::{cashu, core::signature as core_signature, ecash};
 use thiserror::Error;
 // ----- local imports
 
@@ -20,7 +20,7 @@ pub enum ChecksError {
     SpendingConditions(#[from] core_signature::ECashSignatureError),
 }
 
-pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()> {
+pub fn basic_blinds_checks(blinds: &[ecash::BlindedMessage]) -> ChecksResult<()> {
     // 1. no zero amounts
     let zero_inputs = blinds
         .iter()
@@ -36,7 +36,7 @@ pub fn basic_blinds_checks(blinds: &[cashu::BlindedMessage]) -> ChecksResult<()>
     Ok(())
 }
 
-pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
+pub fn basic_proofs_checks(proofs: &[ecash::Proof]) -> ChecksResult<()> {
     // 1. no empty proofs
     if proofs.is_empty() {
         return Err(ChecksError::Empty);
@@ -55,7 +55,7 @@ pub fn basic_proofs_checks(proofs: &[cashu::Proof]) -> ChecksResult<()> {
     }
     // 4. p2pk / htlc
     for proof in proofs {
-        core_signature::verify_spending_conditions(proof)?;
+        core_signature::verify_spending_conditions(&proof.clone().into())?;
     }
     Ok(())
 }
@@ -83,8 +83,9 @@ pub fn basic_fingerprints_checks(fps: &[core_signature::ProofFingerprint]) -> Ch
 #[cfg(any(feature = "test-utils", test))]
 pub mod test_utils {
     use super::*;
-    use crate::keys::test_utils::{generate_blind, publics};
-    use bcr_common::{core_tests, ecash, wire::keys as wire_keys};
+    use bcr_common::{
+        cdk_common::secret as cdk_secret, core, core_tests, ecash, wire::keys as wire_keys,
+    };
     use cashu::{secret, Id};
 
     pub fn random_schnorr_signature() -> bitcoin::secp256k1::schnorr::Signature {
@@ -94,13 +95,27 @@ pub mod test_utils {
         bitcoin::secp256k1::schnorr::Signature::from_slice(&sl).unwrap()
     }
 
+    pub fn generate_blind(
+        kid: ecash::Id,
+        amount: cashu::Amount,
+    ) -> (ecash::BlindedMessage, cdk_secret::Secret, cashu::SecretKey) {
+        let secret = cdk_secret::Secret::new(rand::random::<u64>().to_string());
+        let (b_, r) =
+            cashu::dhke::blind_message(secret.as_bytes(), None).expect("cdk_dhke::blind_message");
+        (
+            cashu::BlindedMessage::new(amount, kid.into(), b_).into(),
+            secret,
+            r,
+        )
+    }
+
     pub fn generate_blinds(
         id: Id,
         amounts: &[cashu::Amount],
-    ) -> Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> {
-        let mut blinds: Vec<(cashu::BlindedMessage, secret::Secret, cashu::SecretKey)> = Vec::new();
+    ) -> Vec<(ecash::BlindedMessage, secret::Secret, cashu::SecretKey)> {
+        let mut blinds = Vec::with_capacity(amounts.len());
         for amount in amounts {
-            blinds.push(generate_blind(id, *amount));
+            blinds.push(generate_blind(id.into(), *amount));
         }
         blinds
     }
@@ -114,7 +129,7 @@ pub mod test_utils {
             signatures.push(cashu::BlindSignature {
                 keyset_id,
                 amount: *amount,
-                c: publics()[0],
+                c: core::generate_random_keypair().public_key().into(),
                 dleq: None,
             });
         }
@@ -185,7 +200,11 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::ZeroAmount)
         ));
-        let mut proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let mut proofs: Vec<ecash::Proof> =
+            core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+                .into_iter()
+                .map(From::from)
+                .collect();
         proofs[0].amount = cashu::Amount::ZERO;
         assert!(matches!(
             basic_proofs_checks(&proofs),
@@ -206,7 +225,11 @@ mod tests {
             basic_blinds_checks(&blinds),
             Err(ChecksError::NonUnique)
         ));
-        let mut proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
+        let mut proofs: Vec<ecash::Proof> =
+            core_tests::generate_random_ecash_proofs(&keyset, &amounts)
+                .into_iter()
+                .map(From::from)
+                .collect();
         proofs.push(proofs[0].clone());
         assert!(matches!(
             basic_proofs_checks(&proofs),

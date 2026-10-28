@@ -4,6 +4,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 use bcr_common::{
     cashu::{self, ProofsMethods},
     client::admin::treasury::SUError,
+    ecash,
     wire::{attestation as wire_attestation, melt as wire_melt, mint as wire_mint},
 };
 use bitcoin::secp256k1::PublicKey;
@@ -38,7 +39,13 @@ impl Service {
         request: wire_mint::OnchainMintQuoteRequest,
         now: TStamp,
     ) -> Result<wire_mint::OnchainMintQuoteResponse> {
-        bcr_wdc_utils::signatures::basic_blinds_checks(&request.blinded_messages)
+        let blinds: Vec<ecash::BlindedMessage> = request
+            .blinded_messages
+            .iter()
+            .cloned()
+            .map(From::from)
+            .collect();
+        bcr_wdc_utils::signatures::basic_blinds_checks(&blinds)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let qid = Uuid::new_v4();
         let blinds_camount = request
@@ -303,9 +310,9 @@ impl Service {
         vault: &dyn onchain::VaultService,
     ) -> Result<wire_melt::MeltOnchainResponse> {
         let wire_melt::MeltOnchainRequest { inputs, .. } = request;
-        let c_inputs: Vec<cashu::Proof> = inputs.into_iter().map(From::from).collect();
         // verify proofs
-        bcr_wdc_utils::signatures::basic_proofs_checks(&c_inputs)?;
+        bcr_wdc_utils::signatures::basic_proofs_checks(&inputs)?;
+        let c_inputs: Vec<cashu::Proof> = inputs.into_iter().map(From::from).collect();
         self.wdc.verify_proofs(&c_inputs).await?;
         // verify not spent
         let p_ys = c_inputs.ys()?;
@@ -521,6 +528,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
@@ -553,6 +561,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let request = wire_mint::OnchainMintQuoteRequest {
             blinded_messages: blinds,
@@ -965,11 +974,13 @@ mod tests {
             signatures_test::generate_blinds(keyset1.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let blinds2: Vec<_> =
             signatures_test::generate_blinds(keyset2.id.into(), &[Amount::from(8_u64)])
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let mut blinded_messages = Vec::new();
         blinded_messages.extend(blinds1);

@@ -15,6 +15,6 @@ async fn keys_simple_request() {
     let server_url = server.server_address().expect("address");
     let client = CoreClient::new(server_url);
 
-    let keys = client.keys(kentry.id).await.unwrap();
+    let keys = client.keys(kentry.id.into()).await.unwrap();
     assert_eq!(keys.id, kentry.id.into());
 }

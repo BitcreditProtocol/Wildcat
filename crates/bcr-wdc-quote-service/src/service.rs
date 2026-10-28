@@ -548,7 +548,6 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use bcr_common::{core_tests, wire_tests};
-    use bcr_wdc_utils::keys::test_utils as keys_utils;
     use mockall::predicate::*;
     use rand::Rng;
     use std::str::FromStr;
@@ -600,7 +599,13 @@ mod tests {
         bill.maturity_date = submitted.date();
         let credit_ends = credit_ends_at(bill.maturity_date).unwrap();
         let expiration_date = calculate_expiration_from_maturity(bill.maturity_date).unwrap();
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
+            submitted,
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -638,7 +643,13 @@ mod tests {
         let mut bill = generate_random_bill();
         bill.maturity_date = time::macros::date!(2026 - 01 - 01);
         let submitted = credit_ends_at(bill.maturity_date).unwrap();
-        let quote = Quote::new(bill, keys_utils::publics()[0], submitted);
+        let quote = Quote::new(
+            bill,
+            bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
+            submitted,
+        );
         let qid = quote.id;
 
         let mut repo = MockRepository::new();
@@ -666,7 +677,9 @@ mod tests {
         let credit_ends = credit_ends_at(bill.maturity_date).unwrap();
         let mut quote = Quote::new(
             bill,
-            keys_utils::publics()[0],
+            bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
             credit_ends - time::Duration::HOUR,
         );
         let kid = core_tests::generate_random_ecash_keyset().0.id;
@@ -698,7 +711,9 @@ mod tests {
         let test = service
             .enquire(
                 rnd_bill,
-                keys_utils::publics()[0],
+                bcr_common::core::generate_random_keypair()
+                    .public_key()
+                    .into(),
                 time::OffsetDateTime::now_utc(),
             )
             .await;
@@ -709,7 +724,9 @@ mod tests {
     async fn test_new_quote_request_quote_pending() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let mut repo = MockRepository::new();
         let cloned = rnd_bill.clone();
         repo.expect_search_by_bill()
@@ -744,7 +761,9 @@ mod tests {
     async fn test_new_quote_request_quote_denied() {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let public_key = keys_utils::publics()[0];
+        let public_key = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let cloned = rnd_bill.clone();
         let now = TStamp::from_unix_timestamp(10000).unwrap();
         let mut repo = MockRepository::new();
@@ -778,7 +797,9 @@ mod tests {
         let id = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let now = TStamp::from_unix_timestamp(10000).unwrap();
         let cloned = rnd_bill.clone();
         let mut repo = MockRepository::new();
@@ -818,7 +839,9 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let mut repo = MockRepository::new();
         let now = TStamp::from_unix_timestamp(10000).unwrap();
         repo.expect_search_by_bill()
@@ -861,7 +884,9 @@ mod tests {
         let rnd_bill = generate_random_bill();
         let cloned = rnd_bill.clone();
         let keyset_id = core_tests::generate_random_ecash_keyset().0.id;
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let mut repo = MockRepository::new();
         let now = TStamp::from_unix_timestamp(10000).unwrap();
         repo.expect_search_by_bill()
@@ -928,7 +953,9 @@ mod tests {
     async fn test_enable_minting_manual_override_invalid_status() {
         let qid = Uuid::new_v4();
         let rnd_bill = generate_random_bill();
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let mut repo = MockRepository::new();
         repo.expect_load()
             .with(eq(qid))
@@ -965,7 +992,9 @@ mod tests {
         let qid = Uuid::new_v4();
         let mut quote = Quote::new(
             generate_random_bill(),
-            keys_utils::publics()[0],
+            bcr_common::core::generate_random_keypair()
+                .public_key()
+                .into(),
             time::OffsetDateTime::now_utc(),
         );
         quote.id = qid;
@@ -979,7 +1008,9 @@ mod tests {
             final_expiry: signing_keyset.final_expiry,
         };
         let keyset_id = keyset.id;
-        let wallet_pubkey = keys_utils::publics()[0];
+        let wallet_pubkey = bcr_common::cashu::PublicKey::from(
+            bcr_common::core::generate_random_keypair().public_key(),
+        );
         let fee = cashu::Amount::from(10);
         let discounted = quote.bill.sum - btc::Amount::from_sat(10);
         let bill_id = quote.bill.id.clone();

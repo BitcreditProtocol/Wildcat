@@ -100,7 +100,7 @@ mod tests {
     use super::*;
     use crate::{error::Error, vault};
     use bcr_common::{cashu::ProofsMethods, core, core_tests};
-    use bcr_wdc_utils::{keys::test_utils as keys_test, signatures::test_utils as signatures_test};
+    use bcr_wdc_utils::signatures::test_utils as signatures_test;
     use bitcoin::{
         key::rand,
         secp256k1::{self as secp, schnorr},
@@ -256,7 +256,7 @@ mod tests {
             keys: keyset.keys.clone(),
         };
         db.keys_store(entry.clone()).await.unwrap();
-        let rkeys = db.keys_load(entry.id).await.unwrap().unwrap();
+        let rkeys = db.keys_load(entry.id.into()).await.unwrap().unwrap();
         assert_eq!(rkeys, keyset);
     }
 
@@ -327,7 +327,7 @@ mod tests {
     async fn signsrepo_store(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
-        let y = keys_test::publics()[0];
+        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         db.signature_store(y, signature).await.unwrap();
     }
@@ -346,7 +346,7 @@ mod tests {
     async fn signsrepo_store_same_signature_twice(db: impl Repository) {
         let (_, keyset) = core_tests::generate_random_ecash_keyset();
         let amounts = [cashu::Amount::from(8u64)];
-        let y = keys_test::publics()[0];
+        let y = cashu::PublicKey::from(core::generate_random_keypair().public_key());
         let signature = signatures_test::generate_signatures(keyset.id.into(), &amounts)[0].clone();
         db.signature_store(y, signature.clone()).await.unwrap();
         let res = db.signature_store(y, signature).await;
@@ -1099,6 +1099,7 @@ mod tests {
             signatures_test::generate_blinds(keyset.id.into(), amounts)
                 .into_iter()
                 .map(|b| b.0)
+                .map(cashu::BlindedMessage::from)
                 .collect();
         let signatures = blinds
             .iter()
