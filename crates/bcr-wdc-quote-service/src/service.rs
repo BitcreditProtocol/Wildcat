@@ -96,11 +96,10 @@ pub struct Service {
     pub wdc_client: Box<dyn WdcClient + Send + Sync>,
     pub quotes: Box<dyn Repository + Send + Sync>,
     pub mint_url: cashu::MintUrl,
+    pub user_decision_retention: time::Duration,
 }
 
 impl Service {
-    pub(crate) const USER_DECISION_RETENTION: time::Duration = time::Duration::days(1);
-
     async fn _lookup(&self, qid: uuid::Uuid, now: TStamp) -> Result<Quote> {
         let mut quote = self
             .quotes
@@ -189,7 +188,7 @@ impl Service {
                 status: Status::Rejected { tstamp, .. },
                 ..
             }) => {
-                if (submitted - *tstamp) > Self::USER_DECISION_RETENTION {
+                if (submitted - *tstamp) > self.user_decision_retention {
                     self.new_quote(bill, pub_key, submitted).await
                 } else {
                     Ok(*id)
@@ -623,6 +622,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let (_, ttl) = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -651,6 +651,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let err = service
             .offer(qid, btc::Amount::from_sat(1000), submitted, None)
@@ -694,6 +695,7 @@ mod tests {
             quotes: Box::new(quotes),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let test = service
             .enquire(
@@ -732,6 +734,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, time::OffsetDateTime::now_utc())
@@ -768,6 +771,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let test_id = service.enquire(rnd_bill, public_key, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -807,6 +811,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let test_id = service.enquire(rnd_bill, wallet_pubkey, now).await.unwrap();
         assert_eq!(id, test_id);
@@ -847,6 +852,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let test_id = service
             .enquire(rnd_bill, wallet_pubkey, now + time::Duration::seconds(1))
@@ -895,8 +901,9 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
-        let submitted = now + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
+        let submitted = now + service.user_decision_retention + time::Duration::seconds(1);
         let test_id = service.enquire(rnd_bill, wallet_pubkey, submitted).await;
         assert!(test_id.is_ok());
         assert_ne!(id, test_id.unwrap());
@@ -916,6 +923,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -948,6 +956,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(matches!(
@@ -1065,6 +1074,7 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
         };
         let res = service.enable_minting_manual_override(qid).await;
         assert!(res.is_ok());
