@@ -1,3 +1,10 @@
+# 0.7.0
+* SurrealDB → PostgreSQL migration: the core and treasury services now persist with sqlx, and the core service was consolidated into a single service.
+* Quote expiry: quote offers now expire at the bill's maturity, late mints are honoured, and a bill can be quoted on its maturity day.
+* Quote notifications: the quote service sends a notification for each new quote request.
+* Foreign mint balances: the treasury has a new API for balances held at other mints.
+* Admin aggregator endpoints: new endpoints for e-bill balance, onchain history, keyset balances, foreign balance, e-IOU deposits and e-IOU history.
+
 # 0.6.0
 * Consolidated key and swap services into core.
 * Adopted the shared maturity boundary, spending-condition check and intermint HTLC helpers from bcr-common; onchain minting now fails closed without a debit keyset.

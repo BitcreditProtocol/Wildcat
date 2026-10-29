@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-admin-aggregator"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "axum",
  "bcr-common",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-core-service"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-mint-service"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-quote-service"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-treasury-service"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-utils"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "bcr-wdc-wallet-aggregator"
-version = "0.5.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "axum",
