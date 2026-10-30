@@ -125,7 +125,7 @@ async fn main() {
     }
     // Connect to PostgreSQL (destination)
     bcr_wdc_utils::db::postgres::run_migration(&cfg.appcfg.repository_new).await;
-    let pool = sqlx::postgres::PgPool::connect(&cfg.appcfg.repository_new.connection)
+    let pool = bcr_wdc_utils::db::postgres::connect(&cfg.appcfg.repository_new)
         .await
         .expect("Failed to connect to PostgreSQL");
     //ebill

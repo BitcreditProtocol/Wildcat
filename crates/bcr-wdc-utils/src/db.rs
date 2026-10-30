@@ -58,7 +58,12 @@ pub mod surreal {
 }
 
 pub mod postgres {
-    use sqlx::Connection;
+    use std::{str::FromStr, time::Duration};
+
+    use sqlx::{
+        postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions},
+        ConnectOptions, Connection,
+    };
 
     #[derive(Debug, Clone, serde::Deserialize)]
     pub struct DBConnConfig {
@@ -66,8 +71,30 @@ pub mod postgres {
         pub max_connections: u32,
     }
 
+    /// sqlx logs every statement at DEBUG by default, flooding the service logs:
+    fn connect_options(cfg: &DBConnConfig) -> Result<PgConnectOptions, sqlx::Error> {
+        let options = PgConnectOptions::from_str(&cfg.connection)?
+            .log_statements(log::LevelFilter::Info)
+            .log_slow_statements(log::LevelFilter::Warn, Duration::from_millis(100));
+        Ok(options)
+    }
+
+    /// `max_connections == 0` (PostgreSQL not configured) falls back to sqlx's
+    pub async fn connect(cfg: &DBConnConfig) -> Result<PgPool, sqlx::Error> {
+        let mut pool = PgPoolOptions::new();
+        if cfg.max_connections > 0 {
+            pool = pool.max_connections(cfg.max_connections);
+        } else {
+            tracing::warn!(
+                "PostgreSQL max_connections == 0, using default sqlx connection pool settings"
+            );
+        }
+        pool.connect_with(connect_options(cfg)?).await
+    }
+
     pub async fn run_migration(cfg: &DBConnConfig) {
-        let mut conn = sqlx::postgres::PgConnection::connect(&cfg.connection)
+        let options = connect_options(cfg).expect("Invalid database connection string");
+        let mut conn = PgConnection::connect_with(&options)
             .await
             .expect("Failed to connect to database");
         sqlx::migrate!("./migrations")

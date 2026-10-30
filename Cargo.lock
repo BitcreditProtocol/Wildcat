@@ -789,6 +789,7 @@ dependencies = [
  "bitcoin",
  "built",
  "ciborium",
+ "log",
  "rand 0.8.8",
  "reqwest 0.13.5",
  "secp256k1 0.29.1",

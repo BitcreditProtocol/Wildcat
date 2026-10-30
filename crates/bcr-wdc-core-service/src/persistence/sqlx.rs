@@ -220,9 +220,7 @@ pub struct Repository {
 
 impl Repository {
     pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
+        let pool = postgres::connect(&cfg)
             .await
             .map_err(|e| Error::KeysRepository(anyhow!(e)))?;
         Ok(Self { pool })
