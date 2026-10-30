@@ -13,7 +13,7 @@ use bcr_common::{
     core::BillId,
     ecash,
 };
-use bcr_wdc_utils::{keys as keys_utils, postgres};
+use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::{
     bip32::DerivationPath,
     secp256k1::{self as secp, schnorr},
@@ -205,16 +205,6 @@ fn parse_commitment_public_keys(keys: Vec<String>) -> Result<Vec<cashu::PublicKe
                 .map_err(|e| Error::CommitmentRepository(anyhow!(e)))
         })
         .collect()
-}
-
-/// The single pool shared by every mint repository, so `max_connections` caps the
-/// whole service rather than each repository.
-pub async fn connect(cfg: &postgres::DBConnConfig) -> Result<PgPool> {
-    sqlx::postgres::PgPoolOptions::new()
-        .max_connections(cfg.max_connections)
-        .connect(&cfg.connection)
-        .await
-        .map_err(|e| Error::DB(anyhow!(e)))
 }
 
 ///////////////////////////////////////////////////////////////////////// Repository
@@ -933,15 +923,6 @@ pub struct DBVault {
 }
 
 impl DBVault {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(cfg.max_connections)
-            .connect(&cfg.connection)
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
