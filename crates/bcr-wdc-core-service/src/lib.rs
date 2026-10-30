@@ -57,15 +57,9 @@ impl AppController {
             .expect("Failed to read migration marker");
         let backend = db::select_db_backend("core-service", migrated, repository_new.clone());
         let repository: Arc<dyn Repository> = match backend {
-            db::DBBackend::Postgres => {
-                let db = persistence::sqlx::Repository::new(repository_new)
-                    .await
-                    .expect("failed to create sqlx repository");
-                Arc::new(db)
-            }
             db::DBBackend::Surreal => Arc::new(surreal_db),
-            db::DBBackend::DefaultPostgres => {
-                let pool = sqlx::postgres::PgPool::connect(&repository_new.connection)
+            db::DBBackend::Postgres | db::DBBackend::DefaultPostgres => {
+                let pool = db::postgres::connect(&repository_new)
                     .await
                     .expect("Failed to connect to PostgreSQL");
                 Arc::new(persistence::sqlx::Repository::from_pool(pool))
