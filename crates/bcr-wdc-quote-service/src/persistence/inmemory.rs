@@ -127,7 +127,7 @@ impl Repository for QuotesIDMap {
                 _ => Err(Error::CreditQuoteReissueConflict),
             };
         }
-        crate::service::validate_basic_ebill_rules(&quote.bill, consumed_at.date())?;
+        crate::service::validate_basic_ebill_rules(&quote.bill, consumed_at)?;
         let expires_at = time::OffsetDateTime::parse(
             &signed.permit.expires_at,
             &time::format_description::well_known::Rfc3339,

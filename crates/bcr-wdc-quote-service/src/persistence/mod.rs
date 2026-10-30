@@ -2189,7 +2189,7 @@ mod tests {
 
         assert!(matches!(
             db.execute_quote_reissue(signed, quote, consumed_at).await,
-            Err(crate::error::Error::InvalidInput(message)) if message.contains("maturity date")
+            Err(crate::error::Error::InvalidInput(message)) if message.contains("bill matured")
         ));
         assert!(db.load(reissued_id).await.unwrap().is_none());
     }

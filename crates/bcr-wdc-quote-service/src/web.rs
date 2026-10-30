@@ -276,6 +276,7 @@ mod tests {
             wdc_client: Box::new(wdc),
             quotes: Box::new(crate::persistence::MockRepository::new()),
             mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         });

@@ -559,7 +559,7 @@ impl Service {
             };
         }
 
-        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date);
+        let expiration_date = calculate_expiration_from_maturity(quote.bill.maturity_date)?;
         let keyset_id = self
             .wdc_client
             .get_keyset_with_expiration_date(expiration_date)
@@ -955,6 +955,7 @@ mod tests {
             bill,
             keys_utils::publics()[0],
             credit_ends - time::Duration::HOUR,
+            crate::quotes::test_credit_program_binding(),
         );
         let kid = core_tests::generate_random_ecash_keyset().0.id;
         quote
@@ -1031,6 +1032,7 @@ mod tests {
             quotes: Box::new(db),
             wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
@@ -1083,6 +1085,7 @@ mod tests {
             quotes: Box::new(db),
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
@@ -1139,6 +1142,7 @@ mod tests {
             quotes: Box::new(db),
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         });
@@ -1257,15 +1261,21 @@ mod tests {
         repo.expect_store_if_latest()
             .withf(move |expected, _| *expected == Some(id))
             .returning(|_, quote| Ok(quote.id));
+        let mut wdc_client = MockWdcClient::new();
+        wdc_client
+            .expect_notify_new_ebill_quote()
+            .times(1)
+            .returning(|_, _, _, _| Ok(()));
         let service = Service {
             quotes: Box::new(repo),
-            wdc_client: Box::new(MockWdcClient::new()),
+            wdc_client: Box::new(wdc_client),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
 
-        let submitted = denied_at + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
+        let submitted = denied_at + service.user_decision_retention + time::Duration::seconds(1);
         let reissued = service
             .enquire(rnd_bill, public_key, submitted)
             .await
@@ -1314,11 +1324,12 @@ mod tests {
             quotes: Box::new(repo),
             wdc_client: Box::new(MockWdcClient::new()),
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: crate::quotes::test_credit_program_binding(),
             authorization_verifier: crate::authorization::test_authorization_verifier(),
         };
 
-        let submitted = denied_at + Service::USER_DECISION_RETENTION + time::Duration::seconds(1);
+        let submitted = denied_at + service.user_decision_retention + time::Duration::seconds(1);
         let returned = service
             .enquire(rnd_bill, public_key, submitted)
             .await
@@ -1697,6 +1708,7 @@ mod tests {
                 quotes: Box::new(repo),
                 wdc_client: Box::new(client),
                 mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+                user_decision_retention: time::Duration::days(1),
                 credit_program: crate::quotes::test_credit_program_binding(),
                 authorization_verifier: crate::authorization::test_authorization_verifier(),
             };

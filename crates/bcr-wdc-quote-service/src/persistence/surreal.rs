@@ -992,9 +992,7 @@ impl Repository for DBQuotes {
             return Ok(id);
         }
         if message.contains("CREDIT_QUOTE_REISSUE_MATURED") {
-            Err(Error::InvalidInput(String::from(
-                "maturity date must be >= today",
-            )))
+            Err(Error::InvalidInput(String::from("bill matured")))
         } else if message.contains("CREDIT_QUOTE_REISSUE_EXPIRED") {
             Err(Error::CreditQuoteReissueInvalid)
         } else if message.contains("CREDIT_QUOTE_REISSUE_CONFLICT")

@@ -246,6 +246,7 @@ mod tests {
             wdc_client: Box::new(service::MockWdcClient::new()),
             quotes: Box::new(persistence::inmemory::QuotesIDMap::default()),
             mint_url: cashu::MintUrl::from_str("http://localhost:8000").unwrap(),
+            user_decision_retention: time::Duration::days(1),
             credit_program: quotes::test_credit_program_binding(),
             authorization_verifier: authorization::test_authorization_verifier(),
         });
