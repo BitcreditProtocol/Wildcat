@@ -58,9 +58,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
 
     // one PostgreSQL pool shared by every repository
     let pg_pool = if repository_new.max_connections > 0 {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(repository_new.max_connections)
-            .connect(&repository_new.connection)
+        let pool = db_utils::postgres::connect(&repository_new)
             .await
             .expect("Failed to connect to PostgreSQL");
         Some(pool)
@@ -117,7 +115,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
                 Arc::new(persistence::sqlx::DBOnChain::from_pool(pool))
             }
             db_utils::DBBackend::DefaultPostgres => {
-                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                let pool = db_utils::postgres::connect(&repository_new)
                     .await
                     .expect("Failed to connect to PostgreSQL");
                 Arc::new(persistence::sqlx::DBOnChain::from_pool(pool))
@@ -167,7 +165,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
                 Box::new(persistence::sqlx::DBEbill::from_pool(pool))
             }
             db_utils::DBBackend::DefaultPostgres => {
-                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                let pool = db_utils::postgres::connect(&repository_new)
                     .await
                     .expect("Failed to connect to PostgreSQL");
                 Box::new(persistence::sqlx::DBEbill::from_pool(pool))
@@ -218,7 +216,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
             Arc::new(persistence::sqlx::DBForeignOnline::from_pool(pool))
         }
         db_utils::DBBackend::DefaultPostgres => {
-            let pool = sqlx::PgPool::connect(&repository_new.connection)
+            let pool = db_utils::postgres::connect(&repository_new)
                 .await
                 .expect("Failed to connect to PostgreSQL");
             Arc::new(persistence::sqlx::DBForeignOnline::from_pool(pool))
@@ -242,7 +240,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
             Arc::new(persistence::sqlx::DBForeignOffline::from_pool(pool))
         }
         db_utils::DBBackend::DefaultPostgres => {
-            let pool = sqlx::PgPool::connect(&repository_new.connection)
+            let pool = db_utils::postgres::connect(&repository_new)
                 .await
                 .expect("Failed to connect to PostgreSQL");
             Arc::new(persistence::sqlx::DBForeignOffline::from_pool(pool))
@@ -287,7 +285,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
                 Box::new(persistence::sqlx::DBVault::from_pool(pool))
             }
             db_utils::DBBackend::DefaultPostgres => {
-                let pool = sqlx::PgPool::connect(&repository_new.connection)
+                let pool = db_utils::postgres::connect(&repository_new)
                     .await
                     .expect("Failed to connect to PostgreSQL");
                 Box::new(persistence::sqlx::DBVault::from_pool(pool))
