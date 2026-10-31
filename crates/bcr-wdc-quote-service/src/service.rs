@@ -283,16 +283,27 @@ impl Service {
             .credit_program()
             .cloned()
             .ok_or(Error::CreditProgramNotBound(previous.id))?;
-        let quote = Quote::new_with_id(
-            verified.signed.permit.reissued_mint_quote_id,
-            bill,
-            pub_key,
-            submitted,
-            credit_program,
-        );
-        self.quotes
+        let reissued_id = verified.signed.permit.reissued_mint_quote_id;
+        let (sum, drawee, maturity) = (bill.sum, bill.drawee.name.clone(), bill.maturity_date);
+        let quote = Quote::new_with_id(reissued_id, bill, pub_key, submitted, credit_program);
+        // a replayed permit returns the quote it already created, which was already announced;
+        // two concurrent first requests may both announce it, which is harmless
+        let is_replay = self.quotes.load(reissued_id).await?.is_some();
+        let stored = self
+            .quotes
             .execute_quote_reissue(verified.signed, quote, submitted)
-            .await
+            .await?;
+        if !is_replay && stored == reissued_id {
+            // best-effort: a failed notification must not fail the reissue
+            if let Err(e) = self
+                .wdc_client
+                .notify_new_ebill_quote(reissued_id, sum, drawee, maturity)
+                .await
+            {
+                tracing::error!("reissued ebill quote {reissued_id} notification failed: {e}");
+            }
+        }
+        Ok(stored)
     }
 
     pub async fn cancel(&self, id: uuid::Uuid, submitted: TStamp) -> Result<()> {
@@ -1004,6 +1015,66 @@ mod tests {
             )
             .await;
         assert!(test.is_ok());
+    }
+
+    fn reissue_service(already_created: bool, announcements: usize) -> (Service, Quote, Uuid) {
+        let previous = Quote::new(
+            generate_random_bill(),
+            keys_utils::publics()[0],
+            TStamp::UNIX_EPOCH,
+            crate::quotes::test_credit_program_binding(),
+        );
+        let previous_id = previous.id;
+        let reissued_id = Uuid::from_u128(77);
+        let loaded = previous.clone();
+        let mut quotes = MockRepository::new();
+        quotes
+            .expect_load()
+            .with(eq(previous_id))
+            .returning(move |_| Ok(Some(loaded.clone())));
+        let existing = previous.clone();
+        quotes
+            .expect_load()
+            .with(eq(reissued_id))
+            .returning(move |_| Ok(already_created.then(|| existing.clone())));
+        quotes
+            .expect_execute_quote_reissue()
+            .times(1)
+            .returning(|_, quote, _| Ok(quote.id));
+        let mut wdc_client = MockWdcClient::new();
+        wdc_client
+            .expect_notify_new_ebill_quote()
+            .withf(move |qid, _, _, _| *qid == reissued_id)
+            .times(announcements)
+            .returning(|_, _, _, _| Ok(()));
+        let service = Service {
+            quotes: Box::new(quotes),
+            wdc_client: Box::new(wdc_client),
+            mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
+            user_decision_retention: time::Duration::days(1),
+            credit_program: crate::quotes::test_credit_program_binding(),
+            authorization_verifier: crate::authorization::test_authorization_verifier(),
+        };
+        (service, previous, reissued_id)
+    }
+
+    #[tokio::test]
+    async fn reissued_quote_is_announced_once_on_first_creation() {
+        let now = time::OffsetDateTime::now_utc();
+        for (already_created, announcements) in [(false, 1), (true, 0)] {
+            let (service, previous, reissued_id) = reissue_service(already_created, announcements);
+            let signed = crate::authorization::tests::signed_reissue_for(
+                &previous,
+                reissued_id,
+                now,
+                now + time::Duration::minutes(1),
+            );
+            let stored = service
+                .reissue_enquire(previous.bill.clone(), keys_utils::publics()[0], signed, now)
+                .await
+                .unwrap();
+            assert_eq!(stored, reissued_id);
+        }
     }
 
     #[tokio::test]
