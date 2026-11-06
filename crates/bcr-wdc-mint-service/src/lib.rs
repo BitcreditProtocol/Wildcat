@@ -62,7 +62,9 @@ impl AppController {
             repository.max_connections > 0,
             "Repository must allow at least one connection"
         );
-        let pool = persistence::sqlx::connect(&repository)
+        // the single pool shared by every mint repository, so `max_connections`
+        // caps the whole service rather than each repository
+        let pool = bcr_wdc_utils::db::postgres::connect(&repository)
             .await
             .expect("Failed to connect to PostgreSQL");
         let repository: Arc<dyn Repository> =
