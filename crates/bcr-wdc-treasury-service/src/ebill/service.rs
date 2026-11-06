@@ -1,7 +1,7 @@
 // ----- standard library imports
 // ----- extra library imports
 use bcr_common::{
-    cashu, client::clowder::ClowderClientError, core::BillId, wire::mint as wire_mint,
+    cashu, client::clowder::ClowderClientError, core::BillId, ecash, wire::mint as wire_mint,
 };
 use uuid::Uuid;
 // ----- local imports
@@ -88,7 +88,9 @@ impl Service {
         request: wire_mint::EbillMintRequest,
     ) -> Result<wire_mint::EbillMintResponse> {
         // basic checks
-        bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
+        let blinds: Vec<ecash::BlindedMessage> =
+            request.outputs.iter().cloned().map(From::from).collect();
+        bcr_wdc_utils::signatures::basic_blinds_checks(&blinds)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let output_amount = request
             .outputs
@@ -623,7 +625,11 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let blinds = outputs
+            .iter()
+            .map(|(blind, _, _)| blind.clone())
+            .map(cashu::BlindedMessage::from)
+            .collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let response = service.mint(request).await.unwrap();
         assert_eq!(response.signatures.len(), amounts.len());
@@ -650,7 +656,11 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let blinds = outputs
+            .iter()
+            .map(|(blind, _, _)| blind.clone())
+            .map(cashu::BlindedMessage::from)
+            .collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         let err = service.mint(request).await.unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
@@ -707,7 +717,11 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let blinds = outputs
+            .iter()
+            .map(|(blind, _, _)| blind.clone())
+            .map(cashu::BlindedMessage::from)
+            .collect();
         let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
         (service, request, amounts.len())
     }

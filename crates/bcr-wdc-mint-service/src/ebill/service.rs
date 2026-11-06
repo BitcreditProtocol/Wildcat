@@ -1,6 +1,8 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::admin::core::BRError, core::BillId, wire::mint as wire_mint};
+use bcr_common::{
+    cashu, client::admin::core::BRError, core::BillId, ecash, wire::mint as wire_mint,
+};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -85,7 +87,9 @@ impl Service {
         request: wire_mint::EbillMintRequest,
     ) -> Result<wire_mint::EbillMintResponse> {
         // basic checks
-        bcr_wdc_utils::signatures::basic_blinds_checks(&request.outputs)
+        let blinds: Vec<ecash::BlindedMessage> =
+            request.outputs.iter().cloned().map(From::from).collect();
+        bcr_wdc_utils::signatures::basic_blinds_checks(&blinds)
             .map_err(|e| Error::InvalidInput(BRError::Generic(e.to_string())))?;
         let output_amount = request
             .outputs
@@ -657,8 +661,12 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
+        let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let request = wire_mint::EbillMintRequest::new(uid, c_blinds, &kp);
         let response = service.mint(&core_cl, request).await.unwrap();
         assert_eq!(response.signatures.len(), amounts.len());
     }
@@ -683,8 +691,12 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
+        let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let request = wire_mint::EbillMintRequest::new(uid, c_blinds, &kp);
         let err = service.mint(&core_cl, request).await.unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
     }
@@ -705,8 +717,12 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
+        let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let request = wire_mint::EbillMintRequest::new(uid, c_blinds, &kp);
         let err = service.mint(&core_cl, request).await.unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
     }
@@ -760,8 +776,12 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
+        let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let request = wire_mint::EbillMintRequest::new(uid, c_blinds, &kp);
         let err = service.mint(&core_cl, request).await.unwrap_err();
         assert!(matches!(err, Error::Internal(_)));
     }
@@ -827,8 +847,12 @@ mod tests {
             multiplier: cashu::Amount::ONE,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
-        let blinds = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
-        let request = wire_mint::EbillMintRequest::new(uid, blinds, &kp);
+        let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
+        let c_blinds: Vec<_> = blinds
+            .into_iter()
+            .map(cashu::BlindedMessage::from)
+            .collect();
+        let request = wire_mint::EbillMintRequest::new(uid, c_blinds, &kp);
         (service, core_cl, request)
     }
 
