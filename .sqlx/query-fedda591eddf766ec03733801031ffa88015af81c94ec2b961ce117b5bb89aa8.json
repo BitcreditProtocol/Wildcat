@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE core_swaps SET blob = $2 WHERE signature = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fedda591eddf766ec03733801031ffa88015af81c94ec2b961ce117b5bb89aa8"
+}

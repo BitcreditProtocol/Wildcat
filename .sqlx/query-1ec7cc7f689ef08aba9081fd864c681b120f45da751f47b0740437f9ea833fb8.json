@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO core_swaps (signature, blob)\n            VALUES ($1, $2)\n            ON CONFLICT (signature) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ec7cc7f689ef08aba9081fd864c681b120f45da751f47b0740437f9ea833fb8"
+}

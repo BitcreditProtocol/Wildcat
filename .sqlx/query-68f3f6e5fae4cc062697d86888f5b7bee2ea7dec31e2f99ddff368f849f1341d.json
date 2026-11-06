@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT blob as \"blob: Json<SwapBlob>\" FROM core_swaps WHERE signature = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blob: Json<SwapBlob>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "68f3f6e5fae4cc062697d86888f5b7bee2ea7dec31e2f99ddff368f849f1341d"
+}

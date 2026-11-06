@@ -108,6 +108,7 @@ impl axum::response::IntoResponse for Error {
                         (StatusCode::BAD_REQUEST, j)
                     }
                     Rej::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+                    r if r.is_transient() => (StatusCode::SERVICE_UNAVAILABLE, String::new()),
                     _ => {
                         let j = serde_json::to_string(&BRError::Generic(msg)).unwrap_or_default();
                         (StatusCode::BAD_REQUEST, j)
@@ -115,7 +116,23 @@ impl axum::response::IntoResponse for Error {
                 }
             }
             Error::ClowderClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            Error::ClowderRestClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            Error::ClowderRestClient(e) => {
+                use bcr_common::client::admin::clowder::Error as Rest;
+                match e {
+                    Rest::ResourceNotFound(v) => (StatusCode::NOT_FOUND, v.to_string()),
+                    Rest::InvalidRequest(v) => (StatusCode::BAD_REQUEST, v.to_string()),
+                    Rest::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, String::new()),
+                    Rest::Internal(body)
+                        if matches!(
+                            serde_json::from_str(&body),
+                            Ok(bcr_common::wire::clowder::ClowderRejection::Conflict(_))
+                        ) =>
+                    {
+                        (StatusCode::BAD_REQUEST, body)
+                    }
+                    _ => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+                }
+            }
             Error::EbillClient(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::BcrWallet(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
             Error::DB(_) => (StatusCode::INTERNAL_SERVER_ERROR, String::new()),
@@ -176,5 +193,33 @@ impl axum::response::IntoResponse for Error {
         };
 
         response.into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+    use bcr_common::client::admin::clowder::Error as Rest;
+
+    fn status(e: Rest) -> StatusCode {
+        Error::ClowderRestClient(e).into_response().status()
+    }
+
+    #[test]
+    fn a_clowder_conflict_reaches_the_wallet_as_a_refusal() {
+        let body = serde_json::to_string(&bcr_common::wire::clowder::ClowderRejection::Conflict(
+            String::from("exchange does not verify"),
+        ))
+        .unwrap();
+        assert_eq!(status(Rest::Internal(body)), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn other_internal_clowder_errors_stay_500() {
+        assert_eq!(
+            status(Rest::Internal(String::from("boom"))),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
