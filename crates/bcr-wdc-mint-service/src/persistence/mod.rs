@@ -35,12 +35,15 @@ pub trait Repository: Send + Sync {
         blind: &cashu::BlindedMessage,
     ) -> Result<Option<cashu::BlindSignature>>;
     /// Atomically completes the local state transition for an acknowledged swap.
+    ///
+    /// On success, the finalized commitment stays loadable through `swap_load`.
     async fn swap_finalize(
         &self,
         proofs: Vec<cashu::Proof>,
         signatures: Vec<StoredSignature>,
         commitment: schnorr::Signature,
     ) -> Result<()>;
+    async fn swap_load(&self, commitment: &schnorr::Signature) -> Result<Option<StoredCommitment>>;
     /// WARNING: this method should do strict insert. all or nothing
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()>;
     async fn proofs_remove(&self, tokens: &[cashu::PublicKey]) -> Result<()>;
@@ -80,6 +83,7 @@ pub enum SignatureOwner {
     Beta,
 }
 
+#[derive(Clone, Debug)]
 pub struct StoredCommitment {
     pub inputs: Vec<cashu::PublicKey>,
     pub outputs: Vec<cashu::PublicKey>,
@@ -1193,6 +1197,62 @@ mod tests {
         assert_eq!(result, expected);
         let result = db.commitment_load(&commitment).await;
         assert!(matches!(result, Err(Error::ResourceNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_swap_load_returns_finalized_swap() {
+        swap_load_returns_finalized_swap(init_memmap_db()).await;
+    }
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_swap_load_returns_finalized_swap_sqlx(pool: ::sqlx::PgPool) {
+        swap_load_returns_finalized_swap(sqlx::Repository::from_pool(pool)).await;
+    }
+    async fn swap_load_returns_finalized_swap(db: impl Repository) {
+        let (proofs, blinds, stored_signatures, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        assert!(db.swap_load(&commitment).await.unwrap().is_none());
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+        assert!(db.swap_load(&commitment).await.unwrap().is_none());
+        db.swap_finalize(proofs.clone(), stored_signatures, commitment)
+            .await
+            .unwrap();
+        let swap = db.swap_load(&commitment).await.unwrap().unwrap();
+        assert_eq!(swap.fp_digest, [0u8; 32]);
+        assert_eq!(swap.signed, SignatureOwner::Unsigned);
+        assert_eq!(swap.outputs.len(), blinds.len());
+        assert_eq!(swap.inputs.len(), proofs.len());
+        assert!(blinds
+            .iter()
+            .all(|b| swap.outputs.contains(&b.blinded_secret)));
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn test_migrate_legacy_swaps_sqlx(pool: ::sqlx::PgPool) {
+        let db = sqlx::Repository::from_pool(pool.clone());
+        let (proofs, blinds, stored_signatures, commitment) =
+            swap_finalization_fixture(&[cashu::Amount::from(16_u64)]);
+        store_swap_commitment(&db, proofs.clone(), blinds.clone(), commitment).await;
+        db.swap_finalize(proofs, stored_signatures, commitment)
+            .await
+            .unwrap();
+        let expected = db.swap_load(&commitment).await.unwrap().unwrap();
+        // strip the version envelope: the shape core-service writes
+        ::sqlx::query("UPDATE core_swaps SET blob = blob->'data'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(db.swap_load(&commitment).await.is_err());
+
+        assert_eq!(db.migrate_legacy_swaps().await.unwrap(), 1);
+        assert_eq!(db.migrate_legacy_swaps().await.unwrap(), 0);
+        let swap = db.swap_load(&commitment).await.unwrap().unwrap();
+        assert_eq!(swap.inputs, expected.inputs);
+        assert_eq!(swap.outputs, expected.outputs);
+        assert_eq!(swap.expiration, expected.expiration);
+        assert_eq!(swap.fp_digest, expected.fp_digest);
+        assert_eq!(swap.signed, expected.signed);
     }
 
     #[tokio::test]
