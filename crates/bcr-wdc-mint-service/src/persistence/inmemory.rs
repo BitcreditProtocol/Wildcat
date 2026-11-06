@@ -33,6 +33,7 @@ pub struct Repository {
     signatures: Arc<RwLock<HashMap<cashu::PublicKey, cashu::BlindSignature>>>,
     proofs: Arc<RwLock<HashMap<cashu::PublicKey, cashu::Proof>>>,
     commitments: Arc<Mutex<HashMap<schnorr::Signature, Commitment>>>,
+    swaps: Arc<Mutex<HashMap<schnorr::Signature, persistence::StoredCommitment>>>,
     reserved_ys: Arc<RwLock<HashMap<cashu::PublicKey, TStamp>>>,
 }
 
@@ -190,11 +191,13 @@ impl persistence::Repository for Repository {
         let mut locked_proofs = self.proofs.write().unwrap();
         let mut locked_signatures = self.signatures.write().unwrap();
         let mut locked_commitments = self.commitments.lock().unwrap();
-        if !locked_commitments.contains_key(&commitment) {
+        let Some((inputs, outputs, expiration, _, fp_digest, signed)) =
+            locked_commitments.get(&commitment).cloned()
+        else {
             return Err(Error::ResourceNotFound(RNFError::Generic(
                 commitment.to_string(),
             )));
-        }
+        };
         let any_proofs_spent = proof_ys.iter().any(|y| locked_proofs.contains_key(y));
         if any_proofs_spent {
             return Err(Error::Conflict(String::from(CONFLICT_MSG)));
@@ -213,7 +216,24 @@ impl persistence::Repository for Repository {
                 .map(|stored| (stored.y, stored.signature)),
         );
         locked_commitments.remove(&commitment);
+        self.swaps.lock().unwrap().insert(
+            commitment,
+            persistence::StoredCommitment {
+                inputs,
+                outputs,
+                expiration,
+                fp_digest,
+                signed,
+            },
+        );
         Ok(())
+    }
+
+    async fn swap_load(
+        &self,
+        commitment: &schnorr::Signature,
+    ) -> Result<Option<persistence::StoredCommitment>> {
+        Ok(self.swaps.lock().unwrap().get(commitment).cloned())
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {

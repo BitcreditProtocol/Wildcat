@@ -19,7 +19,7 @@ use bitcoin::{
     secp256k1::{self as secp, schnorr},
 };
 use sqlx::types::Json;
-use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 // ----- local imports
 use crate::{
@@ -157,6 +157,23 @@ struct CommitmentBlobV1 {
     signed: persistence::SignatureOwner,
 }
 
+// ///////////////////////////////////////////////////////////////////////// Versioned blob for swaps
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version", content = "data")]
+enum SwapBlob {
+    V1(SwapBlobV1),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct SwapBlobV1 {
+    commitment: CommitmentBlob,
+    #[serde(with = "time::serde::rfc3339")]
+    expiration: TStamp,
+    inputs: Vec<String>,
+    outputs: Vec<String>,
+}
+
 #[derive(sqlx::FromRow)]
 struct CommitmentRow {
     signature: String,
@@ -223,9 +240,91 @@ pub struct Repository {
     pool: PgPool,
 }
 
+/// loads a commitment row together with its input and output ys
+async fn commitment_parts(
+    conn: &mut PgConnection,
+    signature: &str,
+) -> Result<Option<(CommitmentRow, Vec<String>, Vec<String>)>> {
+    let row = sqlx::query_as!(
+        CommitmentRow,
+        r#"
+        SELECT signature, expiration, blob as "blob: Json<CommitmentBlob>"
+        FROM core_commitments
+        WHERE signature = $1
+        "#,
+        signature
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let input_keys = sqlx::query_scalar!(
+        r#"
+        SELECT y
+        FROM core_proofs
+        WHERE signature = $1
+        "#,
+        signature
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+    let output_keys = sqlx::query_scalar!(
+        r#"
+        SELECT y
+        FROM core_commitment_outputs
+        WHERE signature = $1
+        "#,
+        signature
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+    Ok(Some((row, input_keys, output_keys)))
+}
+
 impl Repository {
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    /// Wraps the unversioned swap blobs written by core-service into `SwapBlob::V1`.
+    /// Returns the number of migrated swaps.
+    pub async fn migrate_legacy_swaps(&self) -> Result<usize> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let rows = sqlx::query!(
+            r#"
+            SELECT signature, blob as "blob: Json<SwapBlobV1>"
+            FROM core_swaps
+            WHERE NOT (blob ? 'version')
+            "#
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let migrated = rows.len();
+        for row in rows {
+            let blob = serde_json::to_value(SwapBlob::V1(row.blob.0))
+                .map_err(|e| Error::CommitmentRepository(anyhow!("swap {}: {e}", row.signature)))?;
+            sqlx::query!(
+                "UPDATE core_swaps SET blob = $2 WHERE signature = $1",
+                row.signature,
+                blob
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!("swap {}: {e}", row.signature)))?;
+        }
+        tx.commit()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        Ok(migrated)
     }
 }
 
@@ -469,6 +568,33 @@ impl persistence::Repository for Repository {
             .begin()
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
+        // must run before the inputs are overwritten and the commitment is deleted
+        let signature = commitment.to_string();
+        let Some((row, inputs, outputs)) = commitment_parts(&mut tx, &signature).await? else {
+            tx.rollback()
+                .await
+                .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+            return Err(Error::ResourceNotFound(RNFError::Generic(signature)));
+        };
+        let swap_blob = serde_json::to_value(SwapBlob::V1(SwapBlobV1 {
+            commitment: row.blob.0,
+            expiration: row.expiration,
+            inputs,
+            outputs,
+        }))
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        sqlx::query!(
+            r#"
+            INSERT INTO core_swaps (signature, blob)
+            VALUES ($1, $2)
+            ON CONFLICT (signature) DO NOTHING
+            "#,
+            signature,
+            swap_blob
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
         if !proof_ys.is_empty() {
             let result = sqlx::query!(
                 r#"
@@ -533,6 +659,30 @@ impl persistence::Repository for Repository {
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?;
         Ok(())
+    }
+
+    async fn swap_load(
+        &self,
+        commitment: &schnorr::Signature,
+    ) -> Result<Option<persistence::StoredCommitment>> {
+        let blob = sqlx::query_scalar!(
+            r#"SELECT blob as "blob: Json<SwapBlob>" FROM core_swaps WHERE signature = $1"#,
+            commitment.to_string()
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        blob.map(|Json(SwapBlob::V1(blob))| {
+            let CommitmentBlob::V1(commitment) = blob.commitment;
+            Ok(persistence::StoredCommitment {
+                inputs: parse_commitment_public_keys(blob.inputs)?,
+                outputs: parse_commitment_public_keys(blob.outputs)?,
+                expiration: blob.expiration,
+                fp_digest: commitment.fp_digest,
+                signed: commitment.signed,
+            })
+        })
+        .transpose()
     }
 
     async fn proofs_insert(&self, tokens: Vec<cashu::Proof>) -> Result<()> {
@@ -734,41 +884,14 @@ impl persistence::Repository for Repository {
         signature: &schnorr::Signature,
     ) -> Result<persistence::StoredCommitment> {
         let signature = signature.to_string();
-        let row = sqlx::query_as!(
-            CommitmentRow,
-            r#"
-            SELECT signature, expiration, blob as "blob: Json<CommitmentBlob>"
-            FROM core_commitments
-            WHERE signature = $1
-            "#,
-            &signature
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
-        .ok_or_else(|| Error::ResourceNotFound(RNFError::Generic(signature.clone())))?;
-        let input_keys = sqlx::query_scalar!(
-            r#"
-            SELECT y
-            FROM core_proofs
-            WHERE signature = $1
-            "#,
-            &signature
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
-        let output_keys = sqlx::query_scalar!(
-            r#"
-            SELECT y
-            FROM core_commitment_outputs
-            WHERE signature = $1
-            "#,
-            &signature
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?;
+        let (row, input_keys, output_keys) = commitment_parts(&mut conn, &signature)
+            .await?
+            .ok_or_else(|| Error::ResourceNotFound(RNFError::Generic(signature.clone())))?;
         commitment_from_row(
             row,
             parse_commitment_public_keys(input_keys)?,
