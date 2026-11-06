@@ -58,7 +58,7 @@ pub mod surreal {
 }
 
 pub mod postgres {
-    use std::{str::FromStr, time::Duration};
+    use std::str::FromStr;
 
     use sqlx::{
         postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions},
