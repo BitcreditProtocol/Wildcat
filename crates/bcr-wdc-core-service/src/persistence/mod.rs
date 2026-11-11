@@ -21,7 +21,7 @@ pub trait Repository: Send + Sync {
     async fn keys_load(&self, id: cashu::Id) -> Result<Option<ecash::MintKeySet>>;
     async fn keys_list_info(
         &self,
-        currency: Option<cashu::CurrencyUnit>,
+        currency: Option<ecash::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<ecash::MintKeySetInfo>>;
@@ -180,7 +180,7 @@ mod tests {
     }
     async fn keysrepo_list_info(db: impl Repository) {
         let (mut info1, keyset1) = core_tests::generate_random_ecash_keyset();
-        info1.unit = cashu::CurrencyUnit::Sat;
+        info1.unit = ecash::DEFAULT_CURRENCY_UNIT;
         info1.final_expiry = Some(10);
         let entry1 = keys_utils::MintKeysEntry {
             id: info1.id,
@@ -196,7 +196,7 @@ mod tests {
         };
         db.keys_store(entry1).await.unwrap();
         let (mut info2, keyset2) = core_tests::generate_random_ecash_keyset();
-        info2.unit = cashu::CurrencyUnit::Usd;
+        info2.unit = ecash::CurrencyUnit::new("usd").unwrap();
         info2.final_expiry = Some(20);
         let entry2 = keys_utils::MintKeysEntry {
             id: info2.id,
@@ -212,7 +212,7 @@ mod tests {
         };
         db.keys_store(entry2).await.unwrap();
         let (mut info3, keyset3) = core_tests::generate_random_ecash_keyset();
-        info3.unit = cashu::CurrencyUnit::Usd;
+        info3.unit = ecash::CurrencyUnit::new("usd").unwrap();
         info3.final_expiry = Some(30);
         let entry3 = keys_utils::MintKeysEntry {
             id: info3.id,
@@ -232,19 +232,23 @@ mod tests {
         assert_eq!(rinfos.len(), 3);
 
         let rinfos = db
-            .keys_list_info(Some(cashu::CurrencyUnit::Sat), None, None)
+            .keys_list_info(Some(ecash::DEFAULT_CURRENCY_UNIT), None, None)
             .await
             .unwrap();
         assert_eq!(rinfos.len(), 1);
-        assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Sat);
+        assert_eq!(rinfos[0].unit, ecash::DEFAULT_CURRENCY_UNIT);
 
         let rinfos = db
-            .keys_list_info(Some(cashu::CurrencyUnit::Usd), Some(15), Some(25))
+            .keys_list_info(
+                Some(ecash::CurrencyUnit::new("usd").unwrap()),
+                Some(15),
+                Some(25),
+            )
             .await
             .unwrap();
         assert_eq!(rinfos.len(), 1);
         assert_eq!(rinfos[0].final_expiry, Some(20));
-        assert_eq!(rinfos[0].unit, cashu::CurrencyUnit::Usd);
+        assert_eq!(rinfos[0].unit, ecash::CurrencyUnit::new("usd").unwrap());
     }
 
     #[tokio::test]

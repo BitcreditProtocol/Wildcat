@@ -24,6 +24,6 @@ impl vault::WildcatClient for WildcatCl {
         Ok(states)
     }
     fn unit(&self) -> cashu::CurrencyUnit {
-        CoreClient::currency_unit()
+        CoreClient::currency_unit().into()
     }
 }

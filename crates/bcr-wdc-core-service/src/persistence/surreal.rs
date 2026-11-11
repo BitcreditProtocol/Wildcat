@@ -107,7 +107,7 @@ impl persistence::Repository for Repository {
 
     async fn keys_list_info(
         &self,
-        unit: Option<cashu::CurrencyUnit>,
+        unit: Option<ecash::CurrencyUnit>,
         min_exp_tstamp: Option<u64>,
         max_exp_tstamp: Option<u64>,
     ) -> Result<Vec<ecash::MintKeySetInfo>> {
@@ -391,7 +391,7 @@ impl std::convert::From<KeysInfoDBEntry> for ecash::MintKeySetInfo {
     fn from(info: KeysInfoDBEntry) -> Self {
         Self {
             id: info.kid.into(),
-            unit: info.unit,
+            unit: info.unit.try_into().expect("sat converts without errors"),
             active: info.active,
             valid_from: info.valid_from,
             derivation_path: info.derivation_path,
@@ -406,7 +406,7 @@ impl std::convert::From<keys_utils::MintKeysEntry> for KeysInfoDBEntry {
     fn from(entry: keys_utils::MintKeysEntry) -> Self {
         Self {
             kid: entry.id.into(),
-            unit: entry.unit,
+            unit: entry.unit.into(),
             active: entry.active,
             valid_from: entry.valid_from,
             derivation_path: entry.derivation_path,

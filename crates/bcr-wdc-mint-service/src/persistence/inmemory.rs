@@ -89,7 +89,7 @@ impl persistence::Repository for Repository {
 
     async fn keys_list_info(
         &self,
-        unit: Option<cashu::CurrencyUnit>,
+        unit: Option<ecash::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<ecash::MintKeySetInfo>> {

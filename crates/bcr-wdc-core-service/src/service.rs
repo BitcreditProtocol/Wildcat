@@ -38,7 +38,7 @@ use crate::{
 
 #[derive(Default)]
 pub struct ListFilters {
-    pub unit: Option<cashu::CurrencyUnit>,
+    pub unit: Option<ecash::CurrencyUnit>,
     pub min_expiration: Option<time::Date>,
     pub max_expiration: Option<time::Date>,
 }
@@ -62,7 +62,7 @@ impl Service {
 
     pub async fn create(
         &self,
-        unit: cashu::CurrencyUnit,
+        unit: ecash::CurrencyUnit,
         now: TStamp,
         expiration: Option<u64>,
         fees_ppk: u64,

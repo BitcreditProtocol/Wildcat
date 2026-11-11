@@ -107,13 +107,13 @@ impl ClowderClient for ClowderCl {
         let request = wire_clowder::KeysetCreationRequest {
             id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
-            unit: keyset.unit.clone(),
+            unit: keyset.unit.into(),
         };
         let response = wire_clowder::KeysetCreationResponse {
             public_keys: keyset.keys.keys().clone(),
             id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
-            unit: keyset.unit,
+            unit: keyset.unit.into(),
         };
         self.nats.new_keyset(request, response).await?;
         Ok(())

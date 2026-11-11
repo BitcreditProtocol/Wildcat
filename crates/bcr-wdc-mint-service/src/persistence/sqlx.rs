@@ -89,7 +89,7 @@ fn keyset_to_row(entry: keys_utils::MintKeysEntry) -> Result<KeysetRow> {
 fn keyset_from_row(row: KeysetRow) -> Result<keys_utils::MintKeysEntry> {
     let kid = ecash::Id::from_str(&row.kid).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let unit =
-        cashu::CurrencyUnit::from_str(&row.unit).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
+        ecash::CurrencyUnit::from_str(&row.unit).map_err(|e| Error::KeysRepository(anyhow!(e)))?;
     let final_expiry = row
         .final_expiry
         .map(u64::try_from)
@@ -383,7 +383,7 @@ impl persistence::Repository for Repository {
 
     async fn keys_list_info(
         &self,
-        unit: Option<cashu::CurrencyUnit>,
+        unit: Option<ecash::CurrencyUnit>,
         min_expiration_tstamp: Option<u64>,
         max_expiration_tstamp: Option<u64>,
     ) -> Result<Vec<ecash::MintKeySetInfo>> {

@@ -15,7 +15,7 @@ pub fn default_denominations() -> Vec<u64> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MintKeysEntry {
     pub id: ecash::Id,
-    pub unit: cashu::CurrencyUnit,
+    pub unit: ecash::CurrencyUnit,
     pub active: bool,
     pub valid_from: u64,
     pub derivation_path: btc32::DerivationPath,

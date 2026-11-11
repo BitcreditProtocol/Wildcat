@@ -148,7 +148,7 @@ impl foreign::ClowderClient for ClowderCl {
                 "No keyset info found for given kid",
             )));
         }
-        Ok(keysets.remove(0).into())
+        Ok(keysets.remove(0).try_into()?)
     }
 
     async fn get_keyset(
@@ -162,7 +162,7 @@ impl foreign::ClowderClient for ClowderCl {
                 "No keyset info found for given kid",
             )));
         }
-        Ok(keysets.remove(0).into())
+        Ok(keysets.remove(0).try_into()?)
     }
 
     async fn is_offline(&self, pk: secp256k1::PublicKey) -> Result<bool> {
