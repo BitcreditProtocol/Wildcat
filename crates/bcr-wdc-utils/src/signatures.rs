@@ -24,13 +24,13 @@ pub enum ChecksError {
 pub fn basic_blinds_checks(blinds: &[ecash::BlindedMessage]) -> ChecksResult<()> {
     let zero_inputs = blinds
         .iter()
-        .any(|output| output.amount == cashu::Amount::ZERO);
+        .any(|output| output.amount == bitcoin::Amount::ZERO);
     if zero_inputs {
         return Err(ChecksError::InvalidAmount(String::from("zero amount")));
     }
-    let denominations: Vec<cashu::Amount> = keys_utils::default_denominations()
+    let denominations: Vec<bitcoin::Amount> = keys_utils::default_denominations()
         .into_iter()
-        .map(cashu::Amount::from)
+        .map(bitcoin::Amount::from_sat)
         .collect();
     for output in blinds {
         if !denominations.contains(&output.amount) {
@@ -38,11 +38,12 @@ pub fn basic_blinds_checks(blinds: &[ecash::BlindedMessage]) -> ChecksResult<()>
             return Err(ChecksError::InvalidAmount(msg));
         }
     }
-    let max_amount = cashu::Amount::from(bitcoin::Amount::MAX_MONEY.to_sat());
-    let total = blinds.iter().try_fold(cashu::Amount::ZERO, |acc, output| {
-        acc.checked_add(output.amount)
-    });
-    if total.is_none() || total.unwrap() > max_amount {
+    let total = blinds
+        .iter()
+        .try_fold(bitcoin::Amount::ZERO, |acc, output| {
+            acc.checked_add(output.amount)
+        });
+    if total.is_none() || total.unwrap() > bitcoin::Amount::MAX_MONEY {
         return Err(ChecksError::InvalidAmount(String::from(
             "total amount overflow",
         )));
@@ -60,22 +61,23 @@ pub fn basic_proofs_checks(proofs: &[ecash::Proof]) -> ChecksResult<()> {
     }
     let zero_inputs = proofs
         .iter()
-        .any(|output| output.amount == cashu::Amount::ZERO);
+        .any(|output| output.amount == bitcoin::Amount::ZERO);
     if zero_inputs {
         return Err(ChecksError::InvalidAmount(String::from("zero amount")));
     }
     let denominations = keys_utils::default_denominations();
     let unknown_amount = proofs
         .iter()
-        .any(|output| !denominations.contains(&output.amount.to_u64()));
+        .any(|output| !denominations.contains(&output.amount.to_sat()));
     if unknown_amount {
         return Err(ChecksError::InvalidAmount(String::from("unknown_amount")));
     }
-    let total = proofs.iter().try_fold(cashu::Amount::ZERO, |acc, output| {
-        acc.checked_add(output.amount)
-    });
-    let max_amount = cashu::Amount::from(bitcoin::Amount::MAX_MONEY.to_sat());
-    if total.is_none() || total.unwrap() > max_amount {
+    let total = proofs
+        .iter()
+        .try_fold(bitcoin::Amount::ZERO, |acc, output| {
+            acc.checked_add(output.amount)
+        });
+    if total.is_none() || total.unwrap() > bitcoin::Amount::MAX_MONEY {
         return Err(ChecksError::InvalidAmount(String::from(
             "total amount overflow",
         )));
@@ -226,14 +228,14 @@ mod tests {
             .into_iter()
             .map(|(blind, _, _)| blind)
             .collect();
-        blinds[0].amount = cashu::Amount::ZERO;
+        blinds[0].amount = bitcoin::Amount::ZERO;
         assert!(matches!(
             basic_blinds_checks(&blinds),
             Err(ChecksError::InvalidAmount(_))
         ));
         let c_proofs = core_tests::generate_random_ecash_proofs(&keyset, &amounts);
         let mut proofs: Vec<ecash::Proof> = c_proofs.into_iter().map(ecash::Proof::from).collect();
-        proofs[0].amount = cashu::Amount::ZERO;
+        proofs[0].amount = bitcoin::Amount::ZERO;
         assert!(matches!(
             basic_proofs_checks(&proofs),
             Err(ChecksError::InvalidAmount(_))

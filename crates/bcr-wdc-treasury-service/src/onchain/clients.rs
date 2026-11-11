@@ -6,7 +6,7 @@ use bcr_common::{
     cashu,
     client::clowder::ClowderNatsClient,
     client::{admin::clowder::Client as ClowderRestClient, core::Client as CoreClient},
-    core::{maturity::active_keyset, signature, CURRENCY_UNIT},
+    core::{maturity::active_keyset, signature},
     ecash,
     wire::{
         attestation::AttestedFingerprints, clowder as wire_clowder, keys as wire_keys,
@@ -72,7 +72,7 @@ impl WildcatClient for WildcatCl {
 
     async fn get_active_keyset(&self) -> Result<cashu::Id> {
         let filter = wire_keys::KeysetInfoFilters {
-            unit: Some(CURRENCY_UNIT),
+            unit: Some(ecash::DEFAULT_CURRENCY_UNIT),
             ..Default::default()
         };
         let infos = self.core_cl.list_keyset_info(filter).await?;

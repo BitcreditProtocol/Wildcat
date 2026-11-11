@@ -64,7 +64,7 @@ pub async fn lookup_keys_v1(
         active: None,
         keys: cashu::Keys::from(mint_keyset.keys),
         final_expiry: mint_keyset.final_expiry,
-        unit: mint_keyset.unit,
+        unit: mint_keyset.unit.into(),
         id: mint_keyset.id.into(),
         input_fee_ppk: mint_keyset.input_fee_ppk,
     };

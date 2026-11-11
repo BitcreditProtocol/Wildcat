@@ -2,7 +2,7 @@
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, nut02::KeySetVersion},
-    cdk_common,
+    cdk_common, ecash,
 };
 use bcr_wdc_utils::keys as keys_utils;
 use bitcoin::{
@@ -27,7 +27,7 @@ impl KeysFactory {
     }
     pub fn generate(
         &self,
-        unit: cashu::CurrencyUnit,
+        unit: ecash::CurrencyUnit,
         now: TStamp,
         expiration: Option<u64>,
         fees_ppk: u64,
@@ -76,7 +76,7 @@ impl KeysFactory {
         let keyset = cashu::MintKeySet::generate(
             secp,
             xpriv,
-            unit,
+            unit.into(),
             &denominations,
             fees_ppk,
             expiration,
@@ -97,7 +97,7 @@ impl KeysFactory {
         } = keyset;
         keys_utils::MintKeysEntry {
             id: id.into(),
-            unit,
+            unit: unit.try_into().expect("sat converts without errors"),
             active: true,
             valid_from: now.unix_timestamp().max(0) as u64,
             derivation_path: path,
@@ -119,14 +119,14 @@ mod tests {
         let seed = [0u8; 32];
         let derivation = btc32::DerivationPath::default();
         let factory = KeysFactory::new(&seed, derivation);
-        let unit1 = cashu::CurrencyUnit::Sat;
+        let unit1 = ecash::DEFAULT_CURRENCY_UNIT;
         let now = time::OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
         let expire1 = 2_000_000;
         let info1 = factory.generate(unit1.clone(), now, Some(expire1), 100);
         assert_eq!(info1.unit, unit1);
         assert_eq!(info1.final_expiry, Some(expire1));
         // different unit
-        let unit2 = cashu::CurrencyUnit::Eur;
+        let unit2 = ecash::CurrencyUnit::new("eur").unwrap();
         let info2 = factory.generate(unit2.clone(), now, Some(expire1), 0);
         assert_eq!(info2.unit, unit2);
         assert_ne!(info2.id, info1.id);

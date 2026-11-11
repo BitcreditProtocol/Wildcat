@@ -307,8 +307,12 @@ impl foreign::OnlineRepository for DBForeignOnline {
                     ForeignProofBlob::V1(proof) => proofs.push(proof),
                 }
             }
-            let total = cashu::Amount::try_sum(proofs.iter().map(|p| p.amount))
-                .expect("amounts are already checked");
+            let total = cashu::Amount::try_sum(
+                proofs
+                    .iter()
+                    .map(|p| cashu::Amount::from(p.amount.to_sat())),
+            )
+            .expect("amounts are already checked");
             balances.insert(mint_id, total);
         }
         Ok(balances)
@@ -851,7 +855,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
             let ForeignOfflineProofBlob::V1(proof) = row.blob.0;
             let total = balances.entry(mint_id).or_insert(cashu::Amount::ZERO);
             *total = total
-                .checked_add(proof.amount)
+                .checked_add(cashu::Amount::from(proof.amount.to_sat()))
                 .ok_or_else(|| Error::DB(anyhow!("unsettled balance overflow")))?;
         }
         Ok(balances)

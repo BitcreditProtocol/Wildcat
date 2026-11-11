@@ -123,7 +123,7 @@ mod tests {
         );
         assert_eq!(token.value().unwrap(), cashu::Amount::from(9_u64));
         let mut recovered: Vec<cashu::Proof> = token
-            .proofs(&[cashu::KeySetInfo::from(keyset_info).into()])
+            .proofs(&[bcr_common::ecash::KeySetInfo::from(keyset_info)])
             .unwrap()
             .into_iter()
             .map(Into::into)

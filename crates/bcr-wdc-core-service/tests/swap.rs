@@ -183,5 +183,5 @@ async fn swap_p2pk() {
         .swap(c_correct_proofs, c_blinds, commitment)
         .await
         .expect("Swap with correct P2PK signatures should succeed");
-    assert_eq!(res[0].amount, Amount::from(8));
+    assert_eq!(res[0].amount.to_sat(), 8);
 }
