@@ -25,6 +25,7 @@ ignore = [
     {id = "RUSTSEC-2026-0452", reason = "surrealkv"},
     {id = "RUSTSEC-2026-0453", reason = "surrealDB"},
     {id = "RUSTSEC-2026-0454", reason = "surrealdb-core"},
+    {id = "RUSTSEC-2026-0533", reason = "ammonia"},
 ]
 unmaintained = "workspace"
 
