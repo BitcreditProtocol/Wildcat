@@ -817,38 +817,28 @@ struct ForeignProofDBEntry {
     mint_id: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct ForeignBalanceDBEntry {
-    mint_id: String,
-    total: u64,
-}
-
-async fn foreign_balance_by_mint(
+async fn foreign_mint_ids(
     db: &Surreal<Any>,
     table: &'static str,
-) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
-    let entries: Vec<ForeignBalanceDBEntry> = db
-        .query(
-            "
-            SELECT mint_id, math::sum(proof.amount) AS total
-            FROM type::table($table)
-            GROUP BY mint_id
-            ",
-        )
+) -> Result<Vec<secp256k1::PublicKey>> {
+    #[derive(Debug, Default, Clone, serde::Deserialize)]
+    struct MintIdEntries {
+        mint_id: Vec<String>,
+    }
+    let entries: Option<MintIdEntries> = db
+        .query("SELECT array::group(mint_id) AS mint_id FROM type::table($table) GROUP ALL")
         .bind(("table", table))
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?
         .take(0)
         .map_err(|e| Error::DB(anyhow!(e)))?;
-    let balances = entries
+    let mint_ids: Vec<secp256k1::PublicKey> = entries
+        .unwrap_or_default()
+        .mint_id
         .into_iter()
-        .map(|entry| {
-            let mint_id =
-                secp256k1::PublicKey::from_str(&entry.mint_id).expect("mint_id <--> String");
-            (mint_id, cashu::Amount::from(entry.total))
-        })
+        .map(|m| secp256k1::PublicKey::from_str(&m).expect("mint_id <--> String"))
         .collect();
-    Ok(balances)
+    Ok(mint_ids)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -988,10 +978,8 @@ impl foreign::OnlineRepository for DBForeignOnline {
         Ok(proofs)
     }
 
-    async fn settled_balance(
-        &self,
-    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
-        foreign_balance_by_mint(&self.db, Self::FOREIGNS_TABLE).await
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
+        foreign_mint_ids(&self.db, Self::FOREIGNS_TABLE).await
     }
 
     async fn store_htlc(
@@ -1409,12 +1397,6 @@ impl foreign::OfflineRepository for DBForeignOffline {
         Ok(ret_val)
     }
 
-    async fn unsettled_balance(
-        &self,
-    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
-        foreign_balance_by_mint(&self.db, Self::PROOFS_TABLE).await
-    }
-
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {
         ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         // records are keyed by y: a stored cashu::Proof has no y field to filter on
@@ -1433,25 +1415,7 @@ impl foreign::OfflineRepository for DBForeignOffline {
         Ok(())
     }
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
-        #[derive(Debug, Default, Clone, serde::Deserialize)]
-        struct MintIdEntries {
-            mint_id: Vec<String>,
-        }
-        let entries: Option<MintIdEntries> = self
-            .db
-            .query("SELECT array::group(mint_id) AS mint_id FROM type::table($table) GROUP ALL")
-            .bind(("table", Self::PROOFS_TABLE))
-            .await
-            .map_err(|e| Error::DB(anyhow!(e)))?
-            .take(0)
-            .map_err(|e| Error::DB(anyhow!(e)))?;
-        let mint_ids: Vec<secp256k1::PublicKey> = entries
-            .unwrap_or_default()
-            .mint_id
-            .into_iter()
-            .map(|m| secp256k1::PublicKey::from_str(&m).expect("mint_id <--> String"))
-            .collect();
-        Ok(mint_ids)
+        foreign_mint_ids(&self.db, Self::PROOFS_TABLE).await
     }
 
     async fn claim_redemption(&self, digest: [u8; 32]) -> Result<bool> {

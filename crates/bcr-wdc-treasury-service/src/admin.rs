@@ -112,8 +112,10 @@ impl From<foreign::MintBalance> for wire_treasury::ForeignBalanceEntry {
     fn from(balance: foreign::MintBalance) -> Self {
         Self {
             mint_id: balance.mint_id,
-            settled: balance.settled,
-            unsettled: balance.unsettled,
+            cr_settled: balance.cr_settled,
+            cr_unsettled: balance.cr_unsettled,
+            db_settled: balance.db_settled,
+            db_unsettled: balance.db_unsettled,
         }
     }
 }
@@ -122,7 +124,8 @@ impl From<foreign::MintBalance> for wire_treasury::ForeignBalanceEntry {
 pub async fn foreign_balance(
     State(ctrl): State<Arc<foreign::Service>>,
 ) -> Result<Json<wire_treasury::ForeignBalanceResponse>> {
-    let balances = ctrl.balance().await?;
+    let now = time::OffsetDateTime::now_utc();
+    let balances = ctrl.balance(now).await?;
     let balances = balances.into_iter().map(Into::into).collect();
     let response = wire_treasury::ForeignBalanceResponse { balances };
     Ok(Json(response))

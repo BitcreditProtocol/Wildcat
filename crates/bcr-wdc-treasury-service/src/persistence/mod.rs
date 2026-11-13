@@ -54,20 +54,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_foreign_online_settled_balance() {
+    async fn test_foreign_online_list_foreign_pks() {
         let db = init_inmemory_foreign_online_db();
-        foreign_online_settled_balance(db).await;
+        foreign_online_list_foreign_pks(db).await;
         let db = init_surreal_foreign_online_db().await;
-        foreign_online_settled_balance(db).await;
+        foreign_online_list_foreign_pks(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_foreign_online_settled_balance_sqlx(pool: ::sqlx::PgPool) {
+    async fn test_foreign_online_list_foreign_pks_sqlx(pool: ::sqlx::PgPool) {
         let db = sqlx::DBForeignOnline::from_pool(pool);
-        foreign_online_settled_balance(db).await;
+        foreign_online_list_foreign_pks(db).await;
     }
-    async fn foreign_online_settled_balance(db: impl foreign::OnlineRepository) {
-        assert!(db.settled_balance().await.unwrap().is_empty());
+    // A mint stored twice is listed once.
+    async fn foreign_online_list_foreign_pks(db: impl foreign::OnlineRepository) {
+        assert!(db.list_foreign_pks().await.unwrap().is_empty());
 
         let first = core::generate_random_keypair().public_key();
         let second = core::generate_random_keypair().public_key();
@@ -75,10 +76,11 @@ mod tests {
         db.store(first, generate_test_proofs(3)).await.unwrap();
         db.store(second, generate_test_proofs(1)).await.unwrap();
 
-        let balances = db.settled_balance().await.unwrap();
-        assert_eq!(balances.len(), 2);
-        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
-        assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
+        let mut pks = db.list_foreign_pks().await.unwrap();
+        pks.sort();
+        let mut expected = vec![first, second];
+        expected.sort();
+        assert_eq!(pks, expected);
     }
 
     #[tokio::test]
@@ -261,36 +263,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_foreign_offline_unsettled_balance() {
-        foreign_offline_unsettled_balance(inmemory::OfflineRepository::default()).await;
-        foreign_offline_unsettled_balance(init_surreal_foreign_offline_db().await).await;
-    }
-    #[::sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
-    async fn test_foreign_offline_unsettled_balance_sqlx(pool: ::sqlx::PgPool) {
-        foreign_offline_unsettled_balance(sqlx::DBForeignOffline::from_pool(pool)).await;
-    }
-    async fn foreign_offline_unsettled_balance(db: impl foreign::OfflineRepository) {
-        assert!(db.unsettled_balance().await.unwrap().is_empty());
-
-        let first = core::generate_random_keypair().public_key();
-        let second = core::generate_random_keypair().public_key();
-        db.store_proofs(first, generate_test_proofs(2))
-            .await
-            .unwrap();
-        db.store_proofs(first, generate_test_proofs(3))
-            .await
-            .unwrap();
-        db.store_proofs(second, generate_test_proofs(1))
-            .await
-            .unwrap();
-        let balances = db.unsettled_balance().await.unwrap();
-        assert_eq!(balances.len(), 2);
-        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(40u64)));
-        assert_eq!(balances.get(&second), Some(&cashu::Amount::from(8u64)));
-    }
-
-    #[tokio::test]
     async fn test_foreign_offline_reserve_exchange() {
         foreign_offline_reserve_exchange(inmemory::OfflineRepository::default()).await;
         foreign_offline_reserve_exchange(init_surreal_foreign_offline_db().await).await;
@@ -382,8 +354,6 @@ mod tests {
         db.remove_proofs(&removed).await.unwrap();
         assert_eq!(db.load_proofs(first).await.unwrap(), first_proofs[2..]);
         assert_eq!(db.load_proofs(second).await.unwrap(), second_proofs);
-        let balances = db.unsettled_balance().await.unwrap();
-        assert_eq!(balances.get(&first), Some(&cashu::Amount::from(8u64)));
     }
 
     #[tokio::test]

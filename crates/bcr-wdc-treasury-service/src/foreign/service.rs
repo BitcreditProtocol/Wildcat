@@ -1,5 +1,9 @@
 // ----- standard library imports
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    sync::Arc,
+};
 // ----- extra library imports
 use bcr_common::{
     cashu::{self, ProofsMethods},
@@ -7,6 +11,7 @@ use bcr_common::{
     core::{
         self,
         htlc::{exchange_htlc, hop_locktime, htlc_lock, offline_hash_lock, online_hash_lock},
+        maturity::is_matured,
     },
     wire::{
         exchange::{exchange_digest, exchange_message, OfflineExchangeRequest},
@@ -301,32 +306,63 @@ impl Service {
         Ok(offline_amount)
     }
 
-    /// Foreign eCash held per issuing mint: swapped and owned outright, and held for
-    /// a mint that is still offline. A mint shows up if either figure is non-zero.
-    pub async fn balance(&self) -> Result<Vec<MintBalance>> {
-        let settled = self.online_repo.settled_balance().await?;
-        let mut unsettled = self.offline_repo.unsettled_balance().await?;
-        let mut balances = Vec::with_capacity(settled.len() + unsettled.len());
-        for (mint_id, settled) in settled {
-            // Taking it out leaves only the mints that have nothing settled yet.
-            let unsettled = unsettled.remove(&mint_id).unwrap_or_default();
-            balances.push(MintBalance {
-                mint_id,
-                settled,
-                unsettled,
-            });
+    pub async fn balance(&self, now: TStamp) -> Result<Vec<MintBalance>> {
+        let now = now.unix_timestamp() as u64;
+        let online_mint_ids: HashSet<_> = self
+            .online_repo
+            .list_foreign_pks()
+            .await?
+            .into_iter()
+            .collect();
+        let offline_mint_ids: HashSet<_> = self
+            .offline_repo
+            .list_foreign_pks()
+            .await?
+            .into_iter()
+            .collect();
+        let mint_ids: HashSet<_> = online_mint_ids.union(&offline_mint_ids).collect();
+        let mut balances = Vec::with_capacity(mint_ids.len());
+        for mint_id in mint_ids {
+            let settled = self.online_repo.list(*mint_id).await?;
+            let unsettled = self.offline_repo.load_proofs(*mint_id).await?;
+            let mut settled_by_kid = amounts_by_kid(settled);
+            let mut unsettled_by_kid = amounts_by_kid(unsettled);
+            let kids: HashSet<cashu::Id> = settled_by_kid
+                .keys()
+                .chain(unsettled_by_kid.keys())
+                .copied()
+                .collect();
+            let mut mint_balance = MintBalance {
+                mint_id: *mint_id,
+                cr_settled: cashu::Amount::ZERO,
+                cr_unsettled: cashu::Amount::ZERO,
+                db_settled: cashu::Amount::ZERO,
+                db_unsettled: cashu::Amount::ZERO,
+            };
+            for kid in kids {
+                let kinfo = self.clowder.get_keyset_info(mint_id, &kid).await?;
+                let kid_matured = is_matured(kinfo.final_expiry, now);
+                let settled = settled_by_kid.remove(&kid).unwrap_or(cashu::Amount::ZERO);
+                let unsettled = unsettled_by_kid.remove(&kid).unwrap_or(cashu::Amount::ZERO);
+                if kid_matured {
+                    mint_balance.db_settled += settled;
+                    mint_balance.db_unsettled += unsettled;
+                } else {
+                    mint_balance.cr_settled += settled;
+                    mint_balance.cr_unsettled += unsettled;
+                }
+            }
+            balances.push(mint_balance);
         }
-        balances.extend(
-            unsettled
-                .into_iter()
-                .map(|(mint_id, unsettled)| MintBalance {
-                    mint_id,
-                    settled: cashu::Amount::ZERO,
-                    unsettled,
-                }),
-        );
         Ok(balances)
     }
+}
+
+fn amounts_by_kid(proofs: Vec<cashu::Proof>) -> HashMap<cashu::Id, cashu::Amount> {
+    bcr_common::core::signature::proofs_to_map(proofs)
+        .into_iter()
+        .map(|(k, v)| (k, v.total_amount().unwrap_or_default()))
+        .collect()
 }
 
 fn verify_held_exchange(
@@ -1033,62 +1069,112 @@ mod tests {
         )
     }
 
-    // A mint with only settled, one with only unsettled, and one with both.
+    // A mint with only settled, one with only unsettled, and one with both; each
+    // keyset classified once, with expiry today still credit.
     #[tokio::test]
-    async fn balance_unions_the_two_stores() {
+    async fn balance_splits_credit_and_debit_by_keyset_maturity() {
         let settled_only = core::generate_random_keypair().public_key();
         let unsettled_only = core::generate_random_keypair().public_key();
         let both = core::generate_random_keypair().public_key();
+        let now = TStamp::from_unix_timestamp(1_794_571_200).unwrap(); // 2026-11-13T12:00Z
+        let today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp() as u64;
+        let (_, credit) = core_tests::generate_random_ecash_keyset();
+        let (_, expires_today) = core_tests::generate_random_ecash_keyset();
+        let (_, matured) = core_tests::generate_random_ecash_keyset();
+        let (_, perpetual) = core_tests::generate_random_ecash_keyset();
+        let expiries = HashMap::from([
+            (cashu::Id::from(credit.id), Some(today + 30 * 86_400)),
+            (cashu::Id::from(expires_today.id), Some(today)),
+            (cashu::Id::from(matured.id), Some(today - 86_400)),
+            (cashu::Id::from(perpetual.id), None),
+        ]);
+        let proofs = |keyset: &ecash::MintKeySet, amounts: &[u64]| {
+            let amounts: Vec<cashu::Amount> =
+                amounts.iter().map(|a| cashu::Amount::from(*a)).collect();
+            core_tests::generate_random_ecash_proofs(keyset, &amounts)
+        };
+        let settled = HashMap::from([
+            (
+                settled_only,
+                [proofs(&credit, &[8]), proofs(&matured, &[1])].concat(),
+            ),
+            (both, proofs(&credit, &[16])),
+        ]);
+        let unsettled = HashMap::from([
+            (
+                unsettled_only,
+                [proofs(&expires_today, &[2]), proofs(&perpetual, &[32])].concat(),
+            ),
+            (
+                both,
+                [proofs(&credit, &[4]), proofs(&matured, &[32, 32])].concat(),
+            ),
+        ]);
 
         let mut online_repo = crate::foreign::MockOnlineRepository::new();
+        let settled_mints: Vec<_> = settled.keys().copied().collect();
         online_repo
-            .expect_settled_balance()
+            .expect_list_foreign_pks()
             .times(1)
-            .returning(move || {
-                Ok(HashMap::from([
-                    (settled_only, cashu::Amount::from(8u64)),
-                    (both, cashu::Amount::from(16u64)),
-                ]))
-            });
+            .returning(move || Ok(settled_mints.clone()));
+        online_repo
+            .expect_list()
+            .times(3)
+            .returning(move |mint_id| Ok(settled.get(&mint_id).cloned().unwrap_or_default()));
         let mut offline_repo = crate::foreign::MockOfflineRepository::new();
+        let unsettled_mints: Vec<_> = unsettled.keys().copied().collect();
         offline_repo
-            .expect_unsettled_balance()
+            .expect_list_foreign_pks()
             .times(1)
-            .returning(move || {
-                Ok(HashMap::from([
-                    (unsettled_only, cashu::Amount::from(2u64)),
-                    (both, cashu::Amount::from(4u64)),
-                ]))
+            .returning(move || Ok(unsettled_mints.clone()));
+        offline_repo
+            .expect_load_proofs()
+            .times(3)
+            .returning(move |mint_id| Ok(unsettled.get(&mint_id).cloned().unwrap_or_default()));
+        let mut clowder = crate::foreign::MockClowderClient::new();
+        // (settled_only, both) x (credit, matured) + (unsettled_only) x (today, perpetual)
+        clowder
+            .expect_get_keyset_info()
+            .times(6)
+            .returning(move |_, kid| {
+                Ok(ecash::KeySetInfo {
+                    id: (*kid).into(),
+                    unit: ecash::DEFAULT_CURRENCY_UNIT,
+                    active: true,
+                    input_fee_ppk: 0,
+                    final_expiry: expiries[kid],
+                })
             });
 
         let service = Service {
             online_repo: Arc::new(online_repo),
             offline_repo: Arc::new(offline_repo),
             keys: Arc::new(crate::foreign::MockKeysClient::new()),
-            clowder: Arc::new(crate::foreign::MockClowderClient::new()),
+            clowder: Arc::new(clowder),
             mint_factory: Arc::new(crate::foreign::MockMintClientFactory::new()),
             exchange_lock_margin_secs: 15 * 60,
             offline_exchange_lock_secs: 7 * 24 * 3600,
         };
-        let balances = service.balance().await.unwrap();
+        let balances = service.balance(now).await.unwrap();
 
         assert_eq!(balances.len(), 3);
-        let by_mint: HashMap<_, _> = balances
-            .into_iter()
-            .map(|b| (b.mint_id, (b.settled, b.unsettled)))
-            .collect();
-        assert_eq!(
-            by_mint[&settled_only],
-            (cashu::Amount::from(8u64), cashu::Amount::ZERO)
-        );
+        let by_mint: HashMap<_, _> = balances.into_iter().map(|b| (b.mint_id, b)).collect();
+        let expected =
+            |mint_id, cr_settled: u64, cr_unsettled: u64, db_settled: u64, db_unsettled: u64| {
+                MintBalance {
+                    mint_id,
+                    cr_settled: cashu::Amount::from(cr_settled),
+                    cr_unsettled: cashu::Amount::from(cr_unsettled),
+                    db_settled: cashu::Amount::from(db_settled),
+                    db_unsettled: cashu::Amount::from(db_unsettled),
+                }
+            };
+        assert_eq!(by_mint[&settled_only], expected(settled_only, 8, 0, 1, 0));
         assert_eq!(
             by_mint[&unsettled_only],
-            (cashu::Amount::ZERO, cashu::Amount::from(2u64))
+            expected(unsettled_only, 0, 2, 0, 32)
         );
-        assert_eq!(
-            by_mint[&both],
-            (cashu::Amount::from(16u64), cashu::Amount::from(4u64))
-        );
+        assert_eq!(by_mint[&both], expected(both, 16, 4, 0, 64));
     }
 
     fn redeem_service(
