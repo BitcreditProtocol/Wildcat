@@ -283,39 +283,20 @@ impl foreign::OnlineRepository for DBForeignOnline {
         Ok(proofs)
     }
 
-    async fn settled_balance(
-        &self,
-    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>> {
         let rows = sqlx::query!(
             r#"
-            SELECT mint_id, blobs
-            FROM treasury_foreign_proofs
+            SELECT mint_id FROM treasury_foreign_proofs
             "#
         )
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::DB(anyhow!(e)))?;
-        let mut balances = std::collections::HashMap::with_capacity(rows.len());
-        for row in rows {
-            let mint_id =
-                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
-            let mut proofs = Vec::with_capacity(row.blobs.len());
-            for blob in &row.blobs {
-                let blob: ForeignProofBlob =
-                    serde_json::from_str(blob).map_err(|e| Error::DB(anyhow!(e)))?;
-                match blob {
-                    ForeignProofBlob::V1(proof) => proofs.push(proof),
-                }
-            }
-            let total = cashu::Amount::try_sum(
-                proofs
-                    .iter()
-                    .map(|p| cashu::Amount::from(p.amount.to_sat())),
-            )
-            .expect("amounts are already checked");
-            balances.insert(mint_id, total);
-        }
-        Ok(balances)
+        rows.into_iter()
+            .map(|row| {
+                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))
+            })
+            .collect()
     }
 
     async fn store_htlc(
@@ -833,32 +814,6 @@ impl foreign::OfflineRepository for DBForeignOffline {
             })
             .collect();
         Ok(proofs)
-    }
-
-    async fn unsettled_balance(
-        &self,
-    ) -> Result<std::collections::HashMap<secp256k1::PublicKey, cashu::Amount>> {
-        let rows = sqlx::query!(
-            r#"
-            SELECT mint_id, blob as "blob: Json<ForeignOfflineProofBlob>"
-            FROM treasury_foreign_offline_proofs
-            "#
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::DB(anyhow!(e)))?;
-        let mut balances: std::collections::HashMap<secp256k1::PublicKey, cashu::Amount> =
-            std::collections::HashMap::new();
-        for row in rows {
-            let mint_id =
-                secp256k1::PublicKey::from_str(&row.mint_id).map_err(|e| Error::DB(anyhow!(e)))?;
-            let ForeignOfflineProofBlob::V1(proof) = row.blob.0;
-            let total = balances.entry(mint_id).or_insert(cashu::Amount::ZERO);
-            *total = total
-                .checked_add(cashu::Amount::from(proof.amount.to_sat()))
-                .ok_or_else(|| Error::DB(anyhow!("unsettled balance overflow")))?;
-        }
-        Ok(balances)
     }
 
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()> {

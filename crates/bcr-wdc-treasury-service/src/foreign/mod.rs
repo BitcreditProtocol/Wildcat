@@ -22,14 +22,17 @@ use crate::{error::Result, TStamp};
 
 pub use service::Service;
 
-/// Foreign eCash held from one issuing mint.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MintBalance {
     pub mint_id: secp256k1::PublicKey,
-    /// Swapped and owned outright.
-    pub settled: cashu::Amount,
-    /// Held, but the issuing mint is offline so it cannot be swapped yet.
-    pub unsettled: cashu::Amount,
+    // balance is split into credit/debit based on keyset's expiration date
+    // settled: amount of foreign proofs that have been redeemed
+    // unsettled: amount of foreign proofs that have not been redeemed yet, the issuing mint is
+    //            probably still offline
+    pub cr_settled: cashu::Amount,
+    pub cr_unsettled: cashu::Amount,
+    pub db_settled: cashu::Amount,
+    pub db_unsettled: cashu::Amount,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -37,7 +40,7 @@ pub struct MintBalance {
 pub trait OnlineRepository: Send + Sync {
     async fn store(&self, mint_id: secp256k1::PublicKey, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn list(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
-    async fn settled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
+    async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
 
     async fn store_htlc(
         &self,
@@ -80,9 +83,7 @@ pub trait OfflineRepository: Send + Sync {
         mint_id: secp256k1::PublicKey,
         proof: Vec<cashu::Proof>,
     ) -> Result<()>;
-    #[allow(dead_code)]
     async fn load_proofs(&self, mint_id: secp256k1::PublicKey) -> Result<Vec<cashu::Proof>>;
-    async fn unsettled_balance(&self) -> Result<HashMap<secp256k1::PublicKey, cashu::Amount>>;
     #[allow(dead_code)]
     async fn remove_proofs(&self, ys: &[cashu::PublicKey]) -> Result<()>;
     async fn list_foreign_pks(&self) -> Result<Vec<secp256k1::PublicKey>>;
