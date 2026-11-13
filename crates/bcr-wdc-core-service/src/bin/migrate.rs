@@ -5,9 +5,16 @@ use bcr_wdc_core_service::persistence::{self, Repository as _};
 
 // ----- end imports
 
+fn default_batch_size() -> usize {
+    5000
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct MigrateConfig {
     appcfg: bcr_wdc_core_service::config::App,
+    /// rows read from SurrealDB per query, overridable via CORE_SERVICE__BATCH_SIZE
+    #[serde(default = "default_batch_size")]
+    batch_size: usize,
 }
 
 #[tokio::main]
@@ -21,6 +28,8 @@ async fn main() {
     let cfg: MigrateConfig = settings
         .try_deserialize()
         .expect("Failed to parse migrate config");
+    let batch_size = cfg.batch_size;
+    assert!(batch_size > 0, "batch_size must be greater than 0");
     // Connect to SurrealDB (source)
     let surreal_repository = persistence::surreal::Repository::new(cfg.appcfg.repository)
         .await
@@ -41,25 +50,25 @@ async fn main() {
             .expect("Failed to list keys from SurrealDB");
         println!("   {} keysets in SurrealDB", keys.len());
         let signatures = surreal_repository
-            .dump_signatures()
+            .count_signatures()
             .await
-            .expect("Failed to list signatures from SurrealDB");
-        println!("   {} signatures in SurrealDB", signatures.len());
+            .expect("Failed to count signatures in SurrealDB");
+        println!("   {signatures} signatures in SurrealDB");
         let commitments = surreal_repository
-            .dump_commitments()
+            .count_commitments()
             .await
-            .expect("Failed to list commitments from SurrealDB");
-        println!("   {} commitments in SurrealDB", commitments.len());
+            .expect("Failed to count commitments in SurrealDB");
+        println!("   {commitments} commitments in SurrealDB");
         let reserved_ys = surreal_repository
-            .dump_reserved_ys()
+            .count_reserved_ys()
             .await
-            .expect("Failed to list reserved ys from SurrealDB");
-        println!("   {} reserved ys in SurrealDB", reserved_ys.len());
+            .expect("Failed to count reserved ys in SurrealDB");
+        println!("   {reserved_ys} reserved ys in SurrealDB");
         let proofs = surreal_repository
-            .dump_proofs()
+            .count_proofs()
             .await
-            .expect("Failed to list proofs from SurrealDB");
-        println!("   {} proofs in SurrealDB", proofs.len());
+            .expect("Failed to count proofs in SurrealDB");
+        println!("   {proofs} proofs in SurrealDB");
         return;
     }
     // Connect to PostgreSQL (destination)
@@ -80,18 +89,28 @@ async fn main() {
             std::process::exit(1);
         }
     }
+    // Every other table is read in batches of `batch_size` rows, to bound memory usage.
+    //
     // signatures
-    let signatures = surreal_repository
-        .dump_signatures()
-        .await
-        .expect("Failed to list signatures from SurrealDB");
-    println!("Found {} signatures in SurrealDB", signatures.len());
-    for (y, signature) in signatures {
-        if let Err(e) = sqlx_repository.signature_store(y, signature).await {
-            eprintln!("Failed to migrate signature {y}: {e}");
-            std::process::exit(1);
+    let mut start = 0;
+    loop {
+        let signatures = surreal_repository
+            .dump_signatures(start, batch_size)
+            .await
+            .expect("Failed to list signatures from SurrealDB");
+        let len = signatures.len();
+        for (y, signature) in signatures {
+            if let Err(e) = sqlx_repository.signature_store(y, signature).await {
+                eprintln!("Failed to migrate signature {y}: {e}");
+                std::process::exit(1);
+            }
+        }
+        start += len;
+        if len < batch_size {
+            break;
         }
     }
+    println!("Found {start} signatures in SurrealDB");
     // Commitments, reserved ys and proofs are migrated in that order.
     //
     // PostgreSQL folds the three SurrealDB tables `commitments`, `reserved_ys` and
@@ -101,51 +120,75 @@ async fn main() {
     // upgrades a committed or reserved row to a spent one.
     //
     // commitments
-    let commitments = surreal_repository
-        .dump_commitments()
-        .await
-        .expect("Failed to list commitments from SurrealDB");
-    println!("Found {} commitments in SurrealDB", commitments.len());
-    for commitment in commitments {
-        let signature = commitment.signature;
-        if let Err(e) = sqlx_repository
-            .commitment_store(
-                commitment.inputs,
-                commitment.outputs,
-                commitment.expiration,
-                commitment.wallet_key,
-                signature,
-                commitment.fp_digest,
-                commitment.signed,
-            )
+    let mut start = 0;
+    loop {
+        let commitments = surreal_repository
+            .dump_commitments(start, batch_size)
             .await
-        {
-            eprintln!("Failed to migrate commitment {signature}: {e}");
-            std::process::exit(1);
+            .expect("Failed to list commitments from SurrealDB");
+        let len = commitments.len();
+        for commitment in commitments {
+            let signature = commitment.signature;
+            if let Err(e) = sqlx_repository
+                .commitment_store(
+                    commitment.inputs,
+                    commitment.outputs,
+                    commitment.expiration,
+                    commitment.wallet_key,
+                    signature,
+                    commitment.fp_digest,
+                    commitment.signed,
+                )
+                .await
+            {
+                eprintln!("Failed to migrate commitment {signature}: {e}");
+                std::process::exit(1);
+            }
+        }
+        start += len;
+        if len < batch_size {
+            break;
         }
     }
+    println!("Found {start} commitments in SurrealDB");
     // reserved ys
-    let reserved_ys = surreal_repository
-        .dump_reserved_ys()
-        .await
-        .expect("Failed to list reserved ys from SurrealDB");
-    println!("Found {} reserved ys in SurrealDB", reserved_ys.len());
-    for (y, deadline) in reserved_ys {
-        if let Err(e) = sqlx_repository.ys_store(vec![y], deadline).await {
-            eprintln!("Failed to migrate reserved y {y}: {e}");
-            std::process::exit(1);
+    let mut start = 0;
+    loop {
+        let reserved_ys = surreal_repository
+            .dump_reserved_ys(start, batch_size)
+            .await
+            .expect("Failed to list reserved ys from SurrealDB");
+        let len = reserved_ys.len();
+        for (y, deadline) in reserved_ys {
+            if let Err(e) = sqlx_repository.ys_store(vec![y], deadline).await {
+                eprintln!("Failed to migrate reserved y {y}: {e}");
+                std::process::exit(1);
+            }
+        }
+        start += len;
+        if len < batch_size {
+            break;
         }
     }
+    println!("Found {start} reserved ys in SurrealDB");
     // proofs
-    let proofs = surreal_repository
-        .dump_proofs()
-        .await
-        .expect("Failed to list proofs from SurrealDB");
-    println!("Found {} proofs in SurrealDB", proofs.len());
-    if let Err(e) = persistence::sqlx::insert_v0(&sqlx_repository, proofs).await {
-        eprintln!("Failed to migrate proofs: {e}");
-        std::process::exit(1);
+    let mut start = 0;
+    loop {
+        let proofs = surreal_repository
+            .dump_proofs(start, batch_size)
+            .await
+            .expect("Failed to list proofs from SurrealDB");
+        let len = proofs.len();
+        if let Err(e) = persistence::sqlx::insert_v0(&sqlx_repository, proofs).await {
+            eprintln!("Failed to migrate proofs {start}..{}: {e}", start + len);
+            std::process::exit(1);
+        }
+        start += len;
+        if len < batch_size {
+            break;
+        }
     }
+    println!("Found {start} proofs in SurrealDB");
     surreal_repository
         .mark_migrated()
         .await

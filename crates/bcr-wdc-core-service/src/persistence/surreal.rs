@@ -53,6 +53,20 @@ impl Repository {
     pub(in crate::persistence) fn from_db(db: Surreal<Any>) -> Self {
         Self { db }
     }
+
+    async fn count_rows(&self, table: &'static str) -> SurrealResult<usize> {
+        #[derive(serde::Deserialize)]
+        struct Count {
+            count: usize,
+        }
+        let count: Option<Count> = self
+            .db
+            .query("SELECT count() FROM type::table($table) GROUP ALL")
+            .bind(("table", table))
+            .await?
+            .take(0)?;
+        Ok(count.map_or(0, |c| c.count))
+    }
 }
 
 async fn connect_surreal(cfg: surreal::DBConnConfig) -> SurrealResult<Surreal<Any>> {
@@ -511,11 +525,22 @@ impl std::convert::From<SignatureDBEntry> for cashu::BlindSignature {
 }
 
 impl Repository {
-    pub async fn dump_signatures(&self) -> Result<Vec<(cashu::PublicKey, cashu::BlindSignature)>> {
+    pub async fn count_signatures(&self) -> Result<usize> {
+        self.count_rows(SIGNATURES_TABLE)
+            .await
+            .map_err(|e| Error::SignaturesRepository(anyhow!(e)))
+    }
+    pub async fn dump_signatures(
+        &self,
+        start: usize,
+        limit: usize,
+    ) -> Result<Vec<(cashu::PublicKey, cashu::BlindSignature)>> {
         let entries: Vec<SignatureDBEntry> = self
             .db
-            .query("SELECT * FROM type::table($table)")
+            .query("SELECT * FROM type::table($table) ORDER BY id LIMIT $limit START $start")
             .bind(("table", SIGNATURES_TABLE))
+            .bind(("limit", limit))
+            .bind(("start", start))
             .await
             .map_err(|e| Error::SignaturesRepository(anyhow!(e)))?
             .take(0)
@@ -582,11 +607,18 @@ fn convert_to_db(proof: cashu::Proof, table: &str) -> Result<ProofDBEntry> {
 }
 
 impl Repository {
-    pub async fn dump_proofs(&self) -> Result<Vec<ProofDBEntry>> {
+    pub async fn count_proofs(&self) -> Result<usize> {
+        self.count_rows(PROOFS_TABLE)
+            .await
+            .map_err(|e| Error::ProofRepository(anyhow!(e)))
+    }
+    pub async fn dump_proofs(&self, start: usize, limit: usize) -> Result<Vec<ProofDBEntry>> {
         let entries: Vec<ProofDBEntry> = self
             .db
-            .query("SELECT * FROM type::table($table)")
+            .query("SELECT * FROM type::table($table) ORDER BY id LIMIT $limit START $start")
             .bind(("table", PROOFS_TABLE))
+            .bind(("limit", limit))
+            .bind(("start", start))
             .await
             .map_err(|e| Error::ProofRepository(anyhow!(e)))?
             .take(0)
@@ -650,11 +682,22 @@ pub struct DumpedCommitment {
 }
 
 impl Repository {
-    pub async fn dump_commitments(&self) -> Result<Vec<DumpedCommitment>> {
+    pub async fn count_commitments(&self) -> Result<usize> {
+        self.count_rows(COMMITMENTS_TABLE)
+            .await
+            .map_err(|e| Error::CommitmentRepository(anyhow!(e)))
+    }
+    pub async fn dump_commitments(
+        &self,
+        start: usize,
+        limit: usize,
+    ) -> Result<Vec<DumpedCommitment>> {
         let entries: Vec<CommitmentDBEntry> = self
             .db
-            .query("SELECT * FROM type::table($table)")
+            .query("SELECT * FROM type::table($table) ORDER BY id LIMIT $limit START $start")
             .bind(("table", COMMITMENTS_TABLE))
+            .bind(("limit", limit))
+            .bind(("start", start))
             .await
             .map_err(|e| Error::CommitmentRepository(anyhow!(e)))?
             .take(0)
@@ -824,11 +867,22 @@ struct ReservedYsDBEntry {
 }
 
 impl Repository {
-    pub async fn dump_reserved_ys(&self) -> Result<Vec<(cashu::PublicKey, TStamp)>> {
+    pub async fn count_reserved_ys(&self) -> Result<usize> {
+        self.count_rows(RESERVED_YS_TABLE)
+            .await
+            .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))
+    }
+    pub async fn dump_reserved_ys(
+        &self,
+        start: usize,
+        limit: usize,
+    ) -> Result<Vec<(cashu::PublicKey, TStamp)>> {
         let entries: Vec<ReservedYsDBEntry> = self
             .db
-            .query("SELECT * FROM type::table($table)")
+            .query("SELECT * FROM type::table($table) ORDER BY id LIMIT $limit START $start")
             .bind(("table", RESERVED_YS_TABLE))
+            .bind(("limit", limit))
+            .bind(("start", start))
             .await
             .map_err(|e| Error::ReservedYsRepository(anyhow!(e)))?
             .take(0)
@@ -968,6 +1022,41 @@ mod tests {
         // marking again is harmless
         db.mark_migrated().await.unwrap();
         assert!(db.is_migrated().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn dump_signatures_in_batches() {
+        let db = init_db().await;
+        assert_eq!(db.count_signatures().await.unwrap(), 0);
+        let (_, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
+        let mut expected = HashSet::new();
+        for _ in 0..7 {
+            let kp = bcr_common::core::generate_random_keypair();
+            let y = cashu::PublicKey::from(kp.public_key());
+            let signature = cashu::BlindSignature {
+                amount: cashu::Amount::from(1),
+                keyset_id: keyset.id.into(),
+                c: y,
+                dleq: None,
+            };
+            Repo::signature_store(&db, y, signature).await.unwrap();
+            expected.insert(y);
+        }
+        assert_eq!(db.count_signatures().await.unwrap(), 7);
+        let mut dumped = HashSet::new();
+        let mut sizes = Vec::new();
+        let mut start = 0;
+        loop {
+            let batch = db.dump_signatures(start, 3).await.unwrap();
+            sizes.push(batch.len());
+            start += batch.len();
+            dumped.extend(batch.into_iter().map(|(y, _)| y));
+            if sizes.last() < Some(&3) {
+                break;
+            }
+        }
+        assert_eq!(sizes, vec![3, 3, 1]);
+        assert_eq!(dumped, expected);
     }
 
     #[tokio::test]
