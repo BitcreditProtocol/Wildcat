@@ -45,7 +45,7 @@ pub async fn new_ebill_mintop(
         request.quote_id,
         request.kid.into(),
         cashu::PublicKey::from(request.pub_key),
-        request.target,
+        request.discounted,
         request.bill_id,
         now,
     )

@@ -178,17 +178,6 @@ mod tests {
             .times(1)
             .with(eq(bid.clone()))
             .returning(move |_| Ok(bill.clone()));
-        let cloned = bcr_wdc_utils::keys::to_keyset(&keyset.clone(), None);
-        wdc.expect_get_keys()
-            .times(1)
-            .with(eq(cashu::Id::from(keyset.id)))
-            .returning(move |_| Ok(cloned.clone()));
-        let cloned = keyset.clone();
-        wdc.expect_sign().times(1).returning(move |blnds| {
-            let amounts = blnds.iter().map(|b| b.amount).collect::<Vec<_>>();
-            let signatures = core_tests::generate_ecash_signatures(&cloned, &amounts);
-            Ok(signatures)
-        });
         repo.expect_update_status_if_accepted()
             .times(1)
             .with(eq(qid), always())
@@ -199,11 +188,11 @@ mod tests {
                 eq(qid),
                 eq(cashu::Id::from(keyset.id)),
                 eq(pk),
+                eq(cashu::Amount::from(2000)),
                 eq(cashu::Amount::from(1000)),
                 eq(bid),
             )
-            .returning(|_, _, _, _, _| Ok(()));
-        wdc.expect_collect_fees().times(1).returning(|_| Ok(()));
+            .returning(|_, _, _, _, _, _| Ok(()));
         let serv = Service {
             quotes: Box::new(repo),
             wdc_client: Box::new(wdc),

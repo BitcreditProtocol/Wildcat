@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bcr_common::{
     cashu,
     core::{maturity, BillId, NodeId},
-    ecash,
     wire::{bill as wire_bill, quotes as wire_quotes},
 };
 use bitcoin as btc;
@@ -55,16 +54,16 @@ pub trait WdcClient: Send + Sync {
         &self,
         expiration_date: time::Date,
     ) -> Result<cashu::Id>;
-    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet>;
+    /// amount is the bill sum, the mint fee (amount - discounted) is minted by the treasury
     async fn add_new_mint_operation(
         &self,
         qid: Uuid,
         kid: cashu::Id,
         pk: cashu::PublicKey,
-        target: cashu::Amount,
+        amount: cashu::Amount,
+        discounted: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()>;
-    async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus>;
     async fn validate_and_decrypt_shared_bill(
         &self,
@@ -81,7 +80,6 @@ pub trait WdcClient: Send + Sync {
         shared_bill_data: String,
     ) -> Result<Vec<wire_bill::BillHistoryBlock>>;
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill>;
-    async fn collect_fees(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn notify_new_ebill_quote(
         &self,
         qid: Uuid,
@@ -390,7 +388,7 @@ impl Service {
             qid,
             keyset_id,
             wallet_pubkey,
-            fees_amount,
+            quote.bill.sum,
             discounted,
             quote.bill.id.clone(),
         )
@@ -426,7 +424,7 @@ impl Service {
             qid,
             keyset_id,
             wallet_pubkey,
-            fees_amount,
+            quote.bill.sum,
             discounted,
             quote.bill.id.clone(),
         )
@@ -442,17 +440,15 @@ impl Service {
         qid: uuid::Uuid,
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
-        fees_amount: cashu::Amount,
+        amount: btc::Amount,
         discounted: btc::Amount,
         bill_id: BillId,
     ) -> Result<()> {
-        let keys = self.wdc_client.get_keys(keyset_id).await?;
-        let fees = mint_fees(self.wdc_client.as_ref(), fees_amount, &keys).await?;
-        let discounted_amount = cashu::Amount::from(discounted.to_sat());
+        let amount = cashu::Amount::from(amount.to_sat());
+        let discounted = cashu::Amount::from(discounted.to_sat());
         self.wdc_client
-            .add_new_mint_operation(qid, keyset_id, wallet_pubkey, discounted_amount, bill_id)
+            .add_new_mint_operation(qid, keyset_id, wallet_pubkey, amount, discounted, bill_id)
             .await?;
-        self.wdc_client.collect_fees(fees).await?;
         Ok(())
     }
 
@@ -502,29 +498,6 @@ pub fn calculate_expiration_from_maturity(maturity_date: time::Date) -> Result<t
     maturity_date
         .checked_add(time::Duration::days(2))
         .ok_or(Error::InvalidInput(String::from(MATURITY_OUT_OF_RANGE)))
-}
-
-async fn mint_fees(
-    keyscl: &dyn WdcClient,
-    fees_amount: cashu::Amount,
-    keys: &ecash::KeySet,
-) -> Result<Vec<cashu::Proof>> {
-    let premint = cashu::PreMintSecrets::random(
-        keys.id.into(),
-        fees_amount,
-        &cashu::amount::SplitTarget::None,
-        &bcr_wdc_utils::keys::to_fee_and_amounts(keys),
-    )
-    .map_err(|e| Error::InternalServer(format!("mint_fees(): PreMintSecrets::random(): {e}")))?;
-    let signatures = keyscl.sign(&premint.blinded_messages()).await?;
-    let (rs, secrets) = premint
-        .secrets
-        .into_iter()
-        .map(|secret| (secret.r, secret.secret))
-        .unzip();
-    let prfs = cashu::dhke::construct_proofs(signatures, rs, secrets, &keys.keys)
-        .map_err(|e| Error::InternalServer(format!("mint_fees(): construct_proofs(): {e}")))?;
-    Ok(prfs)
 }
 
 fn validate_basic_ebill_rules(bill: &BillInfo, now: TStamp) -> Result<()> {
@@ -1008,21 +981,14 @@ mod tests {
         );
         quote.id = qid;
         let (_keyset_info, signing_keyset) = core_tests::generate_random_ecash_keyset();
-        let keyset = ecash::KeySet {
-            id: signing_keyset.id,
-            unit: signing_keyset.unit.clone(),
-            active: None,
-            keys: signing_keyset.keys.clone().into(),
-            input_fee_ppk: signing_keyset.input_fee_ppk,
-            final_expiry: signing_keyset.final_expiry,
-        };
-        let keyset_id = keyset.id;
+        let keyset_id = signing_keyset.id;
         let wallet_pubkey = bcr_common::cashu::PublicKey::from(
             bcr_common::core::generate_random_keypair().public_key(),
         );
         let fee = cashu::Amount::from(10);
         let discounted = quote.bill.sum - btc::Amount::from_sat(10);
         let bill_id = quote.bill.id.clone();
+        let bill_sum = quote.bill.sum;
         quote.status = Status::FailedEbillValidation {
             keyset_id: keyset_id.into(),
             discounted,
@@ -1066,40 +1032,24 @@ mod tests {
 
         let mut wdc_client = MockWdcClient::new();
         wdc_client
-            .expect_get_keys()
-            .with(eq(cashu::Id::from(keyset_id)))
-            .times(1)
-            .returning(move |_| Ok(keyset.clone()));
-
-        let signing_keyset = signing_keyset.clone();
-        wdc_client.expect_sign().times(1).returning(move |msgs| {
-            let amounts = msgs.iter().map(|msg| msg.amount).collect::<Vec<_>>();
-            Ok(core_tests::generate_ecash_signatures(
-                &signing_keyset,
-                &amounts,
-            ))
-        });
-        wdc_client
             .expect_add_new_mint_operation()
             .withf(
                 move |actual_qid,
                       actual_keyset_id,
                       actual_wallet_pubkey,
-                      target,
+                      amount,
+                      actual_discounted,
                       actual_bill_id| {
                     *actual_qid == qid
                         && *actual_keyset_id == keyset_id.into()
                         && *actual_wallet_pubkey == wallet_pubkey
-                        && *target == cashu::Amount::from(discounted.to_sat())
+                        && *amount == cashu::Amount::from(bill_sum.to_sat())
+                        && *actual_discounted == cashu::Amount::from(discounted.to_sat())
                         && *actual_bill_id == bill_id
                 },
             )
             .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
-        wdc_client
-            .expect_collect_fees()
-            .times(1)
-            .returning(|_| Ok(()));
+            .returning(|_, _, _, _, _, _| Ok(()));
 
         let service = Service {
             quotes: Box::new(repo),
