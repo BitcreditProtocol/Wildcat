@@ -11,7 +11,6 @@ use bcr_common::{
         treasury::{Client as TreasuryClient, Error as TreasuryError},
     },
     core::BillId,
-    ecash,
     wire::{bill as wire_bill, notification as wire_notification, quotes as wire_quotes},
 };
 use uuid::Uuid;
@@ -45,30 +44,19 @@ impl WdcClient for WildcatCl {
         Ok(kinfo.id.into())
     }
 
-    async fn get_keys(&self, keyset_id: cashu::Id) -> Result<ecash::KeySet> {
-        let keyset = self.core.keys(keyset_id).await?;
-        Ok(keyset)
-    }
-
     async fn add_new_mint_operation(
         &self,
         qid: Uuid,
         kid: cashu::Id,
         c_pk: cashu::PublicKey,
-        target: cashu::Amount,
+        amount: cashu::Amount,
+        discounted: cashu::Amount,
         bill_id: BillId,
     ) -> Result<()> {
         self.treasury
-            .new_ebill_mint_operation(qid, kid.into(), *c_pk.deref(), target, bill_id)
+            .new_ebill_mint_operation(qid, kid.into(), *c_pk.deref(), amount, discounted, bill_id)
             .await?;
         Ok(())
-    }
-
-    async fn sign(&self, msgs: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
-        let c_msgs: Vec<_> = msgs.iter().cloned().map(From::from).collect();
-        let signatures = self.core.sign(&c_msgs).await?;
-        let c_signatures = signatures.into_iter().map(From::from).collect();
-        Ok(c_signatures)
     }
 
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus> {
@@ -117,12 +105,6 @@ impl WdcClient for WildcatCl {
     async fn get_ebill(&self, bid: BillId) -> Result<wire_bill::BitcreditBill> {
         let ebill = self.ebill.get_bill(&bid).await?;
         Ok(ebill)
-    }
-
-    async fn collect_fees(&self, c_proofs: Vec<cashu::Proof>) -> Result<()> {
-        let proofs: Vec<_> = c_proofs.into_iter().map(ecash::Proof::from).collect();
-        self.treasury.fees_store_proofs(proofs).await?;
-        Ok(())
     }
 
     async fn notify_new_ebill_quote(
