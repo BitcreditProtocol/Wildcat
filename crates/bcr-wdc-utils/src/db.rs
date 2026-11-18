@@ -58,7 +58,7 @@ pub mod surreal {
 }
 
 pub mod postgres {
-    use std::str::FromStr;
+    use std::{str::FromStr, time::Duration};
 
     use sqlx::{
         postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions},
@@ -72,9 +72,11 @@ pub mod postgres {
     }
 
     /// sqlx logs every statement at DEBUG by default, flooding the service logs:
+    /// push regular statements down to TRACE and log only slow ones at WARN.
     fn connect_options(cfg: &DBConnConfig) -> Result<PgConnectOptions, sqlx::Error> {
-        let options =
-            PgConnectOptions::from_str(&cfg.connection)?.log_statements(log::LevelFilter::Info);
+        let options = PgConnectOptions::from_str(&cfg.connection)?
+            .log_statements(log::LevelFilter::Trace)
+            .log_slow_statements(log::LevelFilter::Warn, Duration::from_millis(500));
         Ok(options)
     }
 
