@@ -89,7 +89,11 @@ pub async fn lookup_keys_v2(
     Ok(Json(keyset))
 }
 /// --------------------------- Restore signatures
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl))]
+#[tracing::instrument(
+    level = tracing::Level::DEBUG,
+    skip(ctrl, req),
+    fields(outputs = req.outputs.len())
+)]
 pub async fn restore(
     State(ctrl): State<Arc<service::Service>>,
     Json(req): Json<cashu::RestoreRequest>,
