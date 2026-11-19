@@ -10,7 +10,11 @@ use bcr_common::{
     wire::{keys as wire_keys, swap as wire_swap, treasury as wire_treasury},
 };
 // ----- local imports
-use crate::{core, ebill, error::Result, vault};
+use crate::{
+    core, ebill,
+    error::{Error, Result},
+    vault,
+};
 
 // ----- end imports
 
@@ -45,10 +49,17 @@ pub async fn generate_fees_token(
     let now = time::OffsetDateTime::now_utc();
     let wdc_cl = vault::WildcatCl { core: core_srvc };
     let token = vault_srvc.generate_token(&wdc_cl, now).await?;
-    let total = token.value()?;
+    let total = token.value()?.to_u64();
+    let unit = token
+        .unit()
+        .map(ecash::CurrencyUnit::try_from)
+        .transpose()
+        .map_err(|e| Error::Internal(format!("fees token unit: {e}")))?
+        .unwrap_or_default();
     let response = wire_treasury::FeesTokenResponse {
         token: token.to_string(),
         total,
+        unit,
     };
     Ok(Json(response))
 }

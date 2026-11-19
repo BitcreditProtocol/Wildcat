@@ -24,7 +24,7 @@ fn is_same_op(a: &MintOperation, b: &MintOperation) -> bool {
 pub struct Service {
     pub repo: Box<dyn Repository>,
     pub clowdercl: Box<dyn ClowderClient>,
-    pub multiplier: cashu::Amount,
+    pub multiplier: u64,
 }
 
 impl Service {
@@ -35,7 +35,7 @@ impl Service {
         uid: Uuid,
         kid: cashu::Id,
         pub_key: cashu::PublicKey,
-        amount: cashu::Amount,
+        amount: u64,
         bill_id: BillId,
         _now: TStamp,
     ) -> Result<()> {
@@ -45,7 +45,7 @@ impl Service {
             kid,
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id,
         };
         if let Some(existing) = self.repo.mint_lookup_by_bill(new.bill_id.clone()).await? {
@@ -91,13 +91,10 @@ impl Service {
             request.outputs.iter().cloned().map(From::from).collect();
         bcr_wdc_utils::signatures::basic_blinds_checks(&blinds)
             .map_err(|e| Error::InvalidInput(BRError::Generic(e.to_string())))?;
-        let output_amount = request
-            .outputs
-            .iter()
-            .fold(cashu::Amount::ZERO, |acc, blind| {
-                acc.checked_add(blind.amount)
-                    .expect("basic_blinds_checks should prevent overflow")
-            });
+        let output_amount = request.outputs.iter().fold(0u64, |acc, blind| {
+            acc.checked_add(blind.amount.to_u64())
+                .expect("basic_blinds_checks should prevent overflow")
+        });
         let operation = self.repo.mint_load(request.quote).await?;
         let signature_is_ok = request.verify_signature(&operation.pub_key);
         if !signature_is_ok {
@@ -218,7 +215,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(32);
+        let amount: u64 = 32;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -228,7 +225,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -249,7 +246,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -270,7 +267,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_store()
@@ -280,7 +277,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         service
@@ -300,7 +297,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -312,7 +309,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_lookup_by_bill()
@@ -327,7 +324,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         service
@@ -346,7 +343,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -358,7 +355,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_lookup_by_bill()
@@ -368,7 +365,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -397,7 +394,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -408,8 +405,8 @@ mod tests {
             uid,
             kid: kid.into(),
             pub_key,
-            target: cashu::Amount::from(128),
-            minted: cashu::Amount::ZERO,
+            target: 128,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_lookup_by_bill()
@@ -419,7 +416,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -440,7 +437,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -456,7 +453,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_store()
@@ -480,7 +477,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -513,7 +510,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -537,7 +534,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_lookup_by_bill()
@@ -547,7 +544,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         service
@@ -567,7 +564,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(64);
+        let amount: u64 = 64;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -586,7 +583,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: amount,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         repo.expect_mint_lookup_by_bill()
@@ -596,7 +593,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -619,12 +616,12 @@ mod tests {
         let amounts = [cashu::Amount::from(128), cashu::Amount::from(64)];
         let total = amounts
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, amount| acc + *amount);
+            .fold(0u64, |acc, amount| acc + amount.to_u64());
         let bill_id = core_tests::random_bill_id();
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
+            .with(eq(uid), eq(0u64), eq(total))
             .returning(|_, _, _| Ok(()));
         let info = kinfo.clone();
         core_cl
@@ -642,7 +639,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: total,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
         };
         mintop_repo
@@ -658,7 +655,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -688,7 +685,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -714,7 +711,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -737,13 +734,13 @@ mod tests {
         let uid = Uuid::new_v4();
         let kp = bcr_common::core::generate_random_keypair();
         let amounts = [cashu::Amount::from(1), cashu::Amount::from(2)];
-        let total = cashu::Amount::from(3);
+        let total: u64 = 3;
         let mintop = MintOperation {
             uid,
             kid: kid.into(),
             pub_key: cashu::PublicKey::from(kp.public_key()),
             target: total,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: core_tests::random_bill_id(),
         };
         mintop_repo
@@ -754,12 +751,12 @@ mod tests {
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
+            .with(eq(uid), eq(0u64), eq(total))
             .returning(|_, _, _| Ok(()));
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(total), eq(cashu::Amount::ZERO))
+            .with(eq(uid), eq(total), eq(0u64))
             .returning(|_, _, _| Ok(()));
         core_cl
             .expect_info()
@@ -773,7 +770,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();
@@ -805,17 +802,17 @@ mod tests {
         let amounts = [cashu::Amount::from(128)];
         let total = amounts
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, amount| acc + *amount);
+            .fold(0u64, |acc, amount| acc + amount.to_u64());
         let bill_id = core_tests::random_bill_id();
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
+            .with(eq(uid), eq(0u64), eq(total))
             .returning(|_, _, _| Ok(()));
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(total), eq(cashu::Amount::ZERO))
+            .with(eq(uid), eq(total), eq(0u64))
             .returning(|_, _, _| Ok(()));
         let info = kinfo.clone();
         core_cl
@@ -833,7 +830,7 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: total,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id,
         };
         mintop_repo
@@ -844,7 +841,7 @@ mod tests {
         let service = Service {
             clowdercl: Box::new(clowder_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds: Vec<_> = outputs.iter().map(|(blind, _, _)| blind.clone()).collect();

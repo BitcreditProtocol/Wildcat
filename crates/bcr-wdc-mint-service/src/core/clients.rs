@@ -44,7 +44,7 @@ pub trait ClowderClient: Send + Sync {
         &self,
         keyset_id: cashu::Id,
         quote_id: uuid::Uuid,
-        amount: cashu::Amount,
+        amount: u64,
         bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
@@ -85,7 +85,7 @@ impl ClowderClient for ClowderCl {
         &self,
         keyset_id: cashu::Id,
         quote_id: uuid::Uuid,
-        amount: cashu::Amount,
+        amount: u64,
         bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -111,7 +111,12 @@ impl ClowderClient for ClowderCl {
             unit: keyset.unit.into(),
         };
         let response = wire_clowder::KeysetCreationResponse {
-            public_keys: keyset.keys.keys().clone(),
+            public_keys: keyset
+                .keys
+                .keys()
+                .iter()
+                .map(|(amount, pk)| (amount.to_u64(), *pk))
+                .collect(),
             id: keyset.id.into(),
             expiry: keyset.final_expiry.unwrap_or_default(),
             unit: keyset.unit.into(),
@@ -200,7 +205,7 @@ impl ClowderClient for DummyClowderClient {
         &self,
         _keyset_id: cashu::Id,
         _quote_id: uuid::Uuid,
-        _amount: cashu::Amount,
+        _amount: u64,
         _bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
