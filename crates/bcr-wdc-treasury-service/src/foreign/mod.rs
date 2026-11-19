@@ -29,10 +29,10 @@ pub struct MintBalance {
     // settled: amount of foreign proofs that have been redeemed
     // unsettled: amount of foreign proofs that have not been redeemed yet, the issuing mint is
     //            probably still offline
-    pub cr_settled: cashu::Amount,
-    pub cr_unsettled: cashu::Amount,
-    pub db_settled: cashu::Amount,
-    pub db_unsettled: cashu::Amount,
+    pub cr_settled: u64,
+    pub cr_unsettled: u64,
+    pub db_settled: u64,
+    pub db_unsettled: u64,
 }
 
 #[cfg_attr(test, mockall::automock)]

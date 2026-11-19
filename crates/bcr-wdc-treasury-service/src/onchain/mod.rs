@@ -167,8 +167,8 @@ pub struct MeltOperation {
     pub qid: Uuid,
     pub address: String,
     pub target: bitcoin::Amount,
-    pub available: cashu::Amount,
-    pub fees: cashu::Amount,
+    pub available: u64,
+    pub fees: u64,
     // network fees = available - target - fees
     pub expiry: TStamp,
     pub wallet_key: cashu::PublicKey,
@@ -181,8 +181,9 @@ pub struct MeltOperation {
 impl MeltOperation {
     /// target + network fees
     pub fn outflow(&self) -> Option<bitcoin::Amount> {
-        bitcoin::Amount::from_sat(u64::from(self.available))
-            .checked_sub(bitcoin::Amount::from_sat(u64::from(self.fees)))
+        self.available
+            .checked_sub(self.fees)
+            .map(bitcoin::Amount::from_sat)
     }
 
     pub fn network_fee(&self) -> Option<bitcoin::Amount> {

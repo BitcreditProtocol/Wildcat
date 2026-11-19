@@ -105,9 +105,7 @@ impl foreign::ClowderClient for ClowderCl {
         &self,
         fps: Vec<wire_keys::ProofFingerprint>,
     ) -> Result<(reqwest::Url, secp256k1::PublicKey)> {
-        let input_amount = fps.iter().fold(cashu::Amount::ZERO, |acc, fp| {
-            acc + cashu::Amount::from(fp.amount)
-        });
+        let input_amount = fps.iter().fold(0u64, |acc, fp| acc + fp.amount);
         let fps_len = fps.len();
         let fps: Vec<wire_keys::ProofFingerprint> = fps.into_iter().collect();
         let wire_clowder::IntermintOriginResponse {

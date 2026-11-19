@@ -20,11 +20,11 @@ pub struct MintOperation {
     pub kid: cashu::Id,
     pub pub_key: cashu::PublicKey,
     /// the amount the wallet is allowed to mint
-    pub target: cashu::Amount,
-    pub minted: cashu::Amount,
+    pub target: u64,
+    pub minted: u64,
     pub bill_id: BillId,
     /// bill sum - target, minted by the treasury into its vault with the first wallet mint
-    pub fee: cashu::Amount,
+    pub fee: u64,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -34,12 +34,7 @@ pub trait Repository: Send + Sync {
     async fn mint_load(&self, uid: Uuid) -> Result<MintOperation>;
     async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<MintOperation>>;
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<MintOperation>>;
-    async fn mint_update_field(
-        &self,
-        uid: Uuid,
-        old_minted: cashu::Amount,
-        new_minted: cashu::Amount,
-    ) -> Result<()>;
+    async fn mint_update_field(&self, uid: Uuid, old_minted: u64, new_minted: u64) -> Result<()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -69,13 +64,13 @@ pub trait WildcatClient: Send + Sync {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ClowderClient: Send + Sync {
-    async fn register_ebill(&self, bid: BillId, amount: cashu::Amount) -> Result<()>;
+    async fn register_ebill(&self, bid: BillId, amount: u64) -> Result<()>;
 
     async fn minting_ebill(
         &self,
         kid: cashu::Id,
         qid: Uuid,
-        amount: cashu::Amount,
+        amount: u64,
         bid: BillId,
         signs: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>>;
