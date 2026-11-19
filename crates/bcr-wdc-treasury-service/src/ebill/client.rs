@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::{
     ebill,
     error::{Error, Result},
-    TStamp,
+    vault, TStamp,
 };
 
 // ----- end imports
@@ -113,6 +113,11 @@ impl ebill::WildcatClient for WildcatCl {
         Ok(kinfo)
     }
 
+    async fn keys(&self, kid: cashu::Id) -> Result<ecash::KeySet> {
+        let keyset = self.core.keys(kid).await?;
+        Ok(keyset)
+    }
+
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>> {
         let c_blinds: Vec<_> = blinds.iter().cloned().map(From::from).collect();
         let res = self.core.sign(&c_blinds).await?;
@@ -162,5 +167,16 @@ impl ebill::WildcatClient for WildcatCl {
     async fn is_bill_paid(&self, bill_id: core::BillId) -> Result<bool> {
         let status = self.ebill.get_payment_status(bill_id).await?;
         Ok(status.payment_status.paid)
+    }
+}
+
+pub struct VaultSrvc {
+    pub vault: Arc<vault::Service>,
+}
+
+#[async_trait]
+impl ebill::VaultService for VaultSrvc {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()> {
+        self.vault.store_proofs(proofs).await
     }
 }

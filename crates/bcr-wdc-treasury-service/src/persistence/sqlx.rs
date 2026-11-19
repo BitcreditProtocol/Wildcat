@@ -24,12 +24,52 @@ use crate::{
 #[serde(tag = "version", content = "data")]
 enum EbillMintOperationBlob {
     V1(EbillMintOpBlobV1),
+    V2(EbillMintOpBlobV2),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV1 {
     target: bitcoin::Amount,
     pub_key: secp256k1::PublicKey,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct EbillMintOpBlobV2 {
+    target: bitcoin::Amount,
+    pub_key: secp256k1::PublicKey,
+    fee: bitcoin::Amount,
+}
+
+fn to_ebill_mintop(
+    uid: Uuid,
+    kid: &str,
+    minted: i64,
+    bill_id: &str,
+    blob: EbillMintOperationBlob,
+) -> Result<ebill::MintOperation> {
+    let kid = cashu::Id::from_str(kid).map_err(|e| Error::DB(anyhow!(e)))?;
+    let bill_id = BillId::from_str(bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
+    let op = match blob {
+        EbillMintOperationBlob::V1(blob) => ebill::MintOperation {
+            uid,
+            kid,
+            minted: cashu::Amount::from(minted as u64),
+            bill_id,
+            target: cashu::Amount::from(blob.target.to_sat()),
+            pub_key: cashu::PublicKey::from(blob.pub_key),
+            fee: cashu::Amount::from(0),
+        },
+        EbillMintOperationBlob::V2(blob) => ebill::MintOperation {
+            uid,
+            kid,
+            minted: cashu::Amount::from(minted as u64),
+            bill_id,
+            target: cashu::Amount::from(blob.target.to_sat()),
+            pub_key: cashu::PublicKey::from(blob.pub_key),
+            fee: cashu::Amount::from(blob.fee.to_sat()),
+        },
+    };
+    Ok(op)
 }
 
 // ///////////////////////////////////////////////////////////////////////// DBEbill
@@ -49,9 +89,10 @@ impl DBEbill {
 impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
-        let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
+        let blob = EbillMintOperationBlob::V2(EbillMintOpBlobV2 {
             target: bitcoin::Amount::from_sat(mint_op.target.to_u64()),
             pub_key: *mint_op.pub_key.deref(),
+            fee: bitcoin::Amount::from_sat(mint_op.fee.to_u64()),
         });
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
@@ -94,17 +135,7 @@ impl ebill::Repository for DBEbill {
         let Some(row) = result else {
             return Err(Error::ResourceNotFound(uid.to_string()));
         };
-        let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
-        let EbillMintOperationBlob::V1(v1) = row.blob.0;
-        Ok(ebill::MintOperation {
-            uid: row.uid,
-            kid,
-            minted: cashu::Amount::from(row.minted as u64),
-            bill_id,
-            target: cashu::Amount::from(v1.target.to_sat()),
-            pub_key: cashu::PublicKey::from(v1.pub_key),
-        })
+        to_ebill_mintop(row.uid, &row.kid, row.minted, &row.bill_id, row.blob.0)
     }
 
     async fn mint_lookup_by_bill(&self, bill_id: BillId) -> Result<Option<ebill::MintOperation>> {
@@ -122,17 +153,8 @@ impl ebill::Repository for DBEbill {
         let Some(row) = result else {
             return Ok(None);
         };
-        let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-        let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
-        let EbillMintOperationBlob::V1(v1) = row.blob.0;
-        Ok(Some(ebill::MintOperation {
-            uid: row.uid,
-            kid,
-            minted: cashu::Amount::from(row.minted as u64),
-            bill_id,
-            target: cashu::Amount::from(v1.target.to_sat()),
-            pub_key: cashu::PublicKey::from(v1.pub_key),
-        }))
+        let op = to_ebill_mintop(row.uid, &row.kid, row.minted, &row.bill_id, row.blob.0)?;
+        Ok(Some(op))
     }
 
     async fn mint_list(&self, kid: cashu::Id) -> Result<Vec<ebill::MintOperation>> {
@@ -149,17 +171,8 @@ impl ebill::Repository for DBEbill {
         .map_err(|e| Error::DB(anyhow!(e)))?;
         let mut ops = Vec::with_capacity(results.len());
         for row in results {
-            let kid = cashu::Id::from_str(&row.kid).map_err(|e| Error::DB(anyhow!(e)))?;
-            let bill_id = BillId::from_str(&row.bill_id).map_err(|e| Error::DB(anyhow!(e)))?;
-            let EbillMintOperationBlob::V1(v1) = row.blob.0;
-            ops.push(ebill::MintOperation {
-                uid: row.uid,
-                kid,
-                minted: cashu::Amount::from(row.minted as u64),
-                bill_id,
-                target: cashu::Amount::from(v1.target.to_sat()),
-                pub_key: cashu::PublicKey::from(v1.pub_key),
-            });
+            let op = to_ebill_mintop(row.uid, &row.kid, row.minted, &row.bill_id, row.blob.0)?;
+            ops.push(op);
         }
         Ok(ops)
     }
@@ -1581,6 +1594,37 @@ mod tests {
         assert_eq!(stored["data"], cashu_json);
         let VaultProofBlob::V1(back) = serde_json::from_value(stored).unwrap();
         assert_eq!(cashu::Proof::from(back), proof);
+    }
+
+    #[::sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires DATABASE_URL with CREATEDB permission"]
+    async fn ebill_mintop_v1_blob_loads_without_fee(pool: PgPool) {
+        let (kinfo, _) = core_tests::generate_random_ecash_keyset();
+        let pub_key = bcr_common::core::generate_random_keypair().public_key();
+        let uid = Uuid::new_v4();
+        let bill_id = core_tests::random_bill_id();
+        let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
+            target: bitcoin::Amount::from_sat(64),
+            pub_key,
+        });
+        sqlx::query(
+            "INSERT INTO treasury_ebill_mint_ops (uid, kid, minted, bill_id, blob) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(uid)
+        .bind(kinfo.id.to_string())
+        .bind(8_i64)
+        .bind(bill_id.to_string())
+        .bind(serde_json::to_value(&blob).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let db = DBEbill::from_pool(pool);
+        let op = ebill::Repository::mint_load(&db, uid).await.unwrap();
+        assert_eq!(op.target, cashu::Amount::from(64));
+        assert_eq!(op.minted, cashu::Amount::from(8));
+        assert_eq!(op.pub_key, cashu::PublicKey::from(pub_key));
+        assert_eq!(op.fee, cashu::Amount::ZERO);
     }
 
     #[test]
