@@ -640,6 +640,7 @@ dependencies = [
  "axum",
  "bcr-common",
  "bcr-wdc-utils",
+ "bitcoin",
  "config",
  "futures",
  "secp256k1 0.29.1",
