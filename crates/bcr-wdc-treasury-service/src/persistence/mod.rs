@@ -562,6 +562,7 @@ mod tests {
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op).await.unwrap();
     }
@@ -590,6 +591,7 @@ mod tests {
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op.clone()).await.unwrap();
         let res = db.mint_store(op).await;
@@ -599,6 +601,8 @@ mod tests {
     #[tokio::test]
     async fn test_ebill_mint_store_bill_conflict() {
         let db = init_inmemory_ebill_db();
+        ebill_mint_store_bill_conflict(db).await;
+        let db = init_surreal_ebill_db().await;
         ebill_mint_store_bill_conflict(db).await;
     }
     #[::sqlx::test(migrations = "../../migrations")]
@@ -618,6 +622,7 @@ mod tests {
             target: cashu::Amount::from(64),
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op.clone()).await.unwrap();
         let other = ebill::MintOperation {
@@ -652,6 +657,7 @@ mod tests {
             target: cashu::Amount::from(64),
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         let absent = db.mint_lookup_by_bill(op.bill_id.clone()).await.unwrap();
         assert!(absent.is_none());
@@ -686,14 +692,16 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
+            target: cashu::Amount::from(64),
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::from(36),
         };
         db.mint_store(op.clone()).await.unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
         assert_eq!(res.kid, kid.into());
         assert_eq!(res.pub_key, kp.public_key().into());
+        assert_eq!(res, op);
     }
 
     #[tokio::test]
@@ -720,6 +728,7 @@ mod tests {
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op.clone()).await.unwrap();
         db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
@@ -754,6 +763,7 @@ mod tests {
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op1.clone()).await.unwrap();
         let op2 = ebill::MintOperation {
@@ -763,6 +773,7 @@ mod tests {
             target: cashu::Amount::ZERO,
             minted: cashu::Amount::ZERO,
             bill_id: bcr_common::core_tests::random_bill_id(),
+            fee: cashu::Amount::ZERO,
         };
         db.mint_store(op2.clone()).await.unwrap();
         let res = db.mint_list(kid.into()).await.unwrap();

@@ -642,6 +642,8 @@ pub struct EbillMintOpDBEntry {
     target: cashu::Amount,
     minted: cashu::Amount,
     bill_id: core::BillId,
+    #[serde(default)]
+    fee: cashu::Amount,
 }
 
 fn convert_to_ebillmintopdbentry(entry: ebill::MintOperation, table: &str) -> EbillMintOpDBEntry {
@@ -652,6 +654,7 @@ fn convert_to_ebillmintopdbentry(entry: ebill::MintOperation, table: &str) -> Eb
         target,
         minted,
         bill_id,
+        fee,
     } = entry;
     let id = RecordId::from_table_key(table, uid);
     EbillMintOpDBEntry {
@@ -661,6 +664,7 @@ fn convert_to_ebillmintopdbentry(entry: ebill::MintOperation, table: &str) -> Eb
         target,
         minted,
         bill_id,
+        fee,
     }
 }
 
@@ -675,6 +679,7 @@ impl std::convert::From<EbillMintOpDBEntry> for ebill::MintOperation {
             target: entry.target,
             minted: entry.minted,
             bill_id: entry.bill_id,
+            fee: entry.fee,
         }
     }
 }
@@ -722,6 +727,16 @@ impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let uid = mint_op.uid;
+        // no unique index on bill_id here, one mint operation per bill is checked up front
+        if ebill::Repository::mint_lookup_by_bill(self, mint_op.bill_id.clone())
+            .await?
+            .is_some()
+        {
+            return Err(Error::AlreadyExists(format!(
+                "mintop for bill {}",
+                mint_op.bill_id
+            )));
+        }
         let entry = convert_to_ebillmintopdbentry(mint_op, Self::MINT_OPS);
         let res: SurrealResult<Option<EbillMintOpDBEntry>> =
             self.db.insert(&entry.id).content(entry).await;

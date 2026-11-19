@@ -11,7 +11,7 @@ use crate::{error::Result, TStamp};
 
 // ----- end imports
 
-pub use client::{ClwdrCl, WildcatCl};
+pub use client::{ClwdrCl, VaultSrvc, WildcatCl};
 pub use service::Service;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -19,9 +19,12 @@ pub struct MintOperation {
     pub uid: Uuid,
     pub kid: cashu::Id,
     pub pub_key: cashu::PublicKey,
+    /// the amount the wallet is allowed to mint
     pub target: cashu::Amount,
     pub minted: cashu::Amount,
     pub bill_id: BillId,
+    /// bill sum - target, minted by the treasury into its vault with the first wallet mint
+    pub fee: cashu::Amount,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -43,6 +46,7 @@ pub trait Repository: Send + Sync {
 #[async_trait]
 pub trait WildcatClient: Send + Sync {
     async fn info(&self, kid: cashu::Id) -> Result<ecash::KeySetInfo>;
+    async fn keys(&self, kid: cashu::Id) -> Result<ecash::KeySet>;
     async fn sign(&self, blinds: &[cashu::BlindedMessage]) -> Result<Vec<cashu::BlindSignature>>;
     async fn burn(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
     async fn recover(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
@@ -91,4 +95,10 @@ pub trait ClowderClient: Send + Sync {
         block_id: u64,
         previous_block_hash: bitcoin::hashes::sha256::Hash,
     ) -> Result<bitcoin::Address>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait VaultService: Send + Sync {
+    async fn store_proofs(&self, proofs: Vec<cashu::Proof>) -> Result<()>;
 }

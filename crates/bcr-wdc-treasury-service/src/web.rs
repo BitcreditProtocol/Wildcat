@@ -147,9 +147,10 @@ pub async fn mint_onchain(
     Ok(Json(response))
 }
 
-#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, cache))]
+#[tracing::instrument(level = tracing::Level::DEBUG, skip(ctrl, vault_srvc, cache))]
 pub async fn mint_ebill(
     State(ctrl): State<Arc<ebill::Service>>,
+    State(vault_srvc): State<Arc<vault::Service>>,
     State(cache): State<Arc<dyn nut19::Cache>>,
     Json(request): Json<wire_mint::EbillMintRequest>,
 ) -> Result<Json<wire_mint::EbillMintResponse>> {
@@ -159,7 +160,8 @@ pub async fn mint_ebill(
         let response = nut19::ebill::mint::blob_to_response(blob);
         return Ok(Json(response));
     }
-    let response = ctrl.mint(request).await?;
+    let vault = ebill::VaultSrvc { vault: vault_srvc };
+    let response = ctrl.mint(request, &vault).await?;
     let blob = nut19::ebill::mint::response_to_blob(&response);
     cache.store_and_clean(key, blob, now).await;
     Ok(Json(response))
