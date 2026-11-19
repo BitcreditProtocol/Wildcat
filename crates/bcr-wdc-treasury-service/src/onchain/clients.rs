@@ -161,7 +161,7 @@ impl ClowderClient for ClowderCl {
     ) -> Result<Vec<cashu::BlindSignature>> {
         let output_amount = signatures
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, sig| acc + sig.amount);
+            .fold(0u64, |acc, sig| acc + sig.amount.to_u64());
         let request = wire_clowder::MintOnchainRequest {
             quote_id: qid,
             keyset_id: kid,
@@ -197,7 +197,7 @@ impl ClowderClient for ClowderCl {
             quote_id: msg.quote,
             inputs: msg.inputs.clone(),
             address: msg.address.clone(),
-            admin_fees: cashu::Amount::from(msg.melt_fee.to_sat()),
+            admin_fees: msg.melt_fee.to_sat(),
             network_fees: msg.network_fee,
             expiry: msg.expiry,
             wallet_key: cashu::PublicKey::from(msg.wallet_key),

@@ -260,8 +260,11 @@ impl Service {
         let authorized = self.clowder.redeem_offline_exchange(&request).await?;
         // Before signing: a withheld blind signature is still fetchable from restore.
         // Before claiming: a bad request must not spend the entry's one issuance.
-        let claimed = cashu::Amount::try_sum(request.outputs.iter().map(|o| o.amount))
-            .map_err(|_| Error::InvalidInput(String::from("redemption amount overflow")))?;
+        let claimed = request
+            .outputs
+            .iter()
+            .try_fold(0u64, |acc, o| acc.checked_add(o.amount.to_u64()))
+            .ok_or_else(|| Error::InvalidInput(String::from("redemption amount overflow")))?;
         if claimed != authorized.amount {
             return Err(Error::InvalidInput(String::from(
                 "outputs ask for more than the spend entry authorised",
@@ -284,7 +287,7 @@ impl Service {
         Ok(signatures)
     }
 
-    pub async fn try_swap_htlc(&self, preimage: &str, now: TStamp) -> Result<cashu::Amount> {
+    pub async fn try_swap_htlc(&self, preimage: &str, now: TStamp) -> Result<u64> {
         let online_amount = try_online_htlc(
             preimage,
             self.online_repo.as_ref(),
@@ -293,7 +296,7 @@ impl Service {
             now,
         )
         .await?;
-        if online_amount > cashu::Amount::ZERO {
+        if online_amount > 0 {
             return Ok(online_amount);
         }
         let offline_amount = try_offline_htlc_swap(
@@ -334,16 +337,16 @@ impl Service {
                 .collect();
             let mut mint_balance = MintBalance {
                 mint_id: *mint_id,
-                cr_settled: cashu::Amount::ZERO,
-                cr_unsettled: cashu::Amount::ZERO,
-                db_settled: cashu::Amount::ZERO,
-                db_unsettled: cashu::Amount::ZERO,
+                cr_settled: 0,
+                cr_unsettled: 0,
+                db_settled: 0,
+                db_unsettled: 0,
             };
             for kid in kids {
                 let kinfo = self.clowder.get_keyset_info(mint_id, &kid).await?;
                 let kid_matured = is_matured(kinfo.final_expiry, now);
-                let settled = settled_by_kid.remove(&kid).unwrap_or(cashu::Amount::ZERO);
-                let unsettled = unsettled_by_kid.remove(&kid).unwrap_or(cashu::Amount::ZERO);
+                let settled = settled_by_kid.remove(&kid).unwrap_or_default();
+                let unsettled = unsettled_by_kid.remove(&kid).unwrap_or_default();
                 // overflow shouldn't happen, proofs are checked on acceptance
                 // each mint can mint no more than 21 million coins, and the amount is u64
                 if kid_matured {
@@ -362,10 +365,10 @@ impl Service {
 
 // overflow shouldn't happen, proofs are checked on acceptance
 // this is for internal use, proofs come from the repo
-fn amounts_by_kid(proofs: Vec<cashu::Proof>) -> HashMap<cashu::Id, cashu::Amount> {
+fn amounts_by_kid(proofs: Vec<cashu::Proof>) -> HashMap<cashu::Id, u64> {
     bcr_common::core::signature::proofs_to_map(proofs)
         .into_iter()
-        .map(|(k, v)| (k, v.total_amount().expect("money overflow")))
+        .map(|(k, v)| (k, v.total_amount().expect("money overflow").to_u64()))
         .collect()
 }
 
@@ -405,8 +408,8 @@ async fn try_online_htlc(
     clowder: &dyn ClowderClient,
     factory: &dyn MintClientFactory,
     now: TStamp,
-) -> Result<cashu::Amount> {
-    let mut gran_total = cashu::Amount::ZERO;
+) -> Result<u64> {
+    let mut gran_total = 0u64;
     // Online preimages are fixed-size 32-byte hex; non-hex preimages are not online unlocks.
     let Some(hash) = online_hash_lock(preimage) else {
         return Ok(gran_total);
@@ -425,12 +428,12 @@ async fn try_online_htlc(
         f_proofs = clowder.sign_p2pk_proofs(&f_proofs).await?;
         let new_proofs =
             signed_swap_with_foreign(f_proofs, clowder, foreign_client.as_ref(), now).await?;
-        let total = new_proofs.total_amount().unwrap_or_default();
+        let total = new_proofs.total_amount().unwrap_or_default().to_u64();
         repo.store(mint_id, new_proofs).await?;
         repo.remove_htlcs(&f_fingerprints).await?;
         gran_total += total;
     }
-    if gran_total > cashu::Amount::ZERO {
+    if gran_total > 0 {
         // Backed now, so no longer the reclaim routine's to burn.
         repo.remove_issued_by_hash(&hash).await?;
     }
@@ -442,10 +445,10 @@ async fn try_offline_htlc_swap(
     repo: &dyn OfflineRepository,
     issued: &dyn OnlineRepository,
     clowder: &dyn ClowderClient,
-) -> Result<cashu::Amount> {
+) -> Result<u64> {
     let hash = offline_hash_lock(preimage);
     let Some((mint_id, fp)) = repo.search_fp(&hash).await? else {
-        return Ok(cashu::Amount::ZERO);
+        return Ok(0);
     };
     let secret = cashu::secret::Secret::from_str(preimage)?;
     let amount = cashu::Amount::from(fp.amount);
@@ -473,7 +476,7 @@ async fn try_offline_htlc_swap(
     repo.store_proofs(mint_id, vec![proof]).await?;
     // Backed now, so no longer the reclaim routine's to burn.
     issued.remove_issued_by_hash(&hash).await?;
-    Ok(amount)
+    Ok(amount.to_u64())
 }
 
 #[cfg(test)]
@@ -1167,10 +1170,10 @@ mod tests {
             |mint_id, cr_settled: u64, cr_unsettled: u64, db_settled: u64, db_unsettled: u64| {
                 MintBalance {
                     mint_id,
-                    cr_settled: cashu::Amount::from(cr_settled),
-                    cr_unsettled: cashu::Amount::from(cr_unsettled),
-                    db_settled: cashu::Amount::from(db_settled),
-                    db_unsettled: cashu::Amount::from(db_unsettled),
+                    cr_settled,
+                    cr_unsettled,
+                    db_settled,
+                    db_unsettled,
                 }
             };
         assert_eq!(by_mint[&settled_only], expected(settled_only, 8, 0, 1, 0));
@@ -1206,11 +1209,7 @@ mod tests {
             .expect_redeem_offline_exchange()
             .times(1)
             .returning(|_| {
-                Ok(
-                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
-                        amount: cashu::Amount::from(2u64),
-                    },
-                )
+                Ok(bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization { amount: 2 })
             });
         let mut keys = crate::foreign::MockKeysClient::new();
         keys.expect_sign().never();
@@ -1230,11 +1229,7 @@ mod tests {
             .expect_redeem_offline_exchange()
             .times(1)
             .returning(|_| {
-                Ok(
-                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
-                        amount: cashu::Amount::from(3u64),
-                    },
-                )
+                Ok(bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization { amount: 3 })
             });
         let mut offline_repo = crate::foreign::MockOfflineRepository::new();
         offline_repo
@@ -1258,11 +1253,7 @@ mod tests {
             .expect_redeem_offline_exchange()
             .times(1)
             .returning(|_| {
-                Ok(
-                    bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization {
-                        amount: cashu::Amount::from(3u64),
-                    },
-                )
+                Ok(bcr_common::wire::clowder::RedeemOfflineExchangeAuthorization { amount: 3 })
             });
         clowder
             .expect_signal_offline_redeem_event()
@@ -1430,7 +1421,7 @@ mod tests {
             .try_swap_htlc(&preimage, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
-        assert_eq!(cashu::Amount::from(256), amount);
+        assert_eq!(256, amount);
     }
 
     #[tokio::test]
@@ -1501,6 +1492,6 @@ mod tests {
             .try_swap_htlc(&preimage, time::OffsetDateTime::now_utc())
             .await
             .unwrap();
-        assert_eq!(cashu::Amount::from(256), amount);
+        assert_eq!(256, amount);
     }
 }
