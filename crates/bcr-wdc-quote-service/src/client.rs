@@ -49,8 +49,8 @@ impl WdcClient for WildcatCl {
         qid: Uuid,
         kid: cashu::Id,
         c_pk: cashu::PublicKey,
-        amount: cashu::Amount,
-        discounted: cashu::Amount,
+        amount: u64,
+        discounted: u64,
         bill_id: BillId,
     ) -> Result<()> {
         self.treasury
@@ -110,13 +110,13 @@ impl WdcClient for WildcatCl {
     async fn notify_new_ebill_quote(
         &self,
         qid: Uuid,
-        sum: bitcoin::Amount,
+        sum: u64,
         drawee: String,
         maturity_date: time::Date,
     ) -> Result<()> {
         let fields = HashMap::from([
             (String::from("quote_id"), qid.to_string()),
-            (String::from("amount"), sum.to_sat().to_string()),
+            (String::from("amount"), sum.to_string()),
             (String::from("drawee"), drawee),
             (String::from("maturity_date"), maturity_date.to_string()),
         ]);
