@@ -69,7 +69,7 @@ impl From<LightQuoteDBEntry> for quotes::LightQuote {
         Self {
             id: dbq.qid,
             status: dbq.status,
-            sum: bitcoin::Amount::from_sat(dbq.sum),
+            sum: dbq.sum,
             maturity_date: dbq.maturity_date,
         }
     }

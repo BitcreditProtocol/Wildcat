@@ -309,9 +309,7 @@ impl persistence::Repository for DBQuotes {
                     id: r.qid,
                     status: quotes::StatusDiscriminants::from_str(&r.status)
                         .map_err(|e| Error::QuotesRepository(anyhow!(e)))?,
-                    sum: bitcoin::Amount::from_sat(
-                        u64::try_from(r.bill_sum).expect("bill_sum always positive"),
-                    ),
+                    sum: u64::try_from(r.bill_sum).expect("bill_sum always positive"),
                     maturity_date: r.maturity_date,
                 })
             })

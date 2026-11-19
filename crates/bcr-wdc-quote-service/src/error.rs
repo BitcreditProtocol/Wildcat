@@ -2,7 +2,7 @@
 // ----- extra library imports
 use anyhow::Error as AnyError;
 use axum::http::StatusCode;
-use bcr_common::{cashu::nut02 as cdk02, core::signature::ECashSignatureError};
+use bcr_common::{cashu::nut02 as cdk02, core::signature::ECashSignatureError, ecash};
 use thiserror::Error;
 // ----- local modules
 // ----- local imports
@@ -37,9 +37,11 @@ pub enum Error {
     #[error("resource not found: resource id {0}")]
     ResourceNotFound(String),
     #[error("Invalid amount: {0}")]
-    InvalidAmount(bitcoin::Amount),
+    InvalidAmount(u64),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+    #[error("Unsupported currency unit: {0}")]
+    UnsupportedUnit(ecash::CurrencyUnit),
     #[error("Invalid keyset ID: {0}")]
     InvalidKeysetId(cdk02::Id),
     #[error("Internal server error: {0}")]
@@ -58,6 +60,11 @@ impl axum::response::IntoResponse for Error {
             }
             Error::InvalidInput(msg) => {
                 let v = serde_json::Value::String(format!("Invalid input: {msg}"));
+                let j = serde_json::to_string(&v).unwrap_or_default();
+                (StatusCode::BAD_REQUEST, j)
+            }
+            Error::UnsupportedUnit(unit) => {
+                let v = serde_json::Value::String(format!("Unsupported currency unit: {unit}"));
                 let j = serde_json::to_string(&v).unwrap_or_default();
                 (StatusCode::BAD_REQUEST, j)
             }
