@@ -99,7 +99,7 @@ mod tests {
         let quote = quotes::Quote {
             id: qid,
             status: quotes::Status::Accepted {
-                discounted: bitcoin::Amount::from_sat(1000),
+                discounted: 1000,
                 wallet_pubkey: cashu::PublicKey::from(core::generate_random_keypair().public_key()),
                 keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
             },
@@ -137,13 +137,13 @@ mod tests {
         let quote = quotes::Quote {
             id: qid,
             status: quotes::Status::Accepted {
-                discounted: bitcoin::Amount::from_sat(1000),
+                discounted: 1000,
                 wallet_pubkey: pk,
                 keyset_id: keyset.id.into(),
             },
             submitted: time::OffsetDateTime::UNIX_EPOCH,
             bill: quotes::BillInfo {
-                sum: bitcoin::Amount::from_sat(2000),
+                sum: 2000,
                 ..quotes::BillInfo::random()
             },
         };
@@ -188,8 +188,8 @@ mod tests {
                 eq(qid),
                 eq(cashu::Id::from(keyset.id)),
                 eq(pk),
-                eq(cashu::Amount::from(2000)),
-                eq(cashu::Amount::from(1000)),
+                eq(2000),
+                eq(1000),
                 eq(bid),
             )
             .returning(|_, _, _, _, _, _| Ok(()));

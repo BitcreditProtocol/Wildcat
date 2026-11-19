@@ -4,6 +4,7 @@ use std::sync::Arc;
 use axum::extract::{Json, Path, State};
 use bcr_common::{
     core::signature::{deserialize_borsh_msg, schnorr_verify_b64},
+    ecash,
     wire::quotes as wire_quotes,
 };
 // ----- local imports
@@ -58,11 +59,17 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
             wallet_pubkey,
         },
         quotes::Status::OfferExpired { tstamp, discounted } => {
-            wire_quotes::StatusReply::OfferExpired { tstamp, discounted }
+            wire_quotes::StatusReply::OfferExpired {
+                tstamp,
+                discounted,
+                unit: ecash::DEFAULT_CURRENCY_UNIT,
+            }
         }
-        quotes::Status::Rejected { tstamp, discounted } => {
-            wire_quotes::StatusReply::Rejected { tstamp, discounted }
-        }
+        quotes::Status::Rejected { tstamp, discounted } => wire_quotes::StatusReply::Rejected {
+            tstamp,
+            discounted,
+            unit: ecash::DEFAULT_CURRENCY_UNIT,
+        },
         quotes::Status::Accepted {
             keyset_id,
             discounted,
@@ -81,7 +88,7 @@ fn convert_to_enquire_reply(quote: quotes::Quote) -> wire_quotes::StatusReply {
             keyset_id,
             discounted,
             wallet_pubkey,
-            minted_amount: bcr_common::cashu::Amount::ZERO,
+            minted_amount: 0,
         },
         quotes::Status::FailedEbillValidation {
             keyset_id,
