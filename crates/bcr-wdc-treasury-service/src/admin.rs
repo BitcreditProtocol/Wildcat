@@ -3,11 +3,15 @@ use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, State};
 use bcr_common::{
-    cashu,
+    cashu, ecash,
     wire::{exchange as wire_exchange, treasury as wire_treasury},
 };
 // ----- local imports
-use crate::{ebill, error::Result, foreign, onchain, vault};
+use crate::{
+    ebill,
+    error::{Error, Result},
+    foreign, onchain, vault,
+};
 
 // ----- end imports
 
@@ -29,7 +33,7 @@ pub async fn request_to_pay_ebill(
 pub async fn try_htlc_swap(
     State(ctrl): State<Arc<foreign::Service>>,
     Json(request): Json<wire_exchange::HtlcSwapAttemptRequest>,
-) -> Result<Json<cashu::Amount>> {
+) -> Result<Json<u64>> {
     let now = time::OffsetDateTime::now_utc();
     let amount = ctrl.try_swap_htlc(&request.preimage, now).await?;
     Ok(Json(amount))
@@ -101,10 +105,17 @@ pub async fn generate_fees_token(
 ) -> Result<Json<wire_treasury::FeesTokenResponse>> {
     let now = time::OffsetDateTime::now_utc();
     let token = ctrl.generate_token(now).await?;
-    let total = token.value()?;
+    let total = token.value()?.to_u64();
+    let unit = token
+        .unit()
+        .map(ecash::CurrencyUnit::try_from)
+        .transpose()
+        .map_err(|e| Error::Internal(format!("fees token unit: {e}")))?
+        .unwrap_or_default();
     let response = wire_treasury::FeesTokenResponse {
         token: token.to_string(),
         total,
+        unit,
     };
     Ok(Json(response))
 }
@@ -113,6 +124,8 @@ impl From<foreign::MintBalance> for wire_treasury::ForeignBalanceEntry {
     fn from(balance: foreign::MintBalance) -> Self {
         Self {
             mint_id: balance.mint_id,
+            // foreign balances are not yet tracked per unit
+            unit: ecash::DEFAULT_CURRENCY_UNIT,
             cr_settled: balance.cr_settled,
             cr_unsettled: balance.cr_unsettled,
             db_settled: balance.db_settled,

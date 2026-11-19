@@ -281,12 +281,7 @@ impl ebill::Repository for EbillMintOpMap {
         }
         Ok(a)
     }
-    async fn mint_update_field(
-        &self,
-        uid: uuid::Uuid,
-        old: cashu::Amount,
-        new: cashu::Amount,
-    ) -> Result<()> {
+    async fn mint_update_field(&self, uid: uuid::Uuid, old: u64, new: u64) -> Result<()> {
         let mut wlocked = self.mintops.write().unwrap();
         let (cs, _) = &mut *wlocked;
         let operation = cs.get_mut(&uid).ok_or(Error::Internal(format!(

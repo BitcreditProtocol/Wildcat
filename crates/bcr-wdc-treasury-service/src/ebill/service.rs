@@ -29,7 +29,7 @@ pub struct Service {
     pub repo: Box<dyn Repository>,
     pub wildcatcl: Box<dyn WildcatClient>,
     pub clowdercl: Box<dyn ClowderClient>,
-    pub multiplier: cashu::Amount,
+    pub multiplier: u64,
 }
 
 impl Service {
@@ -41,8 +41,8 @@ impl Service {
         uid: Uuid,
         kid: cashu::Id,
         pub_key: cashu::PublicKey,
-        amount: cashu::Amount,
-        discounted: cashu::Amount,
+        amount: u64,
+        discounted: u64,
         bill_id: BillId,
         _now: TStamp,
     ) -> Result<()> {
@@ -57,7 +57,7 @@ impl Service {
             kid,
             pub_key,
             target: discounted,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id,
             fee,
         };
@@ -96,12 +96,12 @@ impl Service {
     async fn sign_fee(
         &self,
         kid: cashu::Id,
-        fee: cashu::Amount,
+        fee: u64,
     ) -> Result<(Vec<cashu::BlindSignature>, Vec<cashu::Proof>)> {
         let keyset = self.wildcatcl.keys(kid).await?;
         let premint = cashu::PreMintSecrets::random(
             kid,
-            fee,
+            cashu::Amount::from(fee),
             &cashu::amount::SplitTarget::None,
             &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
         )?;
@@ -120,7 +120,7 @@ impl Service {
         &self,
         kid: cashu::Id,
         qid: Uuid,
-        amount: cashu::Amount,
+        amount: u64,
         bill_id: BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -171,10 +171,10 @@ impl Service {
         let output_amount = request
             .outputs
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, blind| acc + blind.amount);
+            .fold(0u64, |acc, blind| acc + blind.amount.to_u64());
         // minted must strictly grow, so that only one request moves it away from zero
         // and carries the mint fee
-        if output_amount == cashu::Amount::ZERO {
+        if output_amount == 0 {
             return Err(Error::InvalidInput(String::from("empty outputs")));
         }
         let operation = self.repo.mint_load(request.quote).await?;
@@ -197,8 +197,7 @@ impl Service {
             return Err(Error::InvalidInput(String::from("exceeding amount")));
         }
         // the first mint carries the mint fee, the minted update below lets only one request through
-        let fee = if operation.minted == cashu::Amount::ZERO && operation.fee > cashu::Amount::ZERO
-        {
+        let fee = if operation.minted == 0 && operation.fee > 0 {
             Some(self.sign_fee(operation.kid, operation.fee).await?)
         } else {
             None
@@ -280,7 +279,7 @@ mod tests {
         let pub_key = bcr_common::core::generate_random_keypair()
             .public_key()
             .into();
-        let amount = cashu::Amount::from(32);
+        let amount: u64 = 32;
         let bill_id = core_tests::random_bill_id();
         core_cl
             .expect_info()
@@ -291,7 +290,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let now = time::OffsetDateTime::now_utc();
         let err = service
@@ -310,10 +309,10 @@ mod tests {
             pub_key: bcr_common::core::generate_random_keypair()
                 .public_key()
                 .into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         (kinfo, op)
     }
@@ -334,7 +333,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         }
     }
 
@@ -415,7 +414,7 @@ mod tests {
         let (kinfo, op) = new_op();
         let mut repo = MockRepository::new();
         let existing = MintOperation {
-            target: cashu::Amount::from(128),
+            target: 128,
             ..op.clone()
         };
         expect_store_exists(&mut repo, Some(existing));
@@ -474,12 +473,12 @@ mod tests {
         let amounts = [cashu::Amount::from(128), cashu::Amount::from(64)];
         let total = amounts
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, amount| acc + *amount);
+            .fold(0u64, |acc, amount| acc + amount.to_u64());
         let bill_id = core_tests::random_bill_id();
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
+            .with(eq(uid), eq(0u64), eq(total))
             .returning(|_, _, _| Ok(()));
         core_cl.expect_sign().times(1).returning(move |msgs| {
             let amounts: Vec<cashu::Amount> = msgs.iter().map(|msg| msg.amount).collect();
@@ -491,9 +490,9 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: total,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id: bill_id.clone(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         mintop_repo
             .expect_mint_load()
@@ -509,7 +508,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs
@@ -543,7 +542,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs
@@ -578,12 +577,12 @@ mod tests {
         let amounts = [cashu::Amount::from(128)];
         let total = amounts
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, amount| acc + *amount);
+            .fold(0u64, |acc, amount| acc + amount.to_u64());
         let bill_id = core_tests::random_bill_id();
         mintop_repo
             .expect_mint_update_field()
             .times(1)
-            .with(eq(uid), eq(cashu::Amount::ZERO), eq(total))
+            .with(eq(uid), eq(0u64), eq(total))
             .returning(|_, _, _| Ok(()));
         core_cl.expect_sign().times(1).returning(move |msgs| {
             let amounts: Vec<cashu::Amount> = msgs.iter().map(|msg| msg.amount).collect();
@@ -595,9 +594,9 @@ mod tests {
             kid: kid.into(),
             pub_key,
             target: total,
-            minted: cashu::Amount::ZERO,
+            minted: 0,
             bill_id,
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         mintop_repo
             .expect_mint_load()
@@ -608,7 +607,7 @@ mod tests {
             clowdercl: Box::new(clowder_cl),
             wildcatcl: Box::new(core_cl),
             repo: Box::new(mintop_repo),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let outputs = signatures_test::generate_blinds(kid.into(), &amounts);
         let blinds = outputs
@@ -676,16 +675,14 @@ mod tests {
         assert_eq!(response.signatures.len(), signature_count);
     }
 
-    fn sum_signatures(signatures: &[cashu::BlindSignature]) -> cashu::Amount {
+    fn sum_signatures(signatures: &[cashu::BlindSignature]) -> u64 {
         signatures
             .iter()
-            .fold(cashu::Amount::ZERO, |acc, s| acc + s.amount)
+            .fold(0u64, |acc, s| acc + s.amount.to_u64())
     }
 
-    fn sum_proofs(proofs: &[cashu::Proof]) -> cashu::Amount {
-        proofs
-            .iter()
-            .fold(cashu::Amount::ZERO, |acc, p| acc + p.amount)
+    fn sum_proofs(proofs: &[cashu::Proof]) -> u64 {
+        proofs.iter().fold(0u64, |acc, p| acc + p.amount.to_u64())
     }
 
     /// mintop with target 64 and fee 36, the wallet mints `amounts` after `minted`
@@ -698,7 +695,7 @@ mod tests {
     }
 
     impl FeeFixture {
-        fn new(minted: cashu::Amount) -> Self {
+        fn new(minted: u64) -> Self {
             let (kinfo, keyset) = bcr_common::core_tests::generate_random_ecash_keyset();
             let kid = cashu::Id::from(kinfo.id);
             let kp = bcr_common::core::generate_random_keypair();
@@ -706,10 +703,10 @@ mod tests {
                 uid: Uuid::new_v4(),
                 kid,
                 pub_key: cashu::PublicKey::from(kp.public_key()),
-                target: cashu::Amount::from(64),
+                target: 64,
                 minted,
                 bill_id: core_tests::random_bill_id(),
-                fee: cashu::Amount::from(36),
+                fee: 36,
             };
             Self {
                 keyset,
@@ -720,10 +717,8 @@ mod tests {
             }
         }
 
-        fn output(&self) -> cashu::Amount {
-            self.amounts
-                .iter()
-                .fold(cashu::Amount::ZERO, |acc, a| acc + *a)
+        fn output(&self) -> u64 {
+            self.amounts.iter().fold(0u64, |acc, a| acc + a.to_u64())
         }
 
         fn request(&self) -> wire_mint::EbillMintRequest {
@@ -776,14 +771,14 @@ mod tests {
                 clowdercl: Box::new(clowder_cl),
                 wildcatcl: Box::new(core_cl),
                 repo: Box::new(repo),
-                multiplier: cashu::Amount::ONE,
+                multiplier: 1,
             }
         }
     }
 
     #[tokio::test]
     async fn new_minting_operation_stores_fee_and_registers_bill_sum() {
-        let fx = FeeFixture::new(cashu::Amount::ZERO);
+        let fx = FeeFixture::new(0);
         let amount = fx.mintop.target + fx.mintop.fee;
         let mut repo = MockRepository::new();
         let mut core_cl = MockWildcatClient::new();
@@ -821,7 +816,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_minting_operation_discounted_above_amount_rejected() {
-        let fx = FeeFixture::new(cashu::Amount::ZERO);
+        let fx = FeeFixture::new(0);
         let mut core_cl = MockWildcatClient::new();
         let (kinfo, _) = bcr_common::core_tests::generate_random_ecash_keyset();
         core_cl
@@ -836,7 +831,7 @@ mod tests {
                 fx.kid,
                 fx.mintop.pub_key,
                 fx.mintop.target,
-                fx.mintop.target + cashu::Amount::ONE,
+                fx.mintop.target + 1,
                 fx.mintop.bill_id.clone(),
                 now,
             )
@@ -847,7 +842,7 @@ mod tests {
 
     #[tokio::test]
     async fn mint_first_mint_reports_fee_with_wallet_signatures() {
-        let fx = FeeFixture::new(cashu::Amount::ZERO);
+        let fx = FeeFixture::new(0);
         let (repo, mut core_cl) = fx.mocks(2);
         fx.expect_keys(&mut core_cl);
         let mut clowder_cl = MockClowderClient::new();
@@ -882,7 +877,7 @@ mod tests {
 
     #[tokio::test]
     async fn mint_later_mint_carries_no_fee() {
-        let fx = FeeFixture::new(cashu::Amount::from(8));
+        let fx = FeeFixture::new(8);
         let (repo, core_cl) = fx.mocks(1);
         let mut clowder_cl = MockClowderClient::new();
         clowder_cl
@@ -908,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn mint_fee_vault_failure_does_not_fail_the_mint() {
-        let fx = FeeFixture::new(cashu::Amount::ZERO);
+        let fx = FeeFixture::new(0);
         let (repo, mut core_cl) = fx.mocks(2);
         fx.expect_keys(&mut core_cl);
         let mut clowder_cl = MockClowderClient::new();
@@ -929,7 +924,7 @@ mod tests {
 
     #[tokio::test]
     async fn mint_empty_outputs_rejected() {
-        let mut fx = FeeFixture::new(cashu::Amount::ZERO);
+        let mut fx = FeeFixture::new(0);
         fx.amounts.clear();
         // no repo/core/clowder/vault expectations: nothing is loaded, signed or reported
         let service = FeeFixture::service(
@@ -947,7 +942,7 @@ mod tests {
 
     #[tokio::test]
     async fn mint_concurrent_first_mint_loser_reports_nothing() {
-        let fx = FeeFixture::new(cashu::Amount::ZERO);
+        let fx = FeeFixture::new(0);
         let mut repo = MockRepository::new();
         let mintop = fx.mintop.clone();
         repo.expect_mint_load()

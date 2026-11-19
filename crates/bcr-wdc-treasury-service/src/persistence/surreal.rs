@@ -278,9 +278,9 @@ impl From<MeltStatusDBEntry> for onchain::MeltStatus {
 struct OnChainMeltOpDbEntry {
     id: RecordId,
     address: String,
-    available: cashu::Amount,
+    available: u64,
     target: bitcoin::Amount,
-    fees: cashu::Amount,
+    fees: u64,
     #[serde(with = "time::serde::rfc3339")]
     expiry: TStamp,
     commitment: String,
@@ -639,11 +639,11 @@ pub struct EbillMintOpDBEntry {
     id: RecordId,
     kid: cashu::Id,
     pub_key: cashu::PublicKey,
-    target: cashu::Amount,
-    minted: cashu::Amount,
+    target: u64,
+    minted: u64,
     bill_id: core::BillId,
     #[serde(default)]
-    fee: cashu::Amount,
+    fee: u64,
 }
 
 fn convert_to_ebillmintopdbentry(entry: ebill::MintOperation, table: &str) -> EbillMintOpDBEntry {
@@ -789,12 +789,7 @@ impl ebill::Repository for DBEbill {
         let ops = ops.into_iter().map(ebill::MintOperation::from).collect();
         Ok(ops)
     }
-    async fn mint_update_field(
-        &self,
-        uid: Uuid,
-        old: cashu::Amount,
-        new: cashu::Amount,
-    ) -> Result<()> {
+    async fn mint_update_field(&self, uid: Uuid, old: u64, new: u64) -> Result<()> {
         ensure_writable(&self.db, Self::MIGRATION_KEY).await?;
         let rid = RecordId::from_table_key(Self::MINT_OPS, uid);
         let before: Option<EbillMintOpDBEntry> = self
