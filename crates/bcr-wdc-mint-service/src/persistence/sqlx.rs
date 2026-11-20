@@ -1148,7 +1148,7 @@ enum EbillMintOperationBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV1 {
-    target: bitcoin::Amount,
+    target: u64,
     pub_key: secp256k1::PublicKey,
 }
 
@@ -1170,7 +1170,7 @@ impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
         let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
-            target: bitcoin::Amount::from_sat(mint_op.target.to_u64()),
+            target: mint_op.target,
             pub_key: *mint_op.pub_key.deref(),
         });
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
@@ -1183,7 +1183,7 @@ impl ebill::Repository for DBEbill {
             "#,
             uid,
             mint_op.kid.to_string(),
-            mint_op.minted.to_u64() as i64,
+            mint_op.minted as i64,
             mint_op.bill_id.to_string(),
             blob_value
         )
@@ -1220,9 +1220,9 @@ impl ebill::Repository for DBEbill {
         Ok(ebill::MintOperation {
             uid: row.uid,
             kid,
-            minted: cashu::Amount::from(row.minted as u64),
+            minted: row.minted as u64,
             bill_id,
-            target: cashu::Amount::from(v1.target.to_sat()),
+            target: v1.target,
             pub_key: cashu::PublicKey::from(v1.pub_key),
         })
     }
@@ -1248,9 +1248,9 @@ impl ebill::Repository for DBEbill {
         Ok(Some(ebill::MintOperation {
             uid: row.uid,
             kid,
-            minted: cashu::Amount::from(row.minted as u64),
+            minted: row.minted as u64,
             bill_id,
-            target: cashu::Amount::from(v1.target.to_sat()),
+            target: v1.target,
             pub_key: cashu::PublicKey::from(v1.pub_key),
         }))
     }
@@ -1275,21 +1275,16 @@ impl ebill::Repository for DBEbill {
             ops.push(ebill::MintOperation {
                 uid: row.uid,
                 kid,
-                minted: cashu::Amount::from(row.minted as u64),
+                minted: row.minted as u64,
                 bill_id,
-                target: cashu::Amount::from(v1.target.to_sat()),
+                target: v1.target,
                 pub_key: cashu::PublicKey::from(v1.pub_key),
             });
         }
         Ok(ops)
     }
 
-    async fn mint_update_field(
-        &self,
-        uid: Uuid,
-        old_minted: cashu::Amount,
-        new_minted: cashu::Amount,
-    ) -> Result<()> {
+    async fn mint_update_field(&self, uid: Uuid, old_minted: u64, new_minted: u64) -> Result<()> {
         let result = sqlx::query!(
             r#"
             UPDATE treasury_ebill_mint_ops
@@ -1298,8 +1293,8 @@ impl ebill::Repository for DBEbill {
             RETURNING uid
             "#,
             uid,
-            old_minted.to_u64() as i64,
-            new_minted.to_u64() as i64,
+            old_minted as i64,
+            new_minted as i64,
         )
         .fetch_optional(&self.pool)
         .await

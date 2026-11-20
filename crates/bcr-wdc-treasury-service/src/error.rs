@@ -87,7 +87,7 @@ pub enum Error {
     #[error("active keyset {0}")]
     ActiveKeyset(cashu::Id),
     #[error("Unmatching amount: input {0} != output {1}")]
-    UnmatchingAmount(cashu::Amount, cashu::Amount),
+    UnmatchingAmount(u64, u64),
     #[error("error in unblinding signatures {0}")]
     UnblindSignatures(String),
     #[error("Insufficient amount for melting {0}")]
@@ -95,9 +95,9 @@ pub enum Error {
     #[error("Insufficient amount for minting {0}")]
     InsufficientOnchainMintAmount(bitcoin::Amount),
     #[error("Proofs supplied for melting does not match original request")]
-    MeltAmountMismatch(cashu::Amount),
+    MeltAmountMismatch(u64),
     #[error("Signatures supplied for minting does not match original request")]
-    MintAmountMismatch(cashu::Amount),
+    MintAmountMismatch(u64),
 
     #[error("resource not found: {0}")]
     ResourceNotFound(String),

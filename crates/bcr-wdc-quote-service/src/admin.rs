@@ -2,11 +2,12 @@
 use std::sync::Arc;
 // ----- extra library imports
 use axum::extract::{Json, Path, Query, State};
+use bcr_common::ecash;
 use bcr_common::wire::bill as wire_bill;
 use bcr_common::wire::quotes as wire_quotes;
 // ----- local imports
 use crate::{
-    error::Result,
+    error::{Error, Result},
     quotes,
     service::{calculate_default_expiration_date_for_quote, ListFilters, Service, SortOrder},
 };
@@ -34,6 +35,7 @@ fn convert_into_light_quote(quote: quotes::LightQuote) -> wire_quotes::LightInfo
         id: quote.id,
         status,
         sum: quote.sum,
+        unit: ecash::DEFAULT_CURRENCY_UNIT,
     }
 }
 
@@ -150,6 +152,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
                 id: quote.id,
                 bill: wire_quotes::BillInfo::from(quote.bill),
                 discounted,
+                unit: ecash::DEFAULT_CURRENCY_UNIT,
                 tstamp,
             }
         }
@@ -172,6 +175,7 @@ fn convert_to_info_reply(quote: quotes::Quote) -> wire_quotes::InfoReply {
             id: quote.id,
             bill: wire_quotes::BillInfo::from(quote.bill),
             discounted,
+            unit: ecash::DEFAULT_CURRENCY_UNIT,
             tstamp,
         },
         quotes::Status::MintingEnabled {
@@ -226,9 +230,21 @@ pub async fn update_quote(
             ctrl.deny(id, now).await?;
             wire_quotes::UpdateQuoteResponse::Denied
         }
-        wire_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
+        wire_quotes::UpdateQuoteRequest::Offer {
+            discounted,
+            unit,
+            ttl,
+        } => {
+            // quotes are still denominated in sat only
+            if unit != ecash::DEFAULT_CURRENCY_UNIT {
+                return Err(Error::UnsupportedUnit(unit));
+            }
             let (discounted, ttl) = ctrl.offer(id, discounted, now, ttl).await?;
-            wire_quotes::UpdateQuoteResponse::Offered { discounted, ttl }
+            wire_quotes::UpdateQuoteResponse::Offered {
+                discounted,
+                unit,
+                ttl,
+            }
         }
     };
     Ok(Json(response))
