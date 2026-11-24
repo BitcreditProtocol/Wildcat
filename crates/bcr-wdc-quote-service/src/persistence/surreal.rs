@@ -351,3 +351,56 @@ impl Repository for DBQuotes {
         Ok(())
     }
 }
+
+////////////////////////////////////////////////////////////////////////// Migrations DB
+/// The whole quote DB is migrated to PostgreSQL at once: a single record marks it.
+const MIGRATIONS_TABLE: &str = "migrations";
+const MIGRATION_KEY: &str = "quote";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct MigrationDBEntry {
+    id: surrealdb::RecordId,
+    #[serde(with = "time::serde::rfc3339")]
+    migrated_at: TStamp,
+}
+
+impl DBQuotes {
+    pub async fn is_migrated(&self) -> Result<bool> {
+        let rid = surrealdb::RecordId::from_table_key(MIGRATIONS_TABLE, MIGRATION_KEY);
+        let entry: Option<MigrationDBEntry> = self
+            .db
+            .select(rid)
+            .await
+            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
+        Ok(entry.is_some())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn init_db() -> DBQuotes {
+        DBQuotes::new(surreal::DBConnConfig {
+            connection: "mem://".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn is_migrated_reads_the_marker() {
+        let db = init_db().await;
+        assert!(!db.is_migrated().await.unwrap());
+
+        let rid = surrealdb::RecordId::from_table_key(MIGRATIONS_TABLE, MIGRATION_KEY);
+        let entry = MigrationDBEntry {
+            id: rid.clone(),
+            migrated_at: time::OffsetDateTime::now_utc(),
+        };
+        let _: Option<MigrationDBEntry> = db.db.upsert(rid).content(entry).await.unwrap();
+        assert!(db.is_migrated().await.unwrap());
+    }
+}
