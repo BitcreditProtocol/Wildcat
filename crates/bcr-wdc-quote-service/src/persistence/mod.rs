@@ -22,7 +22,7 @@ use crate::{
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Repository {
+pub trait Repository: Send + Sync {
     async fn load(&self, id: uuid::Uuid) -> Result<Option<Quote>>;
     async fn update_status_if_pending(&self, id: uuid::Uuid, quote: Status) -> Result<()>;
     async fn update_status_if_offered(&self, id: uuid::Uuid, quote: Status) -> Result<()>;

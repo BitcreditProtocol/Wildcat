@@ -18,7 +18,7 @@ use bcr_common::{
     },
     wire::clowder as wire_clowder,
 };
-use bcr_wdc_utils::{routine::RoutineHandle, surreal};
+use bcr_wdc_utils::{db, routine::RoutineHandle, surreal};
 // ----- local modules
 mod admin;
 mod client;
@@ -40,6 +40,7 @@ pub const NOTIFICATION_TIMEOUT: time::SignedDuration = time::SignedDuration::sec
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AppConfig {
     quotes: surreal::DBConnConfig,
+    quotes_new: db::postgres::DBConnConfig,
     core_url: ClientUrl,
     treasury_url: ClientUrl,
     ebill_url: ClientUrl,
@@ -57,6 +58,7 @@ pub struct AppController {
 pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     let AppConfig {
         quotes,
+        quotes_new,
         core_url,
         treasury_url,
         ebill_url,
@@ -65,9 +67,23 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
         monitor_interval_seconds,
         user_decision_retention_seconds,
     } = cfg;
-    let quotes_repository = persistence::surreal::DBQuotes::new(quotes)
+    let surreal_quotes = persistence::surreal::DBQuotes::new(quotes)
         .await
         .expect("DB connection to quotes failed");
+    let migrated = surreal_quotes
+        .is_migrated()
+        .await
+        .expect("Failed to read migration marker");
+    let backend = db::select_db_backend("quote-service", migrated, quotes_new.clone());
+    let quotes_repository: Box<dyn persistence::Repository> = match backend {
+        db::DBBackend::Surreal => Box::new(surreal_quotes),
+        db::DBBackend::Postgres | db::DBBackend::DefaultPostgres => {
+            let pool = db::postgres::connect(&quotes_new)
+                .await
+                .expect("Failed to connect to PostgreSQL");
+            Box::new(persistence::sqlx::DBQuotes::from_pool(pool))
+        }
+    };
 
     let clwdr_cl = ClowderClient::new(clowder_url);
     let public_key = clwdr_cl
@@ -95,7 +111,7 @@ pub async fn init_app(cfg: AppConfig) -> (AppController, RoutineHandle) {
     let user_decision_retention = time::Duration::seconds(user_decision_retention_seconds as i64);
     let quoting_service = service::Service {
         wdc_client: Box::new(wdc_cl),
-        quotes: Box::new(quotes_repository),
+        quotes: quotes_repository,
         mint_url: cashu_mint_url,
         user_decision_retention,
     };

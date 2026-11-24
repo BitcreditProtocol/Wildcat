@@ -1,11 +1,9 @@
-#![allow(dead_code)]
 // ----- standard library imports
 use std::str::FromStr;
 // ----- extra library imports
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bcr_common::core::{BillId, NodeId};
-use bcr_wdc_utils::postgres;
 use sqlx::{types::Json, PgPool, QueryBuilder};
 use strum::IntoDiscriminant;
 use uuid::Uuid;
@@ -136,13 +134,6 @@ pub struct DBQuotes {
 }
 
 impl DBQuotes {
-    pub async fn new(cfg: postgres::DBConnConfig) -> Result<Self> {
-        let pool = postgres::connect(&cfg)
-            .await
-            .map_err(|e| Error::QuotesRepository(anyhow!(e)))?;
-        Ok(Self { pool })
-    }
-
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
