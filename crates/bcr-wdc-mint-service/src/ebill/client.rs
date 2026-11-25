@@ -31,7 +31,7 @@ pub struct ClwdrCl {
 
 #[async_trait]
 impl ebill::ClowderClient for ClwdrCl {
-    async fn register_ebill(&self, bid: BillId, amount: cashu::Amount) -> Result<()> {
+    async fn register_ebill(&self, bid: BillId, amount: u64) -> Result<()> {
         let request = wire_clowder::RegisterEbillRequest {
             bill_id: bid,
             amount,
@@ -45,7 +45,7 @@ impl ebill::ClowderClient for ClwdrCl {
         &self,
         keyset_id: cashu::Id,
         quote_id: Uuid,
-        amount: cashu::Amount,
+        amount: u64,
         bill_id: core::BillId,
         signatures: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {
@@ -107,7 +107,7 @@ pub struct DummyClowderClient;
 #[cfg(feature = "test-utils")]
 #[async_trait]
 impl ebill::ClowderClient for DummyClowderClient {
-    async fn register_ebill(&self, _bid: BillId, _amount: cashu::Amount) -> Result<()> {
+    async fn register_ebill(&self, _bid: BillId, _amount: u64) -> Result<()> {
         Ok(())
     }
 
@@ -115,7 +115,7 @@ impl ebill::ClowderClient for DummyClowderClient {
         &self,
         _kid: cashu::Id,
         _qid: Uuid,
-        _amount: cashu::Amount,
+        _amount: u64,
         _bid: BillId,
         signs: Vec<cashu::BlindSignature>,
     ) -> Result<Vec<cashu::BlindSignature>> {

@@ -45,7 +45,7 @@ pub enum SortOrder {
 
 pub enum MintingStatus {
     Disabled,
-    Enabled(cashu::Amount),
+    Enabled(u64),
 }
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -60,8 +60,8 @@ pub trait WdcClient: Send + Sync {
         qid: Uuid,
         kid: cashu::Id,
         pk: cashu::PublicKey,
-        amount: cashu::Amount,
-        discounted: cashu::Amount,
+        amount: u64,
+        discounted: u64,
         bill_id: BillId,
     ) -> Result<()>;
     async fn get_minting_status(&self, qid: Uuid) -> Result<MintingStatus>;
@@ -83,7 +83,7 @@ pub trait WdcClient: Send + Sync {
     async fn notify_new_ebill_quote(
         &self,
         qid: Uuid,
-        sum: btc::Amount,
+        sum: u64,
         drawee: String,
         maturity_date: time::Date,
     ) -> Result<()>;
@@ -310,10 +310,10 @@ impl Service {
     pub async fn offer(
         &self,
         qid: uuid::Uuid,
-        discounted: btc::Amount,
+        discounted: u64,
         submitted: TStamp,
         ttl: Option<TStamp>,
-    ) -> Result<(btc::Amount, TStamp)> {
+    ) -> Result<(u64, TStamp)> {
         let mut quote = self._lookup(qid, submitted).await?;
         let Status::Pending { .. } = quote.status else {
             return Err(Error::InvalidQuoteStatus(
@@ -381,8 +381,7 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
-        let fees_amount = quote.bill.sum - discounted;
-        let fees_amount = cashu::Amount::from(fees_amount.to_sat());
+        let fees_amount = mint_fee(quote.bill.sum, discounted)?;
         quote.override_failed_ebill_validation(fees_amount)?;
         self.trigger_enable_minting_operations(
             qid,
@@ -417,8 +416,7 @@ impl Service {
                 StatusDiscriminants::from(quote.status.clone()),
             ));
         };
-        let fees_amount = quote.bill.sum - discounted;
-        let fees_amount = cashu::Amount::from(fees_amount.to_sat());
+        let fees_amount = mint_fee(quote.bill.sum, discounted)?;
         quote.start_minting(fees_amount)?;
         self.trigger_enable_minting_operations(
             qid,
@@ -440,12 +438,10 @@ impl Service {
         qid: uuid::Uuid,
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
-        amount: btc::Amount,
-        discounted: btc::Amount,
+        amount: u64,
+        discounted: u64,
         bill_id: BillId,
     ) -> Result<()> {
-        let amount = cashu::Amount::from(amount.to_sat());
-        let discounted = cashu::Amount::from(discounted.to_sat());
         self.wdc_client
             .add_new_mint_operation(qid, keyset_id, wallet_pubkey, amount, discounted, bill_id)
             .await?;
@@ -483,6 +479,13 @@ impl Service {
 
 const MATURITY_OUT_OF_RANGE: &str = "maturity date out of range";
 
+/// the mint fee is what the bill is worth beyond what the wallet is allowed to mint
+fn mint_fee(sum: u64, discounted: u64) -> Result<u64> {
+    sum.checked_sub(discounted).ok_or_else(|| {
+        Error::InvalidInput(format!("discounted {discounted} exceeds bill amount {sum}"))
+    })
+}
+
 fn credit_ends_at(maturity_date: time::Date) -> Result<TStamp> {
     TStamp::from_unix_timestamp(
         (maturity::credit_expires_at(maturity_date) + maturity::SECS_PER_DAY) as i64,
@@ -505,12 +508,11 @@ fn validate_basic_ebill_rules(bill: &BillInfo, now: TStamp) -> Result<()> {
     if credit_ends_at(bill.maturity_date)? <= now {
         return Err(Error::InvalidInput(String::from("bill matured")));
     }
-    if bill.sum <= btc::Amount::ONE_SAT || bill.sum > bitcoin::Amount::MAX_MONEY {
-        return Err(Error::InvalidInput(format!(
-            "{} < bill_amount < {}",
-            btc::Amount::ONE_SAT,
-            btc::Amount::MAX_MONEY
-        )));
+    // BillInfo.sum is still denominated in sats (see bcr_common::wire::quotes::BillInfo)
+    let min = btc::Amount::ONE_SAT.to_sat();
+    let max = btc::Amount::MAX_MONEY.to_sat();
+    if bill.sum <= min || bill.sum > max {
+        return Err(Error::InvalidInput(format!("{min} < bill_amount < {max}")));
     }
     Ok(())
 }
@@ -538,7 +540,7 @@ mod tests {
             payee: wire_bill::BillParticipant::Ident(holder.clone()),
             current_holder: wire_bill::BillParticipant::Ident(holder),
             endorsees: Default::default(),
-            sum: btc::Amount::from_sat(rng.gen_range(1000..100000)),
+            sum: rng.gen_range(1000..100000),
             maturity_date: (time::OffsetDateTime::now_utc()
                 + time::Duration::days(rng.gen_range(10..30)))
             .date(),
@@ -602,10 +604,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
         };
-        let (_, ttl) = service
-            .offer(qid, btc::Amount::from_sat(1000), submitted, None)
-            .await
-            .unwrap();
+        let (_, ttl) = service.offer(qid, 1000, submitted, None).await.unwrap();
         assert_eq!(ttl, credit_ends);
         assert_eq!(ttl, time::macros::datetime!(2026-01-02 00:00 UTC));
         assert!(ttl < calculate_default_expiration_date_for_quote(submitted));
@@ -637,10 +636,7 @@ mod tests {
             mint_url: cashu::MintUrl::from_str(TEST_URL).unwrap(),
             user_decision_retention: time::Duration::days(1),
         };
-        let err = service
-            .offer(qid, btc::Amount::from_sat(1000), submitted, None)
-            .await
-            .unwrap_err();
+        let err = service.offer(qid, 1000, submitted, None).await.unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
     }
 
@@ -657,9 +653,7 @@ mod tests {
             credit_ends - time::Duration::HOUR,
         );
         let kid = core_tests::generate_random_ecash_keyset().0.id;
-        quote
-            .offer(kid.into(), credit_ends, btc::Amount::from_sat(1000))
-            .unwrap();
+        quote.offer(kid.into(), credit_ends, 1000).unwrap();
 
         assert!(!quote.check_expire(credit_ends - time::Duration::NANOSECOND));
         assert!(quote.check_expire(credit_ends));
@@ -985,8 +979,8 @@ mod tests {
         let wallet_pubkey = bcr_common::cashu::PublicKey::from(
             bcr_common::core::generate_random_keypair().public_key(),
         );
-        let fee = cashu::Amount::from(10);
-        let discounted = quote.bill.sum - btc::Amount::from_sat(10);
+        let fee = 10;
+        let discounted = quote.bill.sum - 10;
         let bill_id = quote.bill.id.clone();
         let bill_sum = quote.bill.sum;
         quote.status = Status::FailedEbillValidation {
@@ -1043,8 +1037,8 @@ mod tests {
                     *actual_qid == qid
                         && *actual_keyset_id == keyset_id.into()
                         && *actual_wallet_pubkey == wallet_pubkey
-                        && *amount == cashu::Amount::from(bill_sum.to_sat())
-                        && *actual_discounted == cashu::Amount::from(discounted.to_sat())
+                        && *amount == bill_sum
+                        && *actual_discounted == discounted
                         && *actual_bill_id == bill_id
                 },
             )

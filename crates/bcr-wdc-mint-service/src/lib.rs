@@ -115,10 +115,7 @@ impl AppController {
             mint_id,
         };
         let config::Ebill { multiplier } = ebill_cfg;
-        assert!(
-            multiplier > cashu::Amount::ZERO,
-            "Multiplier must be greater than zero"
-        );
+        assert!(multiplier > 0, "Multiplier must be greater than zero");
         let ebill = ebill::Service {
             repo: Box::new(persistence::sqlx::DBEbill::from_pool(pool)),
             clowdercl: Box::new(ebill_clowder),
@@ -224,7 +221,7 @@ pub mod test_utils {
         let ebill = ebill::Service {
             repo: Box::new(persistence::inmemory::EbillMintOpMap::default()),
             clowdercl: Box::new(ebill::DummyClowderClient),
-            multiplier: cashu::Amount::ONE,
+            multiplier: 1,
         };
         let ebill_cl =
             EbillClient::new(client::Url::parse("http://localhost:3339").expect("ebill url"));

@@ -292,7 +292,7 @@ impl From<quotes::BillInfo> for DbBillInfo {
             payee: DbBillParticipant::from(payee),
             endorsees: endorsees.into_iter().map(DbBillParticipant::from).collect(),
             current_holder: DbBillParticipant::from(current_holder),
-            sum: sum.to_sat(),
+            sum,
             maturity_date,
             file_urls,
             shared_bill_data,
@@ -326,7 +326,7 @@ impl TryFrom<DbBillInfo> for quotes::BillInfo {
                 .map(wire_bill::BillParticipant::try_from)
                 .collect::<Result<Vec<_>>>()?,
             current_holder: wire_bill::BillParticipant::try_from(current_holder)?,
-            sum: bitcoin::Amount::from_sat(sum),
+            sum,
             maturity_date,
             file_urls,
             shared_bill_data,
@@ -339,7 +339,7 @@ mod tests {
     use super::*;
     use crate::{quotes, service, TStamp};
     use bcr_common::{
-        cashu, core_tests, wire::bill as wire_bill, wire_tests::random_identity_public_data,
+        core_tests, wire::bill as wire_bill, wire_tests::random_identity_public_data,
     };
     use bcr_wdc_utils::surreal as surreal_config;
     use uuid::Uuid;
@@ -385,7 +385,7 @@ mod tests {
     fn accepted_status() -> quotes::Status {
         quotes::Status::Accepted {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
-            discounted: bitcoin::Amount::default(),
+            discounted: 0,
             wallet_pubkey: bcr_common::core::generate_random_keypair()
                 .public_key()
                 .into(),
@@ -433,7 +433,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.status = quotes::Status::Rejected {
             tstamp: TStamp::UNIX_EPOCH,
-            discounted: bitcoin::Amount::default(),
+            discounted: 0,
         };
         db.store(quote.clone()).await.unwrap();
         let res = db
@@ -513,7 +513,7 @@ mod tests {
         let mut quote = pending_quote();
         quote.status = quotes::Status::FailedEbillValidation {
             keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
-            discounted: bitcoin::Amount::default(),
+            discounted: 0,
             wallet_pubkey: bcr_common::core::generate_random_keypair()
                 .public_key()
                 .into(),
@@ -524,11 +524,11 @@ mod tests {
                 quote.id,
                 quotes::Status::MintingEnabled {
                     keyset_id: core_tests::generate_random_ecash_keyset().0.id.into(),
-                    discounted: bitcoin::Amount::default(),
+                    discounted: 0,
                     wallet_pubkey: bcr_common::core::generate_random_keypair()
                         .public_key()
                         .into(),
-                    fee: cashu::Amount::from(10),
+                    fee: 10,
                 },
             )
             .await;
@@ -568,7 +568,7 @@ mod tests {
                     wallet_pubkey: bcr_common::core::generate_random_keypair()
                         .public_key()
                         .into(),
-                    fee: cashu::Amount::from(10),
+                    fee: 10,
                 },
             )
             .await;
@@ -849,7 +849,7 @@ mod tests {
             payee: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
             endorsees: vec![holder.clone()],
             current_holder: holder,
-            sum: bitcoin::Amount::from_sat(1000),
+            sum: 1000,
             maturity_date: time::macros::date!(2021 - 01 - 01),
             file_urls: vec![url::Url::parse("https://example.com/f.pdf").unwrap()],
             shared_bill_data: String::from("sharedbilldata"),
@@ -861,7 +861,7 @@ mod tests {
         let wallet_pubkey = bcr_common::cashu::PublicKey::from(
             bcr_common::core::generate_random_keypair().public_key(),
         );
-        let discounted = bitcoin::Amount::from_sat(42);
+        let discounted = 42;
         let tstamp = TStamp::from_unix_timestamp(1_600_000_000).unwrap();
         vec![
             quotes::Status::Pending { wallet_pubkey },
@@ -884,7 +884,7 @@ mod tests {
                 keyset_id: keyset_id.into(),
                 wallet_pubkey,
                 discounted,
-                fee: cashu::Amount::from(10),
+                fee: 10,
             },
             quotes::Status::FailedEbillValidation {
                 discounted,
@@ -950,7 +950,7 @@ mod tests {
         let encoded = serde_json::to_value(quotes::Status::Offered {
             keyset_id: keyset_id.into(),
             ttl: TStamp::UNIX_EPOCH,
-            discounted: bitcoin::Amount::from_sat(42),
+            discounted: 42,
             wallet_pubkey,
         })
         .unwrap();

@@ -179,10 +179,7 @@ pub async fn init_app(cfg: config::App) -> (AppController, Vec<routine::RoutineH
         rest: clowder_client.clone(),
         nats: clowder_nats_client.clone(),
     };
-    assert!(
-        multiplier > cashu::Amount::ZERO,
-        "Multiplier must be greater than zero"
-    );
+    assert!(multiplier > 0, "Multiplier must be greater than zero");
     let ebill = ebill::Service {
         repo: ebill_repo,
         wildcatcl: Box::new(wdccl),

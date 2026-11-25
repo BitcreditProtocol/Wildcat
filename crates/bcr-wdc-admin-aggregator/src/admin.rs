@@ -206,9 +206,11 @@ pub async fn update_quote(
 
     let response = match req {
         wire_quotes::UpdateQuoteRequest::Deny => ctrl.quotes_cl.deny(qid).await,
-        wire_quotes::UpdateQuoteRequest::Offer { discounted, ttl } => {
-            ctrl.quotes_cl.offer(qid, discounted, ttl).await
-        }
+        wire_quotes::UpdateQuoteRequest::Offer {
+            discounted,
+            unit,
+            ttl,
+        } => ctrl.quotes_cl.offer(qid, discounted, unit, ttl).await,
     }?;
     Ok(Json(response))
 }
@@ -630,7 +632,13 @@ pub async fn get_clowder_foreign_coverage(
 
     let supply = ctrl.clwdr_cl.get_circulating_supply(&pk).await?;
     let btc_amt = ctrl.clwdr_cl.get_collateral_onchain(&pk).await?.amount;
-    let ebill_amt = ctrl.clwdr_cl.get_collateral_ebill(pk).await?.amount;
+    let ebill = ctrl.clwdr_cl.get_collateral_ebill(pk).await?;
+    // Coverage still reports ebill collateral as on-chain bitcoin
+    if ebill.unit != ecash::DEFAULT_CURRENCY_UNIT {
+        let msg = format!("ebill collateral in unsupported unit {}", ebill.unit);
+        return Err(Error::Internal(msg));
+    }
+    let ebill_amt = bitcoin::Amount::from_sat(ebill.amount);
     let eiou_amt = ctrl.clwdr_cl.get_collateral_eiou(&pk).await?.amount;
 
     Ok(Json(wire_clowder::Coverage {

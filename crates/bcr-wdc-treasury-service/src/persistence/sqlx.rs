@@ -29,15 +29,15 @@ enum EbillMintOperationBlob {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV1 {
-    target: bitcoin::Amount,
+    target: u64,
     pub_key: secp256k1::PublicKey,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EbillMintOpBlobV2 {
-    target: bitcoin::Amount,
+    target: u64,
     pub_key: secp256k1::PublicKey,
-    fee: bitcoin::Amount,
+    fee: u64,
 }
 
 fn to_ebill_mintop(
@@ -53,20 +53,20 @@ fn to_ebill_mintop(
         EbillMintOperationBlob::V1(blob) => ebill::MintOperation {
             uid,
             kid,
-            minted: cashu::Amount::from(minted as u64),
+            minted: minted as u64,
             bill_id,
-            target: cashu::Amount::from(blob.target.to_sat()),
+            target: blob.target,
             pub_key: cashu::PublicKey::from(blob.pub_key),
-            fee: cashu::Amount::from(0),
+            fee: 0,
         },
         EbillMintOperationBlob::V2(blob) => ebill::MintOperation {
             uid,
             kid,
-            minted: cashu::Amount::from(minted as u64),
+            minted: minted as u64,
             bill_id,
-            target: cashu::Amount::from(blob.target.to_sat()),
+            target: blob.target,
             pub_key: cashu::PublicKey::from(blob.pub_key),
-            fee: cashu::Amount::from(blob.fee.to_sat()),
+            fee: blob.fee,
         },
     };
     Ok(op)
@@ -90,9 +90,9 @@ impl ebill::Repository for DBEbill {
     async fn mint_store(&self, mint_op: ebill::MintOperation) -> Result<()> {
         let uid = mint_op.uid;
         let blob = EbillMintOperationBlob::V2(EbillMintOpBlobV2 {
-            target: bitcoin::Amount::from_sat(mint_op.target.to_u64()),
+            target: mint_op.target,
             pub_key: *mint_op.pub_key.deref(),
-            fee: bitcoin::Amount::from_sat(mint_op.fee.to_u64()),
+            fee: mint_op.fee,
         });
         let blob_value = serde_json::to_value(&blob).map_err(|e| Error::DB(anyhow!(e)))?;
         let result = sqlx::query!(
@@ -104,7 +104,7 @@ impl ebill::Repository for DBEbill {
             "#,
             uid,
             mint_op.kid.to_string(),
-            mint_op.minted.to_u64() as i64,
+            mint_op.minted as i64,
             mint_op.bill_id.to_string(),
             blob_value
         )
@@ -177,12 +177,7 @@ impl ebill::Repository for DBEbill {
         Ok(ops)
     }
 
-    async fn mint_update_field(
-        &self,
-        uid: Uuid,
-        old_minted: cashu::Amount,
-        new_minted: cashu::Amount,
-    ) -> Result<()> {
+    async fn mint_update_field(&self, uid: Uuid, old_minted: u64, new_minted: u64) -> Result<()> {
         let result = sqlx::query!(
             r#"
             UPDATE treasury_ebill_mint_ops
@@ -191,8 +186,8 @@ impl ebill::Repository for DBEbill {
             RETURNING uid
             "#,
             uid,
-            old_minted.to_u64() as i64,
-            new_minted.to_u64() as i64,
+            old_minted as i64,
+            new_minted as i64,
         )
         .fetch_optional(&self.pool)
         .await
@@ -1122,8 +1117,8 @@ enum OnChainMeltOpBlob {
 struct OnChainMeltOpBlobV1 {
     pub address: String,
     pub target: bitcoin::Amount,
-    pub available: bitcoin::Amount,
-    pub fees: bitcoin::Amount,
+    pub available: u64,
+    pub fees: u64,
     // network fees = available - target - fees
     pub wallet_key: secp256k1::PublicKey,
     pub fp_digest: [u8; 32],
@@ -1142,10 +1137,10 @@ fn onchain_meltop_to_row(
 )> {
     let mut blob_v1 = OnChainMeltOpBlobV1 {
         address: op.address,
-        available: bitcoin::Amount::from_sat(op.available.to_u64()),
+        available: op.available,
         target: op.target,
         commitment: op.commitment,
-        fees: bitcoin::Amount::from_sat(op.fees.to_u64()),
+        fees: op.fees,
         wallet_key: *op.wallet_key.deref(),
         fp_digest: op.fp_digest,
         tx: None,
@@ -1198,8 +1193,8 @@ fn onchain_meltop_from_row(
         qid,
         address,
         target,
-        available: cashu::Amount::from(available.to_sat()),
-        fees: cashu::Amount::from(fees.to_sat()),
+        available,
+        fees,
         wallet_key: cashu::PublicKey::from(wallet_key),
         commitment,
         fp_digest,
@@ -1604,7 +1599,7 @@ mod tests {
         let uid = Uuid::new_v4();
         let bill_id = core_tests::random_bill_id();
         let blob = EbillMintOperationBlob::V1(EbillMintOpBlobV1 {
-            target: bitcoin::Amount::from_sat(64),
+            target: 64,
             pub_key,
         });
         sqlx::query(
@@ -1621,10 +1616,10 @@ mod tests {
         .unwrap();
         let db = DBEbill::from_pool(pool);
         let op = ebill::Repository::mint_load(&db, uid).await.unwrap();
-        assert_eq!(op.target, cashu::Amount::from(64));
-        assert_eq!(op.minted, cashu::Amount::from(8));
+        assert_eq!(op.target, 64);
+        assert_eq!(op.minted, 8);
         assert_eq!(op.pub_key, cashu::PublicKey::from(pub_key));
-        assert_eq!(op.fee, cashu::Amount::ZERO);
+        assert_eq!(op.fee, 0);
     }
 
     #[test]

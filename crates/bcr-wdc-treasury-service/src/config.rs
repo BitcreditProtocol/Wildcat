@@ -1,6 +1,6 @@
 // ----- standard library imports
 // ----- extra library imports
-use bcr_common::{cashu, client::Url as ClientUrl};
+use bcr_common::client::Url as ClientUrl;
 use bcr_wdc_utils::{postgres, surreal};
 // ----- local imports
 
@@ -65,11 +65,11 @@ fn default_offline_exchange_lock_secs() -> u64 {
 pub struct Ebill {
     pub db: surreal::DBConnConfig,
     #[serde(default = "default_multiplier")]
-    pub multiplier: cashu::Amount,
+    pub multiplier: u64,
 }
 
-fn default_multiplier() -> cashu::Amount {
-    cashu::Amount::ONE
+fn default_multiplier() -> u64 {
+    1
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

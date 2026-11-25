@@ -9,7 +9,6 @@ use bcr_common::{
 };
 #[cfg(test)]
 use bcr_common::{core_tests::random_bill_id, wire_tests::random_identity_public_data};
-use bitcoin::Amount;
 use uuid::Uuid;
 // ----- local imports
 use crate::error::{Error, Result};
@@ -23,7 +22,7 @@ pub struct BillInfo {
     pub payee: wire_bill::BillParticipant,
     pub endorsees: Vec<wire_bill::BillParticipant>,
     pub current_holder: wire_bill::BillParticipant,
-    pub sum: Amount,
+    pub sum: u64,
     #[serde(with = "bcr_common::wire::bill_date")]
     pub maturity_date: time::Date,
     pub file_urls: Vec<url::Url>,
@@ -42,7 +41,7 @@ pub fn convert_to_billinfo(
         payee: bill.payee,
         endorsees: bill.endorsees,
         current_holder,
-        sum: Amount::from_sat(bill.sum),
+        sum: bill.sum,
         maturity_date,
         file_urls: bill.file_urls,
         shared_bill_data: shared_bill.data,
@@ -56,7 +55,7 @@ impl From<BillInfo> for wire_quotes::BillInfo {
             drawer: bill.drawer,
             payee: bill.payee,
             endorsees: bill.endorsees,
-            sum: bill.sum.to_sat(),
+            sum: bill.sum,
             maturity_date: bill.maturity_date,
             file_urls: bill.file_urls,
         }
@@ -75,7 +74,7 @@ impl BillInfo {
             payee: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
             endorsees: Vec::default(),
             current_holder: wire_bill::BillParticipant::Ident(random_identity_public_data().1),
-            sum: bitcoin::Amount::arbitrary(&mut seed).unwrap(),
+            sum: u64::arbitrary(&mut seed).unwrap(),
             maturity_date: time::macros::date!(1970 - 01 - 01),
             file_urls: Vec::default(),
             shared_bill_data: String::default(),
@@ -110,32 +109,32 @@ pub enum Status {
         keyset_id: cashu::Id,
         #[serde(with = "time::serde::rfc3339")]
         ttl: TStamp,
-        discounted: bitcoin::Amount,
+        discounted: u64,
         wallet_pubkey: cashu::PublicKey,
     },
     OfferExpired {
-        discounted: bitcoin::Amount,
+        discounted: u64,
         #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Rejected {
-        discounted: bitcoin::Amount,
+        discounted: u64,
         #[serde(with = "time::serde::rfc3339")]
         tstamp: TStamp,
     },
     Accepted {
-        discounted: bitcoin::Amount,
+        discounted: u64,
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
     },
     MintingEnabled {
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
-        discounted: bitcoin::Amount,
-        fee: cashu::Amount,
+        discounted: u64,
+        fee: u64,
     },
     FailedEbillValidation {
-        discounted: bitcoin::Amount,
+        discounted: u64,
         keyset_id: cashu::Id,
         wallet_pubkey: cashu::PublicKey,
     },
@@ -152,7 +151,7 @@ pub struct Quote {
 pub struct LightQuote {
     pub id: Uuid,
     pub status: StatusDiscriminants,
-    pub sum: Amount,
+    pub sum: u64,
     pub maturity_date: time::Date,
 }
 
@@ -192,12 +191,7 @@ impl Quote {
         }
     }
 
-    pub fn offer(
-        &mut self,
-        keyset_id: cashu::Id,
-        ttl: TStamp,
-        discounted: bitcoin::Amount,
-    ) -> Result<()> {
+    pub fn offer(&mut self, keyset_id: cashu::Id, ttl: TStamp, discounted: u64) -> Result<()> {
         let Status::Pending { wallet_pubkey, .. } = self.status else {
             return Err(Error::InvalidQuoteStatus(
                 self.id,
@@ -270,7 +264,7 @@ impl Quote {
         Ok(())
     }
 
-    pub fn override_failed_ebill_validation(&mut self, fee: cashu::Amount) -> Result<()> {
+    pub fn override_failed_ebill_validation(&mut self, fee: u64) -> Result<()> {
         match self.status {
             Status::FailedEbillValidation {
                 keyset_id,
@@ -295,7 +289,7 @@ impl Quote {
         Ok(())
     }
 
-    pub fn start_minting(&mut self, fee: cashu::Amount) -> Result<()> {
+    pub fn start_minting(&mut self, fee: u64) -> Result<()> {
         match self.status {
             Status::Accepted {
                 keyset_id,

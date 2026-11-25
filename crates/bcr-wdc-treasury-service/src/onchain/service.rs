@@ -250,10 +250,10 @@ impl Service {
         input_ys.sort();
         let op = onchain::MeltOperation {
             qid,
-            available: cashu::Amount::from(input_total.to_sat()),
+            available: input_total.to_sat(),
             address: checked_address.to_string(),
             target,
-            fees: cashu::Amount::from(admin_fees.to_sat()),
+            fees: admin_fees.to_sat(),
             expiry,
             wallet_key: cashu::PublicKey::from(wallet_key),
             input_ys,
@@ -450,7 +450,7 @@ fn cross_check_locked_fps(
 async fn generate_fee_premints(
     wdc: &Arc<dyn WildcatClient>,
     inputs: &[cashu::Proof],
-    fees: cashu::Amount,
+    fees: u64,
 ) -> Result<cashu::PreMintSecrets> {
     assert!(!inputs.is_empty());
     let p1 = inputs.first().unwrap();
@@ -473,7 +473,7 @@ async fn generate_fee_premints(
     let keyset = wdc.keyset(kid).await?;
     let pre = cashu::PreMintSecrets::random(
         kid,
-        fees,
+        cashu::Amount::from(fees),
         &cashu::amount::SplitTarget::None,
         &bcr_wdc_utils::keys::to_fee_and_amounts(&keyset),
     )?;
@@ -662,11 +662,11 @@ mod tests {
             .returning(move |_| {
                 Ok(onchain::MeltOperation {
                     qid,
-                    available: cashu::Amount::from(99_000),
+                    available: 99_000,
                     address: String::new(),
                     target: bitcoin::Amount::from_sat(99_000),
                     expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-                    fees: cashu::Amount::ZERO,
+                    fees: 0,
                     wallet_key: core::generate_random_keypair().public_key().into(),
                     input_ys: vec![],
                     fp_digest: [0u8; 32],
@@ -810,11 +810,11 @@ mod tests {
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
         let op = onchain::MeltOperation {
             qid,
-            available: cashu::Amount::from(8),
+            available: 8,
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(8),
             expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-            fees: cashu::Amount::ZERO,
+            fees: 0,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: wire_attestation::fp_digest(
@@ -902,11 +902,11 @@ mod tests {
         // quote digest over different fingerprints than the presented proofs
         let op = onchain::MeltOperation {
             qid,
-            available: cashu::Amount::from(8),
+            available: 8,
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(8),
             expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-            fees: cashu::Amount::ZERO,
+            fees: 0,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: [1u8; 32],
@@ -1063,11 +1063,11 @@ mod tests {
         let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&[0; 64]).unwrap();
         let op = onchain::MeltOperation {
             qid,
-            available: cashu::Amount::from(8),
+            available: 8,
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(5),
             expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-            fees: cashu::Amount::from(2),
+            fees: 2,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys,
             fp_digest: wire_attestation::fp_digest(
@@ -1343,11 +1343,11 @@ mod tests {
         repo.expect_load_meltop().returning(move |_| {
             Ok(onchain::MeltOperation {
                 qid: pending,
-                available: cashu::Amount::from(99_000),
+                available: 99_000,
                 address: String::new(),
                 target: bitcoin::Amount::from_sat(50_000),
                 expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-                fees: cashu::Amount::ZERO,
+                fees: 0,
                 wallet_key: core::generate_random_keypair().public_key().into(),
                 input_ys: vec![],
                 fp_digest: [0u8; 32],
@@ -1395,11 +1395,11 @@ mod tests {
         let qid = Uuid::new_v4();
         let op = onchain::MeltOperation {
             qid,
-            available: cashu::Amount::from(8),
+            available: 8,
             address: String::from("1BwBExCU5qfkt1G7rqX8zDkKhhGe2p9Fdb"),
             target: bitcoin::Amount::from_sat(8),
             expiry: time::OffsetDateTime::now_utc() + time::Duration::seconds(3600),
-            fees: cashu::Amount::ZERO,
+            fees: 0,
             wallet_key: core::generate_random_keypair().public_key().into(),
             input_ys: proofs.ys().unwrap(),
             fp_digest: wire_attestation::fp_digest(

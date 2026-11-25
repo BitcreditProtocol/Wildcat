@@ -559,10 +559,10 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op).await.unwrap();
     }
@@ -588,10 +588,10 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op.clone()).await.unwrap();
         let res = db.mint_store(op).await;
@@ -619,10 +619,10 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op.clone()).await.unwrap();
         let other = ebill::MintOperation {
@@ -654,10 +654,10 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         let absent = db.mint_lookup_by_bill(op.bill_id.clone()).await.unwrap();
         assert!(absent.is_none());
@@ -692,10 +692,10 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::from(36),
+            fee: 36,
         };
         db.mint_store(op.clone()).await.unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
@@ -725,18 +725,16 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op.clone()).await.unwrap();
-        db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
-            .await
-            .unwrap();
+        db.mint_update_field(op.uid, 0, 100).await.unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
         assert_eq!(res.kid, kid.into());
-        assert_eq!(res.minted, cashu::Amount::from(100u64));
+        assert_eq!(res.minted, 100);
     }
 
     #[tokio::test]
@@ -760,20 +758,20 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op1.clone()).await.unwrap();
         let op2 = ebill::MintOperation {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
-            fee: cashu::Amount::ZERO,
+            fee: 0,
         };
         db.mint_store(op2.clone()).await.unwrap();
         let res = db.mint_list(kid.into()).await.unwrap();
@@ -1013,8 +1011,8 @@ mod tests {
         let meltop = onchain::MeltOperation {
             qid,
             target: bitcoin::Amount::from_sat(1000),
-            available: cashu::Amount::from(2000u64),
-            fees: cashu::Amount::from(10u64),
+            available: 2000,
+            fees: 10,
             address: String::from("n28b7b8HZcrBqeabbjwGRbo8q9JLcusYFC"),
             wallet_key,
             commitment,

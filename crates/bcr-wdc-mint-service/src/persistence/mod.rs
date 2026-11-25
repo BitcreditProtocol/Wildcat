@@ -1440,8 +1440,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op).await.unwrap();
@@ -1466,8 +1466,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op.clone()).await.unwrap();
@@ -1494,8 +1494,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op.clone()).await.unwrap();
@@ -1526,8 +1526,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::from(64),
-            minted: cashu::Amount::ZERO,
+            target: 64,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         let absent = db.mint_lookup_by_bill(op.bill_id.clone()).await.unwrap();
@@ -1561,8 +1561,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op.clone()).await.unwrap();
@@ -1590,17 +1590,15 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op.clone()).await.unwrap();
-        db.mint_update_field(op.uid, cashu::Amount::ZERO, cashu::Amount::from(100u64))
-            .await
-            .unwrap();
+        db.mint_update_field(op.uid, 0, 100u64).await.unwrap();
         let res = db.mint_load(op.uid).await.unwrap();
         assert_eq!(res.kid, kid.into());
-        assert_eq!(res.minted, cashu::Amount::from(100u64));
+        assert_eq!(res.minted, 100u64);
     }
 
     #[tokio::test]
@@ -1622,8 +1620,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op1.clone()).await.unwrap();
@@ -1631,8 +1629,8 @@ mod tests {
             uid: Uuid::new_v4(),
             kid: kid.into(),
             pub_key: kp.public_key().into(),
-            target: cashu::Amount::ZERO,
-            minted: cashu::Amount::ZERO,
+            target: 0,
+            minted: 0,
             bill_id: bcr_common::core_tests::random_bill_id(),
         };
         db.mint_store(op2.clone()).await.unwrap();

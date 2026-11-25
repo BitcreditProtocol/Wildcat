@@ -69,8 +69,8 @@ pub async fn post_swap(
     Ok(Json(wire_swap::SwapResponse { signatures }))
 }
 
-async fn test_for_htlc(proofs: &[cashu::Proof], tcl: &TreasuryClient) -> Result<cashu::Amount> {
-    let mut total = cashu::Amount::ZERO;
+async fn test_for_htlc(proofs: &[cashu::Proof], tcl: &TreasuryClient) -> Result<u64> {
+    let mut total = 0u64;
     for proof in proofs {
         if let Some(cashu::Witness::HTLCWitness(cashu::HTLCWitness { preimage, .. })) =
             &proof.witness
